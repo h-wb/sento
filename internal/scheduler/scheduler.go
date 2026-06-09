@@ -132,7 +132,7 @@ func (s *Scheduler) tickChapters(ctx context.Context) error {
 		if err != nil || len(wanted) == 0 {
 			continue
 		}
-		candidates, err := s.grabber.FindChapterCandidates(ctx, sr.ID, wanted)
+		candidates, err := s.grabber.FindChapterCandidates(ctx, sr.ID, wanted, false)
 		if err != nil {
 			slog.Warn("chapter check failed", "series", sr.ID, "error", err)
 			continue
@@ -157,7 +157,7 @@ func (s *Scheduler) tickVolumes(ctx context.Context) error {
 		if !sr.Monitored {
 			continue
 		}
-		candidates, err := s.volumes.FindVolumeCandidates(ctx, sr.ID)
+		candidates, err := s.volumes.FindVolumeCandidates(ctx, sr.ID, nil)
 		if err != nil {
 			slog.Warn("volume sweep failed", "series", sr.ID, "error", err)
 			continue

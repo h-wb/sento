@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/h-wb/sento/internal/ledger"
+	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -16,6 +17,7 @@ func (s *Server) mountSourceAPI(r chi.Router) {
 	r.Get("/sources/{sid}/search", s.handleSourceSearch)
 	r.Post("/series/{id}/search/chapters", s.handleChapterSearch)
 	r.Post("/series/{id}/search/volumes", s.handleVolumeSearch)
+	r.Post("/series/{id}/grab/chapter", s.handleGrabChapter)
 	r.Get("/queue", s.handleQueue)
 	r.Post("/queue/process", s.handleQueueProcess)
 }
@@ -33,8 +35,10 @@ func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		DryRun bool   `json:"dryRun"`
-		Grab   string `json:"grab"` // GUID: force-grab one candidate
+		DryRun bool                `json:"dryRun"`
+		Grab   string              `json:"grab"`  // GUID: grab one candidate
+		Force  bool                `json:"force"` // bypass soft rejections
+		Slot   *service.TargetSlot `json:"slot"`  // interactive: target one slot
 	}
 	if r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -42,7 +46,7 @@ func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	candidates, err := s.volumes.FindVolumeCandidates(r.Context(), id)
+	candidates, err := s.volumes.FindVolumeCandidates(r.Context(), id, body.Slot)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -56,7 +60,7 @@ func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
 			if c.GUID != body.Grab {
 				continue
 			}
-			qid, err := s.volumes.GrabVolume(r.Context(), id, c)
+			qid, err := s.volumes.GrabVolume(r.Context(), id, c, body.Force)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -119,6 +123,7 @@ func (s *Server) handleChapterSearch(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		DryRun bool    `json:"dryRun"`
 		Slots  []int64 `json:"slots"` // hundredths; empty = all wanted
+		All    bool    `json:"all"`   // interactive: every matching candidate
 	}
 	if r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -127,17 +132,28 @@ func (s *Server) handleChapterSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	wanted, err := s.wantedChapterSlots(r, id, body.Slots)
-	if err != nil {
-		writeStoreError(w, err)
-		return
+	var wanted map[int64]bool
+	var err error
+	if body.All && len(body.Slots) > 0 {
+		// Interactive: explicit slots are searchable regardless of
+		// wanted/satisfied/pending state.
+		wanted = map[int64]bool{}
+		for _, n := range body.Slots {
+			wanted[n] = true
+		}
+	} else {
+		wanted, err = s.wantedChapterSlots(r, id, body.Slots)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
 	}
 	if len(wanted) == 0 {
 		writeJSON(w, http.StatusOK, map[string]any{"candidates": []any{}, "queued": []any{}})
 		return
 	}
 
-	candidates, err := s.grabber.FindChapterCandidates(r.Context(), id, wanted)
+	candidates, err := s.grabber.FindChapterCandidates(r.Context(), id, wanted, body.All)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -152,6 +168,30 @@ func (s *Server) handleChapterSearch(w http.ResponseWriter, r *http.Request) {
 		resp["queued"] = queued
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleGrabChapter grabs one specific candidate from an interactive
+// chapter search.
+func (s *Server) handleGrabChapter(w http.ResponseWriter, r *http.Request) {
+	if s.grabber == nil {
+		writeError(w, http.StatusServiceUnavailable, "suwayomi is not configured")
+		return
+	}
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var c service.ChapterCandidate
+	if err := json.NewDecoder(r.Body).Decode(&c); err != nil || c.ChapterID == 0 || c.SlotNumber == 0 {
+		writeError(w, http.StatusBadRequest, "chapterId and slotNumber are required")
+		return
+	}
+	queued, err := s.grabber.GrabChapters(r.Context(), id, []service.ChapterCandidate{c})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"queued": queued})
 }
 
 // wantedChapterSlots computes the wanted chapter slot set, optionally

@@ -95,8 +95,17 @@ func (v *VolumeSearcher) wantedVolumes(ctx context.Context, seriesID int64) (map
 	return wanted, collections, nil
 }
 
-// FindVolumeCandidates runs the search + funnel for a series.
-func (v *VolumeSearcher) FindVolumeCandidates(ctx context.Context, seriesID int64) ([]VolumeCandidate, error) {
+// TargetSlot restricts an interactive search to one volume slot; the slot
+// is searchable regardless of wanted/satisfied/pending state.
+type TargetSlot struct {
+	CollectionID int64 `json:"collectionId"`
+	Number       int64 `json:"number"` // hundredths
+}
+
+// FindVolumeCandidates runs the search + funnel for a series. With a
+// target, only that slot counts as wanted and edition routing is pinned to
+// the target's collection (interactive search).
+func (v *VolumeSearcher) FindVolumeCandidates(ctx context.Context, seriesID int64, target *TargetSlot) ([]VolumeCandidate, error) {
 	series, err := v.store.GetSeries(ctx, seriesID)
 	if err != nil {
 		return nil, err
@@ -108,6 +117,9 @@ func (v *VolumeSearcher) FindVolumeCandidates(ctx context.Context, seriesID int6
 	wanted, collections, err := v.wantedVolumes(ctx, seriesID)
 	if err != nil {
 		return nil, err
+	}
+	if target != nil {
+		wanted = map[int64]map[int64]bool{target.CollectionID: {target.Number: true}}
 	}
 
 	releases, err := v.prowlarr.Search(ctx, series.Title, nil)
@@ -123,7 +135,7 @@ func (v *VolumeSearcher) FindVolumeCandidates(ctx context.Context, seriesID int6
 			downloadURL: rel.DownloadURL, magnetURL: rel.MagnetURL,
 		}
 		c.Parse = parse.ParseAnchored(rel.Title, parse.ChannelTorrent, titles)
-		v.funnel(&c, series, collections, wanted)
+		v.funnel(&c, series, collections, wanted, target)
 		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
@@ -132,7 +144,7 @@ func (v *VolumeSearcher) FindVolumeCandidates(ctx context.Context, seriesID int6
 
 // funnel applies hard rejections then scoring (decision-engine.md §3–4).
 func (v *VolumeSearcher) funnel(c *VolumeCandidate, series *store.Series,
-	collections []store.Collection, wanted map[int64]map[int64]bool,
+	collections []store.Collection, wanted map[int64]map[int64]bool, target *TargetSlot,
 ) {
 	reject := func(code string) { c.Rejections = append(c.Rejections, code) }
 
@@ -148,11 +160,17 @@ func (v *VolumeSearcher) funnel(c *VolumeCandidate, series *store.Series,
 		return
 	}
 
-	// R6 edition routing.
-	colID, ok := v.routeEdition(c.Parse, collections, wanted)
-	if !ok {
-		reject("rejected.edition_routing")
-		return
+	// R6 edition routing (pinned to the target's collection when interactive).
+	colID := int64(0)
+	if target != nil {
+		colID = target.CollectionID
+	} else {
+		var ok bool
+		colID, ok = v.routeEdition(c.Parse, collections, wanted)
+		if !ok {
+			reject("rejected.edition_routing")
+			return
+		}
 	}
 	c.CollectionID = colID
 
@@ -278,7 +296,7 @@ func (v *VolumeSearcher) GrabBest(ctx context.Context, seriesID int64, candidate
 		if !news {
 			continue
 		}
-		qid, err := v.GrabVolume(ctx, seriesID, c)
+		qid, err := v.GrabVolume(ctx, seriesID, c, false)
 		if err != nil {
 			slog.Warn("volume grab failed", "series", seriesID, "release", c.Title, "error", err)
 			continue
@@ -291,10 +309,25 @@ func (v *VolumeSearcher) GrabBest(ctx context.Context, seriesID int64, candidate
 	return queued
 }
 
+// Rejections that survive a force-grab (decision-engine.md §7).
+var hardRejections = map[string]bool{
+	"rejected.content_type":    true,
+	"rejected.series_match":    true,
+	"rejected.edition_routing": true,
+	"rejected.no_coverage":     true, // nothing to link a grab to
+}
+
 // GrabVolume sends a candidate to qBittorrent and records the queue item.
-func (v *VolumeSearcher) GrabVolume(ctx context.Context, seriesID int64, c VolumeCandidate) (int64, error) {
-	if len(c.Rejections) > 0 {
-		return 0, fmt.Errorf("candidate is rejected: %v", c.Rejections)
+// force bypasses soft rejections (pack threshold, size, seeders); hard
+// gates (content-type, series match) always hold.
+func (v *VolumeSearcher) GrabVolume(ctx context.Context, seriesID int64, c VolumeCandidate, force bool) (int64, error) {
+	for _, r := range c.Rejections {
+		if hardRejections[r] {
+			return 0, fmt.Errorf("candidate is rejected: %s", r)
+		}
+		if !force {
+			return 0, fmt.Errorf("candidate is rejected: %s (use force to override)", r)
+		}
 	}
 	link := c.magnetURL
 	if link == "" {

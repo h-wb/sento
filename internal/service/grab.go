@@ -39,8 +39,11 @@ type ChapterCandidate struct {
 }
 
 // FindChapterCandidates fetches chapter lists from all active bindings and
-// matches them against the series' wanted chapter slots.
-func (g *Grabber) FindChapterCandidates(ctx context.Context, seriesID int64, wanted map[int64]bool) ([]ChapterCandidate, error) {
+// matches them against the given chapter slots. With includeAll, every
+// matching source chapter is returned (interactive search shows all
+// scanlator/source options); otherwise the first binding by priority wins
+// per slot (automatic mode).
+func (g *Grabber) FindChapterCandidates(ctx context.Context, seriesID int64, wanted map[int64]bool, includeAll bool) ([]ChapterCandidate, error) {
 	titles, err := g.store.SeriesTitles(ctx, seriesID)
 	if err != nil {
 		return nil, err
@@ -51,6 +54,7 @@ func (g *Grabber) FindChapterCandidates(ctx context.Context, seriesID int64, wan
 	}
 
 	chosen := map[int64]ChapterCandidate{} // slot → candidate (first binding by priority wins)
+	var all []ChapterCandidate
 	for _, b := range bindings {
 		if b.State != "active" {
 			continue
@@ -80,10 +84,7 @@ func (g *Grabber) FindChapterCandidates(ctx context.Context, seriesID int64, wan
 					if !wanted[n] {
 						continue
 					}
-					if _, taken := chosen[n]; taken {
-						continue
-					}
-					chosen[n] = ChapterCandidate{
+					cand := ChapterCandidate{
 						SlotNumber:  n,
 						ChapterID:   ch.ID,
 						ChapterName: ch.Name,
@@ -91,6 +92,14 @@ func (g *Grabber) FindChapterCandidates(ctx context.Context, seriesID int64, wan
 						SourceID:    b.SourceID,
 						BindingID:   b.ID,
 					}
+					if includeAll {
+						all = append(all, cand)
+						continue
+					}
+					if _, taken := chosen[n]; taken {
+						continue
+					}
+					chosen[n] = cand
 				}
 			}
 		}
@@ -101,6 +110,10 @@ func (g *Grabber) FindChapterCandidates(ctx context.Context, seriesID int64, wan
 		}
 	}
 
+	if includeAll {
+		sort.Slice(all, func(i, j int) bool { return all[i].SlotNumber < all[j].SlotNumber })
+		return all, nil
+	}
 	out := make([]ChapterCandidate, 0, len(chosen))
 	for _, c := range chosen {
 		out = append(out, c)

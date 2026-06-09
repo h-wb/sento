@@ -186,16 +186,33 @@ export const api = {
   deleteBinding: (id: number, bid: number) =>
     request<void>(`/series/${id}/bindings/${bid}`, { method: 'DELETE' }),
 
-  searchChapters: (id: number, dryRun: boolean) =>
+  searchChapters: (
+    id: number,
+    opts: { dryRun?: boolean; slots?: number[]; all?: boolean },
+  ) =>
     request<{ candidates: ChapterCandidate[]; queued: number[] }>(`/series/${id}/search/chapters`, {
       method: 'POST',
-      body: JSON.stringify({ dryRun }),
+      body: JSON.stringify(opts),
     }),
-  searchVolumes: (id: number, dryRun: boolean, grab?: string) =>
+  grabChapter: (id: number, candidate: ChapterCandidate) =>
+    request<{ queued: number[] }>(`/series/${id}/grab/chapter`, {
+      method: 'POST',
+      body: JSON.stringify(candidate),
+    }),
+  searchVolumes: (
+    id: number,
+    opts: {
+      dryRun?: boolean
+      grab?: string
+      force?: boolean
+      slot?: { collectionId: number; number: number }
+    },
+  ) =>
     request<{ candidates: VolumeCandidate[]; queued: number[] }>(`/series/${id}/search/volumes`, {
       method: 'POST',
-      body: JSON.stringify({ dryRun, grab }),
+      body: JSON.stringify(opts),
     }),
+  deleteFile: (fid: number) => request<void>(`/files/${fid}`, { method: 'DELETE' }),
 
   scanSeries: (id: number, path?: string) =>
     request<{ scanned: number; linked: number; unrequested: number }>(`/series/${id}/import`, {

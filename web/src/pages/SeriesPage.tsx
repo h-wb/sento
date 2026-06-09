@@ -33,6 +33,7 @@ import {
   type Source,
   type VolumeCandidate,
 } from '../api'
+import SlotModal, { type SlotSelection } from '../components/SlotModal'
 
 export default function SeriesPage() {
   const { id } = useParams()
@@ -48,6 +49,7 @@ export default function SeriesPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [slotSel, setSlotSel] = useState<SlotSelection | null>(null)
 
   const load = useCallback(() => {
     api
@@ -147,11 +149,19 @@ export default function SeriesPage() {
             slots={slots}
             busy={busy}
             run={run}
+            onSlot={setSlotSel}
           />
         </Tabs.Panel>
 
         <Tabs.Panel value="chapters" pt="md">
-          <ChaptersTab seriesID={seriesID} ledger={ledger} slots={slots} busy={busy} run={run} />
+          <ChaptersTab
+            seriesID={seriesID}
+            ledger={ledger}
+            slots={slots}
+            busy={busy}
+            run={run}
+            onSlot={setSlotSel}
+          />
         </Tabs.Panel>
 
         <Tabs.Panel value="sources" pt="md">
@@ -208,6 +218,14 @@ export default function SeriesPage() {
           </Stack>
         </Tabs.Panel>
       </Tabs>
+
+      <SlotModal
+        seriesID={seriesID}
+        sel={slotSel}
+        files={files}
+        onClose={() => setSlotSel(null)}
+        onChanged={load}
+      />
     </>
   )
 }
@@ -218,12 +236,14 @@ function VolumesTab({
   slots,
   busy,
   run,
+  onSlot,
 }: {
   seriesID: number
   collections: Collection[]
   slots: Slots | null
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
+  onSlot: (s: SlotSelection) => void
 }) {
   const [funnel, setFunnel] = useState<VolumeCandidate[] | null>(null)
   const volumeCollections = collections.filter((c) => c.type === 'volume')
@@ -237,7 +257,7 @@ function VolumesTab({
           loading={busy}
           onClick={() =>
             run(
-              () => api.searchVolumes(seriesID, false).then((r) => setFunnel(r.candidates)),
+              () => api.searchVolumes(seriesID, {}).then((r) => setFunnel(r.candidates)),
               'Volume search done',
             )
           }
@@ -248,7 +268,9 @@ function VolumesTab({
           size="xs"
           variant="default"
           loading={busy}
-          onClick={() => run(() => api.searchVolumes(seriesID, true).then((r) => setFunnel(r.candidates)))}
+          onClick={() =>
+            run(() => api.searchVolumes(seriesID, { dryRun: true }).then((r) => setFunnel(r.candidates)))
+          }
         >
           Search (dry run)
         </Button>
@@ -288,12 +310,25 @@ function VolumesTab({
                   key={`${s.number}-${s.countType}`}
                   label={`v${fmtNum(s.number)}${s.releaseDate ? ' · ' + s.releaseDate : ''}${
                     s.wanted ? ' · wanted' : ''
-                  }`}
+                  } — click for details`}
                 >
                   <Badge
                     size="sm"
+                    style={{ cursor: 'pointer' }}
                     variant={s.fileIds?.length ? 'filled' : s.wanted ? 'outline' : 'light'}
                     color={s.fileIds?.length ? 'green' : s.wanted ? 'yellow' : 'gray'}
+                    onClick={() =>
+                      onSlot({
+                        ledger: 'volume',
+                        number: s.number,
+                        collectionId: c.id,
+                        collectionName: `${c.editionName} · ${c.language} · ${c.medium}`,
+                        releaseDate: s.releaseDate,
+                        monitored: s.monitored,
+                        wanted: s.wanted,
+                        fileIds: s.fileIds ?? [],
+                      })
+                    }
                   >
                     {fmtNum(s.number)}
                   </Badge>
@@ -344,12 +379,14 @@ function ChaptersTab({
   slots,
   busy,
   run,
+  onSlot,
 }: {
   seriesID: number
   ledger: ChapterLedger | null
   slots: Slots | null
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
+  onSlot: (s: SlotSelection) => void
 }) {
   const chapters = slots?.chapters ?? []
   const monitored = chapters.filter((c) => c.monitored)
@@ -401,7 +438,7 @@ function ChaptersTab({
           mt={20}
           leftSection={<IconSearch size={14} />}
           loading={busy}
-          onClick={() => run(() => api.searchChapters(seriesID, false), 'Chapter search queued')}
+          onClick={() => run(() => api.searchChapters(seriesID, {}), 'Chapter search queued')}
         >
           Search &amp; grab wanted
         </Button>
@@ -412,11 +449,24 @@ function ChaptersTab({
       </Text>
       <Group gap={3}>
         {chapters.slice(-300).map((c) => (
-          <Tooltip key={c.number} label={`c${fmtNum(c.number)}${c.wanted ? ' · wanted' : ''}`}>
+          <Tooltip
+            key={c.number}
+            label={`c${fmtNum(c.number)}${c.wanted ? ' · wanted' : ''} — click for details`}
+          >
             <Badge
               size="xs"
+              style={{ cursor: 'pointer' }}
               variant={c.fileIds?.length ? 'filled' : c.wanted ? 'outline' : 'light'}
               color={c.fileIds?.length ? 'green' : c.wanted ? 'yellow' : 'gray'}
+              onClick={() =>
+                onSlot({
+                  ledger: 'chapter',
+                  number: c.number,
+                  monitored: c.monitored,
+                  wanted: c.wanted,
+                  fileIds: c.fileIds ?? [],
+                })
+              }
             >
               {fmtNum(c.number)}
             </Badge>

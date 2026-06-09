@@ -417,6 +417,23 @@ func (s *Store) ListFiles(ctx context.Context, seriesID int64) ([]File, error) {
 	return out, rows.Err()
 }
 
+// DeleteFile removes a file row (links cascade) and returns its path so
+// the caller can remove it from disk.
+func (s *Store) DeleteFile(ctx context.Context, id int64) (string, error) {
+	var path string
+	err := s.db.QueryRowContext(ctx, `SELECT path FROM files WHERE id = ?`, id).Scan(&path)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM files WHERE id = ?`, id); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 // SlotLinks returns all links for a series keyed by "ledger/collection/number".
 func (s *Store) SlotLinks(ctx context.Context, seriesID int64) (map[string][]int64, error) {
 	rows, err := s.db.QueryContext(ctx, `

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -20,6 +21,7 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/system/status", s.handleStatus)
 
 	r.Get("/lookup", s.handleLookup)
+	r.Delete("/files/{fid}", s.handleDeleteFile)
 	s.mountSourceAPI(r)
 
 	r.Route("/series", func(r chi.Router) {
@@ -269,6 +271,26 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		files = []store.File{}
 	}
 	writeJSON(w, http.StatusOK, files)
+}
+
+// handleDeleteFile unlinks a file and deletes it from disk. The freed slots
+// become wanted again and may re-download (Sonarr semantics, spec.md §11.4).
+func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
+	fid, ok := pathID(w, r, "fid")
+	if !ok {
+		return
+	}
+	path, err := s.store.DeleteFile(r.Context(), fid)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		// Row is gone but the file persists: surface it, a rescan re-adopts.
+		writeError(w, http.StatusInternalServerError, "unlinked, but disk delete failed: "+err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleScanSeries imports existing files in place (spec.md §11.4):

@@ -34,7 +34,7 @@ func TestVolumeFunnel(t *testing.T) {
 	vs := NewVolumeSearcher(st, prowlarr.New(fake.URL, "key"), nil,
 		library.DefaultNaming(), t.TempDir(), "sento")
 
-	candidates, err := vs.FindVolumeCandidates(ctx, seriesID)
+	candidates, err := vs.FindVolumeCandidates(ctx, seriesID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
