@@ -1,0 +1,34 @@
+[tools]
+go = "1.24"
+node = "24"
+sqlc = "latest"
+golangci-lint = "latest"
+
+[env]
+CGO_ENABLED = "0"
+
+[tasks.build]
+description = "Build the sento binary"
+run = "go build -o bin/sento ./cmd/sento"
+
+[tasks.run]
+description = "Run sento (dev)"
+run = "go run ./cmd/sento"
+
+[tasks.test]
+description = "Run Go tests"
+run = "go test ./..."
+
+[tasks.lint]
+description = "Lint Go code"
+run = "golangci-lint run"
+
+[tasks."web:dev"]
+description = "Run the web UI dev server"
+dir = "web"
+run = "npm run dev"
+
+[tasks."web:build"]
+description = "Build the web UI"
+dir = "web"
+run = "npm run build"

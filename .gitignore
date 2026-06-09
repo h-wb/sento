@@ -1,0 +1,14 @@
+# binaries & local data
+bin/
+data/
+*.db
+*.db-wal
+*.db-shm
+config.yml
+
+# web
+web/node_modules/
+web/dist/
+
+# tooling
+.DS_Store

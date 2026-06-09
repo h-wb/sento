@@ -1,0 +1,38 @@
+name: sento
+
+services:
+  sento:
+    build:
+      context: ..
+    ports:
+      - "8484:8484"
+    environment:
+      SENTO_SUWAYOMI_URL: http://suwayomi:4567
+      # SENTO_PROWLARR_URL: http://prowlarr:9696
+      # SENTO_PROWLARR_API_KEY: ...
+    volumes:
+      - sento-config:/config
+      - ./library:/library
+      - ./downloads:/downloads
+    depends_on:
+      - suwayomi
+    restart: unless-stopped
+
+  # Extension engine + chapter downloader (specs/suwayomi-adapter.md).
+  # Pinned to the version the adapter spec was validated against; bump
+  # deliberately, alongside adapter contract tests.
+  suwayomi:
+    image: ghcr.io/suwayomi/suwayomi-server:v2.2.2166
+    environment:
+      DOWNLOAD_AS_CBZ: "true"
+    volumes:
+      - suwayomi-data:/home/suwayomi/.local/share/Tachidesk
+    restart: unless-stopped
+    # Not exposed on the host by default: Sento talks to it on the
+    # compose network. Uncomment to reach its WebUI for extension setup.
+    # ports:
+    #   - "4567:4567"
+
+volumes:
+  sento-config:
+  suwayomi-data:
