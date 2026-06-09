@@ -49,38 +49,23 @@ func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var queued []int64
-	if !body.DryRun {
-		remaining := map[int64]bool{}
+	switch {
+	case body.DryRun:
+	case body.Grab != "":
 		for _, c := range candidates {
-			if body.Grab != "" && c.GUID != body.Grab {
-				continue
-			}
-			if len(c.Rejections) > 0 {
-				continue
-			}
-			// Greedy: skip candidates whose covered slots are all taken.
-			news := false
-			for _, n := range c.Covered {
-				if !remaining[n] {
-					news = true
-					break
-				}
-			}
-			if !news && len(queued) > 0 {
+			if c.GUID != body.Grab {
 				continue
 			}
 			qid, err := s.volumes.GrabVolume(r.Context(), id, c)
 			if err != nil {
-				continue
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
 			}
 			queued = append(queued, qid)
-			for _, n := range c.Covered {
-				remaining[n] = true
-			}
-			if body.Grab != "" {
-				break
-			}
+			break
 		}
+	default:
+		queued = s.volumes.GrabBest(r.Context(), id, candidates)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"candidates": candidates, "queued": queued})
 }

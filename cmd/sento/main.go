@@ -16,6 +16,7 @@ import (
 	"github.com/h-wb/sento/internal/config"
 	"github.com/h-wb/sento/internal/db"
 	"github.com/h-wb/sento/internal/metadata/mangabaka"
+	"github.com/h-wb/sento/internal/scheduler"
 	"github.com/h-wb/sento/internal/server"
 	"github.com/h-wb/sento/internal/version"
 )
@@ -46,11 +47,17 @@ func run(configPath string) error {
 	defer func() { _ = database.Close() }()
 
 	provider := mangabaka.New(cfg.MangaBaka.BaseURL)
+	app := server.New(cfg, database, provider)
+
+	schedCtx, stopSched := context.WithCancel(context.Background())
+	defer stopSched()
+	scheduler.New(app.Store(), app.LibraryService(), app.Grabber(), app.Volumes(),
+		scheduler.DefaultIntervals()).Start(schedCtx)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: server.New(cfg, database, provider).Handler(),
+		Handler: app.Handler(),
 	}
 
 	errCh := make(chan error, 1)

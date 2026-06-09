@@ -258,6 +258,39 @@ func (v *VolumeSearcher) routeEdition(p parse.Result, collections []store.Collec
 	return monitored[0].ID, true
 }
 
+// GrabBest greedily grabs eligible candidates by slot coverage: the
+// highest-scoring candidate wins its slots, later candidates only count if
+// they cover something still missing (decision-engine.md §4 selection).
+func (v *VolumeSearcher) GrabBest(ctx context.Context, seriesID int64, candidates []VolumeCandidate) []int64 {
+	var queued []int64
+	taken := map[int64]bool{}
+	for _, c := range candidates {
+		if len(c.Rejections) > 0 {
+			continue
+		}
+		news := false
+		for _, n := range c.Covered {
+			if !taken[n] {
+				news = true
+				break
+			}
+		}
+		if !news {
+			continue
+		}
+		qid, err := v.GrabVolume(ctx, seriesID, c)
+		if err != nil {
+			slog.Warn("volume grab failed", "series", seriesID, "release", c.Title, "error", err)
+			continue
+		}
+		queued = append(queued, qid)
+		for _, n := range c.Covered {
+			taken[n] = true
+		}
+	}
+	return queued
+}
+
 // GrabVolume sends a candidate to qBittorrent and records the queue item.
 func (v *VolumeSearcher) GrabVolume(ctx context.Context, seriesID int64, c VolumeCandidate) (int64, error) {
 	if len(c.Rejections) > 0 {

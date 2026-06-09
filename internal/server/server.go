@@ -65,6 +65,12 @@ func (s *Server) Volumes() *service.VolumeSearcher { return s.volumes }
 // is not configured.
 func (s *Server) Grabber() *service.Grabber { return s.grabber }
 
+// Store exposes the persistence layer for background loops.
+func (s *Server) Store() *store.Store { return s.store }
+
+// LibraryService exposes the metadata use-cases for background loops.
+func (s *Server) LibraryService() *service.Library { return s.library }
+
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
