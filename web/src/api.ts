@@ -197,6 +197,12 @@ export const api = {
       body: JSON.stringify({ dryRun, grab }),
     }),
 
+  scanSeries: (id: number, path?: string) =>
+    request<{ scanned: number; linked: number; unrequested: number }>(`/series/${id}/import`, {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+
   queue: (all = false) => request<QueueItem[]>(`/queue${all ? '?all=1' : ''}`),
   processQueue: () => request<{ processed: number }>('/queue/process', { method: 'POST' }),
 }

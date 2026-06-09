@@ -33,6 +33,7 @@ type Server struct {
 	suwa     *suwayomi.Client        // nil when unconfigured
 	grabber  *service.Grabber        // nil when unconfigured
 	volumes  *service.VolumeSearcher // nil when unconfigured
+	scanner  *service.Scanner
 }
 
 func New(cfg config.Config, db *sql.DB, provider metadata.Provider) *Server {
@@ -43,6 +44,7 @@ func New(cfg config.Config, db *sql.DB, provider metadata.Provider) *Server {
 		store:    st,
 		provider: provider,
 		library:  service.NewLibrary(st, provider),
+		scanner:  service.NewScanner(st, library.DefaultNaming(), cfg.Library.Path),
 	}
 	if cfg.Suwayomi.URL != "" {
 		s.suwa = suwayomi.New(cfg.Suwayomi.URL, cfg.Suwayomi.Username, cfg.Suwayomi.Password)

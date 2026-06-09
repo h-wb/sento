@@ -166,6 +166,27 @@ export default function SeriesPage() {
 
         <Tabs.Panel value="files" pt="md">
           <Stack gap="xs">
+            <Group>
+              <Button
+                size="xs"
+                variant="default"
+                loading={busy}
+                onClick={() =>
+                  run(
+                    () =>
+                      api
+                        .scanSeries(seriesID)
+                        .then((r) =>
+                          setNotice(
+                            `Scan: ${r.scanned} new files, ${r.linked} linked, ${r.unrequested} unrequested`,
+                          ),
+                        ),
+                  )
+                }
+              >
+                Scan folder (import existing files)
+              </Button>
+            </Group>
             {files.map((f) => (
               <Card key={f.id} withBorder padding="xs">
                 <Group justify="space-between" wrap="nowrap">

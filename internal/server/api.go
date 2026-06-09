@@ -33,6 +33,7 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Put("/collections/{cid}", s.handleUpdateCollection)
 			r.Put("/chapter-ledger", s.handleUpdateChapterLedger)
 			r.Get("/files", s.handleListFiles)
+			r.Post("/import", s.handleScanSeries)
 			r.Get("/bindings", s.handleListBindings)
 			r.Post("/bindings", s.handleAddBinding)
 			r.Delete("/bindings/{bid}", s.handleDeleteBinding)
@@ -268,6 +269,41 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		files = []store.File{}
 	}
 	writeJSON(w, http.StatusOK, files)
+}
+
+// handleScanSeries imports existing files in place (spec.md §11.4):
+// non-destructive, links what it can identify, keeps the rest as
+// unrequested files.
+func (s *Server) handleScanSeries(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body struct {
+		Path string `json:"path"`
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid body")
+			return
+		}
+	}
+	result, err := s.scanner.ScanSeriesFolder(r.Context(), id, body.Path)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	// §11.4: with chapter files present, default the cutoff to the lowest
+	// owned chapter so owned chapters land in-ledger.
+	if result.Linked > 0 {
+		if lowest, err := s.scanner.LowestOwnedChapter(r.Context(), id); err == nil && lowest > 0 {
+			if cl, err := s.store.GetChapterLedger(r.Context(), id); err == nil && lowest-100 < cl.CutoffNum {
+				cl.CutoffNum = lowest - 100
+				_ = s.store.UpdateChapterLedger(r.Context(), *cl)
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // --- bindings ---
