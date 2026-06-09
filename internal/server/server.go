@@ -14,16 +14,29 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/h-wb/sento/internal/config"
+	"github.com/h-wb/sento/internal/metadata"
+	"github.com/h-wb/sento/internal/service"
+	"github.com/h-wb/sento/internal/store"
 	"github.com/h-wb/sento/internal/version"
 )
 
 type Server struct {
-	cfg config.Config
-	db  *sql.DB
+	cfg      config.Config
+	db       *sql.DB
+	store    *store.Store
+	provider metadata.Provider
+	library  *service.Library
 }
 
-func New(cfg config.Config, db *sql.DB) *Server {
-	return &Server{cfg: cfg, db: db}
+func New(cfg config.Config, db *sql.DB, provider metadata.Provider) *Server {
+	st := store.New(db)
+	return &Server{
+		cfg:      cfg,
+		db:       db,
+		store:    st,
+		provider: provider,
+		library:  service.NewLibrary(st, provider),
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -34,8 +47,7 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Get("/system/health", s.handleHealth)
-		r.Get("/system/status", s.handleStatus)
+		s.mountAPI(r)
 	})
 
 	s.mountStatic(r)

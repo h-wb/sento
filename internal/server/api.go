@@ -1,0 +1,350 @@
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/h-wb/sento/internal/ledger"
+	"github.com/h-wb/sento/internal/service"
+	"github.com/h-wb/sento/internal/store"
+)
+
+func (s *Server) mountAPI(r chi.Router) {
+	r.Get("/system/health", s.handleHealth)
+	r.Get("/system/status", s.handleStatus)
+
+	r.Get("/lookup", s.handleLookup)
+
+	r.Route("/series", func(r chi.Router) {
+		r.Get("/", s.handleListSeries)
+		r.Post("/", s.handleAddSeries)
+		r.Route("/{id}", func(r chi.Router) {
+			r.Get("/", s.handleGetSeries)
+			r.Delete("/", s.handleDeleteSeries)
+			r.Post("/refresh", s.handleRefreshSeries)
+			r.Get("/slots", s.handleSlots)
+			r.Put("/collections/{cid}", s.handleUpdateCollection)
+			r.Put("/chapter-ledger", s.handleUpdateChapterLedger)
+			r.Get("/files", s.handleListFiles)
+			r.Get("/bindings", s.handleListBindings)
+			r.Post("/bindings", s.handleAddBinding)
+			r.Delete("/bindings/{bid}", s.handleDeleteBinding)
+		})
+	})
+}
+
+// --- lookup ---
+
+func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		writeError(w, http.StatusBadRequest, "missing query parameter q")
+		return
+	}
+	refs, err := s.provider.Search(r.Context(), q)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, refs)
+}
+
+// --- series ---
+
+func (s *Server) handleListSeries(w http.ResponseWriter, r *http.Request) {
+	list, err := s.store.ListSeries(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = []store.Series{}
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *Server) handleAddSeries(w http.ResponseWriter, r *http.Request) {
+	var req service.AddSeriesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body: "+err.Error())
+		return
+	}
+	if req.MangaBakaID == 0 {
+		writeError(w, http.StatusBadRequest, "mangabakaId is required")
+		return
+	}
+	// Metadata fetch (3+ calls, rate-limited) can be slow; don't tie it to
+	// the handler's 60s middleware timeout budget more than needed.
+	ctx, cancel := context.WithTimeout(r.Context(), 55*time.Second)
+	defer cancel()
+
+	id, err := s.library.AddSeries(ctx, req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	created, err := s.store.GetSeries(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (s *Server) handleGetSeries(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	series, err := s.store.GetSeries(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	collections, err := s.store.ListCollections(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	chapterLedger, err := s.store.GetChapterLedger(r.Context(), id)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"series":        series,
+		"collections":   collections,
+		"chapterLedger": chapterLedger,
+	})
+}
+
+func (s *Server) handleDeleteSeries(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	if err := s.store.DeleteSeries(r.Context(), id); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRefreshSeries(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	if err := s.library.Refresh(r.Context(), id); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "refreshed"})
+}
+
+// --- slots ---
+
+func (s *Server) handleSlots(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	series, err := s.store.GetSeries(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	links, err := s.store.SlotLinks(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	out := map[string]any{}
+
+	collections, err := s.store.ListCollections(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	volumes := map[string]any{}
+	for _, col := range collections {
+		works, err := s.store.ListWorks(r.Context(), col.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		volumes[strconv.FormatInt(col.ID, 10)] = ledger.BuildVolumeSlots(col, works, links, nil, time.Now())
+	}
+	out["volumes"] = volumes
+
+	if cl, err := s.store.GetChapterLedger(r.Context(), id); err == nil {
+		out["chapters"] = ledger.BuildChapterSlots(*cl, series.TotalChapters, links, nil)
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
+
+// --- collection / chapter ledger updates ---
+
+func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	cid, ok := pathID(w, r, "cid")
+	if !ok {
+		return
+	}
+	var body struct {
+		Monitored bool `json:"monitored"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if err := s.store.SetCollectionMonitored(r.Context(), id, cid, body.Monitored); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": cid, "monitored": body.Monitored})
+}
+
+func (s *Server) handleUpdateChapterLedger(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	current, err := s.store.GetChapterLedger(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	var body struct {
+		Monitored *bool   `json:"monitored"`
+		Language  *string `json:"language"`
+		CutoffNum *int64  `json:"cutoffNum"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if body.Monitored != nil {
+		current.Monitored = *body.Monitored
+	}
+	if body.Language != nil {
+		current.Language = *body.Language
+	}
+	if body.CutoffNum != nil {
+		current.CutoffNum = *body.CutoffNum
+	}
+	if err := s.store.UpdateChapterLedger(r.Context(), *current); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, current)
+}
+
+// --- files ---
+
+func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	files, err := s.store.ListFiles(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if files == nil {
+		files = []store.File{}
+	}
+	writeJSON(w, http.StatusOK, files)
+}
+
+// --- bindings ---
+
+func (s *Server) handleListBindings(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	bindings, err := s.store.ListBindings(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if bindings == nil {
+		bindings = []store.Binding{}
+	}
+	writeJSON(w, http.StatusOK, bindings)
+}
+
+func (s *Server) handleAddBinding(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var b store.Binding
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	b.SeriesID = id
+	if b.SourceID == "" || b.SourceMangaID == 0 {
+		writeError(w, http.StatusBadRequest, "sourceId and sourceMangaId are required")
+		return
+	}
+	bid, err := s.store.AddBinding(r.Context(), b)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]int64{"id": bid})
+}
+
+func (s *Server) handleDeleteBinding(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	bid, ok := pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	if err := s.store.DeleteBinding(r.Context(), id, bid); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- helpers ---
+
+func pathID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, name), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid "+name)
+		return 0, false
+	}
+	return id, true
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func writeStoreError(w http.ResponseWriter, err error) {
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, err.Error())
+}

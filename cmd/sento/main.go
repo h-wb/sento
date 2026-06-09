@@ -15,6 +15,7 @@ import (
 
 	"github.com/h-wb/sento/internal/config"
 	"github.com/h-wb/sento/internal/db"
+	"github.com/h-wb/sento/internal/metadata/mangabaka"
 	"github.com/h-wb/sento/internal/server"
 	"github.com/h-wb/sento/internal/version"
 )
@@ -44,10 +45,12 @@ func run(configPath string) error {
 	}
 	defer func() { _ = database.Close() }()
 
+	provider := mangabaka.New(cfg.MangaBaka.BaseURL)
+
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: server.New(cfg, database).Handler(),
+		Handler: server.New(cfg, database, provider).Handler(),
 	}
 
 	errCh := make(chan error, 1)
