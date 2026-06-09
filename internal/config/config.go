@@ -13,9 +13,14 @@ import (
 type Config struct {
 	Server    Server    `yaml:"server"`
 	Database  Database  `yaml:"database"`
+	Library   Library   `yaml:"library"`
 	Suwayomi  Suwayomi  `yaml:"suwayomi"`
 	Prowlarr  Prowlarr  `yaml:"prowlarr"`
 	MangaBaka MangaBaka `yaml:"mangabaka"`
+}
+
+type Library struct {
+	Path string `yaml:"path"`
 }
 
 type Server struct {
@@ -50,6 +55,7 @@ func Default() Config {
 	c.Server.Port = 8484
 	c.Server.StaticDir = "web/dist"
 	c.Database.Path = "data/sento.db"
+	c.Library.Path = "library"
 	c.MangaBaka.BaseURL = "https://api.mangabaka.org/v1"
 	return c
 }
@@ -81,6 +87,7 @@ func applyEnv(c *Config) {
 	str("SENTO_API_KEY", &c.Server.APIKey)
 	str("SENTO_STATIC_DIR", &c.Server.StaticDir)
 	str("SENTO_DB_PATH", &c.Database.Path)
+	str("SENTO_LIBRARY_PATH", &c.Library.Path)
 	str("SENTO_SUWAYOMI_URL", &c.Suwayomi.URL)
 	str("SENTO_SUWAYOMI_USERNAME", &c.Suwayomi.Username)
 	str("SENTO_SUWAYOMI_PASSWORD", &c.Suwayomi.Password)

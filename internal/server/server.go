@@ -14,9 +14,11 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/h-wb/sento/internal/config"
+	"github.com/h-wb/sento/internal/library"
 	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
+	"github.com/h-wb/sento/internal/suwayomi"
 	"github.com/h-wb/sento/internal/version"
 )
 
@@ -26,18 +28,29 @@ type Server struct {
 	store    *store.Store
 	provider metadata.Provider
 	library  *service.Library
+	suwa     *suwayomi.Client // nil when unconfigured
+	grabber  *service.Grabber // nil when unconfigured
 }
 
 func New(cfg config.Config, db *sql.DB, provider metadata.Provider) *Server {
 	st := store.New(db)
-	return &Server{
+	s := &Server{
 		cfg:      cfg,
 		db:       db,
 		store:    st,
 		provider: provider,
 		library:  service.NewLibrary(st, provider),
 	}
+	if cfg.Suwayomi.URL != "" {
+		s.suwa = suwayomi.New(cfg.Suwayomi.URL, cfg.Suwayomi.Username, cfg.Suwayomi.Password)
+		s.grabber = service.NewGrabber(st, s.suwa, library.DefaultNaming(), cfg.Library.Path)
+	}
+	return s
 }
+
+// Grabber exposes the grab service for background loops; nil when Suwayomi
+// is not configured.
+func (s *Server) Grabber() *service.Grabber { return s.grabber }
 
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()

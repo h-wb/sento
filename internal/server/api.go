@@ -20,6 +20,7 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/system/status", s.handleStatus)
 
 	r.Get("/lookup", s.handleLookup)
+	s.mountSourceAPI(r)
 
 	r.Route("/series", func(r chi.Router) {
 		r.Get("/", s.handleListSeries)
