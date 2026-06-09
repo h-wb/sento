@@ -57,6 +57,7 @@ type Result struct {
 	ContentType ContentType  `json:"contentType"`
 	Edition     EditionHints `json:"edition"`
 	Quality     QualityHints `json:"quality"`
+	Anchored    bool         `json:"anchored,omitempty"` // title matched a known candidate
 	Complete    bool         `json:"complete,omitempty"`
 	Ongoing     bool         `json:"ongoing,omitempty"`
 	Extra       bool         `json:"extra,omitempty"`

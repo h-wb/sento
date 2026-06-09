@@ -16,6 +16,8 @@ import (
 	"github.com/h-wb/sento/internal/config"
 	"github.com/h-wb/sento/internal/library"
 	"github.com/h-wb/sento/internal/metadata"
+	"github.com/h-wb/sento/internal/prowlarr"
+	"github.com/h-wb/sento/internal/qbittorrent"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 	"github.com/h-wb/sento/internal/suwayomi"
@@ -28,8 +30,9 @@ type Server struct {
 	store    *store.Store
 	provider metadata.Provider
 	library  *service.Library
-	suwa     *suwayomi.Client // nil when unconfigured
-	grabber  *service.Grabber // nil when unconfigured
+	suwa     *suwayomi.Client        // nil when unconfigured
+	grabber  *service.Grabber        // nil when unconfigured
+	volumes  *service.VolumeSearcher // nil when unconfigured
 }
 
 func New(cfg config.Config, db *sql.DB, provider metadata.Provider) *Server {
@@ -45,8 +48,18 @@ func New(cfg config.Config, db *sql.DB, provider metadata.Provider) *Server {
 		s.suwa = suwayomi.New(cfg.Suwayomi.URL, cfg.Suwayomi.Username, cfg.Suwayomi.Password)
 		s.grabber = service.NewGrabber(st, s.suwa, library.DefaultNaming(), cfg.Library.Path)
 	}
+	if cfg.Prowlarr.URL != "" && cfg.QBittorrent.URL != "" {
+		pr := prowlarr.New(cfg.Prowlarr.URL, cfg.Prowlarr.APIKey)
+		qb := qbittorrent.New(cfg.QBittorrent.URL, cfg.QBittorrent.Username, cfg.QBittorrent.Password)
+		s.volumes = service.NewVolumeSearcher(st, pr, qb, library.DefaultNaming(),
+			cfg.Library.Path, cfg.QBittorrent.Category)
+	}
 	return s
 }
+
+// Volumes exposes the volume searcher for background loops; nil when
+// Prowlarr/qBittorrent are not configured.
+func (s *Server) Volumes() *service.VolumeSearcher { return s.volumes }
 
 // Grabber exposes the grab service for background loops; nil when Suwayomi
 // is not configured.

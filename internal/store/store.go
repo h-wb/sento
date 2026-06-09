@@ -275,6 +275,26 @@ func (s *Store) ListCollections(ctx context.Context, seriesID int64) ([]Collecti
 	return out, rows.Err()
 }
 
+func (s *Store) GetCollection(ctx context.Context, id int64) (*Collection, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, series_id, COALESCE(mb_collection_id,''), edition_name, language,
+		       publisher, medium, ctype, monitored, COALESCE(count_main,0),
+		       COALESCE(count_extra,0), COALESCE(count_other,0),
+		       COALESCE(start_date,''), COALESCE(end_date,'')
+		FROM collections WHERE id = ?`, id)
+	var c Collection
+	err := row.Scan(&c.ID, &c.SeriesID, &c.ProviderID, &c.EditionName, &c.Language,
+		&c.Publisher, &c.Medium, &c.Type, &c.Monitored, &c.CountMain, &c.CountExtra,
+		&c.CountOther, &c.StartDate, &c.EndDate)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
 func (s *Store) SetCollectionMonitored(ctx context.Context, seriesID, collectionID int64, monitored bool) error {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE collections SET monitored = ? WHERE id = ? AND series_id = ?`,

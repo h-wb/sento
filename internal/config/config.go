@@ -14,9 +14,10 @@ type Config struct {
 	Server    Server    `yaml:"server"`
 	Database  Database  `yaml:"database"`
 	Library   Library   `yaml:"library"`
-	Suwayomi  Suwayomi  `yaml:"suwayomi"`
-	Prowlarr  Prowlarr  `yaml:"prowlarr"`
-	MangaBaka MangaBaka `yaml:"mangabaka"`
+	Suwayomi    Suwayomi    `yaml:"suwayomi"`
+	Prowlarr    Prowlarr    `yaml:"prowlarr"`
+	QBittorrent QBittorrent `yaml:"qbittorrent"`
+	MangaBaka   MangaBaka   `yaml:"mangabaka"`
 }
 
 type Library struct {
@@ -45,6 +46,13 @@ type Prowlarr struct {
 	APIKey string `yaml:"api_key"`
 }
 
+type QBittorrent struct {
+	URL      string `yaml:"url"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	Category string `yaml:"category"`
+}
+
 type MangaBaka struct {
 	BaseURL string `yaml:"base_url"`
 }
@@ -56,6 +64,7 @@ func Default() Config {
 	c.Server.StaticDir = "web/dist"
 	c.Database.Path = "data/sento.db"
 	c.Library.Path = "library"
+	c.QBittorrent.Category = "sento"
 	c.MangaBaka.BaseURL = "https://api.mangabaka.org/v1"
 	return c
 }
@@ -93,6 +102,10 @@ func applyEnv(c *Config) {
 	str("SENTO_SUWAYOMI_PASSWORD", &c.Suwayomi.Password)
 	str("SENTO_PROWLARR_URL", &c.Prowlarr.URL)
 	str("SENTO_PROWLARR_API_KEY", &c.Prowlarr.APIKey)
+	str("SENTO_QBITTORRENT_URL", &c.QBittorrent.URL)
+	str("SENTO_QBITTORRENT_USERNAME", &c.QBittorrent.Username)
+	str("SENTO_QBITTORRENT_PASSWORD", &c.QBittorrent.Password)
+	str("SENTO_QBITTORRENT_CATEGORY", &c.QBittorrent.Category)
 	str("SENTO_MANGABAKA_BASE_URL", &c.MangaBaka.BaseURL)
 
 	if v, ok := os.LookupEnv("SENTO_PORT"); ok {

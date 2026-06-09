@@ -15,8 +15,74 @@ func (s *Server) mountSourceAPI(r chi.Router) {
 	r.Get("/sources", s.handleListSources)
 	r.Get("/sources/{sid}/search", s.handleSourceSearch)
 	r.Post("/series/{id}/search/chapters", s.handleChapterSearch)
+	r.Post("/series/{id}/search/volumes", s.handleVolumeSearch)
 	r.Get("/queue", s.handleQueue)
 	r.Post("/queue/process", s.handleQueueProcess)
+}
+
+// handleVolumeSearch runs the Prowlarr funnel; unless dryRun, the best
+// eligible candidates are grabbed greedily by slot coverage
+// (decision-engine.md §4 selection).
+func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
+	if s.volumes == nil {
+		writeError(w, http.StatusServiceUnavailable, "prowlarr/qbittorrent are not configured")
+		return
+	}
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body struct {
+		DryRun bool   `json:"dryRun"`
+		Grab   string `json:"grab"` // GUID: force-grab one candidate
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid body")
+			return
+		}
+	}
+	candidates, err := s.volumes.FindVolumeCandidates(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	var queued []int64
+	if !body.DryRun {
+		remaining := map[int64]bool{}
+		for _, c := range candidates {
+			if body.Grab != "" && c.GUID != body.Grab {
+				continue
+			}
+			if len(c.Rejections) > 0 {
+				continue
+			}
+			// Greedy: skip candidates whose covered slots are all taken.
+			news := false
+			for _, n := range c.Covered {
+				if !remaining[n] {
+					news = true
+					break
+				}
+			}
+			if !news && len(queued) > 0 {
+				continue
+			}
+			qid, err := s.volumes.GrabVolume(r.Context(), id, c)
+			if err != nil {
+				continue
+			}
+			queued = append(queued, qid)
+			for _, n := range c.Covered {
+				remaining[n] = true
+			}
+			if body.Grab != "" {
+				break
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"candidates": candidates, "queued": queued})
 }
 
 func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
@@ -155,14 +221,22 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleQueueProcess(w http.ResponseWriter, r *http.Request) {
-	if s.grabber == nil {
-		writeError(w, http.StatusServiceUnavailable, "suwayomi is not configured")
-		return
+	total := 0
+	if s.grabber != nil {
+		n, err := s.grabber.ProcessQueue(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		total += n
 	}
-	n, err := s.grabber.ProcessQueue(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	if s.volumes != nil {
+		n, err := s.volumes.ProcessTorrentQueue(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		total += n
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"processed": n})
+	writeJSON(w, http.StatusOK, map[string]int{"processed": total})
 }

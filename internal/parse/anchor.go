@@ -46,6 +46,7 @@ func ParseAnchored(name string, ch Channel, titles []string) Result {
 	}
 
 	res.step("anchor.hit", bestTitle)
+	res.Anchored = true
 	runes := []rune(cleaned)
 	for i := bestSpan[0]; i < bestSpan[1] && i < len(runes); i++ {
 		runes[i] = ' '
