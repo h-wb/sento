@@ -52,15 +52,31 @@ func (p *TorrentProvider) Search(ctx context.Context, req SearchRequest) ([]Cand
 	if p.prowlarr == nil {
 		return nil, nil
 	}
-	releases, err := p.prowlarr.Search(ctx, req.Query, nil)
+	// Restrict at the Prowlarr level when a site filter is present.
+	var indexerIDs []int
+	if allowed, ok := req.Allowed[p.ID()]; ok {
+		if len(allowed) == 0 {
+			return nil, nil // provider allowed-set exists but is empty
+		}
+		for id := range allowed {
+			if n, err := strconv.Atoi(id); err == nil {
+				indexerIDs = append(indexerIDs, n)
+			}
+		}
+	}
+	releases, err := p.prowlarr.Search(ctx, req.Query, nil, indexerIDs)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Candidate, 0, len(releases))
 	for _, rel := range releases {
+		if !req.SiteAllowed(p.ID(), strconv.Itoa(rel.IndexerID)) {
+			continue
+		}
 		out = append(out, Candidate{
 			Provider: p.ID(),
 			Site:     rel.Indexer,
+			SiteID:   strconv.Itoa(rel.IndexerID),
 			Protocol: ProtocolTorrent,
 			Title:    rel.Title,
 			Torrent: &TorrentRef{

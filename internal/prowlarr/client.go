@@ -46,7 +46,7 @@ type Release struct {
 	PublishDate string `json:"publishDate"`
 }
 
-func (c *Client) Search(ctx context.Context, query string, categories []int) ([]Release, error) {
+func (c *Client) Search(ctx context.Context, query string, categories []int, indexerIDs []int) ([]Release, error) {
 	if len(categories) == 0 {
 		categories = DefaultCategories
 	}
@@ -55,6 +55,9 @@ func (c *Client) Search(ctx context.Context, query string, categories []int) ([]
 	values.Set("type", "search")
 	for _, cat := range categories {
 		values.Add("categories", strconv.Itoa(cat))
+	}
+	for _, id := range indexerIDs {
+		values.Add("indexerIds", strconv.Itoa(id))
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		c.baseURL+"/api/v1/search?"+values.Encode(), nil)

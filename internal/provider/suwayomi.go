@@ -40,37 +40,61 @@ func (p *SuwayomiProvider) Sites(ctx context.Context) ([]Site, error) {
 	return sites, nil
 }
 
-// Search lists chapters of every bound source manga. Each entry is a
-// candidate; what it covers (chapter? volume-shaped file?) is the parser's
-// call, not ours.
+// Search lists chapters of every bound source manga, in parallel. Each
+// entry is a candidate; what it covers (chapter? volume-shaped file?) is
+// the parser's call, not ours. Failing bindings degrade with an error.
 func (p *SuwayomiProvider) Search(ctx context.Context, req SearchRequest) ([]Candidate, error) {
-	var out []Candidate
-	for _, b := range req.Bindings {
-		chapters, err := p.client.GetChapters(ctx, b.SourceMangaID)
-		if err != nil {
-			return out, fmt.Errorf("binding %d (%s): %w", b.BindingID, b.SourceName, err)
-		}
-		site := b.SourceName
-		if site == "" {
-			site = b.SourceID
-		}
-		for _, ch := range chapters {
-			out = append(out, Candidate{
-				Provider: p.ID(),
-				Site:     site,
-				Protocol: ProtocolSource,
-				Title:    ch.Name,
-				Source: &SourceRef{
-					ChapterID:     ch.ID,
-					ChapterNumber: ch.ChapterNumber,
-					Scanlator:     ch.Scanlator,
-					SourceID:      b.SourceID,
-					BindingID:     b.BindingID,
-				},
-			})
-		}
+	type res struct {
+		cands []Candidate
+		err   error
 	}
-	return out, nil
+	ch := make(chan res, len(req.Bindings))
+	active := 0
+	for _, b := range req.Bindings {
+		if !req.SiteAllowed(p.ID(), b.SourceID) || b.SourceMangaID == 0 {
+			continue
+		}
+		active++
+		go func(b Binding) {
+			chapters, err := p.client.GetChapters(ctx, b.SourceMangaID)
+			if err != nil {
+				ch <- res{err: fmt.Errorf("binding %d (%s): %w", b.BindingID, b.SourceName, err)}
+				return
+			}
+			site := b.SourceName
+			if site == "" {
+				site = b.SourceID
+			}
+			cands := make([]Candidate, 0, len(chapters))
+			for _, c := range chapters {
+				cands = append(cands, Candidate{
+					Provider: p.ID(),
+					Site:     site,
+					SiteID:   b.SourceID,
+					Protocol: ProtocolSource,
+					Title:    c.Name,
+					Source: &SourceRef{
+						ChapterID:     c.ID,
+						ChapterNumber: c.ChapterNumber,
+						Scanlator:     c.Scanlator,
+						SourceID:      b.SourceID,
+						BindingID:     b.BindingID,
+					},
+				})
+			}
+			ch <- res{cands: cands}
+		}(b)
+	}
+	var out []Candidate
+	var firstErr error
+	for range active {
+		rr := <-ch
+		if rr.err != nil && firstErr == nil {
+			firstErr = rr.err
+		}
+		out = append(out, rr.cands...)
+	}
+	return out, firstErr
 }
 
 func (p *SuwayomiProvider) Grab(ctx context.Context, c Candidate) (string, error) {
@@ -125,7 +149,21 @@ func (p *SuwayomiProvider) Recover(ctx context.Context) error {
 	return p.client.Recover(ctx)
 }
 
+// ResolveManga searches a source for series candidates (auto-binding).
+func (p *SuwayomiProvider) ResolveManga(ctx context.Context, siteID, query string) ([]MangaRef, error) {
+	page, err := p.client.SearchManga(ctx, siteID, query, 1)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]MangaRef, 0, len(page.Mangas))
+	for _, m := range page.Mangas {
+		refs = append(refs, MangaRef{ID: m.ID, Title: m.Title})
+	}
+	return refs, nil
+}
+
 var (
-	_ Provider  = (*SuwayomiProvider)(nil)
-	_ Recoverer = (*SuwayomiProvider)(nil)
+	_ Provider      = (*SuwayomiProvider)(nil)
+	_ Recoverer     = (*SuwayomiProvider)(nil)
+	_ MangaResolver = (*SuwayomiProvider)(nil)
 )

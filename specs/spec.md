@@ -20,7 +20,7 @@ clean library for readers like Komga/Kavita.
 | D4 | Tracking model | **Dual ledgers of numbered slots**: volume slots (from MangaBaka works, per monitored collection) + chapter slots (`1..total_chapters`). Both independently monitorable |
 | D5 | Vol↔chapter mapping | **None in v1.** No auto-supersede, no auto-delete. Schema stays mapping-ready (files record parsed vol/ch ranges) |
 | D6 | Chapter monitoring | Cutoff-based: "monitor chapters from N onward", default N = latest at add time |
-| D7 | Chapter slot bound | `max(MangaBaka total_chapters, highest chapter seen on bound sources)` |
+| D7 | Chapter slot bound | ~~`max(MangaBaka total_chapters, highest chapter seen on bound sources)`~~ superseded by D15 |
 | D8 | Slot numbering | Integer slots in v1; non-integer chapters (110.5, omake) ignored by default |
 | D9 | Stack | Go backend (single binary), TypeScript web UI (SPA served by the binary) |
 | D10 | Chapter language | Single language per series |
@@ -28,6 +28,7 @@ clean library for readers like Komga/Kavita.
 | D12 | Pack auto-grab | Ship conservative thresholds + manual confirm; tune with real-world use |
 | D13 | MangaBaka volatility | MangaBaka (esp. collections/works) is WIP and may change: Sento isolates it behind a `MetadataProvider` anti-corruption layer, owns its identity model, caches raw payloads, and degrades gracefully (§5.1) |
 | D14 | Existing-library import | First-class, Sonarr-style: scan root folders, match series, link files to slots **in place** — non-destructive by default, renaming/organizing only as an explicit separate action (§11.4) |
+| D15 | Metadata/download separation | Chapter slot bound = **MangaBaka `total_chapters` only**. Sources never feed the ledger (a mis-numbered source chapter must not create phantom slots); source-reported numbers are used only to match candidates to existing slots. Reverses the `source_seen_max` half of D7 |
 
 ## 2. Goals / non-goals
 
@@ -115,8 +116,8 @@ unmonitored flag, slot↔file links).
   (monitorable per slot) — extras exist exactly where MangaBaka models them
   (D11).
 - **Chapter ledger** (per series, *not* per collection — scanlation chapters
-  don't belong to a publisher edition): slots `cutoff..upperBound`,
-  upperBound per D7. One language per series for chapter searching
+  don't belong to a publisher edition): slots `1..total_chapters` from
+  MangaBaka only (D15). One language per series for chapter searching
   (default: instance language, e.g. `en`) (D10).
 - A slot is **satisfied** when ≥1 file is linked to it. A monitored,
   unsatisfied, released slot is **wanted**.

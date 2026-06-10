@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -9,9 +9,9 @@ import {
   Modal,
   NumberInput,
   Progress,
-  Select,
   Stack,
   Switch,
+  Table,
   Tabs,
   Text,
   TextInput,
@@ -24,14 +24,14 @@ import {
   api,
   fmtNum,
   fmtSize,
-  type Binding,
   type ChapterLedger,
   type Collection,
+  type ReleaseCandidate,
+  type SearchResponse,
   type Series,
   type SeriesFile,
+  type SeriesSiteView,
   type Slots,
-  type Source,
-  type VolumeCandidate,
 } from '../api'
 import SlotModal, { type SlotSelection } from '../components/SlotModal'
 
@@ -44,7 +44,6 @@ export default function SeriesPage() {
   const [collections, setCollections] = useState<Collection[]>([])
   const [ledger, setLedger] = useState<ChapterLedger | null>(null)
   const [slots, setSlots] = useState<Slots | null>(null)
-  const [bindings, setBindings] = useState<Binding[]>([])
   const [files, setFiles] = useState<SeriesFile[]>([])
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -61,7 +60,6 @@ export default function SeriesPage() {
       })
       .catch((e) => setError(String(e)))
     api.slots(seriesID).then(setSlots).catch(() => {})
-    api.bindings(seriesID).then(setBindings).catch(() => {})
     api.files(seriesID).then(setFiles).catch(() => {})
   }, [seriesID])
 
@@ -138,7 +136,7 @@ export default function SeriesPage() {
         <Tabs.List>
           <Tabs.Tab value="volumes">Volumes</Tabs.Tab>
           <Tabs.Tab value="chapters">Chapters</Tabs.Tab>
-          <Tabs.Tab value="sources">Sources</Tabs.Tab>
+          <Tabs.Tab value="indexers">Indexers</Tabs.Tab>
           <Tabs.Tab value="files">Files ({files.length})</Tabs.Tab>
         </Tabs.List>
 
@@ -164,14 +162,8 @@ export default function SeriesPage() {
           />
         </Tabs.Panel>
 
-        <Tabs.Panel value="sources" pt="md">
-          <SourcesTab
-            seriesID={seriesID}
-            seriesTitle={series.title}
-            bindings={bindings}
-            busy={busy}
-            run={run}
-          />
+        <Tabs.Panel value="indexers" pt="md">
+          <IndexersTab seriesID={seriesID} seriesTitle={series.title} run={run} busy={busy} />
         </Tabs.Panel>
 
         <Tabs.Panel value="files" pt="md">
@@ -182,15 +174,14 @@ export default function SeriesPage() {
                 variant="default"
                 loading={busy}
                 onClick={() =>
-                  run(
-                    () =>
-                      api
-                        .scanSeries(seriesID)
-                        .then((r) =>
-                          setNotice(
-                            `Scan: ${r.scanned} new files, ${r.linked} linked, ${r.unrequested} unrequested`,
-                          ),
+                  run(() =>
+                    api
+                      .scanSeries(seriesID)
+                      .then((r) =>
+                        setNotice(
+                          `Scan: ${r.scanned} new files, ${r.linked} linked, ${r.unrequested} unrequested`,
                         ),
+                      ),
                   )
                 }
               >
@@ -245,7 +236,7 @@ function VolumesTab({
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onSlot: (s: SlotSelection) => void
 }) {
-  const [funnel, setFunnel] = useState<VolumeCandidate[] | null>(null)
+  const [funnel, setFunnel] = useState<SearchResponse | null>(null)
   const volumeCollections = collections.filter((c) => c.type === 'volume')
 
   return (
@@ -257,7 +248,7 @@ function VolumesTab({
           loading={busy}
           onClick={() =>
             run(
-              () => api.searchVolumes(seriesID, {}).then((r) => setFunnel(r.candidates)),
+              () => api.search(seriesID, { ledger: 'volume' }).then(setFunnel),
               'Volume search done',
             )
           }
@@ -269,7 +260,7 @@ function VolumesTab({
           variant="default"
           loading={busy}
           onClick={() =>
-            run(() => api.searchVolumes(seriesID, { dryRun: true }).then((r) => setFunnel(r.candidates)))
+            run(() => api.search(seriesID, { ledger: 'volume', dryRun: true }).then(setFunnel))
           }
         >
           Search (dry run)
@@ -339,42 +330,50 @@ function VolumesTab({
         )
       })}
 
-      {funnel && (
-        <Card withBorder padding="sm">
-          <Text fw={600} mb="xs">
-            Search funnel ({funnel.length} releases)
-          </Text>
-          <Stack gap={4}>
-            {funnel.slice(0, 30).map((c) => (
-              <Group key={c.guid} justify="space-between" wrap="nowrap">
-                <Text size="xs" lineClamp={1} style={{ flex: 1 }}>
-                  {c.title}
-                </Text>
-                <Group gap={6} wrap="nowrap">
-                  <Badge size="xs" variant="outline" color={c.protocol === 'torrent' ? 'blue' : 'teal'}>
-                    {c.protocol}/{c.site}
-                  </Badge>
-                  {c.protocol === 'torrent' && (
-                    <Text size="xs" c="dimmed">
-                      {fmtSize(c.size ?? 0)} · {c.seeders ?? 0}S
-                    </Text>
-                  )}
-                  {c.rejections?.length ? (
-                    <Badge size="xs" color="red" variant="light">
-                      {c.rejections[0].replace('rejected.', '')}
-                    </Badge>
-                  ) : (
-                    <Badge size="xs" color="green" variant="light">
-                      score {c.score}
-                    </Badge>
-                  )}
-                </Group>
-              </Group>
-            ))}
-          </Stack>
-        </Card>
-      )}
+      {funnel && <FunnelCard funnel={funnel} />}
     </Stack>
+  )
+}
+
+function FunnelCard({ funnel }: { funnel: SearchResponse }) {
+  return (
+    <Card withBorder padding="sm">
+      <Text fw={600} mb={4}>
+        Search funnel ({funnel.candidates.length} releases)
+      </Text>
+      <Text size="xs" c="dimmed" mb="xs">
+        Searched {funnel.searched.join(', ') || 'nothing'}
+        {funnel.dropped > 0 && ` · ${funnel.dropped} entries for the other ledger skipped`}
+      </Text>
+      <Stack gap={4}>
+        {funnel.candidates.slice(0, 30).map((c: ReleaseCandidate) => (
+          <Group key={c.guid} justify="space-between" wrap="nowrap">
+            <Text size="xs" lineClamp={1} style={{ flex: 1 }}>
+              {c.title}
+            </Text>
+            <Group gap={6} wrap="nowrap">
+              <Badge size="xs" variant="outline" color={c.protocol === 'torrent' ? 'blue' : 'teal'}>
+                {c.provider}/{c.site}
+              </Badge>
+              {c.protocol === 'torrent' && (
+                <Text size="xs" c="dimmed">
+                  {fmtSize(c.size ?? 0)} · {c.seeders ?? 0}S
+                </Text>
+              )}
+              {c.rejections?.length ? (
+                <Badge size="xs" color="red" variant="light">
+                  {c.rejections[0].replace('rejected.', '')}
+                </Badge>
+              ) : (
+                <Badge size="xs" color="green" variant="light">
+                  score {c.score}
+                </Badge>
+              )}
+            </Group>
+          </Group>
+        ))}
+      </Stack>
+    </Card>
   )
 }
 
@@ -443,14 +442,15 @@ function ChaptersTab({
           mt={20}
           leftSection={<IconSearch size={14} />}
           loading={busy}
-          onClick={() => run(() => api.searchChapters(seriesID, {}), 'Chapter search queued')}
+          onClick={() =>
+            run(() => api.search(seriesID, { ledger: 'chapter' }), 'Chapter search queued')
+          }
         >
           Search &amp; grab wanted
         </Button>
       </Group>
       <Text size="sm" c="dimmed">
-        {owned}/{monitored.length} monitored chapters owned · {wanted.length} wanted · source has
-        seen up to {fmtNum(ledger.sourceSeenMax)}
+        {owned}/{monitored.length} monitored chapters owned · {wanted.length} wanted
       </Text>
       <Group gap={3}>
         {chapters.slice(-300).map((c) => (
@@ -482,122 +482,223 @@ function ChaptersTab({
   )
 }
 
-function SourcesTab({
+// IndexersTab: per-series view of every site with override switches and
+// binding status (auto-bound by search; rebind here when it matched wrong).
+function IndexersTab({
   seriesID,
   seriesTitle,
-  bindings,
-  busy,
   run,
+  busy,
 }: {
   seriesID: number
   seriesTitle: string
-  bindings: Binding[]
-  busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
+  busy: boolean
 }) {
-  const [sources, setSources] = useState<Source[]>([])
-  const [modalOpen, setModalOpen] = useState(false)
-  const [sourceID, setSourceID] = useState<string | null>(null)
-  const [query, setQuery] = useState(seriesTitle)
-  const [results, setResults] = useState<{ id: number; title: string }[]>([])
+  const [sites, setSites] = useState<SeriesSiteView[] | null>(null)
+  const [rebind, setRebind] = useState<SeriesSiteView | null>(null)
 
-  useEffect(() => {
-    api.sources().then(setSources).catch(() => {})
-  }, [])
+  const load = useCallback(() => {
+    api.seriesIndexers(seriesID).then(setSites).catch(() => {})
+  }, [seriesID])
+  useEffect(load, [load])
 
-  const sourceName = useMemo(
-    () => Object.fromEntries(sources.map((s) => [s.id, `${s.name} (${s.lang})`])),
-    [sources],
-  )
+  const override = (s: SeriesSiteView, patch: Record<string, boolean | null>) =>
+    run(() =>
+      api
+        .setSeriesIndexerOverride(seriesID, s.provider, s.siteId, {
+          enabled: s.override?.enabled ?? null,
+          useVolumes: s.override?.useVolumes ?? null,
+          useChapters: s.override?.useChapters ?? null,
+          ...patch,
+        })
+        .then(load),
+    )
 
   return (
     <Stack>
-      <Group>
-        <Button size="xs" onClick={() => setModalOpen(true)}>
-          Bind a source
-        </Button>
-      </Group>
-      {bindings.map((b) => (
-        <Card key={b.id} withBorder padding="xs">
-          <Group justify="space-between">
-            <Text size="sm">
-              {b.sourceName || sourceName[b.sourceId] || b.sourceId}{' '}
-              <Text span size="xs" c="dimmed">
-                manga #{b.sourceMangaId} · {b.state}
-              </Text>
-            </Text>
+      <Text size="sm" c="dimmed">
+        Defaults come from the global Indexers page; switches here override them for this series
+        only. Extension sources are bound automatically on first search (≥0.90 title match) —
+        rebind if the wrong manga matched.
+      </Text>
+      <Table maw={860}>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Site</Table.Th>
+            <Table.Th>Enabled</Table.Th>
+            <Table.Th>Volumes</Table.Th>
+            <Table.Th>Chapters</Table.Th>
+            <Table.Th>Binding</Table.Th>
+            <Table.Th></Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {sites?.map((s) => {
+            const overridden = !!s.override
+            return (
+              <Table.Tr key={`${s.provider}-${s.siteId}`} opacity={s.reachable ? 1 : 0.5}>
+                <Table.Td>
+                  <Group gap={6}>
+                    <Text size="sm">{s.name}</Text>
+                    <Badge size="xs" variant="outline" color={s.protocol === 'torrent' ? 'blue' : 'teal'}>
+                      {s.protocol}
+                    </Badge>
+                    {overridden && (
+                      <Badge size="xs" color="grape" variant="light">
+                        override
+                      </Badge>
+                    )}
+                  </Group>
+                </Table.Td>
+                <Table.Td>
+                  <Switch
+                    size="xs"
+                    checked={s.enabled}
+                    onChange={(e) => override(s, { enabled: e.currentTarget.checked })}
+                  />
+                </Table.Td>
+                <Table.Td>
+                  <Switch
+                    size="xs"
+                    checked={s.useVolumes}
+                    disabled={!s.enabled}
+                    onChange={(e) => override(s, { useVolumes: e.currentTarget.checked })}
+                  />
+                </Table.Td>
+                <Table.Td>
+                  <Switch
+                    size="xs"
+                    checked={s.useChapters}
+                    disabled={!s.enabled}
+                    onChange={(e) => override(s, { useChapters: e.currentTarget.checked })}
+                  />
+                </Table.Td>
+                <Table.Td>
+                  {s.provider === 'suwayomi' ? (
+                    s.binding ? (
+                      <Text size="xs" c="dimmed">
+                        manga #{s.binding.sourceMangaId}
+                      </Text>
+                    ) : (
+                      <Text size="xs" c="dimmed">
+                        auto on search
+                      </Text>
+                    )
+                  ) : (
+                    <Text size="xs" c="dimmed">
+                      —
+                    </Text>
+                  )}
+                </Table.Td>
+                <Table.Td>
+                  <Group gap={4} justify="flex-end">
+                    {overridden && (
+                      <Button
+                        size="compact-xs"
+                        variant="subtle"
+                        onClick={() =>
+                          override(s, { enabled: null, useVolumes: null, useChapters: null })
+                        }
+                      >
+                        Reset
+                      </Button>
+                    )}
+                    {s.provider === 'suwayomi' && (
+                      <Button size="compact-xs" variant="default" onClick={() => setRebind(s)}>
+                        {s.binding ? 'Rebind' : 'Bind'}
+                      </Button>
+                    )}
+                  </Group>
+                </Table.Td>
+              </Table.Tr>
+            )
+          })}
+        </Table.Tbody>
+      </Table>
+
+      <RebindModal
+        seriesID={seriesID}
+        seriesTitle={seriesTitle}
+        site={rebind}
+        busy={busy}
+        run={run}
+        onClose={() => {
+          setRebind(null)
+          load()
+        }}
+      />
+    </Stack>
+  )
+}
+
+function RebindModal({
+  seriesID,
+  seriesTitle,
+  site,
+  busy,
+  run,
+  onClose,
+}: {
+  seriesID: number
+  seriesTitle: string
+  site: SeriesSiteView | null
+  busy: boolean
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+  onClose: () => void
+}) {
+  const [query, setQuery] = useState(seriesTitle)
+  const [results, setResults] = useState<{ id: number; title: string }[]>([])
+
+  if (!site) return null
+
+  return (
+    <Modal opened onClose={onClose} title={`Bind ${site.name}`} size="lg">
+      <Stack>
+        <Group align="flex-end">
+          <TextInput
+            label="Search"
+            value={query}
+            onChange={(e) => setQuery(e.currentTarget.value)}
+            style={{ flex: 1 }}
+          />
+          <Button
+            loading={busy}
+            onClick={() =>
+              run(() =>
+                api
+                  .sourceSearch(site.siteId, query)
+                  .then((r) => setResults(r.mangas.map((m) => ({ id: m.id, title: m.title })))),
+              )
+            }
+          >
+            Search
+          </Button>
+        </Group>
+        {results.map((m) => (
+          <Group key={m.id} justify="space-between">
+            <Text size="sm">{m.title}</Text>
             <Button
               size="compact-xs"
-              color="red"
-              variant="subtle"
-              onClick={() => run(() => api.deleteBinding(seriesID, b.id))}
-            >
-              Unbind
-            </Button>
-          </Group>
-        </Card>
-      ))}
-      {bindings.length === 0 && (
-        <Text c="dimmed" size="sm">
-          No source bindings — bind a Suwayomi source to enable chapter downloads.
-        </Text>
-      )}
-
-      <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title="Bind a source" size="lg">
-        <Stack>
-          <Select
-            label="Source"
-            data={sources.map((s) => ({ value: s.id, label: `${s.name} (${s.lang})` }))}
-            value={sourceID}
-            onChange={setSourceID}
-            searchable
-          />
-          <Group align="flex-end">
-            <TextInput
-              label="Search"
-              value={query}
-              onChange={(e) => setQuery(e.currentTarget.value)}
-              style={{ flex: 1 }}
-            />
-            <Button
-              loading={busy}
-              disabled={!sourceID}
               onClick={() =>
-                run(() =>
-                  api.sourceSearch(sourceID!, query).then((r) =>
-                    setResults(r.mangas.map((m) => ({ id: m.id, title: m.title }))),
-                  ),
+                run(
+                  () =>
+                    api
+                      .addBinding(seriesID, {
+                        sourceId: site.siteId,
+                        sourceMangaId: m.id,
+                        sourceName: site.name,
+                      })
+                      .then(onClose),
+                  'Source bound',
                 )
               }
             >
-              Search
+              Bind
             </Button>
           </Group>
-          {results.map((m) => (
-            <Group key={m.id} justify="space-between">
-              <Text size="sm">{m.title}</Text>
-              <Button
-                size="compact-xs"
-                onClick={() =>
-                  run(
-                    () =>
-                      api
-                        .addBinding(seriesID, {
-                          sourceId: sourceID!,
-                          sourceMangaId: m.id,
-                          sourceName: sourceName[sourceID!],
-                        })
-                        .then(() => setModalOpen(false)),
-                    'Source bound',
-                  )
-                }
-              >
-                Bind
-              </Button>
-            </Group>
-          ))}
-        </Stack>
-      </Modal>
-    </Stack>
+        ))}
+      </Stack>
+    </Modal>
   )
 }

@@ -7,44 +7,148 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/h-wb/sento/internal/ledger"
-	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 )
 
 func (s *Server) mountSourceAPI(r chi.Router) {
 	r.Get("/sources", s.handleListSources)
-	r.Get("/indexers", s.handleListIndexers)
 	r.Get("/sources/{sid}/search", s.handleSourceSearch)
-	r.Post("/series/{id}/search/chapters", s.handleChapterSearch)
-	r.Post("/series/{id}/search/volumes", s.handleVolumeSearch)
-	r.Post("/series/{id}/grab/chapter", s.handleGrabChapter)
+
+	r.Get("/settings/indexers", s.handleListIndexerSettings)
+	r.Put("/settings/indexers/{provider}/{sid}", s.handleUpdateIndexerSetting)
+	r.Get("/series/{id}/indexers", s.handleSeriesIndexers)
+	r.Put("/series/{id}/indexers/{provider}/{sid}", s.handleSeriesIndexerOverride)
+
+	r.Post("/series/{id}/search", s.handleSearch)
 	r.Get("/queue", s.handleQueue)
 	r.Post("/queue/process", s.handleQueueProcess)
 }
 
-// handleVolumeSearch runs the Prowlarr funnel; unless dryRun, the best
-// eligible candidates are grabbed greedily by slot coverage
-// (decision-engine.md §4 selection).
-func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
+// --- indexer settings ---
+
+func (s *Server) handleListIndexerSettings(w http.ResponseWriter, r *http.Request) {
+	sites, err := s.sites.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if sites == nil {
+		sites = []service.SiteView{}
+	}
+	writeJSON(w, http.StatusOK, sites)
+}
+
+func (s *Server) handleUpdateIndexerSetting(w http.ResponseWriter, r *http.Request) {
+	providerID := chi.URLParam(r, "provider")
+	siteID := chi.URLParam(r, "sid")
+	current, err := s.store.GlobalSiteSetting(r.Context(), providerID, siteID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var body struct {
+		Enabled     *bool `json:"enabled"`
+		UseVolumes  *bool `json:"useVolumes"`
+		UseChapters *bool `json:"useChapters"`
+		Priority    *int  `json:"priority"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if body.Enabled != nil {
+		current.Enabled = *body.Enabled
+	}
+	if body.UseVolumes != nil {
+		current.UseVolumes = *body.UseVolumes
+	}
+	if body.UseChapters != nil {
+		current.UseChapters = *body.UseChapters
+	}
+	if body.Priority != nil {
+		current.Priority = *body.Priority
+	}
+	if err := s.store.UpsertSiteSetting(r.Context(), current); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, current)
+}
+
+func (s *Server) handleSeriesIndexers(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	sites, err := s.sites.Effective(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if sites == nil {
+		sites = []service.SeriesSiteView{}
+	}
+	writeJSON(w, http.StatusOK, sites)
+}
+
+// handleSeriesIndexerOverride sets/clears per-series override fields.
+// All-null body = clear override (inherit globals).
+func (s *Server) handleSeriesIndexerOverride(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	ov := store.SiteOverride{
+		SeriesID: id,
+		Provider: chi.URLParam(r, "provider"),
+		SiteID:   chi.URLParam(r, "sid"),
+	}
+	var body struct {
+		Enabled     *bool `json:"enabled"`
+		UseVolumes  *bool `json:"useVolumes"`
+		UseChapters *bool `json:"useChapters"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	ov.Enabled = body.Enabled
+	ov.UseVolumes = body.UseVolumes
+	ov.UseChapters = body.UseChapters
+	if err := s.store.UpsertSiteOverride(r.Context(), ov); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, ov)
+}
+
+// --- unified search ---
+
+// handleSearch is the single search endpoint for both ledgers:
+// {ledger, dryRun, slot?, grab?, force?}.
+func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
 	var body struct {
+		Ledger string              `json:"ledger"`
 		DryRun bool                `json:"dryRun"`
-		Grab   string              `json:"grab"`  // GUID: grab one candidate
-		Force  bool                `json:"force"` // bypass soft rejections
-		Slot   *service.TargetSlot `json:"slot"`  // interactive: target one slot
+		Slot   *service.TargetSlot `json:"slot"`
+		Grab   string              `json:"grab"` // GUID of one candidate
+		Force  bool                `json:"force"`
 	}
-	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid body")
-			return
-		}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
 	}
-	result, err := s.volumes.FindVolumeCandidates(r.Context(), id, body.Slot)
+	if body.Ledger != service.LedgerVolume && body.Ledger != service.LedgerChapter {
+		writeError(w, http.StatusBadRequest, "ledger must be volume or chapter")
+		return
+	}
+
+	result, err := s.search.FindCandidates(r.Context(), id, body.Ledger, body.Slot)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -58,7 +162,7 @@ func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
 			if c.GUID != body.Grab {
 				continue
 			}
-			qid, err := s.volumes.GrabVolume(r.Context(), id, c, body.Force)
+			qid, err := s.search.Grab(r.Context(), id, body.Ledger, c, body.Force)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -67,31 +171,20 @@ func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	default:
-		queued = s.volumes.GrabBest(r.Context(), id, result.Candidates)
+		queued = s.search.GrabBest(r.Context(), id, body.Ledger, result.Candidates)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"candidates":       result.Candidates,
-		"queued":           queued,
-		"searched":         result.Searched,
-		"droppedNonVolume": result.DroppedNonVolume,
-		"providerErrors":   result.ProviderErrors,
+		"ledger":         result.Ledger,
+		"candidates":     result.Candidates,
+		"queued":         queued,
+		"searched":       result.Searched,
+		"dropped":        result.Dropped,
+		"providerErrors": result.ProviderErrors,
+		"bindingNotes":   result.BindingNotes,
 	})
 }
 
-// handleListIndexers returns every search site Sento can use, across all
-// providers, in one uniform list.
-func (s *Server) handleListIndexers(w http.ResponseWriter, r *http.Request) {
-	out := []provider.Site{}
-	for _, p := range s.registry.All() {
-		sites, err := p.Sites(r.Context())
-		if err != nil {
-			writeError(w, http.StatusBadGateway, p.ID()+": "+err.Error())
-			return
-		}
-		out = append(out, sites...)
-	}
-	writeJSON(w, http.StatusOK, out)
-}
+// --- suwayomi-specific endpoints (binding fix-ups) ---
 
 func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 	if s.suwa == nil {
@@ -128,131 +221,7 @@ func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// handleChapterSearch finds candidates for wanted chapter slots and, unless
-// dryRun, grabs them.
-func (s *Server) handleChapterSearch(w http.ResponseWriter, r *http.Request) {
-	if !s.grabber.HasSourceProvider() {
-		writeError(w, http.StatusServiceUnavailable, "suwayomi is not configured")
-		return
-	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	var body struct {
-		DryRun bool    `json:"dryRun"`
-		Slots  []int64 `json:"slots"` // hundredths; empty = all wanted
-		All    bool    `json:"all"`   // interactive: every matching candidate
-	}
-	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid body")
-			return
-		}
-	}
-
-	var wanted map[int64]bool
-	var err error
-	if body.All && len(body.Slots) > 0 {
-		// Interactive: explicit slots are searchable regardless of
-		// wanted/satisfied/pending state.
-		wanted = map[int64]bool{}
-		for _, n := range body.Slots {
-			wanted[n] = true
-		}
-	} else {
-		wanted, err = s.wantedChapterSlots(r, id, body.Slots)
-		if err != nil {
-			writeStoreError(w, err)
-			return
-		}
-	}
-	if len(wanted) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"candidates": []any{}, "queued": []any{}})
-		return
-	}
-
-	candidates, err := s.grabber.FindChapterCandidates(r.Context(), id, wanted, body.All)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	if candidates == nil {
-		candidates = []service.ChapterCandidate{}
-	}
-	resp := map[string]any{"candidates": candidates, "queued": []int64{}}
-	if !body.DryRun && len(candidates) > 0 {
-		queued, err := s.grabber.GrabChapters(r.Context(), id, candidates)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		resp["queued"] = queued
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
-
-// handleGrabChapter grabs one specific candidate from an interactive
-// chapter search.
-func (s *Server) handleGrabChapter(w http.ResponseWriter, r *http.Request) {
-	if !s.grabber.HasSourceProvider() {
-		writeError(w, http.StatusServiceUnavailable, "suwayomi is not configured")
-		return
-	}
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	var c service.ChapterCandidate
-	if err := json.NewDecoder(r.Body).Decode(&c); err != nil || c.ChapterID == 0 || c.SlotNumber == 0 {
-		writeError(w, http.StatusBadRequest, "chapterId and slotNumber are required")
-		return
-	}
-	queued, err := s.grabber.GrabChapters(r.Context(), id, []service.ChapterCandidate{c})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"queued": queued})
-}
-
-// wantedChapterSlots computes the wanted chapter slot set, optionally
-// restricted to an explicit list, excluding pending queue items.
-func (s *Server) wantedChapterSlots(r *http.Request, seriesID int64, restrict []int64) (map[int64]bool, error) {
-	series, err := s.store.GetSeries(r.Context(), seriesID)
-	if err != nil {
-		return nil, err
-	}
-	cl, err := s.store.GetChapterLedger(r.Context(), seriesID)
-	if err != nil {
-		return nil, err
-	}
-	links, err := s.store.SlotLinks(r.Context(), seriesID)
-	if err != nil {
-		return nil, err
-	}
-	pending, err := s.store.PendingSlotKeys(r.Context(), seriesID)
-	if err != nil {
-		return nil, err
-	}
-
-	allowed := map[int64]bool{}
-	for _, n := range restrict {
-		allowed[n] = true
-	}
-
-	wanted := map[int64]bool{}
-	for _, slot := range ledger.BuildChapterSlots(*cl, series.TotalChapters, links, nil) {
-		if !slot.Wanted || pending[store.SlotKey("chapter", 0, slot.Number)] {
-			continue
-		}
-		if len(allowed) > 0 && !allowed[slot.Number] {
-			continue
-		}
-		wanted[slot.Number] = true
-	}
-	return wanted, nil
-}
+// --- queue ---
 
 func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 	active := r.URL.Query().Get("all") == ""

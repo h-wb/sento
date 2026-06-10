@@ -88,7 +88,7 @@ var (
 	reVolMarker = regexp.MustCompile(`(?i)\b(?:vol(?:ume)?|tome)\.?\s*(\d+(?:\.\d+)?)(?:\s*[-–~]\s*(?:v(?:ol(?:ume)?)?\.?\s*)?(\d+(?:\.\d+)?))?|\b[vV](\d+(?:\.\d+)?)(?:\s*[-–~]\s*[vV]?(\d+(?:\.\d+)?))?|\b[tT](\d+)(?:\s*[-–~]\s*[tT]?(\d+))?\b`)
 	reVolJP     = regexp.MustCompile(`第(\d+)(?:\s*[-–~]\s*(\d+))?巻`)
 	// Chapter markers: c001, ch. 4, Chapter 1184, Episode 12, #34, 第12話.
-	reChMarker = regexp.MustCompile(`(?i)\b(?:ch(?:ap(?:ter)?)?|episode|ep)\.?\s*(\d+(?:\.\d+)?)([a-z])?(?:\s*[-–~]\s*(?:ch?\.?\s*)?(\d+(?:\.\d+)?))?|\b[cC](\d+(?:\.\d+)?)(?:\s*[-–~]\s*[cC]?(\d+(?:\.\d+)?))?\b|#(\d+(?:\.\d+)?)`)
+	reChMarker = regexp.MustCompile(`(?i)\b(?:ch(?:apitre|ap(?:ter)?)?|episode|ep)\.?\s*(\d+(?:\.\d+)?)([a-z])?(?:\s*[-–~]\s*(?:ch?\.?\s*)?(\d+(?:\.\d+)?))?|\b[cC](\d+(?:\.\d+)?)(?:\s*[-–~]\s*[cC]?(\d+(?:\.\d+)?))?\b|#(\d+(?:\.\d+)?)`)
 	reChJP     = regexp.MustCompile(`第(\d+(?:\.\d+)?)(?:\s*[-–~]\s*(\d+(?:\.\d+)?))?話`)
 	// Release-version suffix directly after a number: 34v2.
 	reVerSuffix = regexp.MustCompile(`(?i)(\d)\s*v(\d)\b`)

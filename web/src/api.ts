@@ -69,7 +69,6 @@ export type ChapterLedger = {
   monitored: boolean
   language: string
   cutoffNum: number
-  sourceSeenMax: number
 }
 
 export type VolumeSlot = {
@@ -124,34 +123,56 @@ export type QueueItem = {
   createdAt: string
 }
 
-export type ChapterCandidate = {
-  slotNumber: number
-  chapterId: number
-  chapterName: string
-  scanlator?: string
-  sourceId: string
-}
+export type Ledger = 'volume' | 'chapter'
 
-export type VolumeCandidate = {
+export type ReleaseCandidate = {
   guid: string
+  provider: string
   protocol: 'torrent' | 'source'
   site: string
+  siteId: string
   title: string
   size?: number
   seeders?: number
   chapterId?: number
+  scanlator?: string
   covered?: number[]
   score: number
   rejections?: string[]
 }
 
-export type Indexer = {
-  provider: 'prowlarr' | 'suwayomi'
-  id: string
+export type SearchResponse = {
+  ledger: Ledger
+  candidates: ReleaseCandidate[]
+  queued: number[]
+  searched: string[]
+  dropped: number
+  providerErrors?: string[]
+  bindingNotes?: string[]
+}
+
+export type SiteView = {
+  provider: string
+  siteId: string
   name: string
   protocol: 'torrent' | 'source'
   lang?: string
+  reachable: boolean
   enabled: boolean
+  useVolumes: boolean
+  useChapters: boolean
+  priority: number
+}
+
+export type SiteOverride = {
+  enabled?: boolean | null
+  useVolumes?: boolean | null
+  useChapters?: boolean | null
+}
+
+export type SeriesSiteView = SiteView & {
+  override?: SiteOverride | null
+  binding?: Binding | null
 }
 
 export type SeriesFile = {
@@ -189,7 +210,22 @@ export const api = {
   files: (id: number) => request<SeriesFile[]>(`/series/${id}/files`),
 
   sources: () => request<Source[]>('/sources'),
-  indexers: () => request<Indexer[]>('/indexers'),
+  indexerSettings: () => request<SiteView[]>('/settings/indexers'),
+  updateIndexerSetting: (
+    provider: string,
+    siteId: string,
+    patch: { enabled?: boolean; useVolumes?: boolean; useChapters?: boolean; priority?: number },
+  ) =>
+    request<SiteView>(`/settings/indexers/${provider}/${encodeURIComponent(siteId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+  seriesIndexers: (id: number) => request<SeriesSiteView[]>(`/series/${id}/indexers`),
+  setSeriesIndexerOverride: (id: number, provider: string, siteId: string, ov: SiteOverride) =>
+    request<unknown>(`/series/${id}/indexers/${provider}/${encodeURIComponent(siteId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(ov),
+    }),
   sourceSearch: (sid: string, q: string) =>
     request<{ mangas: SourceManga[] }>(`/sources/${sid}/search?q=${encodeURIComponent(q)}`),
   bindings: (id: number) => request<Binding[]>(`/series/${id}/bindings`),
@@ -198,35 +234,17 @@ export const api = {
   deleteBinding: (id: number, bid: number) =>
     request<void>(`/series/${id}/bindings/${bid}`, { method: 'DELETE' }),
 
-  searchChapters: (
-    id: number,
-    opts: { dryRun?: boolean; slots?: number[]; all?: boolean },
-  ) =>
-    request<{ candidates: ChapterCandidate[]; queued: number[] }>(`/series/${id}/search/chapters`, {
-      method: 'POST',
-      body: JSON.stringify(opts),
-    }),
-  grabChapter: (id: number, candidate: ChapterCandidate) =>
-    request<{ queued: number[] }>(`/series/${id}/grab/chapter`, {
-      method: 'POST',
-      body: JSON.stringify(candidate),
-    }),
-  searchVolumes: (
+  search: (
     id: number,
     opts: {
+      ledger: Ledger
       dryRun?: boolean
       grab?: string
       force?: boolean
       slot?: { collectionId: number; number: number }
     },
   ) =>
-    request<{
-      candidates: VolumeCandidate[]
-      queued: number[]
-      searched: string[]
-      droppedNonVolume: number
-      providerErrors?: string[]
-    }>(`/series/${id}/search/volumes`, {
+    request<SearchResponse>(`/series/${id}/search`, {
       method: 'POST',
       body: JSON.stringify(opts),
     }),

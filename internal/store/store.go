@@ -71,11 +71,10 @@ type Work struct {
 }
 
 type ChapterLedger struct {
-	SeriesID      int64  `json:"seriesId"`
-	Monitored     bool   `json:"monitored"`
-	Language      string `json:"language"`
-	CutoffNum     int64  `json:"cutoffNum"`
-	SourceSeenMax int64  `json:"sourceSeenMax"`
+	SeriesID  int64  `json:"seriesId"`
+	Monitored bool   `json:"monitored"`
+	Language  string `json:"language"`
+	CutoffNum int64  `json:"cutoffNum"`
 }
 
 type File struct {
@@ -241,8 +240,8 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 		lang = "en"
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO chapter_ledgers (series_id, monitored, language, cutoff_num, source_seen_max)
-		VALUES (?,?,?,?,0)`, seriesID, true, lang, cutoff); err != nil {
+		INSERT INTO chapter_ledgers (series_id, monitored, language, cutoff_num)
+		VALUES (?,?,?,?)`, seriesID, true, lang, cutoff); err != nil {
 		return 0, fmt.Errorf("inserting chapter ledger: %w", err)
 	}
 
@@ -333,10 +332,10 @@ func (s *Store) ListWorks(ctx context.Context, collectionID int64) ([]Work, erro
 
 func (s *Store) GetChapterLedger(ctx context.Context, seriesID int64) (*ChapterLedger, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT series_id, monitored, language, cutoff_num, source_seen_max
+		SELECT series_id, monitored, language, cutoff_num
 		FROM chapter_ledgers WHERE series_id = ?`, seriesID)
 	var l ChapterLedger
-	err := row.Scan(&l.SeriesID, &l.Monitored, &l.Language, &l.CutoffNum, &l.SourceSeenMax)
+	err := row.Scan(&l.SeriesID, &l.Monitored, &l.Language, &l.CutoffNum)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -357,13 +356,6 @@ func (s *Store) UpdateChapterLedger(ctx context.Context, l ChapterLedger) error 
 		return ErrNotFound
 	}
 	return nil
-}
-
-func (s *Store) BumpSourceSeenMax(ctx context.Context, seriesID, seen int64) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE chapter_ledgers SET source_seen_max = MAX(source_seen_max, ?)
-		WHERE series_id = ?`, seen, seriesID)
-	return err
 }
 
 // --- files & links ---

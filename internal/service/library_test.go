@@ -192,16 +192,6 @@ func TestChapterSlots(t *testing.T) {
 	if wanted != 2 {
 		t.Fatalf("want 2 wanted chapter slots, got %d", wanted)
 	}
-
-	// Source saw chapter 1186 → upper bound extends (D7).
-	if err := st.BumpSourceSeenMax(ctx, id, 118600); err != nil {
-		t.Fatal(err)
-	}
-	cl, _ = st.GetChapterLedger(ctx, id)
-	slots = ledger.BuildChapterSlots(*cl, 1184, nil, nil)
-	if len(slots) != 1186 {
-		t.Fatalf("upper bound should extend to 1186, got %d", len(slots))
-	}
 }
 
 func TestRefreshReconciliation(t *testing.T) {

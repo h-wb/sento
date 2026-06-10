@@ -33,8 +33,8 @@ type Server struct {
 	library  *service.Library
 	suwa     *suwayomi.Client // nil when unconfigured; binding endpoints only
 	registry *provider.Registry
-	grabber  *service.Grabber
-	volumes  *service.VolumeSearcher
+	search   *service.SearchService
+	sites    *service.SiteService
 	importer *service.Importer
 	scanner  *service.Scanner
 }
@@ -68,21 +68,19 @@ func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 		provider.NewSuwayomi(s.suwa),
 		provider.NewTorrent(pr, qb, cfg.QBittorrent.Category),
 	)
-	s.grabber = service.NewGrabber(st, s.registry)
-	s.volumes = service.NewVolumeSearcher(st, s.registry)
+	s.search = service.NewSearchService(st, s.registry)
+	s.sites = service.NewSiteService(st, s.registry)
 	s.importer = service.NewImporter(st, s.registry, naming, cfg.Library.Path)
 	return s
 }
 
 // Volumes exposes the volume searcher for background loops.
-func (s *Server) Volumes() *service.VolumeSearcher { return s.volumes }
 
 // Importer exposes the queue importer for background loops.
 func (s *Server) Importer() *service.Importer { return s.importer }
 
-// Grabber exposes the grab service for background loops; nil when Suwayomi
-// is not configured.
-func (s *Server) Grabber() *service.Grabber { return s.grabber }
+// SearchSvc exposes the unified search for background loops.
+func (s *Server) SearchSvc() *service.SearchService { return s.search }
 
 // Store exposes the persistence layer for background loops.
 func (s *Server) Store() *store.Store { return s.store }
@@ -95,7 +93,9 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
+	// Interactive searches fan out to live sources (some behind Cloudflare)
+	// and may auto-resolve bindings on first run.
+	r.Use(middleware.Timeout(120 * time.Second))
 
 	r.Route("/api/v1", func(r chi.Router) {
 		s.mountAPI(r)

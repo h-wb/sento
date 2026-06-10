@@ -16,9 +16,9 @@ import {
   api,
   fmtNum,
   fmtSize,
-  type ChapterCandidate,
+  type ReleaseCandidate,
+  type SearchResponse,
   type SeriesFile,
-  type VolumeCandidate,
 } from '../api'
 
 export type SlotSelection = {
@@ -56,13 +56,7 @@ export default function SlotModal({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [volCands, setVolCands] = useState<VolumeCandidate[] | null>(null)
-  const [volDiag, setVolDiag] = useState<{
-    searched: string[]
-    droppedNonVolume: number
-    providerErrors?: string[]
-  } | null>(null)
-  const [chCands, setChCands] = useState<ChapterCandidate[] | null>(null)
+  const [result, setResult] = useState<SearchResponse | null>(null)
 
   if (!sel) return null
   const linked = files.filter((f) => sel.fileIds.includes(f.id))
@@ -81,32 +75,26 @@ export default function SlotModal({
     }
   }
 
+  const slotRef = { collectionId: sel.collectionId ?? 0, number: sel.number }
+
   const interactiveSearch = () =>
     run(async () => {
-      if (sel.ledger === 'volume') {
-        const r = await api.searchVolumes(seriesID, {
-          dryRun: true,
-          slot: { collectionId: sel.collectionId!, number: sel.number },
-        })
-        setVolCands(r.candidates)
-        setVolDiag({
-          searched: r.searched,
-          droppedNonVolume: r.droppedNonVolume,
-          providerErrors: r.providerErrors,
-        })
-      } else {
-        const r = await api.searchChapters(seriesID, {
-          dryRun: true,
-          slots: [sel.number],
-          all: true,
-        })
-        setChCands(r.candidates)
-      }
+      setResult(
+        await api.search(seriesID, { ledger: sel.ledger, dryRun: true, slot: slotRef }),
+      )
     })
 
+  const grab = (c: ReleaseCandidate, force: boolean) =>
+    run(
+      () =>
+        api
+          .search(seriesID, { ledger: sel.ledger, grab: c.guid, force, slot: slotRef })
+          .then(onChanged),
+      `Grabbed via ${c.provider}/${c.site}`,
+    )
+
   const close = () => {
-    setVolCands(null)
-    setChCands(null)
+    setResult(null)
     setError(null)
     setNotice(null)
     onClose()
@@ -171,7 +159,12 @@ export default function SlotModal({
                 variant="subtle"
                 leftSection={<IconTrash size={14} />}
                 onClick={() => {
-                  if (!window.confirm(`Delete from disk?\n${f.path}\n\nThe slot becomes wanted again and may re-download.`)) return
+                  if (
+                    !window.confirm(
+                      `Delete from disk?\n${f.path}\n\nThe slot becomes wanted again and may re-download.`,
+                    )
+                  )
+                    return
                   run(() => api.deleteFile(f.id).then(onChanged), 'File deleted')
                 }}
               >
@@ -193,29 +186,29 @@ export default function SlotModal({
           </Button>
         </Group>
 
-        {volCands && (
+        {result && (
           <Stack gap={4}>
-            {volDiag && (
-              <Text size="xs" c="dimmed">
-                Searched {volDiag.searched.join(', ') || 'nothing'}
-                {volDiag.droppedNonVolume > 0 &&
-                  ` · ${volDiag.droppedNonVolume} chapter-shaped entries skipped`}
+            <Text size="xs" c="dimmed">
+              Searched {result.searched.join(', ') || 'nothing'}
+              {result.dropped > 0 && ` · ${result.dropped} entries for the other ledger skipped`}
+            </Text>
+            {result.bindingNotes?.map((n) => (
+              <Text key={n} size="xs" c="dimmed">
+                {n}
               </Text>
-            )}
-            {volDiag?.providerErrors?.map((e) => (
+            ))}
+            {result.providerErrors?.map((e) => (
               <Alert key={e} color="orange" p="xs">
                 {e}
               </Alert>
             ))}
-            {volCands.length === 0 && (
+            {result.candidates.length === 0 && (
               <Text size="sm" c="dimmed">
-                No volume releases found.
-                {volDiag && volDiag.droppedNonVolume > 0
-                  ? ' The bound sources only offer individual chapters — bind a volume-organized source (e.g. Madokami) or configure Prowlarr for torrents.'
-                  : ' Bind a volume-organized source (e.g. Madokami) or configure Prowlarr for torrents.'}
+                No releases found for this {sel.ledger}. Check the Indexers tab — sites must be
+                enabled for this ledger, and extension sources need a confident title match.
               </Text>
             )}
-            {volCands.map((c) => {
+            {result.candidates.map((c) => {
               const rejected = c.rejections?.length ? c.rejections[0] : null
               const hard = rejected !== null && hardRejections.has(rejected)
               return (
@@ -224,13 +217,22 @@ export default function SlotModal({
                     {c.title}
                   </Text>
                   <Group gap={6} wrap="nowrap">
-                    <Badge size="xs" variant="outline" color={c.protocol === 'torrent' ? 'blue' : 'teal'}>
-                      {c.protocol}/{c.site}
+                    <Badge
+                      size="xs"
+                      variant="outline"
+                      color={c.protocol === 'torrent' ? 'blue' : 'teal'}
+                    >
+                      {c.provider}/{c.site}
                     </Badge>
                     {c.protocol === 'torrent' && (
                       <Text size="xs" c="dimmed">
                         {fmtSize(c.size ?? 0)} · {c.seeders ?? 0}S
                       </Text>
+                    )}
+                    {c.scanlator && (
+                      <Badge size="xs" variant="light">
+                        {c.scanlator}
+                      </Badge>
                     )}
                     {rejected ? (
                       <Badge size="xs" color="red" variant="light">
@@ -241,24 +243,20 @@ export default function SlotModal({
                         {c.score}
                       </Badge>
                     )}
-                    <Tooltip label={hard ? 'Hard rejection — cannot grab' : rejected ? 'Force grab (bypasses soft rejection)' : 'Grab'}>
+                    <Tooltip
+                      label={
+                        hard
+                          ? 'Hard rejection — cannot grab'
+                          : rejected
+                            ? 'Force grab (bypasses soft rejection)'
+                            : 'Grab'
+                      }
+                    >
                       <Button
                         size="compact-xs"
                         color={rejected ? 'orange' : 'indigo'}
                         disabled={hard || busy}
-                        onClick={() =>
-                          run(
-                            () =>
-                              api
-                                .searchVolumes(seriesID, {
-                                  grab: c.guid,
-                                  force: !!rejected,
-                                  slot: { collectionId: sel.collectionId!, number: sel.number },
-                                })
-                                .then(onChanged),
-                            'Grabbed — sent to qBittorrent',
-                          )
-                        }
+                        onClick={() => grab(c, !!rejected)}
                       >
                         {rejected ? 'Force' : 'Grab'}
                       </Button>
@@ -267,42 +265,6 @@ export default function SlotModal({
                 </Group>
               )
             })}
-          </Stack>
-        )}
-
-        {chCands && (
-          <Stack gap={4}>
-            {chCands.length === 0 && (
-              <Text size="sm" c="dimmed">
-                No source chapters matched this slot.
-              </Text>
-            )}
-            {chCands.map((c, i) => (
-              <Group key={`${c.chapterId}-${i}`} justify="space-between" wrap="nowrap">
-                <Text size="xs" lineClamp={1} style={{ flex: 1 }}>
-                  {c.chapterName}
-                </Text>
-                <Group gap={6} wrap="nowrap">
-                  {c.scanlator && (
-                    <Badge size="xs" variant="outline">
-                      {c.scanlator}
-                    </Badge>
-                  )}
-                  <Button
-                    size="compact-xs"
-                    disabled={busy}
-                    onClick={() =>
-                      run(
-                        () => api.grabChapter(seriesID, c).then(onChanged),
-                        'Grabbed — downloading via Suwayomi',
-                      )
-                    }
-                  >
-                    Grab
-                  </Button>
-                </Group>
-              </Group>
-            ))}
           </Stack>
         )}
       </Stack>

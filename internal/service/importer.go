@@ -208,14 +208,20 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	}
 	expectedSet := map[int64]store.ExpectedSlot{}
 	var collectionID int64
+	slotLedger := "volume"
 	for _, sl := range expected {
 		expectedSet[sl.Number] = sl
 		collectionID = sl.CollectionID
+		slotLedger = sl.Ledger
 	}
 
 	editionName, lang := "", ""
-	if col, err := im.store.GetCollection(ctx, collectionID); err == nil {
-		editionName, lang = col.EditionName, col.Language
+	if slotLedger == "volume" {
+		if col, err := im.store.GetCollection(ctx, collectionID); err == nil {
+			editionName, lang = col.EditionName, col.Language
+		}
+	} else if cl, err := im.store.GetChapterLedger(ctx, item.SeriesID); err == nil {
+		lang = cl.Language
 	}
 
 	seriesDir, err := im.seriesDir(ctx, series)
@@ -230,16 +236,29 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			continue
 		}
 		res := parse.ParseAnchored(filepath.Base(rel), parse.ChannelFile, titles)
-		for _, r := range res.Volumes {
+		ranges := res.Volumes
+		if slotLedger == "chapter" {
+			ranges = res.Chapters
+		}
+		for _, r := range ranges {
 			for n := (int64(r.From) + 99) / 100 * 100; n <= int64(r.To); n += 100 {
 				sl, ok := expectedSet[n]
 				if !ok {
 					continue
 				}
-				dest := filepath.Join(seriesDir, library.Render(im.naming.VolumeFile, library.NameTokens{
-					SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
-					Volume: n, Chapter: -1, Edition: editionName, Lang: lang,
-				}))
+				var dest string
+				if slotLedger == "volume" {
+					dest = filepath.Join(seriesDir, library.Render(im.naming.VolumeFile, library.NameTokens{
+						SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
+						Volume: n, Chapter: -1, Edition: editionName, Lang: lang,
+					}))
+				} else {
+					dest = filepath.Join(seriesDir, im.naming.ChapterDir,
+						library.Render(im.naming.ChapterFile, library.NameTokens{
+							SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
+							Volume: -1, Chapter: n, Lang: lang,
+						}))
+				}
 				src := filepath.Join(dir, rel)
 				if err := library.HardlinkOrCopy(src, dest); err != nil {
 					return fmt.Errorf("linking %s: %w", rel, err)

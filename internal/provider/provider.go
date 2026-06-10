@@ -41,6 +41,21 @@ type SearchRequest struct {
 	Query    string   // primary title, for text-search providers
 	Titles   []string // all titles/aliases, for anchored parsing by callers
 	Bindings []Binding
+	// Allowed restricts the search to specific sites per provider id;
+	// nil map or missing provider key = all sites allowed.
+	Allowed map[string]map[string]bool
+}
+
+// SiteAllowed reports whether a provider's site passes the filter.
+func (r SearchRequest) SiteAllowed(providerID, siteID string) bool {
+	if r.Allowed == nil {
+		return true
+	}
+	set, ok := r.Allowed[providerID]
+	if !ok {
+		return true
+	}
+	return set[siteID]
 }
 
 // TorrentRef carries torrent-protocol handles and health.
@@ -67,6 +82,7 @@ type SourceRef struct {
 type Candidate struct {
 	Provider string      `json:"provider"`
 	Site     string      `json:"site"`
+	SiteID   string      `json:"siteId"`
 	Protocol string      `json:"protocol"`
 	Title    string      `json:"title"`
 	Torrent  *TorrentRef `json:"torrent,omitempty"`
@@ -119,6 +135,20 @@ type Recoverer interface {
 	Recover(ctx context.Context) error
 }
 
+// MangaRef is a series candidate on an extension source (for binding
+// resolution).
+type MangaRef struct {
+	ID    int64  `json:"id"`
+	Title string `json:"title"`
+}
+
+// MangaResolver is an optional capability: providers whose sites need a
+// series→manga identity mapping before they can be searched (extension
+// sources). Used by the auto-binding resolver.
+type MangaResolver interface {
+	ResolveManga(ctx context.Context, siteID, query string) ([]MangaRef, error)
+}
+
 // Registry holds the configured providers.
 type Registry struct {
 	providers []Provider
@@ -154,18 +184,29 @@ func (r *Registry) ForProtocol(protocol string) Provider {
 	return nil
 }
 
-// SearchAll fans out to every provider, collecting partial results; a
-// failing provider degrades, never aborts (errors are returned for logging).
+// SearchAll fans out to every provider in parallel, collecting partial
+// results; a failing provider degrades, never aborts.
 func (r *Registry) SearchAll(ctx context.Context, req SearchRequest) ([]Candidate, []error) {
+	type res struct {
+		cands []Candidate
+		err   error
+		id    string
+	}
+	ch := make(chan res, len(r.providers))
+	for _, p := range r.providers {
+		go func(p Provider) {
+			cands, err := p.Search(ctx, req)
+			ch <- res{cands: cands, err: err, id: p.ID()}
+		}(p)
+	}
 	var out []Candidate
 	var errs []error
-	for _, p := range r.providers {
-		cands, err := p.Search(ctx, req)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", p.ID(), err))
-			continue
+	for range r.providers {
+		rr := <-ch
+		if rr.err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", rr.id, rr.err))
 		}
-		out = append(out, cands...)
+		out = append(out, rr.cands...) // partial results count even on error
 	}
 	return out, errs
 }

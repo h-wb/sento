@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -35,17 +34,16 @@ func DefaultIntervals() Intervals {
 type Scheduler struct {
 	store     *store.Store
 	libraries *service.Library
-	grabber   *service.Grabber
-	volumes   *service.VolumeSearcher
+	search    *service.SearchService
 	importer  *service.Importer
 	intervals Intervals
 }
 
-func New(st *store.Store, lib *service.Library, grabber *service.Grabber,
-	volumes *service.VolumeSearcher, importer *service.Importer, intervals Intervals,
+func New(st *store.Store, lib *service.Library, search *service.SearchService,
+	importer *service.Importer, intervals Intervals,
 ) *Scheduler {
 	return &Scheduler{
-		store: st, libraries: lib, grabber: grabber, volumes: volumes,
+		store: st, libraries: lib, search: search,
 		importer: importer, intervals: intervals,
 	}
 }
@@ -54,10 +52,8 @@ func New(st *store.Store, lib *service.Library, grabber *service.Grabber,
 func (s *Scheduler) Start(ctx context.Context) {
 	go s.loop(ctx, "queue-process", s.intervals.QueueProcess, s.tickQueue)
 	go s.loop(ctx, "metadata-refresh", s.intervals.RefreshSweep, s.tickRefresh)
-	if s.grabber.HasSourceProvider() {
+	if s.search.HasProviders() {
 		go s.loop(ctx, "chapter-check", s.intervals.ChapterCheck, s.tickChapters)
-	}
-	if s.volumes.HasProviders() {
 		go s.loop(ctx, "volume-sweep", s.intervals.VolumeSweep, s.tickVolumes)
 	}
 }
@@ -113,80 +109,39 @@ func (s *Scheduler) tickRefresh(ctx context.Context) error {
 }
 
 // tickChapters runs the automatic chapter search for releasing, monitored
-// series: fetch source lists (bumps source_seen_max, D7), grab wanted.
+// series.
 func (s *Scheduler) tickChapters(ctx context.Context) error {
-	series, err := s.store.ListSeries(ctx)
-	if err != nil {
-		return err
-	}
-	for _, sr := range series {
-		if !sr.Monitored || sr.Status != "releasing" {
-			continue
-		}
-		wanted, err := s.wantedChapters(ctx, sr.ID, sr.TotalChapters)
-		if err != nil || len(wanted) == 0 {
-			continue
-		}
-		candidates, err := s.grabber.FindChapterCandidates(ctx, sr.ID, wanted, false)
-		if err != nil {
-			slog.Warn("chapter check failed", "series", sr.ID, "error", err)
-			continue
-		}
-		if len(candidates) > 0 {
-			if _, err := s.grabber.GrabChapters(ctx, sr.ID, candidates); err != nil {
-				slog.Warn("chapter grab failed", "series", sr.ID, "error", err)
-			} else {
-				slog.Info("chapters grabbed", "series", sr.Title, "count", len(candidates))
-			}
-		}
-	}
-	return nil
+	return s.sweep(ctx, service.LedgerChapter, func(sr store.Series) bool {
+		return sr.Monitored && sr.Status == "releasing"
+	})
 }
 
 func (s *Scheduler) tickVolumes(ctx context.Context) error {
+	return s.sweep(ctx, service.LedgerVolume, func(sr store.Series) bool {
+		return sr.Monitored
+	})
+}
+
+// sweep runs the unified wanted-search for one ledger across the library.
+func (s *Scheduler) sweep(ctx context.Context, searchLedger string, include func(store.Series) bool) error {
 	series, err := s.store.ListSeries(ctx)
 	if err != nil {
 		return err
 	}
 	for _, sr := range series {
-		if !sr.Monitored {
+		if !include(sr) {
 			continue
 		}
-		result, err := s.volumes.FindVolumeCandidates(ctx, sr.ID, nil)
+		result, err := s.search.FindCandidates(ctx, sr.ID, searchLedger, nil)
 		if err != nil {
-			slog.Warn("volume sweep failed", "series", sr.ID, "error", err)
+			slog.Warn("sweep failed", "ledger", searchLedger, "series", sr.ID, "error", err)
 			continue
 		}
-		if queued := s.volumes.GrabBest(ctx, sr.ID, result.Candidates); len(queued) > 0 {
-			slog.Info("volumes grabbed", "series", sr.Title, "count", len(queued))
+		if queued := s.search.GrabBest(ctx, sr.ID, searchLedger, result.Candidates); len(queued) > 0 {
+			slog.Info("releases grabbed", "ledger", searchLedger, "series", sr.Title, "count", len(queued))
 		}
 	}
 	return nil
-}
-
-func (s *Scheduler) wantedChapters(ctx context.Context, seriesID int64, totalChapters int) (map[int64]bool, error) {
-	cl, err := s.store.GetChapterLedger(ctx, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	if !cl.Monitored {
-		return nil, nil
-	}
-	links, err := s.store.SlotLinks(ctx, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	pending, err := s.store.PendingSlotKeys(ctx, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	wanted := map[int64]bool{}
-	for _, slot := range ledger.BuildChapterSlots(*cl, totalChapters, links, nil) {
-		if slot.Wanted && !pending[store.SlotKey("chapter", 0, slot.Number)] {
-			wanted[slot.Number] = true
-		}
-	}
-	return wanted, nil
 }
 
 func parseDBTime(s string) time.Time {
