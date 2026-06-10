@@ -41,7 +41,7 @@ func ParseAnchored(name string, ch Channel, titles []string) Result {
 	if bestTitle == "" {
 		// No anchor found: fall back to blind parsing.
 		res.step("anchor.miss", "no candidate title found in name")
-		parseInto(cleaned, ch, &res, "")
+		parseInto(cleaned, ch, &res, "", nil)
 		return res
 	}
 
@@ -51,8 +51,81 @@ func ParseAnchored(name string, ch Channel, titles []string) Result {
 	for i := bestSpan[0]; i < bestSpan[1] && i < len(runes); i++ {
 		runes[i] = ' '
 	}
-	parseInto(string(runes), ch, &res, bestTitle)
+	parseInto(string(runes), ch, &res, bestTitle, titles)
 	return res
+}
+
+// Edition/quality vocabulary that legitimately appears around a title
+// ("One Piece - Digital Colored Comics v05") and must not count as
+// title leftover.
+var leftoverStopwords = map[string]bool{
+	"digital": true, "colored": true, "coloured": true, "color": true,
+	"colour": true, "full": true, "comics": true, "comic": true,
+	"deluxe": true, "omnibus": true, "edition": true, "box": true,
+	"set": true, "raw": true, "the": true, "complete": true, "batch": true,
+	"cover": true, "stories": true, "translated": true, "archived": true,
+	"scanlated": true,
+}
+
+// leftoverWords reduces the unexplained title-region text around an anchor
+// to meaningful words. Dual-title segments that fuzzy-match another known
+// title/alias are dropped ("Only I Level Up / Solo Leveling").
+func leftoverWords(leftover string, knownTitles []string) string {
+	if strings.TrimSpace(leftover) == "" {
+		return ""
+	}
+	var folded []string
+	for _, t := range knownTitles {
+		folded = append(folded, strings.Join(strings.Fields(string(foldRunes(preClean(t)))), " "))
+	}
+
+	var keep []string
+	for _, segment := range strings.FieldsFunc(leftover, func(r rune) bool {
+		return r == '/' || r == '|'
+	}) {
+		words := strings.Fields(string(foldRunes(segment)))
+		var meaningful []string
+		for _, w := range words {
+			if !leftoverStopwords[w] && len(w) > 1 {
+				meaningful = append(meaningful, w)
+			}
+		}
+		if len(meaningful) == 0 {
+			continue
+		}
+		joined := strings.Join(meaningful, " ")
+		alias := false
+		for _, t := range folded {
+			if titleSimilar(joined, t) {
+				alias = true
+				break
+			}
+		}
+		if !alias {
+			keep = append(keep, joined)
+		}
+	}
+	return strings.Join(keep, " ")
+}
+
+// titleSimilar is a cheap token-overlap check (≥75% of the shorter side).
+func titleSimilar(a, b string) bool {
+	ta, tb := strings.Fields(a), strings.Fields(b)
+	if len(ta) == 0 || len(tb) == 0 {
+		return false
+	}
+	set := map[string]bool{}
+	for _, w := range tb {
+		set[w] = true
+	}
+	hits := 0
+	for _, w := range ta {
+		if set[w] {
+			hits++
+		}
+	}
+	short := min(len(ta), len(tb))
+	return hits*4 >= short*3
 }
 
 // foldRunes maps each rune 1:1 (for offset stability) to a lowercase,

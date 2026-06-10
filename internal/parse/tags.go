@@ -36,6 +36,15 @@ var publisherTags = []string{
 	"vertical", "tapas", "webtoon", "manga plus", "ize press", "udon",
 }
 
+// Unambiguous language words also found in free text (scene naming:
+// "One.piece.T01.FRENCH.HYBRiD"). Two-letter codes stay segment-only.
+var freeTextLangWords = map[string]string{
+	"french": "fr", "francais": "fr", "vf": "fr", "vostfr": "fr",
+	"english": "en", "japanese": "ja", "spanish": "es",
+	"korean": "ko", "chinese": "zh", "german": "de", "italian": "it",
+	"portuguese": "pt", "russian": "ru", "polish": "pl", "multi": "multi",
+}
+
 type segmentHints struct {
 	language    string
 	contentType ContentType

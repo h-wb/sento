@@ -57,6 +57,11 @@ export default function SlotModal({
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [volCands, setVolCands] = useState<VolumeCandidate[] | null>(null)
+  const [volDiag, setVolDiag] = useState<{
+    searched: string[]
+    droppedNonVolume: number
+    providerErrors?: string[]
+  } | null>(null)
   const [chCands, setChCands] = useState<ChapterCandidate[] | null>(null)
 
   if (!sel) return null
@@ -84,6 +89,11 @@ export default function SlotModal({
           slot: { collectionId: sel.collectionId!, number: sel.number },
         })
         setVolCands(r.candidates)
+        setVolDiag({
+          searched: r.searched,
+          droppedNonVolume: r.droppedNonVolume,
+          providerErrors: r.providerErrors,
+        })
       } else {
         const r = await api.searchChapters(seriesID, {
           dryRun: true,
@@ -185,9 +195,24 @@ export default function SlotModal({
 
         {volCands && (
           <Stack gap={4}>
+            {volDiag && (
+              <Text size="xs" c="dimmed">
+                Searched {volDiag.searched.join(', ') || 'nothing'}
+                {volDiag.droppedNonVolume > 0 &&
+                  ` · ${volDiag.droppedNonVolume} chapter-shaped entries skipped`}
+              </Text>
+            )}
+            {volDiag?.providerErrors?.map((e) => (
+              <Alert key={e} color="orange" p="xs">
+                {e}
+              </Alert>
+            ))}
             {volCands.length === 0 && (
               <Text size="sm" c="dimmed">
-                No releases found.
+                No volume releases found.
+                {volDiag && volDiag.droppedNonVolume > 0
+                  ? ' The bound sources only offer individual chapters — bind a volume-organized source (e.g. Madokami) or configure Prowlarr for torrents.'
+                  : ' Bind a volume-organized source (e.g. Madokami) or configure Prowlarr for torrents.'}
               </Text>
             )}
             {volCands.map((c) => {

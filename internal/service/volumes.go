@@ -91,9 +91,19 @@ func (v *VolumeSearcher) wantedVolumes(ctx context.Context, seriesID int64) (map
 	return wanted, collections, nil
 }
 
+// VolumeSearchResult carries candidates plus search diagnostics so an
+// empty result can explain itself (which sites were searched, how many
+// entries were chapter-shaped and dropped, which providers failed).
+type VolumeSearchResult struct {
+	Candidates       []VolumeCandidate `json:"candidates"`
+	Searched         []string          `json:"searched"`
+	DroppedNonVolume int               `json:"droppedNonVolume"`
+	ProviderErrors   []string          `json:"providerErrors,omitempty"`
+}
+
 // FindVolumeCandidates runs search + funnel. With a target, only that slot
 // counts as wanted and edition routing is pinned to its collection.
-func (v *VolumeSearcher) FindVolumeCandidates(ctx context.Context, seriesID int64, target *TargetSlot) ([]VolumeCandidate, error) {
+func (v *VolumeSearcher) FindVolumeCandidates(ctx context.Context, seriesID int64, target *TargetSlot) (*VolumeSearchResult, error) {
 	if v.registry.Empty() {
 		return nil, fmt.Errorf("no search providers configured")
 	}
@@ -110,12 +120,29 @@ func (v *VolumeSearcher) FindVolumeCandidates(ctx context.Context, seriesID int6
 		wanted = map[int64]map[int64]bool{target.CollectionID: {target.Number: true}}
 	}
 
+	result := &VolumeSearchResult{Candidates: []VolumeCandidate{}}
+	for _, p := range v.registry.All() {
+		switch p.ID() {
+		case "torrent":
+			result.Searched = append(result.Searched, "torrent/prowlarr")
+		case "suwayomi":
+			for _, b := range req.Bindings {
+				result.Searched = append(result.Searched, "source/"+b.SourceName)
+			}
+			if len(req.Bindings) == 0 {
+				result.Searched = append(result.Searched, "source/(no bindings)")
+			}
+		default:
+			result.Searched = append(result.Searched, p.ID())
+		}
+	}
+
 	candidates, errs := v.registry.SearchAll(ctx, req)
 	for _, e := range errs {
 		slog.Warn("volume search provider degraded", "error", e)
+		result.ProviderErrors = append(result.ProviderErrors, e.Error())
 	}
 
-	out := make([]VolumeCandidate, 0, len(candidates))
 	for _, cand := range candidates {
 		vc := VolumeCandidate{
 			GUID: cand.GUID(), Provider: cand.Provider,
@@ -135,15 +162,18 @@ func (v *VolumeSearcher) FindVolumeCandidates(ctx context.Context, seriesID int6
 		}
 		vc.Parse = parse.ParseAnchored(cand.Title, channel, req.Titles)
 		// Source entries that don't parse as volumes belong to the chapter
-		// ledger; drop them from the volume funnel entirely.
+		// ledger; drop them from the volume funnel (counted, not silent).
 		if cand.Protocol == provider.ProtocolSource && len(vc.Parse.Volumes) == 0 {
+			result.DroppedNonVolume++
 			continue
 		}
 		v.funnel(&vc, collections, wanted, target)
-		out = append(out, vc)
+		result.Candidates = append(result.Candidates, vc)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
-	return out, nil
+	sort.Slice(result.Candidates, func(i, j int) bool {
+		return result.Candidates[i].Score > result.Candidates[j].Score
+	})
+	return result, nil
 }
 
 // funnel applies hard rejections then scoring (decision-engine.md §3–4).
@@ -159,10 +189,17 @@ func (v *VolumeSearcher) funnel(c *VolumeCandidate,
 	}
 	// Series match: the anchored parse must have located one of the
 	// series' titles — except source candidates, whose binding already
-	// scopes them to the series.
-	if !c.Parse.Anchored && c.Protocol != provider.ProtocolSource {
-		reject("rejected.series_match")
-		return
+	// scopes them to the series. Unexplained words around the anchor mean
+	// a different work that merely contains the title (spin-offs).
+	if c.Protocol != provider.ProtocolSource {
+		if !c.Parse.Anchored {
+			reject("rejected.series_match")
+			return
+		}
+		if c.Parse.TitleLeftover != "" {
+			reject("rejected.series_match")
+			return
+		}
 	}
 
 	// R6 edition routing (pinned to the target's collection when interactive).
@@ -178,6 +215,20 @@ func (v *VolumeSearcher) funnel(c *VolumeCandidate,
 		}
 	}
 	c.CollectionID = colID
+
+	// R2 language gate: a tagged language must be compatible with the
+	// routed collection's language (untagged passes, decision-engine.md).
+	if c.Parse.Language != "" && c.Parse.Language != "multi" {
+		for _, col := range collections {
+			if col.ID != colID || col.Language == "" {
+				continue
+			}
+			if baseLang(c.Parse.Language) != baseLang(col.Language) {
+				reject("rejected.language")
+				return
+			}
+		}
+	}
 
 	// R5 slot coverage. A whole-series pack covers everything wanted.
 	volumes := c.Parse.Volumes
@@ -241,6 +292,11 @@ func (v *VolumeSearcher) funnel(c *VolumeCandidate,
 		score -= 100
 	}
 	c.Score = score
+}
+
+func baseLang(lang string) string {
+	base, _, _ := strings.Cut(lang, "-")
+	return strings.ToLower(base)
 }
 
 // routeEdition maps edition hints to a monitored collection (R6).

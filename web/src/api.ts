@@ -220,7 +220,13 @@ export const api = {
       slot?: { collectionId: number; number: number }
     },
   ) =>
-    request<{ candidates: VolumeCandidate[]; queued: number[] }>(`/series/${id}/search/volumes`, {
+    request<{
+      candidates: VolumeCandidate[]
+      queued: number[]
+      searched: string[]
+      droppedNonVolume: number
+      providerErrors?: string[]
+    }>(`/series/${id}/search/volumes`, {
       method: 'POST',
       body: JSON.stringify(opts),
     }),

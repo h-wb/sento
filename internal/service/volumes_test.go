@@ -34,13 +34,17 @@ func TestVolumeFunnel(t *testing.T) {
 	registry := provider.NewRegistry(provider.NewTorrent(prowlarr.New(fake.URL, "key"), nil, "sento"))
 	vs := NewVolumeSearcher(st, registry)
 
-	candidates, err := vs.FindVolumeCandidates(ctx, seriesID, nil)
+	result, err := vs.FindVolumeCandidates(ctx, seriesID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	candidates := result.Candidates
 	byGUID := map[string]VolumeCandidate{}
 	for _, c := range candidates {
 		byGUID[c.GUID] = c
+	}
+	if len(result.Searched) == 0 {
+		t.Error("search diagnostics should list searched sites")
 	}
 
 	if c := byGUID["g1"]; len(c.Rejections) != 0 || c.Score < 1000 {

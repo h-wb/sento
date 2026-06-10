@@ -58,6 +58,10 @@ type Result struct {
 	Edition     EditionHints `json:"edition"`
 	Quality     QualityHints `json:"quality"`
 	Anchored    bool         `json:"anchored,omitempty"` // title matched a known candidate
+	// TitleLeftover holds unexplained words around an anchored title
+	// ("WANTED! Eiichiro Oda Before" around "One Piece") — a strong signal
+	// the release is a different work that merely contains the title.
+	TitleLeftover string `json:"titleLeftover,omitempty"`
 	Complete    bool         `json:"complete,omitempty"`
 	Ongoing     bool         `json:"ongoing,omitempty"`
 	Extra       bool         `json:"extra,omitempty"`

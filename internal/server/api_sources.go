@@ -44,20 +44,17 @@ func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	candidates, err := s.volumes.FindVolumeCandidates(r.Context(), id, body.Slot)
+	result, err := s.volumes.FindVolumeCandidates(r.Context(), id, body.Slot)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
-	}
-	if candidates == nil {
-		candidates = []service.VolumeCandidate{}
 	}
 
 	var queued []int64
 	switch {
 	case body.DryRun:
 	case body.Grab != "":
-		for _, c := range candidates {
+		for _, c := range result.Candidates {
 			if c.GUID != body.Grab {
 				continue
 			}
@@ -70,9 +67,15 @@ func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	default:
-		queued = s.volumes.GrabBest(r.Context(), id, candidates)
+		queued = s.volumes.GrabBest(r.Context(), id, result.Candidates)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"candidates": candidates, "queued": queued})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"candidates":       result.Candidates,
+		"queued":           queued,
+		"searched":         result.Searched,
+		"droppedNonVolume": result.DroppedNonVolume,
+		"providerErrors":   result.ProviderErrors,
+	})
 }
 
 // handleListIndexers returns every search site Sento can use, across all

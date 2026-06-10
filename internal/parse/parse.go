@@ -246,13 +246,14 @@ func Parse(name string, ch Channel) Result {
 	res := Result{ContentType: ContentManga, Confidence: 1}
 	cleaned := preClean(name)
 	res.step("preclean", cleaned)
-	parseInto(cleaned, ch, &res, "")
+	parseInto(cleaned, ch, &res, "", nil)
 	return res
 }
 
 // parseInto runs segmentation onward; anchoredTitle, when set, was already
-// removed from the input by ParseAnchored.
-func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string) {
+// removed from the input by ParseAnchored (knownTitles are its aliases,
+// used to excuse dual-title leftovers).
+func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, knownTitles []string) {
 	segs := segments(cleaned)
 
 	infos := make([]segInfo, 0, len(segs))
@@ -315,6 +316,15 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string) {
 	// Edition phrases also occur in free text ("Deluxe Edition",
 	// "Digital Colored Comics") — hint-scan without cutting the title.
 	lowerFree := strings.ToLower(freeText)
+	if res.Language == "" {
+		for word, lang := range freeTextLangWords {
+			if indexWord(lowerFree, word) >= 0 {
+				res.Language = lang
+				res.step("language.freetext", word)
+				break
+			}
+		}
+	}
 	if strings.Contains(lowerFree, "deluxe") {
 		res.Edition.Deluxe = true
 	}
@@ -366,6 +376,11 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string) {
 	// Title.
 	if anchoredTitle != "" {
 		res.Title = anchoredTitle
+		leftover := strings.TrimSpace(freeText[:max(titleEnd, 0)])
+		res.TitleLeftover = leftoverWords(leftover, knownTitles)
+		if res.TitleLeftover != "" {
+			res.step("anchor.leftover", res.TitleLeftover)
+		}
 	} else {
 		title := strings.TrimSpace(freeText[:max(titleEnd, 0)])
 		title = strings.TrimRight(title, " -–~:|/+&")
@@ -400,11 +415,13 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string) {
 		res.Group = leading
 	}
 
-	// Implicit whole-series pack: torrent with no numbers at all.
+	// Implicit whole-series pack: torrent with no numbers at all AND a year
+	// range ("Solo Leveling (2021-2026)"). A bare numberless title is more
+	// likely a one-shot/spin-off than a pack.
 	if ch == ChannelTorrent && len(res.Volumes)+len(res.Chapters)+len(res.Bare) == 0 &&
-		!res.Ongoing && res.Title != "" {
+		!res.Ongoing && res.Title != "" && res.YearRange != nil {
 		res.Complete = true
-		res.step("implicit-pack", "no numbers → whole series")
+		res.step("implicit-pack", "no numbers + year range → whole series")
 	}
 
 	scoreConfidence(res, infos)

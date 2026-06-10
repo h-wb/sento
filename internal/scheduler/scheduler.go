@@ -152,12 +152,12 @@ func (s *Scheduler) tickVolumes(ctx context.Context) error {
 		if !sr.Monitored {
 			continue
 		}
-		candidates, err := s.volumes.FindVolumeCandidates(ctx, sr.ID, nil)
+		result, err := s.volumes.FindVolumeCandidates(ctx, sr.ID, nil)
 		if err != nil {
 			slog.Warn("volume sweep failed", "series", sr.ID, "error", err)
 			continue
 		}
-		if queued := s.volumes.GrabBest(ctx, sr.ID, candidates); len(queued) > 0 {
+		if queued := s.volumes.GrabBest(ctx, sr.ID, result.Candidates); len(queued) > 0 {
 			slog.Info("volumes grabbed", "series", sr.Title, "count", len(queued))
 		}
 	}
