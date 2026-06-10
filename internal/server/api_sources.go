@@ -126,7 +126,9 @@ func (s *Server) handleSeriesIndexerOverride(w http.ResponseWriter, r *http.Requ
 // --- unified search ---
 
 // handleSearch is the single search endpoint for both ledgers:
-// {ledger, dryRun, slot?, grab?, force?}.
+// {ledger, dryRun, slot?, grab?, force?, stream?}. stream implies dryRun
+// and switches the response to NDJSON SearchEvents, one per provider, so
+// fast sites render before slow ones finish.
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
@@ -138,6 +140,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		Slot   *service.TargetSlot `json:"slot"`
 		Grab   string              `json:"grab"` // GUID of one candidate
 		Force  bool                `json:"force"`
+		Stream bool                `json:"stream"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid body")
@@ -145,6 +148,11 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Ledger != service.LedgerVolume && body.Ledger != service.LedgerChapter {
 		writeError(w, http.StatusBadRequest, "ledger must be volume or chapter")
+		return
+	}
+
+	if body.Stream {
+		s.streamSearch(w, r, id, body.Ledger, body.Slot)
 		return
 	}
 
@@ -182,6 +190,27 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		"providerErrors": result.ProviderErrors,
 		"bindingNotes":   result.BindingNotes,
 	})
+}
+
+// streamSearch writes NDJSON SearchEvents, flushing after each so the UI
+// can render provider batches as they arrive.
+func (s *Server) streamSearch(w http.ResponseWriter, r *http.Request, id int64, searchLedger string, slot *service.TargetSlot) {
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-cache")
+	flusher, _ := w.(http.Flusher)
+	enc := json.NewEncoder(w)
+	send := func(v any) {
+		_ = enc.Encode(v)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+	if err := s.search.FindCandidatesStream(r.Context(), id, searchLedger, slot, func(ev service.SearchEvent) {
+		send(ev)
+	}); err != nil {
+		// Headers may already be out; report in-band.
+		send(map[string]string{"type": "error", "error": err.Error()})
+	}
 }
 
 // --- suwayomi-specific endpoints (binding fix-ups) ---

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/h-wb/sento/internal/ledger"
@@ -114,98 +115,82 @@ func (s *SearchService) effectiveSites(ctx context.Context, seriesID int64, sear
 	return states, nil
 }
 
-// ensureBindings auto-resolves missing series↔manga bindings for usable
-// extension sites (spec.md §6: auto-bind at ≥0.9 title similarity).
-// Resolution runs in parallel with a per-site time budget; definitive
+// resolveBinding auto-resolves one site's series↔manga binding (spec.md
+// §6: auto-bind at ≥0.9 title similarity) under a time budget. Definitive
 // misses are persisted as state "unmatched" so slow sources aren't
-// re-probed on every search (rebind in the UI retries).
-func (s *SearchService) ensureBindings(ctx context.Context, seriesID int64, titles []string, sites []siteState, notes *[]string) {
-	resolver, ok := s.registry.Get("suwayomi").(provider.MangaResolver)
-	if !ok {
-		return
-	}
-	bindings, err := s.store.ListBindings(ctx, seriesID)
+// re-probed on every search (rebind in the UI retries); transient errors
+// are not persisted. Returns the persisted binding, if any.
+func (s *SearchService) resolveBinding(ctx context.Context, resolver provider.MangaResolver, seriesID int64, titles []string, st siteState) (*store.Binding, string) {
+	resolveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	refs, err := resolver.ResolveManga(resolveCtx, st.site.ID, titles[0])
 	if err != nil {
-		return
+		return nil, fmt.Sprintf("%s: search failed (%v)", st.site.Name, err)
 	}
-	bound := map[string]bool{}
-	for _, b := range bindings {
-		bound[b.SourceID] = true // any state: unmatched rows stop re-probing
-	}
-
-	var pendingSites []siteState
-	for _, st := range sites {
-		if st.usable && st.providerID == "suwayomi" && !bound[st.site.ID] {
-			pendingSites = append(pendingSites, st)
-		}
-	}
-	if len(pendingSites) == 0 {
-		return
-	}
-
-	type outcome struct {
-		st    siteState
-		note  string
-		bind  *store.Binding
-		fatal bool // transient error: do not persist
-	}
-	ch := make(chan outcome, len(pendingSites))
-	for _, st := range pendingSites {
-		go func(st siteState) {
-			resolveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-			defer cancel()
-			refs, err := resolver.ResolveManga(resolveCtx, st.site.ID, titles[0])
-			if err != nil {
-				ch <- outcome{st: st, note: fmt.Sprintf("%s: search failed (%v)", st.site.Name, err), fatal: true}
-				return
-			}
-			bestScore, bestRef := 0.0, provider.MangaRef{}
-			for _, ref := range refs {
-				for _, t := range titles {
-					if sc := match.Similarity(match.Normalize(t), match.Normalize(ref.Title)); sc > bestScore {
-						bestScore, bestRef = sc, ref
-					}
-				}
-			}
-			switch {
-			case bestScore >= match.AutoThreshold:
-				ch <- outcome{st: st, note: fmt.Sprintf("auto-bound %s → %q", st.site.Name, bestRef.Title),
-					bind: &store.Binding{
-						SeriesID: seriesID, SourceID: st.site.ID,
-						SourceMangaID: bestRef.ID, SourceName: st.site.Name,
-						State: "active", Priority: st.setting.Priority,
-					}}
-			case bestScore > 0:
-				ch <- outcome{st: st, note: fmt.Sprintf("%s: no confident match (best %q %.2f)", st.site.Name, bestRef.Title, bestScore),
-					bind: &store.Binding{
-						SeriesID: seriesID, SourceID: st.site.ID,
-						SourceMangaID: bestRef.ID, SourceName: st.site.Name,
-						State: "unmatched",
-					}}
-			default:
-				ch <- outcome{st: st, note: fmt.Sprintf("%s: no results", st.site.Name),
-					bind: &store.Binding{
-						SeriesID: seriesID, SourceID: st.site.ID,
-						SourceMangaID: 0, SourceName: st.site.Name,
-						State: "unmatched",
-					}}
-			}
-		}(st)
-	}
-	for range pendingSites {
-		o := <-ch
-		*notes = append(*notes, o.note)
-		if o.bind != nil {
-			if _, err := s.store.AddBinding(ctx, *o.bind); err != nil {
-				slog.Warn("persisting binding failed", "site", o.st.site.Name, "error", err)
+	bestScore, bestRef := 0.0, provider.MangaRef{}
+	for _, ref := range refs {
+		for _, t := range titles {
+			if sc := match.Similarity(match.Normalize(t), match.Normalize(ref.Title)); sc > bestScore {
+				bestScore, bestRef = sc, ref
 			}
 		}
 	}
+	bind := store.Binding{
+		SeriesID: seriesID, SourceID: st.site.ID,
+		SourceMangaID: bestRef.ID, SourceName: st.site.Name,
+		State: "unmatched",
+	}
+	var note string
+	switch {
+	case bestScore >= match.AutoThreshold:
+		bind.State, bind.Priority = "active", st.setting.Priority
+		note = fmt.Sprintf("auto-bound %s → %q", st.site.Name, bestRef.Title)
+	case bestScore > 0:
+		note = fmt.Sprintf("%s: no confident match (best %q %.2f)", st.site.Name, bestRef.Title, bestScore)
+	default:
+		note = fmt.Sprintf("%s: no results", st.site.Name)
+	}
+	if id, err := s.store.AddBinding(ctx, bind); err != nil {
+		slog.Warn("persisting binding failed", "site", st.site.Name, "error", err)
+	} else {
+		bind.ID = id
+	}
+	return &bind, note
 }
 
-// FindCandidates runs the unified search for one ledger. With a target,
-// only that slot counts as wanted (interactive search, any slot state).
-func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot) (*SearchResult, error) {
+// SearchEvent is one frame of a streaming search: "sites" announces what
+// will be searched, "batch" delivers processed candidates as soon as one
+// search unit finishes (a single extension source, or one provider's
+// indexer sweep), "done" closes the stream.
+type SearchEvent struct {
+	Type         string             `json:"type"` // sites | batch | done
+	Ledger       string             `json:"ledger,omitempty"`
+	Searched     []string           `json:"searched,omitempty"`
+	Provider     string             `json:"provider,omitempty"`
+	Sites        []string           `json:"sites,omitempty"` // searched entries this batch covers
+	Candidates   []ReleaseCandidate `json:"candidates,omitempty"`
+	Dropped      int                `json:"dropped,omitempty"`
+	Error        string             `json:"error,omitempty"`
+	BindingNotes []string           `json:"bindingNotes,omitempty"`
+}
+
+// searchRun is the resolved context of one search, shared by all provider
+// goroutines (read-only after prepare).
+type searchRun struct {
+	seriesID    int64
+	ledger      string
+	target      *TargetSlot
+	titles      []string
+	sites       []siteState
+	allowed     map[string]map[string]bool
+	priorities  map[[2]string]int
+	searched    []string
+	wanted      map[int64]map[int64]bool
+	collections []store.Collection
+	chapterLang string
+}
+
+func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot) (*searchRun, error) {
 	if s.registry.Empty() {
 		return nil, fmt.Errorf("no search providers configured")
 	}
@@ -213,57 +198,35 @@ func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, sear
 	if err != nil {
 		return nil, err
 	}
-
-	result := &SearchResult{Ledger: searchLedger, Candidates: []ReleaseCandidate{}}
-
 	sites, err := s.effectiveSites(ctx, seriesID, searchLedger)
 	if err != nil {
 		return nil, err
 	}
-	allowed := map[string]map[string]bool{}
-	priorities := map[[2]string]int{}
+	run := &searchRun{
+		seriesID: seriesID, ledger: searchLedger, target: target,
+		titles: titles, sites: sites,
+		allowed: map[string]map[string]bool{}, priorities: map[[2]string]int{},
+	}
 	for _, st := range sites {
-		if allowed[st.providerID] == nil {
-			allowed[st.providerID] = map[string]bool{}
+		if run.allowed[st.providerID] == nil {
+			run.allowed[st.providerID] = map[string]bool{}
 		}
 		if st.usable {
-			allowed[st.providerID][st.site.ID] = true
-			result.Searched = append(result.Searched, st.providerID+"/"+st.site.Name)
+			run.allowed[st.providerID][st.site.ID] = true
+			run.searched = append(run.searched, st.providerID+"/"+st.site.Name)
 		}
-		priorities[[2]string{st.providerID, st.site.ID}] = st.setting.Priority
+		run.priorities[[2]string{st.providerID, st.site.ID}] = st.setting.Priority
 	}
-
-	s.ensureBindings(ctx, seriesID, titles, sites, &result.BindingNotes)
-
-	bindings, err := s.store.ListBindings(ctx, seriesID)
+	run.wanted, run.collections, run.chapterLang, err = s.wantedSlots(ctx, seriesID, searchLedger, target)
 	if err != nil {
 		return nil, err
 	}
-	req := provider.SearchRequest{
-		SeriesID: seriesID, Query: titles[0], Titles: titles, Allowed: allowed,
-	}
-	for _, b := range bindings {
-		if b.State != "active" {
-			continue
-		}
-		req.Bindings = append(req.Bindings, provider.Binding{
-			BindingID: b.ID, SourceID: b.SourceID,
-			SourceMangaID: b.SourceMangaID, SourceName: b.SourceName,
-		})
-	}
+	return run, nil
+}
 
-	wanted, collections, chapterLang, err := s.wantedSlots(ctx, seriesID, searchLedger, target)
-	if err != nil {
-		return nil, err
-	}
-
-	candidates, errs := s.registry.SearchAll(ctx, req)
-	for _, e := range errs {
-		slog.Warn("search provider degraded", "error", e)
-		result.ProviderErrors = append(result.ProviderErrors, e.Error())
-	}
-
-	for _, cand := range candidates {
+// process parses, funnels and scores one provider's raw candidates.
+func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out []ReleaseCandidate, dropped int) {
+	for _, cand := range cands {
 		rc := ReleaseCandidate{
 			GUID: cand.GUID(), Provider: cand.Provider, Protocol: cand.Protocol,
 			Site: cand.Site, SiteID: cand.SiteID, Title: cand.Title, cand: cand,
@@ -280,21 +243,155 @@ func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, sear
 			rc.ChapterID = cand.Source.ChapterID
 			rc.Scanlator = cand.Source.Scanlator
 		}
-		rc.Parse = parse.ParseAnchored(cand.Title, channel, titles)
+		rc.Parse = parse.ParseAnchored(cand.Title, channel, run.titles)
 
-		ranges := s.coverageRanges(searchLedger, &rc)
+		ranges := s.coverageRanges(run.ledger, &rc)
 		// Keep number-less candidates only as potential whole-series packs
 		// (volume ledger).
-		isPack := searchLedger == LedgerVolume && rc.Parse.Complete
+		isPack := run.ledger == LedgerVolume && rc.Parse.Complete
 		if len(ranges) == 0 && !isPack {
-			result.Dropped++
+			dropped++
 			continue
 		}
-		s.funnel(searchLedger, &rc, ranges, collections, wanted, chapterLang, target)
-		rc.Score -= priorities[[2]string{rc.Provider, rc.SiteID}]
-		result.Candidates = append(result.Candidates, rc)
+		s.funnel(run.ledger, &rc, ranges, run.collections, run.wanted, run.chapterLang, run.target)
+		rc.Score -= run.priorities[[2]string{rc.Provider, rc.SiteID}]
+		out = append(out, rc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	return out, dropped
+}
+
+// searchOnce runs one search unit (one provider call under an Allowed
+// filter) and funnels its results.
+func (s *SearchService) searchOnce(ctx context.Context, p provider.Provider, run *searchRun,
+	allowed map[string]map[string]bool, siteNames []string, bindings []provider.Binding,
+) SearchEvent {
+	ev := SearchEvent{Type: "batch", Provider: p.ID(), Sites: siteNames}
+	cands, err := p.Search(ctx, provider.SearchRequest{
+		SeriesID: run.seriesID, Query: run.titles[0], Titles: run.titles,
+		Allowed: allowed, Bindings: bindings,
+	})
+	if err != nil {
+		slog.Warn("search degraded", "provider", p.ID(), "sites", siteNames, "error", err)
+		ev.Error = fmt.Sprintf("%s: %v", strings.Join(siteNames, ", "), err) // partial results still count
+	}
+	ev.Candidates, ev.Dropped = s.process(run, cands)
+	return ev
+}
+
+// streamProvider fans one provider out into search units. Extension
+// providers get one unit per site, each resolving its own missing binding
+// before searching — a sluggish source (or a slow first-time resolution)
+// doesn't hold back its siblings. Other providers are one unit: their
+// fan-out is server-side (Prowlarr).
+func (s *SearchService) streamProvider(ctx context.Context, p provider.Provider, run *searchRun, ch chan<- SearchEvent, wg *sync.WaitGroup) {
+	var mySites []string
+	for _, st := range run.sites {
+		if st.usable && st.providerID == p.ID() {
+			mySites = append(mySites, st.providerID+"/"+st.site.Name)
+		}
 	}
 
+	resolver, isResolver := p.(provider.MangaResolver)
+	if !isResolver {
+		ch <- s.searchOnce(ctx, p, run, run.allowed, mySites, nil)
+		return
+	}
+
+	bindings, err := s.store.ListBindings(ctx, run.seriesID)
+	if err != nil {
+		ch <- SearchEvent{Type: "batch", Provider: p.ID(), Sites: mySites,
+			Error: fmt.Sprintf("%s: %v", p.ID(), err)}
+		return
+	}
+	bySite := map[string][]store.Binding{}
+	for _, b := range bindings {
+		bySite[b.SourceID] = append(bySite[b.SourceID], b)
+	}
+
+	for _, st := range run.sites {
+		if !st.usable || st.providerID != p.ID() {
+			continue
+		}
+		wg.Add(1)
+		go func(st siteState) {
+			defer wg.Done()
+			siteBindings := bySite[st.site.ID]
+			var notes []string
+			if len(siteBindings) == 0 { // never probed: resolve now
+				bind, note := s.resolveBinding(ctx, resolver, run.seriesID, run.titles, st)
+				notes = append(notes, note)
+				if bind != nil {
+					siteBindings = []store.Binding{*bind}
+				}
+			}
+			var active []provider.Binding
+			for _, b := range siteBindings {
+				if b.State != "active" {
+					continue
+				}
+				active = append(active, provider.Binding{
+					BindingID: b.ID, SourceID: b.SourceID,
+					SourceMangaID: b.SourceMangaID, SourceName: b.SourceName,
+				})
+			}
+			ev := s.searchOnce(ctx, p, run,
+				map[string]map[string]bool{p.ID(): {st.site.ID: true}},
+				[]string{st.providerID + "/" + st.site.Name}, active)
+			ev.BindingNotes = notes
+			ch <- ev
+		}(st)
+	}
+}
+
+// FindCandidatesStream runs the unified search for one ledger, emitting a
+// batch per search unit as it completes. emit is always called from this
+// goroutine. With a target, only that slot counts as wanted (interactive
+// search, any slot state).
+func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot, emit func(SearchEvent)) error {
+	run, err := s.prepare(ctx, seriesID, searchLedger, target)
+	if err != nil {
+		return err
+	}
+	emit(SearchEvent{Type: "sites", Ledger: searchLedger, Searched: run.searched})
+
+	ch := make(chan SearchEvent)
+	var wg sync.WaitGroup
+	for _, p := range s.registry.All() {
+		wg.Add(1)
+		go func(p provider.Provider) {
+			defer wg.Done()
+			s.streamProvider(ctx, p, run, ch, &wg)
+		}(p)
+	}
+	go func() { wg.Wait(); close(ch) }()
+	for ev := range ch {
+		emit(ev)
+	}
+	emit(SearchEvent{Type: "done", Ledger: searchLedger})
+	return nil
+}
+
+// FindCandidates runs the unified search and collects the whole stream
+// into one result (scheduler, auto-grab and grab-by-GUID paths).
+func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot) (*SearchResult, error) {
+	result := &SearchResult{Ledger: searchLedger, Candidates: []ReleaseCandidate{}}
+	err := s.FindCandidatesStream(ctx, seriesID, searchLedger, target, func(ev SearchEvent) {
+		switch ev.Type {
+		case "sites":
+			result.Searched = ev.Searched
+		case "batch":
+			result.Candidates = append(result.Candidates, ev.Candidates...)
+			result.Dropped += ev.Dropped
+			result.BindingNotes = append(result.BindingNotes, ev.BindingNotes...)
+			if ev.Error != "" {
+				result.ProviderErrors = append(result.ProviderErrors, ev.Error)
+			}
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	sort.Slice(result.Candidates, func(i, j int) bool {
 		return result.Candidates[i].Score > result.Candidates[j].Score
 	})

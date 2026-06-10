@@ -151,6 +151,19 @@ export type SearchResponse = {
   bindingNotes?: string[]
 }
 
+// One NDJSON frame of a streaming search (POST {stream: true}).
+export type SearchEvent = {
+  type: 'sites' | 'batch' | 'done' | 'error'
+  ledger?: Ledger
+  searched?: string[]
+  provider?: string
+  sites?: string[] // searched entries this batch covers
+  candidates?: ReleaseCandidate[]
+  dropped?: number
+  error?: string
+  bindingNotes?: string[]
+}
+
 export type SiteView = {
   provider: string
   siteId: string
@@ -248,6 +261,42 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(opts),
     }),
+  // Streaming dry-run search: provider batches arrive as they complete.
+  searchStream: async (
+    id: number,
+    opts: { ledger: Ledger; slot?: { collectionId: number; number: number } },
+    onEvent: (ev: SearchEvent) => void,
+  ) => {
+    const res = await fetch(`${base}/series/${id}/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...opts, dryRun: true, stream: true }),
+    })
+    if (!res.ok || !res.body) {
+      let msg = `HTTP ${res.status}`
+      try {
+        const body = await res.json()
+        if (body.error) msg = body.error
+      } catch {
+        /* keep status message */
+      }
+      throw new Error(msg)
+    }
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      let nl
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim()
+        buf = buf.slice(nl + 1)
+        if (line) onEvent(JSON.parse(line) as SearchEvent)
+      }
+    }
+  },
   deleteFile: (fid: number) => request<void>(`/files/${fid}`, { method: 'DELETE' }),
 
   scanSeries: (id: number, path?: string) =>

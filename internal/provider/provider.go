@@ -183,30 +183,3 @@ func (r *Registry) ForProtocol(protocol string) Provider {
 	}
 	return nil
 }
-
-// SearchAll fans out to every provider in parallel, collecting partial
-// results; a failing provider degrades, never aborts.
-func (r *Registry) SearchAll(ctx context.Context, req SearchRequest) ([]Candidate, []error) {
-	type res struct {
-		cands []Candidate
-		err   error
-		id    string
-	}
-	ch := make(chan res, len(r.providers))
-	for _, p := range r.providers {
-		go func(p Provider) {
-			cands, err := p.Search(ctx, req)
-			ch <- res{cands: cands, err: err, id: p.ID()}
-		}(p)
-	}
-	var out []Candidate
-	var errs []error
-	for range r.providers {
-		rr := <-ch
-		if rr.err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", rr.id, rr.err))
-		}
-		out = append(out, rr.cands...) // partial results count even on error
-	}
-	return out, errs
-}
