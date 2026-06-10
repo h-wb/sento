@@ -21,6 +21,7 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/system/status", s.handleStatus)
 
 	r.Get("/lookup", s.handleLookup)
+	r.Get("/calendar", s.handleCalendar)
 	r.Delete("/files/{fid}", s.handleDeleteFile)
 	s.mountSourceAPI(r)
 
@@ -57,6 +58,20 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, refs)
+}
+
+// handleCalendar lists dated volume releases of monitored collections:
+// two weeks back, `days` ahead (default 60).
+func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	if days <= 0 {
+		days = 60
+	}
+	now := time.Now()
+	from := now.AddDate(0, 0, -14).Format("2006-01-02")
+	to := now.AddDate(0, 0, days).Format("2006-01-02")
+	entries, err := s.store.Calendar(r.Context(), from, to)
+	respondList(w, entries, err)
 }
 
 // --- series ---

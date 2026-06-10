@@ -2,6 +2,23 @@
 /* eslint-disable */
 
 //////////
+// source: calendar.go
+
+/**
+ * CalendarEntry is one dated volume release of a monitored collection.
+ */
+export interface CalendarEntry {
+  seriesId: number /* int64 */;
+  seriesTitle: string;
+  collectionId: number /* int64 */;
+  editionName: string;
+  sequenceNum: number /* int64 */; // hundredths
+  sequenceStr: string;
+  releaseDate: string;
+  owned: boolean;
+}
+
+//////////
 // source: history.go
 
 /**

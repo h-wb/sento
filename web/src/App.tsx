@@ -1,6 +1,7 @@
 import { AppShell, Group, NavLink, Text, Title } from '@mantine/core'
 import {
   IconBooks,
+  IconCalendar,
   IconDownload,
   IconPlus,
   IconServerBolt,
@@ -10,6 +11,7 @@ import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import LibraryPage from './pages/LibraryPage'
 import AddPage from './pages/AddPage'
 import SeriesPage from './pages/SeriesPage'
+import CalendarPage from './pages/CalendarPage'
 import QueuePage from './pages/QueuePage'
 import IndexersPage from './pages/IndexersPage'
 import SystemPage from './pages/SystemPage'
@@ -17,6 +19,7 @@ import SystemPage from './pages/SystemPage'
 const links = [
   { to: '/', label: 'Library', icon: IconBooks },
   { to: '/add', label: 'Add Series', icon: IconPlus },
+  { to: '/calendar', label: 'Calendar', icon: IconCalendar },
   { to: '/queue', label: 'Activity', icon: IconDownload },
   { to: '/indexers', label: 'Indexers', icon: IconWorldSearch },
   { to: '/system', label: 'System', icon: IconServerBolt },
@@ -55,6 +58,7 @@ export default function App() {
           <Route path="/" element={<LibraryPage />} />
           <Route path="/add" element={<AddPage />} />
           <Route path="/series/:id" element={<SeriesPage />} />
+          <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/queue" element={<QueuePage />} />
           <Route path="/indexers" element={<IndexersPage />} />
           <Route path="/system" element={<SystemPage />} />

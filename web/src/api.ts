@@ -24,6 +24,7 @@ import type {
 import type {
   Binding,
   BlocklistEntry,
+  CalendarEntry,
   ChapterLedger,
   Collection,
   Decision,
@@ -36,6 +37,7 @@ import type { Manga as SourceManga, MangaPage, Source } from './types/suwayomi'
 export type {
   Binding,
   BlocklistEntry,
+  CalendarEntry,
   ChapterLedger,
   ChapterSlot,
   Collection,
@@ -85,6 +87,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   status: () => request<SystemStatus>('/system/status'),
   lookup: (q: string) => request<LookupResult[]>(`/lookup?q=${encodeURIComponent(q)}`),
+  calendar: (days = 60) => request<CalendarEntry[]>(`/calendar?days=${days}`),
 
   listSeries: () => request<Series[]>('/series/'),
   addSeries: (body: Partial<AddSeriesRequest> & Pick<AddSeriesRequest, 'mangabakaId'>) =>
