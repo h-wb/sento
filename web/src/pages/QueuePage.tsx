@@ -8,6 +8,7 @@ import {
   Table,
   Text,
   Title,
+  Tooltip,
 } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
@@ -32,6 +33,18 @@ export default function QueuePage() {
   const process = useMutation({
     mutationFn: api.processQueue,
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['queue'] }),
+  })
+  const { data: blocked } = useQuery({ queryKey: ['blocklist'], queryFn: api.blocklist })
+  const block = useMutation({
+    mutationFn: (qid: number) => api.blocklistQueueItem(qid),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] })
+      queryClient.invalidateQueries({ queryKey: ['blocklist'] })
+    },
+  })
+  const unblock = useMutation({
+    mutationFn: (id: number) => api.unblock(id),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['blocklist'] }),
   })
 
   return (
@@ -67,12 +80,28 @@ export default function QueuePage() {
           {items?.map((i) => (
             <Table.Tr key={i.id}>
               <Table.Td>
-                <Text size="sm">{i.title}</Text>
-                {i.error && (
-                  <Text size="xs" c="red">
-                    {i.error}
-                  </Text>
-                )}
+                <Group gap={6} wrap="nowrap">
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <Text size="sm">{i.title}</Text>
+                    {i.error && (
+                      <Text size="xs" c="red">
+                        {i.error}
+                      </Text>
+                    )}
+                  </div>
+                  {i.status === 'failed' && (
+                    <Tooltip label="Blocklist this release (never grab it again)">
+                      <Button
+                        size="compact-xs"
+                        variant="subtle"
+                        color="orange"
+                        onClick={() => block.mutate(i.id)}
+                      >
+                        Blocklist
+                      </Button>
+                    </Tooltip>
+                  )}
+                </Group>
               </Table.Td>
               <Table.Td>
                 <Badge size="xs" variant="outline">
@@ -97,6 +126,40 @@ export default function QueuePage() {
         <Text c="dimmed" mt="md">
           Queue is empty.
         </Text>
+      )}
+
+      {blocked && blocked.length > 0 && (
+        <>
+          <Title order={4} mt="xl" mb="xs">
+            Blocklist
+          </Title>
+          <Table maw={860}>
+            <Table.Tbody>
+              {blocked.map((b) => (
+                <Table.Tr key={b.id}>
+                  <Table.Td>
+                    <Text size="xs" style={{ wordBreak: 'break-all' }}>
+                      {b.key}
+                    </Text>
+                    <Text size="xs" c="dimmed" lineClamp={1}>
+                      {b.reason}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td w={90}>
+                    <Badge size="xs" variant="outline">
+                      {b.protocol}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td w={90}>
+                    <Button size="compact-xs" variant="subtle" onClick={() => unblock.mutate(b.id)}>
+                      Unblock
+                    </Button>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </>
       )}
     </>
   )

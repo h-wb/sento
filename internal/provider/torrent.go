@@ -120,11 +120,7 @@ func (p *TorrentProvider) Grab(ctx context.Context, c Candidate) (string, error)
 	default:
 		return "", fmt.Errorf("torrent: candidate has no magnet or download url")
 	}
-	externalID := c.Torrent.InfoHash
-	if externalID == "" {
-		externalID = strings.ToLower(c.Torrent.GUID)
-	}
-	return externalID, nil
+	return c.ExternalKey(), nil
 }
 
 func fetchTorrentFile(ctx context.Context, url string) ([]byte, error) {

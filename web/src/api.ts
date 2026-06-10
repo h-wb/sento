@@ -23,8 +23,10 @@ import type {
 } from './types/service'
 import type {
   Binding,
+  BlocklistEntry,
   ChapterLedger,
   Collection,
+  Decision,
   File as SeriesFile,
   QueueItem,
   Series,
@@ -33,9 +35,11 @@ import type { Manga as SourceManga, MangaPage, Source } from './types/suwayomi'
 
 export type {
   Binding,
+  BlocklistEntry,
   ChapterLedger,
   ChapterSlot,
   Collection,
+  Decision,
   QueueItem,
   ReleaseCandidate,
   ScanResult,
@@ -182,6 +186,15 @@ export const api = {
 
   queue: (all = false) => request<QueueItem[]>(`/queue${all ? '?all=1' : ''}`),
   processQueue: () => request<{ processed: number }>('/queue/process', { method: 'POST' }),
+  blocklistQueueItem: (qid: number) =>
+    request<void>(`/queue/${qid}/blocklist`, { method: 'POST' }),
+
+  history: (seriesId?: number, limit = 100) =>
+    request<Decision[]>(
+      seriesId ? `/series/${seriesId}/history?limit=${limit}` : `/history?limit=${limit}`,
+    ),
+  blocklist: () => request<BlocklistEntry[]>('/blocklist'),
+  unblock: (id: number) => request<void>(`/blocklist/${id}`, { method: 'DELETE' }),
 }
 
 export function fmtNum(hundredths: number): string {

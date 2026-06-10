@@ -23,6 +23,75 @@ func (s *Server) mountSourceAPI(r chi.Router) {
 	r.Post("/series/{id}/search", s.handleSearch)
 	r.Get("/queue", s.handleQueue)
 	r.Post("/queue/process", s.handleQueueProcess)
+	r.Post("/queue/{qid}/blocklist", s.handleQueueBlocklist)
+
+	r.Get("/history", s.handleHistory)
+	r.Get("/series/{id}/history", s.handleHistory)
+	r.Get("/blocklist", s.handleListBlocklist)
+	r.Delete("/blocklist/{bid}", s.handleDeleteBlocklist)
+}
+
+// --- history & blocklist ---
+
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	var seriesID int64
+	if chi.URLParam(r, "id") != "" {
+		id, ok := pathID(w, r, "id")
+		if !ok {
+			return
+		}
+		seriesID = id
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	decisions, err := s.store.ListDecisions(r.Context(), seriesID, limit)
+	respondList(w, decisions, err)
+}
+
+func (s *Server) handleListBlocklist(w http.ResponseWriter, r *http.Request) {
+	entries, err := s.store.ListBlocklist(r.Context())
+	respondList(w, entries, err)
+}
+
+func (s *Server) handleDeleteBlocklist(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	if err := s.store.DeleteBlocklist(r.Context(), id); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleQueueBlocklist manually bans a queue item's release (typically a
+// failed import whose release is actually bad) and marks the item failed.
+func (s *Server) handleQueueBlocklist(w http.ResponseWriter, r *http.Request) {
+	qid, ok := pathID(w, r, "qid")
+	if !ok {
+		return
+	}
+	items, err := s.store.ListQueueItems(r.Context(), false)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, item := range items {
+		if item.ID != qid {
+			continue
+		}
+		if err := s.store.AddBlocklist(r.Context(), item.Protocol, item.ExternalID, "blocked manually"); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		_ = s.store.UpdateQueueItem(r.Context(), item.ID, store.QueueFailed, "blocked manually")
+		_ = s.store.AddDecision(r.Context(), item.SeriesID, store.DecisionBody{
+			Event: "blocklisted", Title: item.Title, Key: item.ExternalID,
+		})
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeError(w, http.StatusNotFound, "queue item not found")
 }
 
 // --- indexer settings ---

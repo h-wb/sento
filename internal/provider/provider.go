@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -96,6 +98,22 @@ func (c Candidate) GUID() string {
 		return c.Torrent.GUID
 	case c.Source != nil:
 		return fmt.Sprintf("source-%s-%d", c.Source.SourceID, c.Source.ChapterID)
+	}
+	return ""
+}
+
+// ExternalKey is the download-side identity of a candidate — the same key
+// providers return from Grab (infohash / chapter id), used to match queue
+// items and blocklist entries.
+func (c Candidate) ExternalKey() string {
+	switch {
+	case c.Torrent != nil:
+		if c.Torrent.InfoHash != "" {
+			return strings.ToLower(c.Torrent.InfoHash)
+		}
+		return strings.ToLower(c.Torrent.GUID)
+	case c.Source != nil:
+		return strconv.FormatInt(c.Source.ChapterID, 10)
 	}
 	return ""
 }

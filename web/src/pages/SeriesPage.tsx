@@ -146,6 +146,7 @@ export default function SeriesPage() {
           <Tabs.Tab value="chapters">Chapters</Tabs.Tab>
           <Tabs.Tab value="indexers">Indexers</Tabs.Tab>
           <Tabs.Tab value="files">Files ({files.length})</Tabs.Tab>
+          <Tabs.Tab value="history">History</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="volumes" pt="md">
@@ -216,6 +217,9 @@ export default function SeriesPage() {
             {files.length === 0 && <Text c="dimmed">No files yet.</Text>}
           </Stack>
         </Tabs.Panel>
+        <Tabs.Panel value="history" pt="md">
+          <HistoryTab seriesID={seriesID} />
+        </Tabs.Panel>
       </Tabs>
 
       <SlotModal
@@ -226,6 +230,69 @@ export default function SeriesPage() {
         onChanged={load}
       />
     </>
+  )
+}
+
+const eventColor: Record<string, string> = {
+  grabbed: 'indigo',
+  imported: 'green',
+  import_failed: 'red',
+  download_failed: 'red',
+  blocklisted: 'orange',
+}
+
+function HistoryTab({ seriesID }: { seriesID: number }) {
+  const { data: events } = useQuery({
+    queryKey: ['series', seriesID, 'history'],
+    queryFn: () => api.history(seriesID),
+  })
+
+  if (events && events.length === 0)
+    return <Text c="dimmed">Nothing yet — grabs and imports will show up here.</Text>
+  return (
+    <Table striped>
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th>When</Table.Th>
+          <Table.Th>Event</Table.Th>
+          <Table.Th>Release</Table.Th>
+          <Table.Th>Site</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>
+        {events?.map((d) => (
+          <Table.Tr key={d.id}>
+            <Table.Td>
+              <Text size="xs" c="dimmed">
+                {d.createdAt}
+              </Text>
+            </Table.Td>
+            <Table.Td>
+              <Badge size="xs" color={eventColor[d.body.event] ?? 'gray'}>
+                {d.body.event}
+                {d.body.force ? ' (forced)' : ''}
+              </Badge>
+            </Table.Td>
+            <Table.Td>
+              <Text size="sm" lineClamp={1} title={d.body.title}>
+                {d.body.title}
+              </Text>
+              {d.body.error && (
+                <Text size="xs" c="red" lineClamp={1} title={d.body.error}>
+                  {d.body.error}
+                </Text>
+              )}
+            </Table.Td>
+            <Table.Td>
+              <Text size="xs" c="dimmed">
+                {d.body.provider}
+                {d.body.site ? `/${d.body.site}` : ''}
+              </Text>
+            </Table.Td>
+          </Table.Tr>
+        ))}
+      </Table.Tbody>
+    </Table>
   )
 }
 

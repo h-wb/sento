@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -69,14 +70,34 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 		if err != nil {
 			slog.Warn("queue item failed", "id", item.ID, "title", item.Title, "error", err)
 			_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueFailed, err.Error())
+			event := "import_failed"
+			if errors.Is(err, errDownloadDead) {
+				// Sonarr semantics: a download that never completes gets
+				// blocklisted so the next sweep picks another release.
+				// Import errors don't — they're usually local (paths,
+				// permissions), not the release's fault.
+				event = "download_failed"
+				_ = im.store.AddBlocklist(ctx, item.Protocol, item.ExternalID, err.Error())
+			}
+			_ = im.store.AddDecision(ctx, item.SeriesID, store.DecisionBody{
+				Event: event, Title: item.Title, Provider: prov.ID(),
+				Key: item.ExternalID, Error: err.Error(),
+			})
 			continue
 		}
 		if done {
 			imported++
+			_ = im.store.AddDecision(ctx, item.SeriesID, store.DecisionBody{
+				Event: "imported", Title: item.Title, Provider: prov.ID(),
+				Key: item.ExternalID,
+			})
 		}
 	}
 	return imported, nil
 }
+
+// errDownloadDead marks downloads that never completed (vs import errors).
+var errDownloadDead = errors.New("download dead")
 
 func (im *Importer) processItem(ctx context.Context, prov provider.Provider, item store.QueueItem) (bool, error) {
 	state, err := prov.State(ctx, item.ExternalID)
@@ -101,8 +122,8 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 				_ = rec.Recover(ctx)
 			}
 			if age > 10*time.Minute {
-				return false, fmt.Errorf("download neither in flight nor completed after %s (%s)",
-					age.Round(time.Second), state.Detail)
+				return false, fmt.Errorf("%w: neither in flight nor completed after %s (%s)",
+					errDownloadDead, age.Round(time.Second), state.Detail)
 			}
 		}
 		return false, nil

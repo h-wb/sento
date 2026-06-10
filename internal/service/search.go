@@ -188,6 +188,7 @@ type searchRun struct {
 	wanted      map[int64]map[int64]bool
 	collections []store.Collection
 	chapterLang string
+	blocked     map[string]bool // "protocol/externalKey" bans
 }
 
 func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot) (*searchRun, error) {
@@ -219,6 +220,9 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 	}
 	run.wanted, run.collections, run.chapterLang, err = s.wantedSlots(ctx, seriesID, searchLedger, target)
 	if err != nil {
+		return nil, err
+	}
+	if run.blocked, err = s.store.BlockedKeys(ctx); err != nil {
 		return nil, err
 	}
 	return run, nil
@@ -253,7 +257,11 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 			dropped++
 			continue
 		}
-		s.funnel(run.ledger, &rc, ranges, run.collections, run.wanted, run.chapterLang, run.target)
+		if run.blocked[cand.Protocol+"/"+cand.ExternalKey()] {
+			rc.Rejections = append(rc.Rejections, "rejected.blocklisted") // hard
+		} else {
+			s.funnel(run.ledger, &rc, ranges, run.collections, run.wanted, run.chapterLang, run.target)
+		}
 		rc.Score -= run.priorities[[2]string{rc.Provider, rc.SiteID}]
 		out = append(out, rc)
 	}
@@ -651,6 +659,7 @@ var hardRejections = map[string]bool{
 	"rejected.series_match":    true,
 	"rejected.edition_routing": true,
 	"rejected.no_coverage":     true,
+	"rejected.blocklisted":     true,
 }
 
 // GrabBest greedily grabs eligible candidates by slot coverage.
@@ -712,11 +721,19 @@ func (s *SearchService) Grab(ctx context.Context, seriesID int64, searchLedger s
 	if err != nil {
 		return 0, err
 	}
-	return s.store.AddQueueItem(ctx, store.QueueItem{
+	qid, err := s.store.AddQueueItem(ctx, store.QueueItem{
 		SeriesID:      seriesID,
 		Protocol:      c.Protocol,
 		ExternalID:    externalID,
 		Title:         c.Title,
 		ExpectedSlots: store.JSONText(slotsJSON),
 	})
+	if err == nil {
+		_ = s.store.AddDecision(ctx, seriesID, store.DecisionBody{
+			Event: "grabbed", Ledger: searchLedger, Title: c.Title,
+			Provider: c.Provider, Site: c.Site, Key: externalID,
+			Slots: slots, Force: force,
+		})
+	}
+	return qid, err
 }

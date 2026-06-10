@@ -2,6 +2,45 @@
 /* eslint-disable */
 
 //////////
+// source: history.go
+
+/**
+ * Decision is one history event (grab/import/failure) — the explainable
+ * record of everything Sento did autonomously.
+ */
+export interface Decision {
+  id: number /* int64 */;
+  seriesId: number /* int64 */;
+  body: DecisionBody;
+  createdAt: string;
+}
+/**
+ * DecisionBody is the JSON payload of one history event.
+ */
+export interface DecisionBody {
+  event: string; // grabbed | imported | import_failed | download_failed | blocklisted
+  ledger?: string;
+  title?: string; // release title
+  provider?: string;
+  site?: string;
+  key?: string; // external id (infohash / chapter id)
+  slots?: ExpectedSlot[];
+  error?: string;
+  force?: boolean;
+}
+/**
+ * BlocklistEntry bans one release (by protocol + external key) from ever
+ * being grabbed again.
+ */
+export interface BlocklistEntry {
+  id: number /* int64 */;
+  protocol: string;
+  key: string;
+  reason: string;
+  createdAt: string;
+}
+
+//////////
 // source: queue.go
 
 /**
