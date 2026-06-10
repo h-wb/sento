@@ -13,41 +13,25 @@ import {
   Title,
 } from '@mantine/core'
 import { IconSearch } from '@tabler/icons-react'
+import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api, type LookupResult } from '../api'
 
 export default function AddPage() {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<LookupResult[] | null>(null)
-  const [busy, setBusy] = useState(false)
   const [monitorAll, setMonitorAll] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
 
-  const search = async () => {
-    if (!query.trim()) return
-    setBusy(true)
-    setError(null)
-    try {
-      setResults(await api.lookup(query))
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
+  const lookup = useMutation({ mutationFn: (q: string) => api.lookup(q) })
+  const add = useMutation({
+    mutationFn: (r: LookupResult) => api.addSeries({ mangabakaId: r.mangabakaId, monitorAll }),
+    onSuccess: (s) => navigate(`/series/${s.id}`),
+  })
 
-  const add = async (r: LookupResult) => {
-    setBusy(true)
-    setError(null)
-    try {
-      const s = await api.addSeries({ mangabakaId: r.mangabakaId, monitorAll })
-      navigate(`/series/${s.id}`)
-    } catch (e) {
-      setError(String(e))
-      setBusy(false)
-    }
-  }
+  const search = () => query.trim() && lookup.mutate(query)
+  const results = lookup.data
+  const busy = lookup.isPending || add.isPending
+  const error = lookup.error ?? add.error
 
   return (
     <>
@@ -75,7 +59,7 @@ export default function AddPage() {
       />
       {error && (
         <Alert color="red" mb="md">
-          {error}
+          {String(error)}
         </Alert>
       )}
       <Stack>
@@ -97,7 +81,7 @@ export default function AddPage() {
                   ) : null}
                 </Group>
               </div>
-              <Button size="xs" onClick={() => add(r)} disabled={busy}>
+              <Button size="xs" onClick={() => add.mutate(r)} disabled={busy}>
                 Add
               </Button>
             </Group>

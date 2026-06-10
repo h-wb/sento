@@ -1,21 +1,16 @@
-import { useEffect, useState } from 'react'
 import { Alert, Badge, Card, Group, Text, Title } from '@mantine/core'
-import { api, type SystemStatus } from '../api'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../api'
 
 export default function SystemPage() {
-  const [status, setStatus] = useState<SystemStatus | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    api.status().then(setStatus).catch((e) => setError(String(e)))
-  }, [])
+  const { data: status, error } = useQuery({ queryKey: ['status'], queryFn: api.status })
 
   return (
     <>
       <Title order={2} mb="md">
         System
       </Title>
-      {error && <Alert color="red">{error}</Alert>}
+      {error && <Alert color="red">{String(error)}</Alert>}
       {status && (
         <Card withBorder maw={420} mb="lg">
           <Group justify="space-between">

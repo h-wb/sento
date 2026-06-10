@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   Alert,
   Badge,
@@ -9,7 +9,8 @@ import {
   Text,
   Title,
 } from '@mantine/core'
-import { api, type QueueItem } from '../api'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { api } from '../api'
 
 const statusColor: Record<string, string> = {
   queued: 'gray',
@@ -20,32 +21,18 @@ const statusColor: Record<string, string> = {
 }
 
 export default function QueuePage() {
-  const [items, setItems] = useState<QueueItem[] | null>(null)
   const [showAll, setShowAll] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const queryClient = useQueryClient()
 
-  const load = useCallback(() => {
-    api.queue(showAll).then(setItems).catch((e) => setError(String(e)))
-  }, [showAll])
-
-  useEffect(() => {
-    load()
-    const t = setInterval(load, 5000)
-    return () => clearInterval(t)
-  }, [load])
-
-  const process = async () => {
-    setBusy(true)
-    try {
-      await api.processQueue()
-      load()
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
+  const { data: items, error } = useQuery({
+    queryKey: ['queue', showAll],
+    queryFn: () => api.queue(showAll),
+    refetchInterval: 5000,
+  })
+  const process = useMutation({
+    mutationFn: api.processQueue,
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['queue'] }),
+  })
 
   return (
     <>
@@ -57,14 +44,14 @@ export default function QueuePage() {
             checked={showAll}
             onChange={(e) => setShowAll(e.currentTarget.checked)}
           />
-          <Button size="xs" onClick={process} loading={busy}>
+          <Button size="xs" onClick={() => process.mutate()} loading={process.isPending}>
             Process now
           </Button>
         </Group>
       </Group>
-      {error && (
+      {(error || process.error) && (
         <Alert color="red" mb="md">
-          {error}
+          {String(error ?? process.error)}
         </Alert>
       )}
       <Table striped highlightOnHover>

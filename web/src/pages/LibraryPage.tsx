@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -9,23 +8,19 @@ import {
   Text,
   Title,
 } from '@mantine/core'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { api, type Series } from '../api'
+import { api } from '../api'
 
 export default function LibraryPage() {
-  const [series, setSeries] = useState<Series[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    api.listSeries().then(setSeries).catch((e) => setError(String(e)))
-  }, [])
+  const { data: series, error } = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
 
   return (
     <>
       <Title order={2} mb="md">
         Library
       </Title>
-      {error && <Alert color="red">{error}</Alert>}
+      {error && <Alert color="red">{String(error)}</Alert>}
       {series && series.length === 0 && (
         <Text c="dimmed">Nothing here yet — add a series to get started.</Text>
       )}

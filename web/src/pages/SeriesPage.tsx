@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -19,6 +19,7 @@ import {
   Tooltip,
 } from '@mantine/core'
 import { IconRefresh, IconSearch, IconTrash } from '@tabler/icons-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   api,
@@ -28,8 +29,6 @@ import {
   type Collection,
   type ReleaseCandidate,
   type SearchResponse,
-  type Series,
-  type SeriesFile,
   type SeriesSiteView,
   type Slots,
 } from '../api'
@@ -40,30 +39,36 @@ export default function SeriesPage() {
   const seriesID = Number(id)
   const navigate = useNavigate()
 
-  const [series, setSeries] = useState<Series | null>(null)
-  const [collections, setCollections] = useState<Collection[]>([])
-  const [ledger, setLedger] = useState<ChapterLedger | null>(null)
-  const [slots, setSlots] = useState<Slots | null>(null)
-  const [files, setFiles] = useState<SeriesFile[]>([])
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [slotSel, setSlotSel] = useState<SlotSelection | null>(null)
 
-  const load = useCallback(() => {
-    api
-      .getSeries(seriesID)
-      .then((d) => {
-        setSeries(d.series ?? null)
-        setCollections(d.collections)
-        setLedger(d.chapterLedger ?? null)
-      })
-      .catch((e) => setError(String(e)))
-    api.slots(seriesID).then(setSlots).catch(() => {})
-    api.files(seriesID).then(setFiles).catch(() => {})
-  }, [seriesID])
+  const queryClient = useQueryClient()
+  const detail = useQuery({
+    queryKey: ['series', seriesID],
+    queryFn: () => api.getSeries(seriesID),
+  })
+  const slotsQuery = useQuery({
+    queryKey: ['series', seriesID, 'slots'],
+    queryFn: () => api.slots(seriesID),
+  })
+  const filesQuery = useQuery({
+    queryKey: ['series', seriesID, 'files'],
+    queryFn: () => api.files(seriesID),
+  })
 
-  useEffect(load, [load])
+  const series = detail.data?.series ?? null
+  const collections = detail.data?.collections ?? []
+  const ledger = detail.data?.chapterLedger ?? null
+  const slots = slotsQuery.data ?? null
+  const files = filesQuery.data ?? []
+
+  // Refresh everything under this series (slots, files, indexers, detail).
+  const load = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['series', seriesID] }),
+    [queryClient, seriesID],
+  )
 
   const run = async (fn: () => Promise<unknown>, doneMsg?: string) => {
     setBusy(true)
@@ -79,7 +84,10 @@ export default function SeriesPage() {
     }
   }
 
-  if (!series) return error ? <Alert color="red">{error}</Alert> : null
+  if (!series) {
+    const err = error ?? (detail.error ? String(detail.error) : null)
+    return err ? <Alert color="red">{err}</Alert> : null
+  }
 
   return (
     <>
@@ -497,26 +505,23 @@ function IndexersTab({
   run: (fn: () => Promise<unknown>, msg?: string) => void
   busy: boolean
 }) {
-  const [sites, setSites] = useState<SeriesSiteView[] | null>(null)
   const [rebind, setRebind] = useState<SeriesSiteView | null>(null)
-
-  const load = useCallback(() => {
-    api.seriesIndexers(seriesID).then(setSites).catch(() => {})
-  }, [seriesID])
-  useEffect(load, [load])
+  const { data: sites } = useQuery({
+    queryKey: ['series', seriesID, 'indexers'],
+    queryFn: () => api.seriesIndexers(seriesID),
+  })
 
   // Omitted fields decode to nil pointers server-side (= inherit), so
-  // undefined and an explicit null are equivalent here.
+  // undefined and an explicit null are equivalent here. run() invalidates
+  // the series queries, which re-fetches this tab.
   const override = (s: SeriesSiteView, patch: Record<string, boolean | undefined>) =>
     run(() =>
-      api
-        .setSeriesIndexerOverride(seriesID, s.provider, s.siteId, {
-          enabled: s.override?.enabled ?? undefined,
-          useVolumes: s.override?.useVolumes ?? undefined,
-          useChapters: s.override?.useChapters ?? undefined,
-          ...patch,
-        })
-        .then(load),
+      api.setSeriesIndexerOverride(seriesID, s.provider, s.siteId, {
+        enabled: s.override?.enabled ?? undefined,
+        useVolumes: s.override?.useVolumes ?? undefined,
+        useChapters: s.override?.useChapters ?? undefined,
+        ...patch,
+      }),
     )
 
   return (
@@ -631,10 +636,7 @@ function IndexersTab({
         site={rebind}
         busy={busy}
         run={run}
-        onClose={() => {
-          setRebind(null)
-          load()
-        }}
+        onClose={() => setRebind(null)}
       />
     </Stack>
   )

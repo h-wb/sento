@@ -1,26 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
 import { Alert, Badge, Switch, Table, Text, Title } from '@mantine/core'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type SiteView } from '../api'
 
 // Global indexer configuration: every site Sento can search, uniformly,
 // with per-ledger enablement.
 export default function IndexersPage() {
-  const [sites, setSites] = useState<SiteView[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const load = useCallback(() => {
-    api.indexerSettings().then(setSites).catch((e) => setError(String(e)))
-  }, [])
-  useEffect(load, [load])
-
-  const patch = async (s: SiteView, p: Parameters<typeof api.updateIndexerSetting>[2]) => {
-    try {
-      await api.updateIndexerSetting(s.provider, s.siteId, p)
-      load()
-    } catch (e) {
-      setError(String(e))
-    }
-  }
+  const queryClient = useQueryClient()
+  const { data: sites, error } = useQuery({
+    queryKey: ['indexers'],
+    queryFn: api.indexerSettings,
+  })
+  const patch = useMutation({
+    mutationFn: ({ s, p }: { s: SiteView; p: Parameters<typeof api.updateIndexerSetting>[2] }) =>
+      api.updateIndexerSetting(s.provider, s.siteId, p),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['indexers'] }),
+  })
 
   return (
     <>
@@ -31,9 +25,9 @@ export default function IndexersPage() {
         Every site Sento can search — torrent indexers and extension sources alike. Configure
         which ledgers each site serves; series can override these defaults individually.
       </Text>
-      {error && (
-        <Alert color="red" mb="md" withCloseButton onClose={() => setError(null)}>
-          {error}
+      {(error || patch.error) && (
+        <Alert color="red" mb="md">
+          {String(error ?? patch.error)}
         </Alert>
       )}
       <Table striped maw={760}>
@@ -70,7 +64,7 @@ export default function IndexersPage() {
                 <Switch
                   size="xs"
                   checked={s.enabled}
-                  onChange={(e) => patch(s, { enabled: e.currentTarget.checked })}
+                  onChange={(e) => patch.mutate({ s, p: { enabled: e.currentTarget.checked } })}
                 />
               </Table.Td>
               <Table.Td>
@@ -78,7 +72,7 @@ export default function IndexersPage() {
                   size="xs"
                   checked={s.useVolumes}
                   disabled={!s.enabled}
-                  onChange={(e) => patch(s, { useVolumes: e.currentTarget.checked })}
+                  onChange={(e) => patch.mutate({ s, p: { useVolumes: e.currentTarget.checked } })}
                 />
               </Table.Td>
               <Table.Td>
@@ -86,7 +80,7 @@ export default function IndexersPage() {
                   size="xs"
                   checked={s.useChapters}
                   disabled={!s.enabled}
-                  onChange={(e) => patch(s, { useChapters: e.currentTarget.checked })}
+                  onChange={(e) => patch.mutate({ s, p: { useChapters: e.currentTarget.checked } })}
                 />
               </Table.Td>
             </Table.Tr>
