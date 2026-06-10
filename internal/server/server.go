@@ -30,9 +30,10 @@ type Server struct {
 	store    *store.Store
 	provider metadata.Provider
 	library  *service.Library
-	suwa     *suwayomi.Client        // nil when unconfigured
-	grabber  *service.Grabber        // nil when unconfigured
-	volumes  *service.VolumeSearcher // nil when unconfigured
+	suwa     *suwayomi.Client // nil when unconfigured
+	prowlarr *prowlarr.Client // nil when unconfigured
+	grabber  *service.Grabber // nil when unconfigured
+	volumes  *service.VolumeSearcher
 	scanner  *service.Scanner
 }
 
@@ -50,12 +51,17 @@ func New(cfg config.Config, db *sql.DB, provider metadata.Provider) *Server {
 		s.suwa = suwayomi.New(cfg.Suwayomi.URL, cfg.Suwayomi.Username, cfg.Suwayomi.Password)
 		s.grabber = service.NewGrabber(st, s.suwa, library.DefaultNaming(), cfg.Library.Path)
 	}
-	if cfg.Prowlarr.URL != "" && cfg.QBittorrent.URL != "" {
-		pr := prowlarr.New(cfg.Prowlarr.URL, cfg.Prowlarr.APIKey)
-		qb := qbittorrent.New(cfg.QBittorrent.URL, cfg.QBittorrent.Username, cfg.QBittorrent.Password)
-		s.volumes = service.NewVolumeSearcher(st, pr, qb, library.DefaultNaming(),
-			cfg.Library.Path, cfg.QBittorrent.Category)
+	if cfg.Prowlarr.URL != "" {
+		s.prowlarr = prowlarr.New(cfg.Prowlarr.URL, cfg.Prowlarr.APIKey)
 	}
+	var qb *qbittorrent.Client
+	if cfg.QBittorrent.URL != "" {
+		qb = qbittorrent.New(cfg.QBittorrent.URL, cfg.QBittorrent.Username, cfg.QBittorrent.Password)
+	}
+	// The volume searcher always exists; it uses whichever providers are
+	// configured and reports clearly when none are.
+	s.volumes = service.NewVolumeSearcher(st, s.prowlarr, qb, s.suwa,
+		library.DefaultNaming(), cfg.Library.Path, cfg.QBittorrent.Category)
 	return s
 }
 

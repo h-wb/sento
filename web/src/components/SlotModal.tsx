@@ -199,9 +199,14 @@ export default function SlotModal({
                     {c.title}
                   </Text>
                   <Group gap={6} wrap="nowrap">
-                    <Text size="xs" c="dimmed">
-                      {fmtSize(c.size)} · {c.seeders}S · {c.indexer}
-                    </Text>
+                    <Badge size="xs" variant="outline" color={c.protocol === 'torrent' ? 'blue' : 'teal'}>
+                      {c.protocol}/{c.site}
+                    </Badge>
+                    {c.protocol === 'torrent' && (
+                      <Text size="xs" c="dimmed">
+                        {fmtSize(c.size ?? 0)} · {c.seeders ?? 0}S
+                      </Text>
+                    )}
                     {rejected ? (
                       <Badge size="xs" color="red" variant="light">
                         {rejected.replace('rejected.', '')}

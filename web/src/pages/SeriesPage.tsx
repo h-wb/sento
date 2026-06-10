@@ -351,9 +351,14 @@ function VolumesTab({
                   {c.title}
                 </Text>
                 <Group gap={6} wrap="nowrap">
-                  <Text size="xs" c="dimmed">
-                    {fmtSize(c.size)} · {c.seeders}S
-                  </Text>
+                  <Badge size="xs" variant="outline" color={c.protocol === 'torrent' ? 'blue' : 'teal'}>
+                    {c.protocol}/{c.site}
+                  </Badge>
+                  {c.protocol === 'torrent' && (
+                    <Text size="xs" c="dimmed">
+                      {fmtSize(c.size ?? 0)} · {c.seeders ?? 0}S
+                    </Text>
+                  )}
                   {c.rejections?.length ? (
                     <Badge size="xs" color="red" variant="light">
                       {c.rejections[0].replace('rejected.', '')}

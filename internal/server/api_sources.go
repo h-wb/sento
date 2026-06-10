@@ -14,6 +14,7 @@ import (
 
 func (s *Server) mountSourceAPI(r chi.Router) {
 	r.Get("/sources", s.handleListSources)
+	r.Get("/indexers", s.handleListIndexers)
 	r.Get("/sources/{sid}/search", s.handleSourceSearch)
 	r.Post("/series/{id}/search/chapters", s.handleChapterSearch)
 	r.Post("/series/{id}/search/volumes", s.handleVolumeSearch)
@@ -26,10 +27,6 @@ func (s *Server) mountSourceAPI(r chi.Router) {
 // eligible candidates are grabbed greedily by slot coverage
 // (decision-engine.md §4 selection).
 func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
-	if s.volumes == nil {
-		writeError(w, http.StatusServiceUnavailable, "prowlarr/qbittorrent are not configured")
-		return
-	}
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
@@ -50,6 +47,9 @@ func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
+	}
+	if candidates == nil {
+		candidates = []service.VolumeCandidate{}
 	}
 
 	var queued []int64
@@ -72,6 +72,47 @@ func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
 		queued = s.volumes.GrabBest(r.Context(), id, candidates)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"candidates": candidates, "queued": queued})
+}
+
+// handleListIndexers returns every search site Sento can use, across all
+// providers, in one uniform list: prowlarr/<indexer> and suwayomi/<source>.
+func (s *Server) handleListIndexers(w http.ResponseWriter, r *http.Request) {
+	type indexer struct {
+		Provider string `json:"provider"` // prowlarr | suwayomi
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Protocol string `json:"protocol"` // torrent | source
+		Lang     string `json:"lang,omitempty"`
+		Enabled  bool   `json:"enabled"`
+	}
+	out := []indexer{}
+	if s.prowlarr != nil {
+		idx, err := s.prowlarr.ListIndexers(r.Context())
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "prowlarr: "+err.Error())
+			return
+		}
+		for _, i := range idx {
+			out = append(out, indexer{
+				Provider: "prowlarr", ID: strconv.Itoa(i.ID), Name: i.Name,
+				Protocol: "torrent", Enabled: i.Enable,
+			})
+		}
+	}
+	if s.suwa != nil {
+		sources, err := s.suwa.ListSources(r.Context())
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "suwayomi: "+err.Error())
+			return
+		}
+		for _, src := range sources {
+			out = append(out, indexer{
+				Provider: "suwayomi", ID: src.ID, Name: src.Name,
+				Protocol: "source", Lang: src.Lang, Enabled: true,
+			})
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
@@ -157,6 +198,9 @@ func (s *Server) handleChapterSearch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
+	}
+	if candidates == nil {
+		candidates = []service.ChapterCandidate{}
 	}
 	resp := map[string]any{"candidates": candidates, "queued": []int64{}}
 	if !body.DryRun && len(candidates) > 0 {

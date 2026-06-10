@@ -217,11 +217,17 @@ func (g *Grabber) importChapter(ctx context.Context, item store.QueueItem, chapt
 	if err := json.Unmarshal(item.ExpectedSlots, &slots); err != nil || len(slots) == 0 {
 		return fmt.Errorf("queue item has no expected slots")
 	}
-	chapterNum := slots[0].Number
+	first := slots[0]
+	isVolume := first.Ledger == "volume"
 
-	ledgerInfo, err := g.store.GetChapterLedger(ctx, item.SeriesID)
-	if err != nil {
-		return err
+	lang := "en"
+	editionName := ""
+	if isVolume {
+		if col, err := g.store.GetCollection(ctx, first.CollectionID); err == nil {
+			editionName, lang = col.EditionName, col.Language
+		}
+	} else if cl, err := g.store.GetChapterLedger(ctx, item.SeriesID); err == nil {
+		lang = cl.Language
 	}
 
 	seriesDir := series.Path
@@ -234,33 +240,42 @@ func (g *Grabber) importChapter(ctx context.Context, item store.QueueItem, chapt
 		}
 	}
 
-	fileName := library.Render(g.naming.ChapterFile, library.NameTokens{
-		SeriesTitle: series.Title,
-		SeriesID:    series.MangaBakaID,
-		Volume:      -1,
-		Chapter:     chapterNum,
-		Lang:        ledgerInfo.Language,
-	})
-	destPath := seriesDir
-	if g.naming.ChapterDir != "" {
-		destPath += "/" + g.naming.ChapterDir
+	var destPath string
+	info := library.ComicInfo{
+		Series:      series.Title,
+		Summary:     series.Description,
+		Web:         fmt.Sprintf("https://mangabaka.org/%d", series.MangaBakaID),
+		LanguageISO: lang,
+		Notes:       fmt.Sprintf("mangabaka:%d sento:v1", series.MangaBakaID),
 	}
-	destPath += "/" + fileName
+	if isVolume {
+		fileName := library.Render(g.naming.VolumeFile, library.NameTokens{
+			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
+			Volume: first.Number, Chapter: -1, Edition: editionName, Lang: lang,
+		})
+		destPath = seriesDir + "/" + fileName
+		info.Volume = library.RenderPlainNum(first.Number)
+		// Also set Number: the merge would otherwise preserve whatever the
+		// source's ComicInfo guessed (often a year mis-parse).
+		info.Number = info.Volume
+	} else {
+		fileName := library.Render(g.naming.ChapterFile, library.NameTokens{
+			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
+			Volume: -1, Chapter: first.Number, Lang: lang,
+		})
+		destPath = seriesDir
+		if g.naming.ChapterDir != "" {
+			destPath += "/" + g.naming.ChapterDir
+		}
+		destPath += "/" + fileName
+		info.Number = library.RenderPlainNum(first.Number)
+	}
 
 	body, _, err := g.suwa.FetchCBZ(ctx, chapterID)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = body.Close() }()
-
-	info := library.ComicInfo{
-		Series:      series.Title,
-		Number:      library.RenderPlainNum(chapterNum),
-		Summary:     series.Description,
-		Web:         fmt.Sprintf("https://mangabaka.org/%d", series.MangaBakaID),
-		LanguageISO: ledgerInfo.Language,
-		Notes:       fmt.Sprintf("mangabaka:%d sento:v1", series.MangaBakaID),
-	}
 	size, err := library.ImportCBZ(body, destPath, info)
 	if err != nil {
 		return err

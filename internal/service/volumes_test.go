@@ -31,7 +31,7 @@ func TestVolumeFunnel(t *testing.T) {
 	}))
 	defer fake.Close()
 
-	vs := NewVolumeSearcher(st, prowlarr.New(fake.URL, "key"), nil,
+	vs := NewVolumeSearcher(st, prowlarr.New(fake.URL, "key"), nil, nil,
 		library.DefaultNaming(), t.TempDir(), "sento")
 
 	candidates, err := vs.FindVolumeCandidates(ctx, seriesID, nil)

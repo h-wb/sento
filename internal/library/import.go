@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ImportCBZ writes a CBZ stream to destPath (atomically via temp file),
@@ -17,6 +18,7 @@ func ImportCBZ(src io.Reader, destPath string, sentoInfo ComicInfo) (int64, erro
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return 0, err
 	}
+	cleanStaleTemps(filepath.Dir(destPath))
 
 	tmp, err := os.CreateTemp(filepath.Dir(destPath), ".sento-import-*")
 	if err != nil {
@@ -41,6 +43,21 @@ func ImportCBZ(src io.Reader, destPath string, sentoInfo ComicInfo) (int64, erro
 		return 0, err
 	}
 	return info.Size(), nil
+}
+
+// cleanStaleTemps removes leftover temp files from imports interrupted by
+// a crash/kill (the defer never ran). Anything older than an hour is junk.
+func cleanStaleTemps(dir string) {
+	matches, err := filepath.Glob(filepath.Join(dir, ".sento-import-*"))
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-time.Hour)
+	for _, m := range matches {
+		if info, err := os.Stat(m); err == nil && info.ModTime().Before(cutoff) {
+			_ = os.Remove(m)
+		}
+	}
 }
 
 var imageExts = map[string]bool{

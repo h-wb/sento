@@ -53,7 +53,7 @@ func (s *Scheduler) Start(ctx context.Context) {
 	if s.grabber != nil {
 		go s.loop(ctx, "chapter-check", s.intervals.ChapterCheck, s.tickChapters)
 	}
-	if s.volumes != nil {
+	if s.volumes != nil && s.volumes.HasProviders() {
 		go s.loop(ctx, "volume-sweep", s.intervals.VolumeSweep, s.tickVolumes)
 	}
 }

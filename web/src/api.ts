@@ -134,13 +134,24 @@ export type ChapterCandidate = {
 
 export type VolumeCandidate = {
   guid: string
+  protocol: 'torrent' | 'source'
+  site: string
   title: string
-  indexer: string
-  size: number
-  seeders: number
+  size?: number
+  seeders?: number
+  chapterId?: number
   covered?: number[]
   score: number
   rejections?: string[]
+}
+
+export type Indexer = {
+  provider: 'prowlarr' | 'suwayomi'
+  id: string
+  name: string
+  protocol: 'torrent' | 'source'
+  lang?: string
+  enabled: boolean
 }
 
 export type SeriesFile = {
@@ -178,6 +189,7 @@ export const api = {
   files: (id: number) => request<SeriesFile[]>(`/series/${id}/files`),
 
   sources: () => request<Source[]>('/sources'),
+  indexers: () => request<Indexer[]>('/indexers'),
   sourceSearch: (sid: string, q: string) =>
     request<{ mangas: SourceManga[] }>(`/sources/${sid}/search?q=${encodeURIComponent(q)}`),
   bindings: (id: number) => request<Binding[]>(`/series/${id}/bindings`),

@@ -82,6 +82,38 @@ func (c *Client) Search(ctx context.Context, query string, categories []int) ([]
 	return releases, nil
 }
 
+type Indexer struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	Enable   bool   `json:"enable"`
+}
+
+func (c *Client) ListIndexers(ctx context.Context) ([]Indexer, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/indexer", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Api-Key", c.apiKey)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("prowlarr: indexer list returned %d", resp.StatusCode)
+	}
+	var indexers []Indexer
+	if err := json.Unmarshal(body, &indexers); err != nil {
+		return nil, err
+	}
+	return indexers, nil
+}
+
 func (c *Client) Ping(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/health", nil)
 	if err != nil {
