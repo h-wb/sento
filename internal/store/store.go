@@ -1,5 +1,5 @@
-// Package store is the SQLite persistence layer. Hand-written queries for
-// now; sqlc can replace the internals later without changing callers.
+// Package store is the SQLite persistence layer: hand-written SQL, scany
+// for row mapping (columns match snake-cased field names or `db` tags).
 package store
 
 import (
@@ -25,7 +25,7 @@ func New(db *sql.DB) *Store { return &Store{db: db} }
 
 type Series struct {
 	ID            int64  `json:"id"`
-	MangaBakaID   int64  `json:"mangabakaId"`
+	MangaBakaID   int64  `json:"mangabakaId" db:"mangabaka_id"`
 	Title         string `json:"title"`
 	SortTitle     string `json:"sortTitle"`
 	Type          string `json:"type"`
@@ -45,12 +45,12 @@ type Series struct {
 type Collection struct {
 	ID          int64  `json:"id"`
 	SeriesID    int64  `json:"seriesId"`
-	ProviderID  string `json:"-"`
+	ProviderID  string `json:"-" db:"mb_collection_id"`
 	EditionName string `json:"editionName"`
 	Language    string `json:"language"`
 	Publisher   string `json:"publisher"`
 	Medium      string `json:"medium"`
-	Type        string `json:"type"`
+	Type        string `json:"type" db:"ctype"`
 	Monitored   bool   `json:"monitored"`
 	CountMain   int    `json:"countMain"`
 	CountExtra  int    `json:"countExtra"`
@@ -63,7 +63,7 @@ type Work struct {
 	ID           int64  `json:"id"`
 	CollectionID int64  `json:"collectionId"`
 	SequenceNum  int64  `json:"sequenceNum"` // hundredths
-	SequenceStr  string `json:"sequenceStr"`
+	SequenceStr  string `json:"sequenceStr" db:"sequence_string"`
 	CountType    string `json:"countType"`
 	ReleaseDate  string `json:"releaseDate,omitempty"`
 	ISBN         string `json:"isbn,omitempty"`
@@ -106,59 +106,25 @@ type Binding struct {
 
 // --- series ---
 
+const seriesColumns = `
+	id, mangabaka_id, title, sort_title, type, status,
+	COALESCE(content_rating,'') AS content_rating, COALESCE(year,0) AS year,
+	COALESCE(total_chapters,0) AS total_chapters,
+	COALESCE(final_volume,0) AS final_volume,
+	COALESCE(description,'') AS description, COALESCE(cover_url,'') AS cover_url,
+	monitored, COALESCE(path,'') AS path, added_at,
+	COALESCE(refreshed_at,'') AS refreshed_at`
+
 func (s *Store) ListSeries(ctx context.Context) ([]Series, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, mangabaka_id, title, sort_title, type, status,
-		       COALESCE(content_rating,''), COALESCE(year,0), COALESCE(total_chapters,0),
-		       COALESCE(final_volume,0), COALESCE(description,''), COALESCE(cover_url,''),
-		       monitored, COALESCE(path,''), added_at, COALESCE(refreshed_at,'')
-		FROM series ORDER BY sort_title`)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []Series
-	for rows.Next() {
-		var x Series
-		if err := rows.Scan(&x.ID, &x.MangaBakaID, &x.Title, &x.SortTitle, &x.Type, &x.Status,
-			&x.ContentRating, &x.Year, &x.TotalChapters, &x.FinalVolume, &x.Description,
-			&x.CoverURL, &x.Monitored, &x.Path, &x.AddedAt, &x.RefreshedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, x)
-	}
-	return out, rows.Err()
+	return list[Series](ctx, s, `SELECT `+seriesColumns+` FROM series ORDER BY sort_title`)
 }
 
 func (s *Store) GetSeries(ctx context.Context, id int64) (*Series, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, mangabaka_id, title, sort_title, type, status,
-		       COALESCE(content_rating,''), COALESCE(year,0), COALESCE(total_chapters,0),
-		       COALESCE(final_volume,0), COALESCE(description,''), COALESCE(cover_url,''),
-		       monitored, COALESCE(path,''), added_at, COALESCE(refreshed_at,'')
-		FROM series WHERE id = ?`, id)
-	var x Series
-	err := row.Scan(&x.ID, &x.MangaBakaID, &x.Title, &x.SortTitle, &x.Type, &x.Status,
-		&x.ContentRating, &x.Year, &x.TotalChapters, &x.FinalVolume, &x.Description,
-		&x.CoverURL, &x.Monitored, &x.Path, &x.AddedAt, &x.RefreshedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &x, nil
+	return get[Series](ctx, s, `SELECT `+seriesColumns+` FROM series WHERE id = ?`, id)
 }
 
 func (s *Store) DeleteSeries(ctx context.Context, id int64) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM series WHERE id = ?`, id)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.touch(ctx, `DELETE FROM series WHERE id = ?`, id)
 }
 
 // AddSeriesParams carries everything needed to create a library entry from
@@ -221,8 +187,8 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 		}
 		for _, w := range p.Works[col.ProviderID] {
 			if _, err := tx.ExecContext(ctx, `
-				INSERT OR IGNORE INTO works (collection_id, mb_work_id, sequence_num,
-					sequence_string, count_type, release_date, isbn, pages, raw_json)
+				INSERT INTO works (collection_id, mb_work_id, sequence_num, sequence_string,
+					count_type, release_date, isbn, pages, raw_json)
 				VALUES (?,?,?,?,?,?,?,?,?)`,
 				colID, w.ProviderID, int64(w.SequenceNum), w.SequenceStr, w.CountType,
 				w.ReleaseDate, w.ISBN, w.Pages, string(w.RawJSON)); err != nil {
@@ -250,112 +216,47 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 
 // --- collections / works ---
 
+const collectionColumns = `
+	id, series_id, COALESCE(mb_collection_id,'') AS mb_collection_id,
+	edition_name, language, publisher, medium, ctype, monitored,
+	COALESCE(count_main,0) AS count_main, COALESCE(count_extra,0) AS count_extra,
+	COALESCE(count_other,0) AS count_other,
+	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date`
+
 func (s *Store) ListCollections(ctx context.Context, seriesID int64) ([]Collection, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, series_id, COALESCE(mb_collection_id,''), edition_name, language,
-		       publisher, medium, ctype, monitored, COALESCE(count_main,0),
-		       COALESCE(count_extra,0), COALESCE(count_other,0),
-		       COALESCE(start_date,''), COALESCE(end_date,'')
+	return list[Collection](ctx, s, `SELECT `+collectionColumns+`
 		FROM collections WHERE series_id = ? ORDER BY edition_name, language, medium`, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []Collection
-	for rows.Next() {
-		var c Collection
-		if err := rows.Scan(&c.ID, &c.SeriesID, &c.ProviderID, &c.EditionName, &c.Language,
-			&c.Publisher, &c.Medium, &c.Type, &c.Monitored, &c.CountMain, &c.CountExtra,
-			&c.CountOther, &c.StartDate, &c.EndDate); err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
 }
 
 func (s *Store) GetCollection(ctx context.Context, id int64) (*Collection, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, series_id, COALESCE(mb_collection_id,''), edition_name, language,
-		       publisher, medium, ctype, monitored, COALESCE(count_main,0),
-		       COALESCE(count_extra,0), COALESCE(count_other,0),
-		       COALESCE(start_date,''), COALESCE(end_date,'')
-		FROM collections WHERE id = ?`, id)
-	var c Collection
-	err := row.Scan(&c.ID, &c.SeriesID, &c.ProviderID, &c.EditionName, &c.Language,
-		&c.Publisher, &c.Medium, &c.Type, &c.Monitored, &c.CountMain, &c.CountExtra,
-		&c.CountOther, &c.StartDate, &c.EndDate)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &c, nil
+	return get[Collection](ctx, s, `SELECT `+collectionColumns+` FROM collections WHERE id = ?`, id)
 }
 
 func (s *Store) SetCollectionMonitored(ctx context.Context, seriesID, collectionID int64, monitored bool) error {
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE collections SET monitored = ? WHERE id = ? AND series_id = ?`,
+	return s.touch(ctx, `UPDATE collections SET monitored = ? WHERE id = ? AND series_id = ?`,
 		monitored, collectionID, seriesID)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
 }
 
 func (s *Store) ListWorks(ctx context.Context, collectionID int64) ([]Work, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, collection_id, sequence_num, COALESCE(sequence_string,''), count_type,
-		       COALESCE(release_date,''), COALESCE(isbn,''), COALESCE(pages,0)
+	return list[Work](ctx, s, `
+		SELECT id, collection_id, sequence_num, COALESCE(sequence_string,'') AS sequence_string,
+		       count_type, COALESCE(release_date,'') AS release_date,
+		       COALESCE(isbn,'') AS isbn, COALESCE(pages,0) AS pages
 		FROM works WHERE collection_id = ? ORDER BY sequence_num`, collectionID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []Work
-	for rows.Next() {
-		var w Work
-		if err := rows.Scan(&w.ID, &w.CollectionID, &w.SequenceNum, &w.SequenceStr,
-			&w.CountType, &w.ReleaseDate, &w.ISBN, &w.Pages); err != nil {
-			return nil, err
-		}
-		out = append(out, w)
-	}
-	return out, rows.Err()
 }
 
 // --- chapter ledger ---
 
 func (s *Store) GetChapterLedger(ctx context.Context, seriesID int64) (*ChapterLedger, error) {
-	row := s.db.QueryRowContext(ctx, `
+	return get[ChapterLedger](ctx, s, `
 		SELECT series_id, monitored, language, cutoff_num
 		FROM chapter_ledgers WHERE series_id = ?`, seriesID)
-	var l ChapterLedger
-	err := row.Scan(&l.SeriesID, &l.Monitored, &l.Language, &l.CutoffNum)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &l, nil
 }
 
 func (s *Store) UpdateChapterLedger(ctx context.Context, l ChapterLedger) error {
-	res, err := s.db.ExecContext(ctx, `
+	return s.touch(ctx, `
 		UPDATE chapter_ledgers SET monitored = ?, language = ?, cutoff_num = ?
 		WHERE series_id = ?`, l.Monitored, l.Language, l.CutoffNum, l.SeriesID)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
 }
 
 // --- files & links ---
@@ -390,63 +291,39 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []SlotLink
 }
 
 func (s *Store) ListFiles(ctx context.Context, seriesID int64) ([]File, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	return list[File](ctx, s, `
 		SELECT id, series_id, path, size, provenance, unrequested, added_at
 		FROM files WHERE series_id = ? ORDER BY path`, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []File
-	for rows.Next() {
-		var f File
-		if err := rows.Scan(&f.ID, &f.SeriesID, &f.Path, &f.Size, &f.Provenance,
-			&f.Unrequested, &f.AddedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, f)
-	}
-	return out, rows.Err()
 }
 
 // DeleteFile removes a file row (links cascade) and returns its path so
 // the caller can remove it from disk.
 func (s *Store) DeleteFile(ctx context.Context, id int64) (string, error) {
-	var path string
-	err := s.db.QueryRowContext(ctx, `SELECT path FROM files WHERE id = ?`, id).Scan(&path)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrNotFound
-	}
+	path, err := get[string](ctx, s, `SELECT path FROM files WHERE id = ?`, id)
 	if err != nil {
 		return "", err
 	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM files WHERE id = ?`, id); err != nil {
 		return "", err
 	}
-	return path, nil
+	return *path, nil
 }
 
 // SlotLinks returns all links for a series keyed by "ledger/collection/number".
 func (s *Store) SlotLinks(ctx context.Context, seriesID int64) (map[string][]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	links, err := list[SlotLink](ctx, s, `
 		SELECT l.ledger, l.collection_id, l.number, l.file_id
 		FROM file_slot_links l JOIN files f ON f.id = l.file_id
 		WHERE f.series_id = ?`, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
 	out := map[string][]int64{}
-	for rows.Next() {
-		var ledger string
-		var colID, number, fileID int64
-		if err := rows.Scan(&ledger, &colID, &number, &fileID); err != nil {
-			return nil, err
-		}
-		key := SlotKey(ledger, colID, number)
-		out[key] = append(out[key], fileID)
+	for _, l := range links {
+		key := SlotKey(l.Ledger, l.CollectionID, l.Number)
+		out[key] = append(out[key], l.FileID)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func SlotKey(ledger string, collectionID, number int64) string {
@@ -456,23 +333,10 @@ func SlotKey(ledger string, collectionID, number int64) string {
 // --- bindings ---
 
 func (s *Store) ListBindings(ctx context.Context, seriesID int64) ([]Binding, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, series_id, source_id, source_manga_id, COALESCE(source_name,''), state, priority
+	return list[Binding](ctx, s, `
+		SELECT id, series_id, source_id, source_manga_id,
+		       COALESCE(source_name,'') AS source_name, state, priority
 		FROM source_bindings WHERE series_id = ? ORDER BY priority`, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []Binding
-	for rows.Next() {
-		var b Binding
-		if err := rows.Scan(&b.ID, &b.SeriesID, &b.SourceID, &b.SourceMangaID,
-			&b.SourceName, &b.State, &b.Priority); err != nil {
-			return nil, err
-		}
-		out = append(out, b)
-	}
-	return out, rows.Err()
 }
 
 func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
@@ -491,15 +355,7 @@ func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
 }
 
 func (s *Store) DeleteBinding(ctx context.Context, seriesID, bindingID int64) error {
-	res, err := s.db.ExecContext(ctx,
-		`DELETE FROM source_bindings WHERE id = ? AND series_id = ?`, bindingID, seriesID)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.touch(ctx, `DELETE FROM source_bindings WHERE id = ? AND series_id = ?`, bindingID, seriesID)
 }
 
 // --- helpers ---

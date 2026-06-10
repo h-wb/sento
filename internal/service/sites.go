@@ -35,7 +35,7 @@ type SiteView struct {
 
 // SeriesSiteView adds per-series override state and binding status.
 type SeriesSiteView struct {
-	SiteView
+	SiteView `tstype:",extends"`
 	Override *store.SiteOverride `json:"override,omitempty"`
 	Binding  *store.Binding      `json:"binding,omitempty"`
 }

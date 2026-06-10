@@ -54,9 +54,9 @@ export default function SeriesPage() {
     api
       .getSeries(seriesID)
       .then((d) => {
-        setSeries(d.series)
+        setSeries(d.series ?? null)
         setCollections(d.collections)
-        setLedger(d.chapterLedger)
+        setLedger(d.chapterLedger ?? null)
       })
       .catch((e) => setError(String(e)))
     api.slots(seriesID).then(setSlots).catch(() => {})
@@ -397,10 +397,12 @@ function ChaptersTab({
   const owned = monitored.filter((c) => (c.fileIds?.length ?? 0) > 0).length
   const wanted = chapters.filter((c) => c.wanted)
   const [cutoff, setCutoff] = useState<number | ''>('')
-
-  useEffect(() => {
-    if (ledger) setCutoff(ledger.cutoffNum / 100)
-  }, [ledger])
+  // Adjust-during-render: re-sync the input when the ledger (re)loads.
+  const [prevCutoff, setPrevCutoff] = useState<number | null>(null)
+  if (ledger && ledger.cutoffNum !== prevCutoff) {
+    setPrevCutoff(ledger.cutoffNum)
+    setCutoff(ledger.cutoffNum / 100)
+  }
 
   if (!ledger) return <Text c="dimmed">No chapter ledger.</Text>
 
@@ -503,13 +505,15 @@ function IndexersTab({
   }, [seriesID])
   useEffect(load, [load])
 
-  const override = (s: SeriesSiteView, patch: Record<string, boolean | null>) =>
+  // Omitted fields decode to nil pointers server-side (= inherit), so
+  // undefined and an explicit null are equivalent here.
+  const override = (s: SeriesSiteView, patch: Record<string, boolean | undefined>) =>
     run(() =>
       api
         .setSeriesIndexerOverride(seriesID, s.provider, s.siteId, {
-          enabled: s.override?.enabled ?? null,
-          useVolumes: s.override?.useVolumes ?? null,
-          useChapters: s.override?.useChapters ?? null,
+          enabled: s.override?.enabled ?? undefined,
+          useVolumes: s.override?.useVolumes ?? undefined,
+          useChapters: s.override?.useChapters ?? undefined,
           ...patch,
         })
         .then(load),
@@ -598,7 +602,11 @@ function IndexersTab({
                         size="compact-xs"
                         variant="subtle"
                         onClick={() =>
-                          override(s, { enabled: null, useVolumes: null, useChapters: null })
+                          override(s, {
+                            enabled: undefined,
+                            useVolumes: undefined,
+                            useChapters: undefined,
+                          })
                         }
                       >
                         Reset

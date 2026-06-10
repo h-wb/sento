@@ -2,7 +2,7 @@ package store
 
 import (
 	"context"
-	"database/sql"
+	"errors"
 )
 
 // SiteSetting is the global configuration of one search site.
@@ -34,37 +34,31 @@ func defaultSiteSetting(provider, siteID string) SiteSetting {
 
 // ListSiteSettings returns all stored global settings keyed provider/site.
 func (s *Store) ListSiteSettings(ctx context.Context) (map[[2]string]SiteSetting, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	settings, err := list[SiteSetting](ctx, s, `
 		SELECT provider, site_id, enabled, use_volumes, use_chapters, priority
 		FROM site_settings`)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
 	out := map[[2]string]SiteSetting{}
-	for rows.Next() {
-		var st SiteSetting
-		if err := rows.Scan(&st.Provider, &st.SiteID, &st.Enabled, &st.UseVolumes,
-			&st.UseChapters, &st.Priority); err != nil {
-			return nil, err
-		}
+	for _, st := range settings {
 		out[[2]string{st.Provider, st.SiteID}] = st
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // GlobalSiteSetting returns the stored setting or the permissive default.
 func (s *Store) GlobalSiteSetting(ctx context.Context, provider, siteID string) (SiteSetting, error) {
-	row := s.db.QueryRowContext(ctx, `
+	st, err := get[SiteSetting](ctx, s, `
 		SELECT provider, site_id, enabled, use_volumes, use_chapters, priority
 		FROM site_settings WHERE provider = ? AND site_id = ?`, provider, siteID)
-	var st SiteSetting
-	err := row.Scan(&st.Provider, &st.SiteID, &st.Enabled, &st.UseVolumes,
-		&st.UseChapters, &st.Priority)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, ErrNotFound) {
 		return defaultSiteSetting(provider, siteID), nil
 	}
-	return st, err
+	if err != nil {
+		return SiteSetting{}, err
+	}
+	return *st, nil
 }
 
 func (s *Store) UpsertSiteSetting(ctx context.Context, st SiteSetting) error {
@@ -82,32 +76,17 @@ func (s *Store) UpsertSiteSetting(ctx context.Context, st SiteSetting) error {
 
 // ListSiteOverrides returns the per-series overrides keyed provider/site.
 func (s *Store) ListSiteOverrides(ctx context.Context, seriesID int64) (map[[2]string]SiteOverride, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	overrides, err := list[SiteOverride](ctx, s, `
 		SELECT series_id, provider, site_id, enabled, use_volumes, use_chapters
 		FROM series_site_settings WHERE series_id = ?`, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
 	out := map[[2]string]SiteOverride{}
-	for rows.Next() {
-		var ov SiteOverride
-		var enabled, vols, chs sql.NullBool
-		if err := rows.Scan(&ov.SeriesID, &ov.Provider, &ov.SiteID, &enabled, &vols, &chs); err != nil {
-			return nil, err
-		}
-		if enabled.Valid {
-			ov.Enabled = &enabled.Bool
-		}
-		if vols.Valid {
-			ov.UseVolumes = &vols.Bool
-		}
-		if chs.Valid {
-			ov.UseChapters = &chs.Bool
-		}
+	for _, ov := range overrides {
 		out[[2]string{ov.Provider, ov.SiteID}] = ov
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // UpsertSiteOverride stores an override; all-nil fields delete it (inherit).

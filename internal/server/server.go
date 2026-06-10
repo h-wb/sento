@@ -110,14 +110,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	dbOK := s.db.PingContext(r.Context()) == nil
-	writeJSON(w, http.StatusOK, map[string]any{
-		"app":     "sento",
-		"version": version.Version,
-		"commit":  version.Commit,
-		"database": map[string]bool{
-			"ok": dbOK,
-		},
+	writeJSON(w, http.StatusOK, StatusResponse{
+		App:      "sento",
+		Version:  version.Version,
+		Commit:   version.Commit,
+		Database: DatabaseStatus{OK: s.db.PingContext(r.Context()) == nil},
 	})
 }
 

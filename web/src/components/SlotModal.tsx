@@ -128,6 +128,8 @@ export default function SlotModal({
                 done: true,
                 errors: [...prev.errors, ev.error ?? 'search failed'],
               }
+            default:
+              return prev
           }
         })
       })

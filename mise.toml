@@ -36,3 +36,7 @@ run = "npm run dev"
 description = "Build the web UI"
 dir = "web"
 run = "npm run build"
+
+[tasks.gen]
+description = "Generate TypeScript API types from Go structs"
+run = "go tool tygo generate"

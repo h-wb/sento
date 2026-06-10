@@ -1,4 +1,61 @@
-// Typed client for the Sento API (specs/data-api.md §2).
+// Typed client for the Sento API. All payload types are generated from the
+// Go structs (mise run gen) into ./types/ — the backend is the schema.
+
+import type { ChapterSlot, VolumeSlot } from './types/ledger'
+import type { SeriesRef } from './types/metadata'
+import type {
+  ChapterLedgerPatch,
+  IndexerSettingPatch,
+  OverridePatch,
+  SearchResponse,
+  SeriesDetail,
+  SlotsResponse,
+  StatusResponse,
+} from './types/server'
+import type {
+  AddSeriesRequest,
+  ReleaseCandidate,
+  ScanResult,
+  SearchEvent,
+  SeriesSiteView,
+  SiteView,
+  TargetSlot,
+} from './types/service'
+import type {
+  Binding,
+  ChapterLedger,
+  Collection,
+  File as SeriesFile,
+  QueueItem,
+  Series,
+} from './types/store'
+import type { Manga as SourceManga, MangaPage, Source } from './types/suwayomi'
+
+export type {
+  Binding,
+  ChapterLedger,
+  ChapterSlot,
+  Collection,
+  QueueItem,
+  ReleaseCandidate,
+  ScanResult,
+  SearchEvent,
+  SearchResponse,
+  Series,
+  SeriesDetail,
+  SeriesFile,
+  SeriesSiteView,
+  SiteView,
+  Source,
+  SourceManga,
+  TargetSlot,
+  VolumeSlot,
+}
+export type Slots = SlotsResponse
+export type SystemStatus = StatusResponse
+export type LookupResult = SeriesRef
+export type SiteOverride = OverridePatch
+export type Ledger = 'volume' | 'chapter'
 
 const base = '/api/v1'
 
@@ -21,192 +78,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
-export type SystemStatus = {
-  app: string
-  version: string
-  database: { ok: boolean }
-}
-
-export type LookupResult = {
-  mangabakaId: number
-  title: string
-  year?: number
-  type: string
-  status: string
-  coverUrl?: string
-}
-
-export type Series = {
-  id: number
-  mangabakaId: number
-  title: string
-  type: string
-  status: string
-  year?: number
-  totalChapters: number
-  finalVolume: number
-  description?: string
-  coverUrl?: string
-  monitored: boolean
-  path?: string
-  addedAt: string
-}
-
-export type Collection = {
-  id: number
-  seriesId: number
-  editionName: string
-  language: string
-  publisher: string
-  medium: string
-  type: string
-  monitored: boolean
-  countMain: number
-}
-
-export type ChapterLedger = {
-  seriesId: number
-  monitored: boolean
-  language: string
-  cutoffNum: number
-}
-
-export type VolumeSlot = {
-  number: number
-  sequenceStr: string
-  countType: string
-  releaseDate?: string
-  monitored: boolean
-  released: boolean
-  fileIds?: number[]
-  wanted: boolean
-}
-
-export type ChapterSlot = {
-  number: number
-  monitored: boolean
-  fileIds?: number[]
-  wanted: boolean
-}
-
-export type Slots = {
-  volumes: Record<string, VolumeSlot[]>
-  chapters?: ChapterSlot[]
-}
-
-export type Source = { id: string; name: string; lang: string }
-
-export type SourceManga = {
-  id: number
-  title: string
-  url: string
-  sourceId: string
-}
-
-export type Binding = {
-  id: number
-  seriesId: number
-  sourceId: string
-  sourceMangaId: number
-  sourceName: string
-  state: string
-  priority: number
-}
-
-export type QueueItem = {
-  id: number
-  seriesId: number
-  protocol: string
-  title: string
-  status: string
-  error?: string
-  createdAt: string
-}
-
-export type Ledger = 'volume' | 'chapter'
-
-export type ReleaseCandidate = {
-  guid: string
-  provider: string
-  protocol: 'torrent' | 'source'
-  site: string
-  siteId: string
-  title: string
-  size?: number
-  seeders?: number
-  chapterId?: number
-  scanlator?: string
-  covered?: number[]
-  score: number
-  rejections?: string[]
-}
-
-export type SearchResponse = {
-  ledger: Ledger
-  candidates: ReleaseCandidate[]
-  queued: number[]
-  searched: string[]
-  dropped: number
-  providerErrors?: string[]
-  bindingNotes?: string[]
-}
-
-// One NDJSON frame of a streaming search (POST {stream: true}).
-export type SearchEvent = {
-  type: 'sites' | 'batch' | 'done' | 'error'
-  ledger?: Ledger
-  searched?: string[]
-  provider?: string
-  sites?: string[] // searched entries this batch covers
-  candidates?: ReleaseCandidate[]
-  dropped?: number
-  error?: string
-  bindingNotes?: string[]
-}
-
-export type SiteView = {
-  provider: string
-  siteId: string
-  name: string
-  protocol: 'torrent' | 'source'
-  lang?: string
-  reachable: boolean
-  enabled: boolean
-  useVolumes: boolean
-  useChapters: boolean
-  priority: number
-}
-
-export type SiteOverride = {
-  enabled?: boolean | null
-  useVolumes?: boolean | null
-  useChapters?: boolean | null
-}
-
-export type SeriesSiteView = SiteView & {
-  override?: SiteOverride | null
-  binding?: Binding | null
-}
-
-export type SeriesFile = {
-  id: number
-  path: string
-  size: number
-  provenance: string
-  unrequested: boolean
-}
-
 export const api = {
   status: () => request<SystemStatus>('/system/status'),
   lookup: (q: string) => request<LookupResult[]>(`/lookup?q=${encodeURIComponent(q)}`),
 
   listSeries: () => request<Series[]>('/series/'),
-  addSeries: (body: { mangabakaId: number; monitorAll?: boolean; chapterCutoff?: number }) =>
+  addSeries: (body: Partial<AddSeriesRequest> & Pick<AddSeriesRequest, 'mangabakaId'>) =>
     request<Series>('/series/', { method: 'POST', body: JSON.stringify(body) }),
-  getSeries: (id: number) =>
-    request<{ series: Series; collections: Collection[]; chapterLedger: ChapterLedger | null }>(
-      `/series/${id}/`,
-    ),
+  getSeries: (id: number) => request<SeriesDetail>(`/series/${id}/`),
   deleteSeries: (id: number) => request<void>(`/series/${id}/`, { method: 'DELETE' }),
   refreshSeries: (id: number) => request<unknown>(`/series/${id}/refresh`, { method: 'POST' }),
   slots: (id: number) => request<Slots>(`/series/${id}/slots`),
@@ -215,7 +94,7 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ monitored }),
     }),
-  updateChapterLedger: (id: number, body: Partial<ChapterLedger>) =>
+  updateChapterLedger: (id: number, body: ChapterLedgerPatch) =>
     request<ChapterLedger>(`/series/${id}/chapter-ledger`, {
       method: 'PUT',
       body: JSON.stringify(body),
@@ -224,23 +103,19 @@ export const api = {
 
   sources: () => request<Source[]>('/sources'),
   indexerSettings: () => request<SiteView[]>('/settings/indexers'),
-  updateIndexerSetting: (
-    provider: string,
-    siteId: string,
-    patch: { enabled?: boolean; useVolumes?: boolean; useChapters?: boolean; priority?: number },
-  ) =>
+  updateIndexerSetting: (provider: string, siteId: string, patch: IndexerSettingPatch) =>
     request<SiteView>(`/settings/indexers/${provider}/${encodeURIComponent(siteId)}`, {
       method: 'PUT',
       body: JSON.stringify(patch),
     }),
   seriesIndexers: (id: number) => request<SeriesSiteView[]>(`/series/${id}/indexers`),
-  setSeriesIndexerOverride: (id: number, provider: string, siteId: string, ov: SiteOverride) =>
+  setSeriesIndexerOverride: (id: number, provider: string, siteId: string, ov: OverridePatch) =>
     request<unknown>(`/series/${id}/indexers/${provider}/${encodeURIComponent(siteId)}`, {
       method: 'PUT',
       body: JSON.stringify(ov),
     }),
   sourceSearch: (sid: string, q: string) =>
-    request<{ mangas: SourceManga[] }>(`/sources/${sid}/search?q=${encodeURIComponent(q)}`),
+    request<MangaPage>(`/sources/${sid}/search?q=${encodeURIComponent(q)}`),
   bindings: (id: number) => request<Binding[]>(`/series/${id}/bindings`),
   addBinding: (id: number, body: { sourceId: string; sourceMangaId: number; sourceName?: string }) =>
     request<{ id: number }>(`/series/${id}/bindings`, { method: 'POST', body: JSON.stringify(body) }),
@@ -254,7 +129,7 @@ export const api = {
       dryRun?: boolean
       grab?: string
       force?: boolean
-      slot?: { collectionId: number; number: number }
+      slot?: TargetSlot
     },
   ) =>
     request<SearchResponse>(`/series/${id}/search`, {
@@ -264,7 +139,7 @@ export const api = {
   // Streaming dry-run search: provider batches arrive as they complete.
   searchStream: async (
     id: number,
-    opts: { ledger: Ledger; slot?: { collectionId: number; number: number } },
+    opts: { ledger: Ledger; slot?: TargetSlot },
     onEvent: (ev: SearchEvent) => void,
   ) => {
     const res = await fetch(`${base}/series/${id}/search`, {
@@ -300,7 +175,7 @@ export const api = {
   deleteFile: (fid: number) => request<void>(`/files/${fid}`, { method: 'DELETE' }),
 
   scanSeries: (id: number, path?: string) =>
-    request<{ scanned: number; linked: number; unrequested: number }>(`/series/${id}/import`, {
+    request<ScanResult>(`/series/${id}/import`, {
       method: 'POST',
       body: JSON.stringify({ path }),
     }),

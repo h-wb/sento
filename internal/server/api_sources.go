@@ -33,10 +33,7 @@ func (s *Server) handleListIndexerSettings(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	if sites == nil {
-		sites = []service.SiteView{}
-	}
-	writeJSON(w, http.StatusOK, sites)
+	respondList(w, sites, nil)
 }
 
 func (s *Server) handleUpdateIndexerSetting(w http.ResponseWriter, r *http.Request) {
@@ -47,14 +44,8 @@ func (s *Server) handleUpdateIndexerSetting(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	var body struct {
-		Enabled     *bool `json:"enabled"`
-		UseVolumes  *bool `json:"useVolumes"`
-		UseChapters *bool `json:"useChapters"`
-		Priority    *int  `json:"priority"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid body")
+	var body IndexerSettingPatch
+	if !decodeBody(w, r, &body) {
 		return
 	}
 	if body.Enabled != nil {
@@ -86,10 +77,7 @@ func (s *Server) handleSeriesIndexers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	if sites == nil {
-		sites = []service.SeriesSiteView{}
-	}
-	writeJSON(w, http.StatusOK, sites)
+	respondList(w, sites, nil)
 }
 
 // handleSeriesIndexerOverride sets/clears per-series override fields.
@@ -104,13 +92,8 @@ func (s *Server) handleSeriesIndexerOverride(w http.ResponseWriter, r *http.Requ
 		Provider: chi.URLParam(r, "provider"),
 		SiteID:   chi.URLParam(r, "sid"),
 	}
-	var body struct {
-		Enabled     *bool `json:"enabled"`
-		UseVolumes  *bool `json:"useVolumes"`
-		UseChapters *bool `json:"useChapters"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid body")
+	var body OverridePatch
+	if !decodeBody(w, r, &body) {
 		return
 	}
 	ov.Enabled = body.Enabled
@@ -134,16 +117,8 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body struct {
-		Ledger string              `json:"ledger"`
-		DryRun bool                `json:"dryRun"`
-		Slot   *service.TargetSlot `json:"slot"`
-		Grab   string              `json:"grab"` // GUID of one candidate
-		Force  bool                `json:"force"`
-		Stream bool                `json:"stream"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid body")
+	var body SearchBody
+	if !decodeBody(w, r, &body) {
 		return
 	}
 	if body.Ledger != service.LedgerVolume && body.Ledger != service.LedgerChapter {
@@ -181,15 +156,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	default:
 		queued = s.search.GrabBest(r.Context(), id, body.Ledger, result.Candidates)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ledger":         result.Ledger,
-		"candidates":     result.Candidates,
-		"queued":         queued,
-		"searched":       result.Searched,
-		"dropped":        result.Dropped,
-		"providerErrors": result.ProviderErrors,
-		"bindingNotes":   result.BindingNotes,
-	})
+	writeJSON(w, http.StatusOK, SearchResponse{SearchResult: *result, Queued: queued})
 }
 
 // streamSearch writes NDJSON SearchEvents, flushing after each so the UI
@@ -255,14 +222,7 @@ func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 	active := r.URL.Query().Get("all") == ""
 	items, err := s.store.ListQueueItems(r.Context(), active)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if items == nil {
-		items = []store.QueueItem{}
-	}
-	writeJSON(w, http.StatusOK, items)
+	respondList(w, items, err)
 }
 
 func (s *Server) handleQueueProcess(w http.ResponseWriter, r *http.Request) {

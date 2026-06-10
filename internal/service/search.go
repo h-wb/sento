@@ -163,7 +163,7 @@ func (s *SearchService) resolveBinding(ctx context.Context, resolver provider.Ma
 // search unit finishes (a single extension source, or one provider's
 // indexer sweep), "done" closes the stream.
 type SearchEvent struct {
-	Type         string             `json:"type"` // sites | batch | done
+	Type         string             `json:"type" tstype:"'sites' | 'batch' | 'done' | 'error'"`
 	Ledger       string             `json:"ledger,omitempty"`
 	Searched     []string           `json:"searched,omitempty"`
 	Provider     string             `json:"provider,omitempty"`

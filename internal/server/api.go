@@ -63,20 +63,12 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListSeries(w http.ResponseWriter, r *http.Request) {
 	list, err := s.store.ListSeries(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if list == nil {
-		list = []store.Series{}
-	}
-	writeJSON(w, http.StatusOK, list)
+	respondList(w, list, err)
 }
 
 func (s *Server) handleAddSeries(w http.ResponseWriter, r *http.Request) {
 	var req service.AddSeriesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid body: "+err.Error())
+	if !decodeBody(w, r, &req) {
 		return
 	}
 	if req.MangaBakaID == 0 {
@@ -121,10 +113,10 @@ func (s *Server) handleGetSeries(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"series":        series,
-		"collections":   collections,
-		"chapterLedger": chapterLedger,
+	writeJSON(w, http.StatusOK, SeriesDetail{
+		Series:        series,
+		Collections:   collections,
+		ChapterLedger: chapterLedger,
 	})
 }
 
@@ -170,28 +162,23 @@ func (s *Server) handleSlots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := map[string]any{}
-
 	collections, err := s.store.ListCollections(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	volumes := map[string]any{}
+	out := SlotsResponse{Volumes: map[string][]ledger.VolumeSlot{}}
 	for _, col := range collections {
 		works, err := s.store.ListWorks(r.Context(), col.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		volumes[strconv.FormatInt(col.ID, 10)] = ledger.BuildVolumeSlots(col, works, links, nil, time.Now())
+		out.Volumes[strconv.FormatInt(col.ID, 10)] = ledger.BuildVolumeSlots(col, works, links, nil, time.Now())
 	}
-	out["volumes"] = volumes
-
 	if cl, err := s.store.GetChapterLedger(r.Context(), id); err == nil {
-		out["chapters"] = ledger.BuildChapterSlots(*cl, series.TotalChapters, links, nil)
+		out.Chapters = ledger.BuildChapterSlots(*cl, series.TotalChapters, links, nil)
 	}
-
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -206,11 +193,8 @@ func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	var body struct {
-		Monitored bool `json:"monitored"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid body")
+	var body CollectionPatch
+	if !decodeBody(w, r, &body) {
 		return
 	}
 	if err := s.store.SetCollectionMonitored(r.Context(), id, cid, body.Monitored); err != nil {
@@ -230,13 +214,8 @@ func (s *Server) handleUpdateChapterLedger(w http.ResponseWriter, r *http.Reques
 		writeStoreError(w, err)
 		return
 	}
-	var body struct {
-		Monitored *bool   `json:"monitored"`
-		Language  *string `json:"language"`
-		CutoffNum *int64  `json:"cutoffNum"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid body")
+	var body ChapterLedgerPatch
+	if !decodeBody(w, r, &body) {
 		return
 	}
 	if body.Monitored != nil {
@@ -263,14 +242,7 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	files, err := s.store.ListFiles(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if files == nil {
-		files = []store.File{}
-	}
-	writeJSON(w, http.StatusOK, files)
+	respondList(w, files, err)
 }
 
 // handleDeleteFile unlinks a file and deletes it from disk. The freed slots
@@ -301,14 +273,9 @@ func (s *Server) handleScanSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body struct {
-		Path string `json:"path"`
-	}
-	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid body")
-			return
-		}
+	var body ScanBody
+	if r.ContentLength > 0 && !decodeBody(w, r, &body) {
+		return
 	}
 	result, err := s.scanner.ScanSeriesFolder(r.Context(), id, body.Path)
 	if err != nil {
@@ -336,14 +303,7 @@ func (s *Server) handleListBindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	bindings, err := s.store.ListBindings(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if bindings == nil {
-		bindings = []store.Binding{}
-	}
-	writeJSON(w, http.StatusOK, bindings)
+	respondList(w, bindings, err)
 }
 
 func (s *Server) handleAddBinding(w http.ResponseWriter, r *http.Request) {
@@ -352,8 +312,7 @@ func (s *Server) handleAddBinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b store.Binding
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid body")
+	if !decodeBody(w, r, &b) {
 		return
 	}
 	b.SeriesID = id
@@ -394,6 +353,28 @@ func pathID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+// decodeBody parses the JSON body into v; on failure it writes the 400 and
+// returns false so handlers can one-line their decoding.
+func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body: "+err.Error())
+		return false
+	}
+	return true
+}
+
+// respondList writes a list (never null: empty becomes []) or the error.
+func respondList[T any](w http.ResponseWriter, list []T, err error) {
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if list == nil {
+		list = []T{}
+	}
+	writeJSON(w, http.StatusOK, list)
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
