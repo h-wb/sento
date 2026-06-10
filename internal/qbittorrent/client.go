@@ -4,17 +4,18 @@
 package qbittorrent
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
-
-	"encoding/json"
 )
 
 type Client struct {
@@ -56,7 +57,11 @@ func (c *Client) login(ctx context.Context) error {
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "Ok") {
+	// qBittorrent ≤4 answers 200 "Ok."; 5.x answers 204 with just the
+	// session cookie. Bad credentials are 200 "Fails." or 403.
+	ok := resp.StatusCode == http.StatusNoContent ||
+		(resp.StatusCode == http.StatusOK && strings.Contains(string(body), "Ok"))
+	if !ok {
 		return fmt.Errorf("qbittorrent: login failed (%d: %s)", resp.StatusCode, body)
 	}
 	c.loggedIn = true
@@ -98,7 +103,7 @@ func (c *Client) do(ctx context.Context, method, path string, form url.Values) (
 			}
 			continue
 		}
-		if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return nil, fmt.Errorf("qbittorrent: %s returned %d", path, resp.StatusCode)
 		}
 		return data, nil
@@ -111,6 +116,50 @@ func (c *Client) AddTorrent(ctx context.Context, urlOrMagnet, category string) e
 	form := url.Values{"urls": {urlOrMagnet}, "category": {category}}
 	_, err := c.do(ctx, http.MethodPost, "/api/v2/torrents/add", form)
 	return err
+}
+
+// AddTorrentFile uploads .torrent bytes (multipart) under the category.
+// Preferred over URL adds: qBittorrent fetches URLs asynchronously from
+// its own network, where an indexer/proxy may be unreachable, and drops
+// failures silently.
+func (c *Client) AddTorrentFile(ctx context.Context, name string, torrent []byte, category string) error {
+	if err := c.login(ctx); err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	part, err := w.CreateFormFile("torrents", name)
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(torrent); err != nil {
+		return err
+	}
+	if err := w.WriteField("category", category); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/api/v2/torrents/add", &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	_ = resp.Body.Close()
+	if resp.StatusCode == http.StatusConflict {
+		return nil // already added: the goal state holds
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || strings.Contains(string(body), "Fails") {
+		return fmt.Errorf("qbittorrent: add failed (%d: %s)", resp.StatusCode, body)
+	}
+	return nil
 }
 
 type Torrent struct {

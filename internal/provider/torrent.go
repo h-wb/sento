@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -41,7 +43,7 @@ func (p *TorrentProvider) Sites(ctx context.Context) ([]Site, error) {
 	sites := make([]Site, 0, len(indexers))
 	for _, i := range indexers {
 		sites = append(sites, Site{
-			Provider: "prowlarr", ID: strconv.Itoa(i.ID), Name: i.Name,
+			Provider: p.ID(), ID: strconv.Itoa(i.ID), Name: i.Name,
 			Protocol: ProtocolTorrent, Enabled: i.Enable,
 		})
 	}
@@ -99,21 +101,53 @@ func (p *TorrentProvider) Grab(ctx context.Context, c Candidate) (string, error)
 	if c.Torrent == nil {
 		return "", fmt.Errorf("torrent: candidate has no torrent ref")
 	}
-	link := c.Torrent.MagnetURL
-	if link == "" {
-		link = c.Torrent.DownloadURL
-	}
-	if link == "" {
+	switch {
+	case c.Torrent.MagnetURL != "":
+		if err := p.qbit.AddTorrent(ctx, c.Torrent.MagnetURL, p.category); err != nil {
+			return "", err
+		}
+	case c.Torrent.DownloadURL != "":
+		// Fetch the .torrent ourselves and upload the bytes: qBittorrent
+		// resolves URL adds asynchronously from its own network (where the
+		// indexer proxy may be unreachable) and drops failures silently.
+		data, err := fetchTorrentFile(ctx, c.Torrent.DownloadURL)
+		if err != nil {
+			return "", err
+		}
+		if err := p.qbit.AddTorrentFile(ctx, c.Title+".torrent", data, p.category); err != nil {
+			return "", err
+		}
+	default:
 		return "", fmt.Errorf("torrent: candidate has no magnet or download url")
-	}
-	if err := p.qbit.AddTorrent(ctx, link, p.category); err != nil {
-		return "", err
 	}
 	externalID := c.Torrent.InfoHash
 	if externalID == "" {
 		externalID = strings.ToLower(c.Torrent.GUID)
 	}
 	return externalID, nil
+}
+
+func fetchTorrentFile(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("torrent: fetching .torrent: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("torrent: .torrent fetch returned %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 || data[0] != 'd' { // bencode dict
+		return nil, fmt.Errorf("torrent: response is not a .torrent file")
+	}
+	return data, nil
 }
 
 func (p *TorrentProvider) find(ctx context.Context, externalID string) (*qbittorrent.Torrent, error) {

@@ -22,14 +22,34 @@ import (
 // The import pipeline itself (naming, ComicInfo, linking) is provider-
 // agnostic; only the payload shape varies (stream vs directory).
 type Importer struct {
-	store       *store.Store
-	registry    *provider.Registry
-	naming      library.NamingConfig
-	libraryRoot string
+	store        *store.Store
+	registry     *provider.Registry
+	naming       library.NamingConfig
+	libraryRoot  string
+	pathMappings []string // "remote=local" download-client path translations
 }
 
-func NewImporter(st *store.Store, registry *provider.Registry, naming library.NamingConfig, libraryRoot string) *Importer {
-	return &Importer{store: st, registry: registry, naming: naming, libraryRoot: libraryRoot}
+func NewImporter(st *store.Store, registry *provider.Registry, naming library.NamingConfig, libraryRoot string, pathMappings []string) *Importer {
+	return &Importer{store: st, registry: registry, naming: naming, libraryRoot: libraryRoot, pathMappings: pathMappings}
+}
+
+// mapPath translates a download-client path to a local one (longest
+// matching "remote=local" prefix wins; unmapped paths pass through).
+func (im *Importer) mapPath(p string) string {
+	bestRemote, bestLocal := "", ""
+	for _, m := range im.pathMappings {
+		remote, local, ok := strings.Cut(m, "=")
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(p, remote) && len(remote) > len(bestRemote) {
+			bestRemote, bestLocal = remote, local
+		}
+	}
+	if bestRemote == "" {
+		return p
+	}
+	return filepath.Join(bestLocal, strings.TrimPrefix(p, bestRemote))
 }
 
 // ProcessQueue advances all active queue items. Returns the number of
@@ -100,7 +120,7 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 		defer func() { _ = payload.Stream.Close() }()
 		err = im.importStream(ctx, item, payload.Stream)
 	} else {
-		err = im.importFiles(ctx, item, payload.Dir, payload.Files)
+		err = im.importFiles(ctx, item, im.mapPath(payload.Dir), payload.Files)
 	}
 	if err != nil {
 		return false, err
@@ -206,6 +226,9 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	if err := json.Unmarshal(item.ExpectedSlots, &expected); err != nil {
 		return err
 	}
+	if len(expected) == 0 {
+		return fmt.Errorf("queue item has no expected slots")
+	}
 	expectedSet := map[int64]store.ExpectedSlot{}
 	var collectionID int64
 	slotLedger := "volume"
@@ -259,6 +282,9 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 							Volume: -1, Chapter: n, Lang: lang,
 						}))
 				}
+				// Hardlinked as-is: keep the source's real format extension
+				// (a CBR renamed .cbz would lie about its contents).
+				dest = strings.TrimSuffix(dest, filepath.Ext(dest)) + ext
 				src := filepath.Join(dir, rel)
 				if err := library.HardlinkOrCopy(src, dest); err != nil {
 					return fmt.Errorf("linking %s: %w", rel, err)

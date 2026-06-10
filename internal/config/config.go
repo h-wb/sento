@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -22,6 +23,11 @@ type Config struct {
 
 type Library struct {
 	Path string `yaml:"path"`
+	// PathMappings translate download-client paths to local ones
+	// ("remote=local"), for setups where qBittorrent runs on another
+	// machine whose storage is mounted here (Sonarr's remote path
+	// mappings). Unmapped paths pass through.
+	PathMappings []string `yaml:"path_mappings"`
 }
 
 type Server struct {
@@ -111,6 +117,14 @@ func applyEnv(c *Config) {
 	if v, ok := os.LookupEnv("SENTO_PORT"); ok {
 		if p, err := strconv.Atoi(v); err == nil {
 			c.Server.Port = p
+		}
+	}
+	if v, ok := os.LookupEnv("SENTO_PATH_MAPPINGS"); ok {
+		c.Library.PathMappings = nil
+		for _, m := range strings.Split(v, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				c.Library.PathMappings = append(c.Library.PathMappings, m)
+			}
 		}
 	}
 }

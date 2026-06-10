@@ -522,11 +522,11 @@ func (s *SearchService) funnel(searchLedger string, c *ReleaseCandidate, ranges 
 	}
 	c.CollectionID = colID
 
-	// R2 language gate (untagged passes; soft, force-grabbable).
+	// R2 language gate (untagged passes). Soft: record and keep going so
+	// Covered is still computed — a force-grab needs the slot list.
 	if c.Parse.Language != "" && c.Parse.Language != "multi" && wantLang != "" &&
 		baseLang(c.Parse.Language) != baseLang(wantLang) {
 		reject("rejected.language")
-		return
 	}
 
 	// R5 slot coverage. A whole-series pack covers everything wanted
@@ -717,6 +717,6 @@ func (s *SearchService) Grab(ctx context.Context, seriesID int64, searchLedger s
 		Protocol:      c.Protocol,
 		ExternalID:    externalID,
 		Title:         c.Title,
-		ExpectedSlots: slotsJSON,
+		ExpectedSlots: store.JSONText(slotsJSON),
 	})
 }

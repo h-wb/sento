@@ -325,6 +325,15 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 			}
 		}
 	}
+	if res.Language == "" {
+		for code, lang := range sceneLangCodes {
+			if indexWord(freeText, code) >= 0 { // case-sensitive: UPPERCASE only
+				res.Language = lang
+				res.step("language.scenecode", code)
+				break
+			}
+		}
+	}
 	if strings.Contains(lowerFree, "deluxe") {
 		res.Edition.Deluxe = true
 	}

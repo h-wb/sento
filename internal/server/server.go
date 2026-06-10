@@ -70,7 +70,7 @@ func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 	)
 	s.search = service.NewSearchService(st, s.registry)
 	s.sites = service.NewSiteService(st, s.registry)
-	s.importer = service.NewImporter(st, s.registry, naming, cfg.Library.Path)
+	s.importer = service.NewImporter(st, s.registry, naming, cfg.Library.Path, cfg.Library.PathMappings)
 	return s
 }
 

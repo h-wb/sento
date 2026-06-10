@@ -3,19 +3,46 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 )
 
+// JSONText is raw JSON that scans from a TEXT column (json.RawMessage
+// itself has no sql.Scanner).
+type JSONText []byte
+
+func (j *JSONText) Scan(src any) error {
+	switch v := src.(type) {
+	case nil:
+		*j = nil
+	case string:
+		*j = JSONText(v)
+	case []byte:
+		*j = append(JSONText(nil), v...)
+	default:
+		return fmt.Errorf("cannot scan %T into JSONText", src)
+	}
+	return nil
+}
+
+func (j JSONText) MarshalJSON() ([]byte, error) {
+	if len(j) == 0 {
+		return []byte("null"), nil
+	}
+	return j, nil
+}
+
 type QueueItem struct {
-	ID            int64           `json:"id"`
-	SeriesID      int64           `json:"seriesId"`
-	Protocol      string          `json:"protocol"` // torrent|source
-	ExternalID    string          `json:"externalId"`
-	Title         string          `json:"title"`
-	Status        string          `json:"status"`
-	ExpectedSlots json.RawMessage `json:"expectedSlots" db:"expected_slots_json"`
-	Error         string          `json:"error,omitempty"`
-	CreatedAt     string          `json:"createdAt"`
-	UpdatedAt     string          `json:"updatedAt,omitempty"`
+	ID            int64    `json:"id"`
+	SeriesID      int64    `json:"seriesId"`
+	Protocol      string   `json:"protocol"` // torrent|source
+	ExternalID    string   `json:"externalId"`
+	Title         string   `json:"title"`
+	Status        string   `json:"status"`
+	ExpectedSlots JSONText `json:"expectedSlots" db:"expected_slots_json" tstype:"ExpectedSlot[]"`
+	Error         string   `json:"error,omitempty"`
+	CreatedAt     string   `json:"createdAt"`
+	UpdatedAt     string   `json:"updatedAt,omitempty"`
 }
 
 const (
@@ -90,12 +117,51 @@ func (s *Store) SetSeriesPath(ctx context.Context, seriesID int64, path string) 
 	return err
 }
 
-// SeriesTitles returns the primary title (raw_json carries aliases; the
-// primary is enough for anchoring v1).
+// SeriesTitles returns the primary title plus every alias from the cached
+// provider payload — anchoring and source binding match releases named in
+// any language (Japscan lists French titles, raws use kana, …).
 func (s *Store) SeriesTitles(ctx context.Context, seriesID int64) ([]string, error) {
-	title, err := get[string](ctx, s, `SELECT title FROM series WHERE id = ?`, seriesID)
+	row, err := get[struct {
+		Title   string
+		RawJSON string `db:"raw_json"`
+	}](ctx, s, `SELECT title, COALESCE(raw_json,'') AS raw_json FROM series WHERE id = ?`, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	return []string{*title}, nil
+	titles := []string{row.Title}
+	add := func(t string) {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			return
+		}
+		for _, ex := range titles {
+			if strings.EqualFold(ex, t) {
+				return
+			}
+		}
+		titles = append(titles, t)
+	}
+	var raw struct {
+		NativeTitle    string `json:"native_title"`
+		RomanizedTitle string `json:"romanized_title"`
+		Titles         []struct {
+			Title string `json:"title"`
+		} `json:"titles"`
+		Secondary map[string][]struct {
+			Title string `json:"title"`
+		} `json:"secondary_titles"`
+	}
+	if json.Unmarshal([]byte(row.RawJSON), &raw) == nil {
+		add(raw.NativeTitle)
+		add(raw.RomanizedTitle)
+		for _, t := range raw.Titles {
+			add(t.Title)
+		}
+		for _, list := range raw.Secondary {
+			for _, t := range list {
+				add(t.Title)
+			}
+		}
+	}
+	return titles, nil
 }

@@ -45,6 +45,15 @@ var freeTextLangWords = map[string]string{
 	"portuguese": "pt", "russian": "ru", "polish": "pl", "multi": "multi",
 }
 
+// Bare two-letter codes are ambiguous in prose but conventional in scene
+// names ("One.Piece.T112.2026.FR.[CBR]") — accepted only as standalone
+// UPPERCASE words, and only codes that don't collide with common words
+// in shouting-case titles (EN/DE/ES/IT stay out).
+var sceneLangCodes = map[string]string{
+	"FR": "fr", "JP": "ja", "JA": "ja", "KR": "ko",
+	"CN": "zh", "RU": "ru", "PL": "pl",
+}
+
 type segmentHints struct {
 	language    string
 	contentType ContentType

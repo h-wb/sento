@@ -4,6 +4,11 @@
 //////////
 // source: queue.go
 
+/**
+ * JSONText is raw JSON that scans from a TEXT column (json.RawMessage
+ * itself has no sql.Scanner).
+ */
+export type JSONText = string /* []byte */;
 export interface QueueItem {
   id: number /* int64 */;
   seriesId: number /* int64 */;
@@ -11,7 +16,7 @@ export interface QueueItem {
   externalId: string;
   title: string;
   status: string;
-  expectedSlots: any;
+  expectedSlots: ExpectedSlot[];
   error?: string;
   createdAt: string;
   updatedAt?: string;
