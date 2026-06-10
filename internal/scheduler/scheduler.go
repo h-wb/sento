@@ -35,25 +35,29 @@ func DefaultIntervals() Intervals {
 type Scheduler struct {
 	store     *store.Store
 	libraries *service.Library
-	grabber   *service.Grabber        // nil ok
-	volumes   *service.VolumeSearcher // nil ok
+	grabber   *service.Grabber
+	volumes   *service.VolumeSearcher
+	importer  *service.Importer
 	intervals Intervals
 }
 
 func New(st *store.Store, lib *service.Library, grabber *service.Grabber,
-	volumes *service.VolumeSearcher, intervals Intervals,
+	volumes *service.VolumeSearcher, importer *service.Importer, intervals Intervals,
 ) *Scheduler {
-	return &Scheduler{store: st, libraries: lib, grabber: grabber, volumes: volumes, intervals: intervals}
+	return &Scheduler{
+		store: st, libraries: lib, grabber: grabber, volumes: volumes,
+		importer: importer, intervals: intervals,
+	}
 }
 
 // Start launches all loops; they stop when ctx is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {
 	go s.loop(ctx, "queue-process", s.intervals.QueueProcess, s.tickQueue)
 	go s.loop(ctx, "metadata-refresh", s.intervals.RefreshSweep, s.tickRefresh)
-	if s.grabber != nil {
+	if s.grabber.HasSourceProvider() {
 		go s.loop(ctx, "chapter-check", s.intervals.ChapterCheck, s.tickChapters)
 	}
-	if s.volumes != nil && s.volumes.HasProviders() {
+	if s.volumes.HasProviders() {
 		go s.loop(ctx, "volume-sweep", s.intervals.VolumeSweep, s.tickVolumes)
 	}
 }
@@ -80,17 +84,8 @@ func (s *Scheduler) loop(ctx context.Context, name string, every time.Duration, 
 }
 
 func (s *Scheduler) tickQueue(ctx context.Context) error {
-	if s.grabber != nil {
-		if _, err := s.grabber.ProcessQueue(ctx); err != nil {
-			return err
-		}
-	}
-	if s.volumes != nil {
-		if _, err := s.volumes.ProcessTorrentQueue(ctx); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := s.importer.ProcessQueue(ctx)
+	return err
 }
 
 // tickRefresh refreshes series whose metadata is stale: releasing every

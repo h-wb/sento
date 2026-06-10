@@ -27,7 +27,7 @@ func preClean(name string) string {
 		}
 	}
 	name = strings.ReplaceAll(name, "_", " ")
-	name = width.Fold.String(name)      // full-width → ASCII
+	name = width.Fold.String(name) // full-width → ASCII
 	name = norm.NFKC.String(name)
 	name = strings.Join(strings.Fields(name), " ")
 	return name

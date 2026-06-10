@@ -9,14 +9,14 @@ import (
 )
 
 type VolumeSlot struct {
-	Number      int64  `json:"number"` // hundredths
-	SequenceStr string `json:"sequenceStr"`
-	CountType   string `json:"countType"`
-	ReleaseDate string `json:"releaseDate,omitempty"`
-	Monitored   bool   `json:"monitored"`
-	Released    bool   `json:"released"`
+	Number      int64   `json:"number"` // hundredths
+	SequenceStr string  `json:"sequenceStr"`
+	CountType   string  `json:"countType"`
+	ReleaseDate string  `json:"releaseDate,omitempty"`
+	Monitored   bool    `json:"monitored"`
+	Released    bool    `json:"released"`
 	FileIDs     []int64 `json:"fileIds,omitempty"`
-	Wanted      bool   `json:"wanted"`
+	Wanted      bool    `json:"wanted"`
 }
 
 type ChapterSlot struct {

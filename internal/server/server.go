@@ -16,6 +16,7 @@ import (
 	"github.com/h-wb/sento/internal/config"
 	"github.com/h-wb/sento/internal/library"
 	"github.com/h-wb/sento/internal/metadata"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/prowlarr"
 	"github.com/h-wb/sento/internal/qbittorrent"
 	"github.com/h-wb/sento/internal/service"
@@ -30,44 +31,54 @@ type Server struct {
 	store    *store.Store
 	provider metadata.Provider
 	library  *service.Library
-	suwa     *suwayomi.Client // nil when unconfigured
-	prowlarr *prowlarr.Client // nil when unconfigured
-	grabber  *service.Grabber // nil when unconfigured
+	suwa     *suwayomi.Client // nil when unconfigured; binding endpoints only
+	registry *provider.Registry
+	grabber  *service.Grabber
 	volumes  *service.VolumeSearcher
+	importer *service.Importer
 	scanner  *service.Scanner
 }
 
-func New(cfg config.Config, db *sql.DB, provider metadata.Provider) *Server {
+func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 	st := store.New(db)
+	naming := library.DefaultNaming()
 	s := &Server{
 		cfg:      cfg,
 		db:       db,
 		store:    st,
-		provider: provider,
-		library:  service.NewLibrary(st, provider),
-		scanner:  service.NewScanner(st, library.DefaultNaming(), cfg.Library.Path),
+		provider: mdProvider,
+		library:  service.NewLibrary(st, mdProvider),
+		scanner:  service.NewScanner(st, naming, cfg.Library.Path),
 	}
+
 	if cfg.Suwayomi.URL != "" {
 		s.suwa = suwayomi.New(cfg.Suwayomi.URL, cfg.Suwayomi.Username, cfg.Suwayomi.Password)
-		s.grabber = service.NewGrabber(st, s.suwa, library.DefaultNaming(), cfg.Library.Path)
 	}
+	var pr *prowlarr.Client
 	if cfg.Prowlarr.URL != "" {
-		s.prowlarr = prowlarr.New(cfg.Prowlarr.URL, cfg.Prowlarr.APIKey)
+		pr = prowlarr.New(cfg.Prowlarr.URL, cfg.Prowlarr.APIKey)
 	}
 	var qb *qbittorrent.Client
 	if cfg.QBittorrent.URL != "" {
 		qb = qbittorrent.New(cfg.QBittorrent.URL, cfg.QBittorrent.Username, cfg.QBittorrent.Password)
 	}
-	// The volume searcher always exists; it uses whichever providers are
-	// configured and reports clearly when none are.
-	s.volumes = service.NewVolumeSearcher(st, s.prowlarr, qb, s.suwa,
-		library.DefaultNaming(), cfg.Library.Path, cfg.QBittorrent.Category)
+
+	// Everything downstream of here is provider-agnostic.
+	s.registry = provider.NewRegistry(
+		provider.NewSuwayomi(s.suwa),
+		provider.NewTorrent(pr, qb, cfg.QBittorrent.Category),
+	)
+	s.grabber = service.NewGrabber(st, s.registry)
+	s.volumes = service.NewVolumeSearcher(st, s.registry)
+	s.importer = service.NewImporter(st, s.registry, naming, cfg.Library.Path)
 	return s
 }
 
-// Volumes exposes the volume searcher for background loops; nil when
-// Prowlarr/qBittorrent are not configured.
+// Volumes exposes the volume searcher for background loops.
 func (s *Server) Volumes() *service.VolumeSearcher { return s.volumes }
+
+// Importer exposes the queue importer for background loops.
+func (s *Server) Importer() *service.Importer { return s.importer }
 
 // Grabber exposes the grab service for background loops; nil when Suwayomi
 // is not configured.

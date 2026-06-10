@@ -141,12 +141,12 @@ type mbCollection struct {
 }
 
 type mbWork struct {
-	ID          string `json:"id"`
-	CountType   string `json:"count_type"`
-	ReleaseDate string `json:"release_date"`
-	SeqString   string `json:"sequence_string"`
+	ID          string      `json:"id"`
+	CountType   string      `json:"count_type"`
+	ReleaseDate string      `json:"release_date"`
+	SeqString   string      `json:"sequence_string"`
 	SeqNumeric  json.Number `json:"sequence_numeric"`
-	Pages       int    `json:"pages"`
+	Pages       int         `json:"pages"`
 	Identifiers []struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`

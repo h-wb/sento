@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/h-wb/sento/internal/ledger"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -75,42 +76,16 @@ func (s *Server) handleVolumeSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleListIndexers returns every search site Sento can use, across all
-// providers, in one uniform list: prowlarr/<indexer> and suwayomi/<source>.
+// providers, in one uniform list.
 func (s *Server) handleListIndexers(w http.ResponseWriter, r *http.Request) {
-	type indexer struct {
-		Provider string `json:"provider"` // prowlarr | suwayomi
-		ID       string `json:"id"`
-		Name     string `json:"name"`
-		Protocol string `json:"protocol"` // torrent | source
-		Lang     string `json:"lang,omitempty"`
-		Enabled  bool   `json:"enabled"`
-	}
-	out := []indexer{}
-	if s.prowlarr != nil {
-		idx, err := s.prowlarr.ListIndexers(r.Context())
+	out := []provider.Site{}
+	for _, p := range s.registry.All() {
+		sites, err := p.Sites(r.Context())
 		if err != nil {
-			writeError(w, http.StatusBadGateway, "prowlarr: "+err.Error())
+			writeError(w, http.StatusBadGateway, p.ID()+": "+err.Error())
 			return
 		}
-		for _, i := range idx {
-			out = append(out, indexer{
-				Provider: "prowlarr", ID: strconv.Itoa(i.ID), Name: i.Name,
-				Protocol: "torrent", Enabled: i.Enable,
-			})
-		}
-	}
-	if s.suwa != nil {
-		sources, err := s.suwa.ListSources(r.Context())
-		if err != nil {
-			writeError(w, http.StatusBadGateway, "suwayomi: "+err.Error())
-			return
-		}
-		for _, src := range sources {
-			out = append(out, indexer{
-				Provider: "suwayomi", ID: src.ID, Name: src.Name,
-				Protocol: "source", Lang: src.Lang, Enabled: true,
-			})
-		}
+		out = append(out, sites...)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -153,7 +128,7 @@ func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 // handleChapterSearch finds candidates for wanted chapter slots and, unless
 // dryRun, grabs them.
 func (s *Server) handleChapterSearch(w http.ResponseWriter, r *http.Request) {
-	if s.grabber == nil {
+	if !s.grabber.HasSourceProvider() {
 		writeError(w, http.StatusServiceUnavailable, "suwayomi is not configured")
 		return
 	}
@@ -217,7 +192,7 @@ func (s *Server) handleChapterSearch(w http.ResponseWriter, r *http.Request) {
 // handleGrabChapter grabs one specific candidate from an interactive
 // chapter search.
 func (s *Server) handleGrabChapter(w http.ResponseWriter, r *http.Request) {
-	if s.grabber == nil {
+	if !s.grabber.HasSourceProvider() {
 		writeError(w, http.StatusServiceUnavailable, "suwayomi is not configured")
 		return
 	}
@@ -290,22 +265,10 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleQueueProcess(w http.ResponseWriter, r *http.Request) {
-	total := 0
-	if s.grabber != nil {
-		n, err := s.grabber.ProcessQueue(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		total += n
+	n, err := s.importer.ProcessQueue(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
-	if s.volumes != nil {
-		n, err := s.volumes.ProcessTorrentQueue(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		total += n
-	}
-	writeJSON(w, http.StatusOK, map[string]int{"processed": total})
+	writeJSON(w, http.StatusOK, map[string]int{"processed": n})
 }

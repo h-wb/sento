@@ -25,8 +25,8 @@ func TestScanSeriesFolder(t *testing.T) {
 		"ONE PIECE v01 (Digital).cbz",
 		"ONE PIECE v02.cbz",
 		"chapters/ONE PIECE c1180.cbz",
-		"ONE PIECE (Artbook).cbz",   // content-type still parses; links by numbers only → unrequested
-		"random notes.txt",          // ignored: not an archive
+		"ONE PIECE (Artbook).cbz", // content-type still parses; links by numbers only → unrequested
+		"random notes.txt",        // ignored: not an archive
 	} {
 		path := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

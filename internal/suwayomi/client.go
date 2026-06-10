@@ -237,7 +237,9 @@ func (c *Client) DownloadStateOf(ctx context.Context, chapterID int64) (*Downloa
 		DownloadStatus struct {
 			State string `json:"state"`
 			Queue []struct {
-				Chapter  struct{ ID int64 `json:"id"` } `json:"chapter"`
+				Chapter struct {
+					ID int64 `json:"id"`
+				} `json:"chapter"`
 				State    string  `json:"state"`
 				Progress float64 `json:"progress"`
 				Tries    int     `json:"tries"`

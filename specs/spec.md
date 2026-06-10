@@ -193,6 +193,12 @@ semi-stable and everything edition-related as **unstable surface**:
 The only part of Sento that knows Suwayomi exists. **Full component spec,
 live-validated against a real instance: [`suwayomi-adapter.md`](suwayomi-adapter.md).**
 
+> Implementation note: this generalized into `internal/provider` — a
+> `Provider` interface (Sites/Search/Grab/State/Fetch/Cleanup) + registry,
+> with `suwayomi` and `torrent` (Prowlarr+qBittorrent) implementations.
+> The decision funnel and importer are provider-agnostic; candidates carry
+> uniform `provider/site/protocol` tags.
+
 Validated flow (no Suwayomi library membership needed at any step):
 `fetchSourceManga(SEARCH)` → `fetchChapters` (stable chapter ids; list =
 transient release candidates) → `enqueueChapterDownload` (self-processing;

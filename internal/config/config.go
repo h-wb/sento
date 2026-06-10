@@ -11,9 +11,9 @@ import (
 )
 
 type Config struct {
-	Server    Server    `yaml:"server"`
-	Database  Database  `yaml:"database"`
-	Library   Library   `yaml:"library"`
+	Server      Server      `yaml:"server"`
+	Database    Database    `yaml:"database"`
+	Library     Library     `yaml:"library"`
 	Suwayomi    Suwayomi    `yaml:"suwayomi"`
 	Prowlarr    Prowlarr    `yaml:"prowlarr"`
 	QBittorrent QBittorrent `yaml:"qbittorrent"`

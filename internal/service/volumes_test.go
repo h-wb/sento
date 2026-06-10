@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/h-wb/sento/internal/library"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/prowlarr"
 )
 
@@ -31,8 +31,8 @@ func TestVolumeFunnel(t *testing.T) {
 	}))
 	defer fake.Close()
 
-	vs := NewVolumeSearcher(st, prowlarr.New(fake.URL, "key"), nil, nil,
-		library.DefaultNaming(), t.TempDir(), "sento")
+	registry := provider.NewRegistry(provider.NewTorrent(prowlarr.New(fake.URL, "key"), nil, "sento"))
+	vs := NewVolumeSearcher(st, registry)
 
 	candidates, err := vs.FindVolumeCandidates(ctx, seriesID, nil)
 	if err != nil {

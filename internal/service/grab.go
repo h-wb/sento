@@ -6,107 +6,131 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"time"
 
-	"github.com/h-wb/sento/internal/library"
 	"github.com/h-wb/sento/internal/parse"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
-	"github.com/h-wb/sento/internal/suwayomi"
 )
 
-// Grabber runs the chapter path: source chapter lists → parse → match
-// wanted slots → enqueue on Suwayomi → poll → import CBZ → link slots
-// (decision-engine.md, source protocol only; torrents are M4).
+// Grabber runs the chapter path: provider candidates → parse → match
+// wanted slots → grab via the owning provider. Import happens in Importer.
 type Grabber struct {
-	store       *store.Store
-	suwa        *suwayomi.Client
-	naming      library.NamingConfig
-	libraryRoot string
+	store    *store.Store
+	registry *provider.Registry
 }
 
-func NewGrabber(st *store.Store, suwa *suwayomi.Client, naming library.NamingConfig, libraryRoot string) *Grabber {
-	return &Grabber{store: st, suwa: suwa, naming: naming, libraryRoot: libraryRoot}
+func NewGrabber(st *store.Store, registry *provider.Registry) *Grabber {
+	return &Grabber{store: st, registry: registry}
 }
 
-// ChapterCandidate is one source chapter matched to a wanted slot.
+// ChapterCandidate is one source candidate matched to a wanted slot
+// (the UI/grab round-trip DTO).
 type ChapterCandidate struct {
 	SlotNumber  int64  `json:"slotNumber"` // hundredths
-	ChapterID   int64  `json:"chapterId"`  // suwayomi chapter id
+	ChapterID   int64  `json:"chapterId"`
 	ChapterName string `json:"chapterName"`
 	Scanlator   string `json:"scanlator,omitempty"`
 	SourceID    string `json:"sourceId"`
-	BindingID   int64  `json:"bindingId"`
+	BindingID   int64  `json:"bindingId,omitempty"`
+	Provider    string `json:"provider"`
+	Site        string `json:"site,omitempty"`
 }
 
-// FindChapterCandidates fetches chapter lists from all active bindings and
-// matches them against the given chapter slots. With includeAll, every
-// matching source chapter is returned (interactive search shows all
-// scanlator/source options); otherwise the first binding by priority wins
-// per slot (automatic mode).
-func (g *Grabber) FindChapterCandidates(ctx context.Context, seriesID int64, wanted map[int64]bool, includeAll bool) ([]ChapterCandidate, error) {
+func (g *Grabber) searchRequest(ctx context.Context, seriesID int64) (provider.SearchRequest, error) {
 	titles, err := g.store.SeriesTitles(ctx, seriesID)
 	if err != nil {
-		return nil, err
+		return provider.SearchRequest{}, err
 	}
 	bindings, err := g.store.ListBindings(ctx, seriesID)
 	if err != nil {
-		return nil, err
+		return provider.SearchRequest{}, err
 	}
-
-	chosen := map[int64]ChapterCandidate{} // slot → candidate (first binding by priority wins)
-	var all []ChapterCandidate
+	req := provider.SearchRequest{SeriesID: seriesID, Titles: titles}
+	if len(titles) > 0 {
+		req.Query = titles[0]
+	}
 	for _, b := range bindings {
 		if b.State != "active" {
 			continue
 		}
-		chapters, err := g.suwa.GetChapters(ctx, b.SourceMangaID)
-		if err != nil {
-			slog.Warn("binding chapter fetch failed", "binding", b.ID, "error", err)
+		req.Bindings = append(req.Bindings, provider.Binding{
+			BindingID: b.ID, SourceID: b.SourceID,
+			SourceMangaID: b.SourceMangaID, SourceName: b.SourceName,
+		})
+	}
+	return req, nil
+}
+
+// FindChapterCandidates matches provider candidates against the given
+// chapter slots. Only source-protocol candidates are considered for the
+// chapter ledger in v1 (torrent chapter import is roadmap). With
+// includeAll, every match is returned (interactive search); otherwise the
+// first candidate per slot wins (automatic mode, binding priority order).
+func (g *Grabber) FindChapterCandidates(ctx context.Context, seriesID int64, wanted map[int64]bool, includeAll bool) ([]ChapterCandidate, error) {
+	req, err := g.searchRequest(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+
+	suwa := g.registry.Get("suwayomi")
+	if suwa == nil {
+		return nil, fmt.Errorf("no source provider configured")
+	}
+	candidates, err := suwa.Search(ctx, req)
+	if err != nil {
+		slog.Warn("chapter search degraded", "error", err)
+	}
+
+	chosen := map[int64]ChapterCandidate{}
+	var all []ChapterCandidate
+	var maxSeen int64
+
+	for _, cand := range candidates {
+		if cand.Source == nil {
 			continue
 		}
-
-		var maxSeen int64
-		for _, ch := range chapters {
-			res := parse.ParseAnchored(ch.Name, parse.ChannelSource, titles)
-			// Corroborate with Suwayomi's own recognition when our parse
-			// found nothing (terse names like "1184").
-			ranges := res.Chapters
-			if len(ranges) == 0 && ch.ChapterNumber > 0 {
-				n := parse.Num(ch.ChapterNumber*100 + 0.5)
-				ranges = []parse.Range{{From: n, To: n}}
+		res := parse.ParseAnchored(cand.Title, parse.ChannelSource, req.Titles)
+		ranges := res.Chapters
+		// Corroborate with the source's own recognition when our parse
+		// found nothing (terse names like "1184").
+		if len(ranges) == 0 && cand.Source.ChapterNumber > 0 {
+			n := parse.Num(cand.Source.ChapterNumber*100 + 0.5)
+			ranges = []parse.Range{{From: n, To: n}}
+		}
+		for _, r := range ranges {
+			if int64(r.To) > maxSeen {
+				maxSeen = int64(r.To)
 			}
-			for _, r := range ranges {
-				if int64(r.To) > maxSeen {
-					maxSeen = int64(r.To)
+			// Integer slots only (D8): walk whole numbers in range.
+			for n := (int64(r.From) + 99) / 100 * 100; n <= int64(r.To); n += 100 {
+				if !wanted[n] {
+					continue
 				}
-				// Integer slots only (D8): walk whole numbers in range.
-				for n := (int64(r.From) + 99) / 100 * 100; n <= int64(r.To); n += 100 {
-					if !wanted[n] {
-						continue
-					}
-					cand := ChapterCandidate{
-						SlotNumber:  n,
-						ChapterID:   ch.ID,
-						ChapterName: ch.Name,
-						Scanlator:   ch.Scanlator,
-						SourceID:    b.SourceID,
-						BindingID:   b.ID,
-					}
-					if includeAll {
-						all = append(all, cand)
-						continue
-					}
-					if _, taken := chosen[n]; taken {
-						continue
-					}
-					chosen[n] = cand
+				cc := ChapterCandidate{
+					SlotNumber:  n,
+					ChapterID:   cand.Source.ChapterID,
+					ChapterName: cand.Title,
+					Scanlator:   cand.Source.Scanlator,
+					SourceID:    cand.Source.SourceID,
+					BindingID:   cand.Source.BindingID,
+					Provider:    cand.Provider,
+					Site:        cand.Site,
 				}
+				if includeAll {
+					all = append(all, cc)
+					continue
+				}
+				if _, taken := chosen[n]; taken {
+					continue
+				}
+				chosen[n] = cc
 			}
 		}
-		if maxSeen > 0 {
-			if err := g.store.BumpSourceSeenMax(ctx, seriesID, maxSeen); err != nil {
-				slog.Warn("bumping source_seen_max failed", "error", err)
-			}
+	}
+
+	if maxSeen > 0 {
+		if err := g.store.BumpSourceSeenMax(ctx, seriesID, maxSeen); err != nil {
+			slog.Warn("bumping source_seen_max failed", "error", err)
 		}
 	}
 
@@ -122,14 +146,19 @@ func (g *Grabber) FindChapterCandidates(ctx context.Context, seriesID int64, wan
 	return out, nil
 }
 
-// GrabChapters enqueues downloads for candidates and records queue items.
+// GrabChapters grabs candidates via their owning provider and records
+// queue items.
 func (g *Grabber) GrabChapters(ctx context.Context, seriesID int64, candidates []ChapterCandidate) ([]int64, error) {
 	var queued []int64
 	for _, c := range candidates {
+		prov := g.registry.Get(orDefaultStr(c.Provider, "suwayomi"))
+		if prov == nil {
+			return queued, fmt.Errorf("provider %q is not configured", c.Provider)
+		}
 		slots, _ := json.Marshal([]store.ExpectedSlot{{Ledger: "chapter", Number: c.SlotNumber}})
 		qid, err := g.store.AddQueueItem(ctx, store.QueueItem{
 			SeriesID:      seriesID,
-			Protocol:      "source",
+			Protocol:      provider.ProtocolSource,
 			ExternalID:    fmt.Sprintf("%d", c.ChapterID),
 			Title:         c.ChapterName,
 			ExpectedSlots: slots,
@@ -137,7 +166,10 @@ func (g *Grabber) GrabChapters(ctx context.Context, seriesID int64, candidates [
 		if err != nil {
 			return queued, err
 		}
-		if err := g.suwa.EnqueueDownload(ctx, c.ChapterID); err != nil {
+		if _, err := prov.Grab(ctx, provider.Candidate{
+			Provider: prov.ID(), Protocol: provider.ProtocolSource, Title: c.ChapterName,
+			Source: &provider.SourceRef{ChapterID: c.ChapterID, SourceID: c.SourceID},
+		}); err != nil {
 			_ = g.store.UpdateQueueItem(ctx, qid, store.QueueFailed, err.Error())
 			continue
 		}
@@ -146,166 +178,12 @@ func (g *Grabber) GrabChapters(ctx context.Context, seriesID int64, candidates [
 	return queued, nil
 }
 
-// ProcessQueue advances active source-protocol queue items: poll download
-// state, then fetch + import + link + clean up. Returns imported count.
-func (g *Grabber) ProcessQueue(ctx context.Context) (int, error) {
-	items, err := g.store.ListQueueItems(ctx, true)
-	if err != nil {
-		return 0, err
-	}
-	imported := 0
-	for _, item := range items {
-		if item.Protocol != "source" {
-			continue
-		}
-		if err := g.processItem(ctx, item); err != nil {
-			slog.Warn("queue item failed", "id", item.ID, "title", item.Title, "error", err)
-			_ = g.store.UpdateQueueItem(ctx, item.ID, store.QueueFailed, err.Error())
-			continue
-		}
-		// Re-read status via imported counter only; processItem updates rows.
-		imported++
-	}
-	return imported, nil
-}
+// HasSourceProvider reports whether chapter search/grab is possible.
+func (g *Grabber) HasSourceProvider() bool { return g.registry.Get("suwayomi") != nil }
 
-func (g *Grabber) processItem(ctx context.Context, item store.QueueItem) error {
-	var chapterID int64
-	if _, err := fmt.Sscanf(item.ExternalID, "%d", &chapterID); err != nil {
-		return fmt.Errorf("bad external id %q", item.ExternalID)
+func orDefaultStr(v, def string) string {
+	if v == "" {
+		return def
 	}
-
-	st, err := g.suwa.DownloadStateOf(ctx, chapterID)
-	if err != nil {
-		return err
-	}
-	switch {
-	case st.Downloaded:
-		// fall through to import
-	case st.Queued:
-		if item.Status != store.QueueDownloading {
-			return g.store.UpdateQueueItem(ctx, item.ID, store.QueueDownloading, "")
-		}
-		return nil
-	default:
-		// Neither downloaded nor queued: stuck (adapter §1.4); kick once.
-		age := time.Since(parseTime(item.CreatedAt))
-		if age > 2*time.Minute {
-			_ = g.suwa.Recover(ctx)
-			if age > 10*time.Minute {
-				return fmt.Errorf("download neither queued nor completed after %s", age.Round(time.Second))
-			}
-		}
-		return nil
-	}
-
-	if err := g.store.UpdateQueueItem(ctx, item.ID, store.QueueImporting, ""); err != nil {
-		return err
-	}
-	if err := g.importChapter(ctx, item, chapterID); err != nil {
-		return err
-	}
-	return g.store.UpdateQueueItem(ctx, item.ID, store.QueueImported, "")
-}
-
-func (g *Grabber) importChapter(ctx context.Context, item store.QueueItem, chapterID int64) error {
-	series, err := g.store.GetSeries(ctx, item.SeriesID)
-	if err != nil {
-		return err
-	}
-	var slots []store.ExpectedSlot
-	if err := json.Unmarshal(item.ExpectedSlots, &slots); err != nil || len(slots) == 0 {
-		return fmt.Errorf("queue item has no expected slots")
-	}
-	first := slots[0]
-	isVolume := first.Ledger == "volume"
-
-	lang := "en"
-	editionName := ""
-	if isVolume {
-		if col, err := g.store.GetCollection(ctx, first.CollectionID); err == nil {
-			editionName, lang = col.EditionName, col.Language
-		}
-	} else if cl, err := g.store.GetChapterLedger(ctx, item.SeriesID); err == nil {
-		lang = cl.Language
-	}
-
-	seriesDir := series.Path
-	if seriesDir == "" {
-		seriesDir = g.libraryRoot + "/" + library.Render(g.naming.SeriesFolder, library.NameTokens{
-			SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1,
-		})
-		if err := g.store.SetSeriesPath(ctx, item.SeriesID, seriesDir); err != nil {
-			return err
-		}
-	}
-
-	var destPath string
-	info := library.ComicInfo{
-		Series:      series.Title,
-		Summary:     series.Description,
-		Web:         fmt.Sprintf("https://mangabaka.org/%d", series.MangaBakaID),
-		LanguageISO: lang,
-		Notes:       fmt.Sprintf("mangabaka:%d sento:v1", series.MangaBakaID),
-	}
-	if isVolume {
-		fileName := library.Render(g.naming.VolumeFile, library.NameTokens{
-			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
-			Volume: first.Number, Chapter: -1, Edition: editionName, Lang: lang,
-		})
-		destPath = seriesDir + "/" + fileName
-		info.Volume = library.RenderPlainNum(first.Number)
-		// Also set Number: the merge would otherwise preserve whatever the
-		// source's ComicInfo guessed (often a year mis-parse).
-		info.Number = info.Volume
-	} else {
-		fileName := library.Render(g.naming.ChapterFile, library.NameTokens{
-			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
-			Volume: -1, Chapter: first.Number, Lang: lang,
-		})
-		destPath = seriesDir
-		if g.naming.ChapterDir != "" {
-			destPath += "/" + g.naming.ChapterDir
-		}
-		destPath += "/" + fileName
-		info.Number = library.RenderPlainNum(first.Number)
-	}
-
-	body, _, err := g.suwa.FetchCBZ(ctx, chapterID)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = body.Close() }()
-	size, err := library.ImportCBZ(body, destPath, info)
-	if err != nil {
-		return err
-	}
-
-	links := make([]store.SlotLink, 0, len(slots))
-	for _, sl := range slots {
-		links = append(links, store.SlotLink{Ledger: sl.Ledger, CollectionID: sl.CollectionID, Number: sl.Number})
-	}
-	if _, err := g.store.AddFile(ctx, store.File{
-		SeriesID:   item.SeriesID,
-		Path:       destPath,
-		Size:       size,
-		Provenance: "source",
-	}, nil, links); err != nil {
-		return err
-	}
-
-	// Bounded Suwayomi disk usage: delete after successful import.
-	if err := g.suwa.DeleteDownload(ctx, chapterID); err != nil {
-		slog.Warn("cleanup of suwayomi download failed", "chapter", chapterID, "error", err)
-	}
-	return nil
-}
-
-func parseTime(s string) time.Time {
-	for _, layout := range []string{"2006-01-02 15:04:05", time.RFC3339} {
-		if t, err := time.Parse(layout, s); err == nil {
-			return t
-		}
-	}
-	return time.Now()
+	return v
 }

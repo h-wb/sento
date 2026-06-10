@@ -60,14 +60,14 @@ type Collection struct {
 }
 
 type Work struct {
-	ID          int64  `json:"id"`
-	CollectionID int64 `json:"collectionId"`
-	SequenceNum int64  `json:"sequenceNum"` // hundredths
-	SequenceStr string `json:"sequenceStr"`
-	CountType   string `json:"countType"`
-	ReleaseDate string `json:"releaseDate,omitempty"`
-	ISBN        string `json:"isbn,omitempty"`
-	Pages       int    `json:"pages,omitempty"`
+	ID           int64  `json:"id"`
+	CollectionID int64  `json:"collectionId"`
+	SequenceNum  int64  `json:"sequenceNum"` // hundredths
+	SequenceStr  string `json:"sequenceStr"`
+	CountType    string `json:"countType"`
+	ReleaseDate  string `json:"releaseDate,omitempty"`
+	ISBN         string `json:"isbn,omitempty"`
+	Pages        int    `json:"pages,omitempty"`
 }
 
 type ChapterLedger struct {
