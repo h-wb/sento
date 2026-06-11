@@ -11,6 +11,7 @@ package sourcehost
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 )
 
@@ -59,6 +60,29 @@ type ExtensionManager interface {
 	// InstallExtension installs or updates to the latest repo version.
 	InstallExtension(ctx context.Context, pkgName string) error
 	UninstallExtension(ctx context.Context, pkgName string) error
+}
+
+// Preference is one ConfigurableSource setting (login, mirror, quality…)
+// in the typed form the host serializes from the extension's preference
+// screen. Values are JSON: string, bool, or string array per ValueType.
+type Preference struct {
+	Key         string          `json:"key"`
+	Type        string          `json:"type" tstype:"'EditTextPreference' | 'ListPreference' | 'CheckBoxPreference' | 'SwitchPreferenceCompat' | 'MultiSelectListPreference'"`
+	Title       string          `json:"title,omitempty"`
+	Summary     string          `json:"summary,omitempty"`
+	ValueType   string          `json:"valueType" tstype:"'String' | 'Boolean' | 'Set<String>'"`
+	Default     json.RawMessage `json:"default,omitempty" tstype:"unknown"`
+	Current     json.RawMessage `json:"current,omitempty" tstype:"unknown"`
+	Entries     []string        `json:"entries,omitempty"`
+	EntryValues []string        `json:"entryValues,omitempty"`
+}
+
+// PreferenceManager is an optional host capability paired with
+// ExtensionManager: Sento stores the values users set and replays them
+// onto fresh hosts during reconciliation.
+type PreferenceManager interface {
+	SourcePreferences(ctx context.Context, sourceID string) ([]Preference, error)
+	SetSourcePreference(ctx context.Context, sourceID, key string, value json.RawMessage) error
 }
 
 // Host is the protocol adapter. Implementations must be safe for

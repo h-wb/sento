@@ -1,12 +1,14 @@
 package sourcehost
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -145,7 +147,48 @@ func (c *Client) UninstallExtension(ctx context.Context, pkgName string) error {
 	return c.request(ctx, http.MethodDelete, "/api/v1/extensions/"+url.PathEscape(pkgName))
 }
 
+// --- source preferences (sidecar only) ---
+
+func (c *Client) SourcePreferences(ctx context.Context, sourceID string) ([]Preference, error) {
+	var out []Preference
+	err := c.get(ctx, "/api/v1/sources/"+url.PathEscape(sourceID)+"/preferences", nil, &out)
+	return out, err
+}
+
+func (c *Client) SetSourcePreference(ctx context.Context, sourceID, key string, value json.RawMessage) error {
+	body, err := json.Marshal(map[string]json.RawMessage{
+		"key":   json.RawMessage(strconv.Quote(key)),
+		"value": value,
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/api/v1/sources/"+url.PathEscape(sourceID)+"/preferences", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		var e struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(raw, &e) == nil && e.Error != "" {
+			return fmt.Errorf("host: %s", e.Error)
+		}
+		return fmt.Errorf("host: HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
 var (
-	_ Host             = (*Client)(nil)
-	_ ExtensionManager = (*Client)(nil)
+	_ Host              = (*Client)(nil)
+	_ ExtensionManager  = (*Client)(nil)
+	_ PreferenceManager = (*Client)(nil)
 )

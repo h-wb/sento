@@ -35,6 +35,8 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/extensions", s.handleListExtensions)
 	r.Post("/extensions/{pkg}", s.handleInstallExtension)
 	r.Delete("/extensions/{pkg}", s.handleUninstallExtension)
+	r.Get("/sources/{sid}/preferences", s.handleSourcePreferences)
+	r.Put("/sources/{sid}/preferences", s.handleSetSourcePreference)
 	s.mountSourceAPI(r)
 
 	r.Route("/series", func(r chi.Router) {
@@ -524,6 +526,31 @@ func (s *Server) handleInstallExtension(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleUninstallExtension(w http.ResponseWriter, r *http.Request) {
 	if err := s.extensions.Uninstall(r.Context(), chi.URLParam(r, "pkg")); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleSourcePreferences(w http.ResponseWriter, r *http.Request) {
+	prefs, err := s.extensions.Preferences(r.Context(), chi.URLParam(r, "sid"))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	respondList(w, prefs, nil)
+}
+
+func (s *Server) handleSetSourcePreference(w http.ResponseWriter, r *http.Request) {
+	var body SetPreferenceBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if body.Key == "" {
+		writeError(w, http.StatusBadRequest, "key is required")
+		return
+	}
+	if err := s.extensions.SetPreference(r.Context(), chi.URLParam(r, "sid"), body.Key, body.Value); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}

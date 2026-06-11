@@ -73,6 +73,28 @@ export interface ExtensionInfo {
  */
 export type ExtensionManager = any;
 /**
+ * Preference is one ConfigurableSource setting (login, mirror, quality…)
+ * in the typed form the host serializes from the extension's preference
+ * screen. Values are JSON: string, bool, or string array per ValueType.
+ */
+export interface Preference {
+  key: string;
+  type: 'EditTextPreference' | 'ListPreference' | 'CheckBoxPreference' | 'SwitchPreferenceCompat' | 'MultiSelectListPreference';
+  title?: string;
+  summary?: string;
+  valueType: 'String' | 'Boolean' | 'Set<String>';
+  default?: unknown;
+  current?: unknown;
+  entries?: string[];
+  entryValues?: string[];
+}
+/**
+ * PreferenceManager is an optional host capability paired with
+ * ExtensionManager: Sento stores the values users set and replays them
+ * onto fresh hosts during reconciliation.
+ */
+export type PreferenceManager = any;
+/**
  * Host is the protocol adapter. Implementations must be safe for
  * concurrent use; rate limiting against the remote sites is the host's
  * concern (the extension runtime owns per-source HTTP behavior).

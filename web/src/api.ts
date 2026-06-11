@@ -40,13 +40,14 @@ import type {
   QueueItem,
   Series,
 } from './types/store'
-import type { Manga as SourceManga, Source } from './types/sourcehost'
+import type { Manga as SourceManga, Preference, Source } from './types/sourcehost'
 
 export type {
   Binding,
   ConnectionSettings,
   ConnectionTest,
   ExtensionView,
+  Preference,
   BlocklistEntry,
   CalendarEntry,
   ChapterLedger,
@@ -138,6 +139,13 @@ export const api = {
 
   connections: () => request<ConnectionSettings>('/settings/connections'),
   extensions: () => request<ExtensionView[]>('/extensions'),
+  sourcePreferences: (sid: string) =>
+    request<Preference[]>(`/sources/${encodeURIComponent(sid)}/preferences`),
+  setSourcePreference: (sid: string, key: string, value: unknown) =>
+    request<void>(`/sources/${encodeURIComponent(sid)}/preferences`, {
+      method: 'PUT',
+      body: JSON.stringify({ key, value }),
+    }),
   installExtension: (pkg: string) =>
     request<void>(`/extensions/${encodeURIComponent(pkg)}`, { method: 'POST' }),
   uninstallExtension: (pkg: string) =>

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/json"
+
 	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
@@ -143,4 +145,11 @@ type ImportFolderBody struct {
 type ImportFolderResponse struct {
 	SeriesID int64               `json:"seriesId"`
 	Scan     *service.ScanResult `json:"scan"`
+}
+
+// SetPreferenceBody sets one source preference value (string, bool, or
+// string array depending on the preference's valueType).
+type SetPreferenceBody struct {
+	Key   string          `json:"key"`
+	Value json.RawMessage `json:"value" tstype:"unknown"`
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"testing"
 
@@ -121,5 +122,66 @@ func TestExtensionsNoManager(t *testing.T) {
 	}
 	if err := svc.Install(context.Background(), "x"); err == nil {
 		t.Fatal("install without manager should fail")
+	}
+}
+
+// fakePrefHost adds the preference capability on top of fakeExtHost.
+type fakePrefHost struct {
+	fakeExtHost
+	prefs  map[string]map[string]json.RawMessage // sourceID → key → current
+	pushes []string
+}
+
+func (f *fakePrefHost) SourcePreferences(_ context.Context, sid string) ([]sourcehost.Preference, error) {
+	var out []sourcehost.Preference
+	for key, cur := range f.prefs[sid] {
+		out = append(out, sourcehost.Preference{Key: key, ValueType: "String", Current: cur})
+	}
+	return out, nil
+}
+
+func (f *fakePrefHost) SetSourcePreference(_ context.Context, sid, key string, value json.RawMessage) error {
+	if f.prefs[sid] == nil {
+		f.prefs[sid] = map[string]json.RawMessage{}
+	}
+	f.prefs[sid][key] = value
+	f.pushes = append(f.pushes, sid+"/"+key)
+	return nil
+}
+
+// Stored preferences replay onto fresh hosts; unchanged values are not
+// re-pushed.
+func TestPreferenceReconcile(t *testing.T) {
+	_, st := setup(t)
+	ctx := context.Background()
+
+	host := &fakePrefHost{prefs: map[string]map[string]json.RawMessage{
+		"42": {"username": json.RawMessage(`"old"`)},
+	}}
+	svc := NewExtensionService(st, func() sourcehost.Host { return host })
+
+	if err := svc.SetPreference(ctx, "42", "username", json.RawMessage(`"hugo"`)); err != nil {
+		t.Fatal(err)
+	}
+	if string(host.prefs["42"]["username"]) != `"hugo"` {
+		t.Fatalf("push missing: %v", host.prefs)
+	}
+
+	// Host wiped: prefs reset to defaults.
+	host.prefs = map[string]map[string]json.RawMessage{"42": {"username": json.RawMessage(`""`)}}
+	host.pushes = nil
+	if err := svc.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(host.pushes) != 1 || string(host.prefs["42"]["username"]) != `"hugo"` {
+		t.Fatalf("reconcile did not replay: pushes=%v prefs=%v", host.pushes, host.prefs)
+	}
+	// Converged: nothing re-pushed.
+	host.pushes = nil
+	if err := svc.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(host.pushes) != 0 {
+		t.Fatalf("re-pushed unchanged prefs: %v", host.pushes)
 	}
 }

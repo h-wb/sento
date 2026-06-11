@@ -1,4 +1,7 @@
-import { Alert, Badge, NumberInput, Switch, Table, Text, Title, Tooltip } from '@mantine/core'
+import { useState } from 'react'
+import { ActionIcon, Alert, Badge, NumberInput, Switch, Table, Text, Title, Tooltip } from '@mantine/core'
+import { IconSettings } from '@tabler/icons-react'
+import SourcePrefsModal from '../components/SourcePrefsModal'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type SiteView } from '../api'
 import { notify, usePageTitle } from '../ui'
@@ -12,6 +15,8 @@ export default function IndexersPage() {
     queryKey: ['indexers'],
     queryFn: api.indexerSettings,
   })
+  const connections = useQuery({ queryKey: ['connections'], queryFn: api.connections })
+  const [prefsFor, setPrefsFor] = useState<SiteView | null>(null)
   const patch = useMutation({
     mutationFn: ({ s, p }: { s: SiteView; p: Parameters<typeof api.updateIndexerSetting>[2] }) =>
       api.updateIndexerSetting(s.provider, s.siteId, p),
@@ -53,7 +58,22 @@ export default function IndexersPage() {
           {sites?.map((s) => (
             <Table.Tr key={`${s.provider}-${s.siteId}`} opacity={s.reachable ? 1 : 0.5}>
               <Table.Td>
-                <Text size="sm">{s.name}</Text>
+                <Text size="sm">
+                  {s.name}
+                  {s.protocol === 'source' && connections.data?.sourceBackend === 'host' && (
+                    <Tooltip label="Source settings (login, mirrors…)">
+                      <ActionIcon
+                        size="xs"
+                        variant="subtle"
+                        color="gray"
+                        ml={4}
+                        onClick={() => setPrefsFor(s)}
+                      >
+                        <IconSettings size={12} />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                </Text>
                 <Text size="xs" c="dimmed">
                   {s.provider}/{s.siteId}
                 </Text>
@@ -109,6 +129,13 @@ export default function IndexersPage() {
           ))}
         </Table.Tbody>
       </Table>
+      {prefsFor && (
+        <SourcePrefsModal
+          sourceId={prefsFor.siteId}
+          sourceName={prefsFor.name}
+          onClose={() => setPrefsFor(null)}
+        />
+      )}
       {sites && sites.length === 0 && (
         <Text c="dimmed" size="sm">
           No providers configured — set Suwayomi and/or Prowlarr in the config.

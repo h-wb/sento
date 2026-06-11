@@ -17,7 +17,10 @@ object GetCatalogueSource {
     var reloader: (() -> Unit)? = null
 
     fun getCatalogueSourceOrNull(sourceId: Long): CatalogueSource? {
-        if (sourceCache.isEmpty()) reloader?.invoke()
+        sourceCache[sourceId]?.let { return it }
+        // Miss: a preference change bounced the instance (or nothing is
+        // loaded yet) — re-instantiate from the installed jars.
+        reloader?.invoke()
         return sourceCache[sourceId]
     }
 

@@ -168,3 +168,11 @@ export interface ImportFolderResponse {
   seriesId: number /* int64 */;
   scan?: ScanResult;
 }
+/**
+ * SetPreferenceBody sets one source preference value (string, bool, or
+ * string array depending on the preference's valueType).
+ */
+export interface SetPreferenceBody {
+  key: string;
+  value: unknown;
+}

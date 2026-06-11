@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"slices"
 
 	"github.com/h-wb/sento/internal/sourcehost"
@@ -17,11 +18,17 @@ import (
 // and Reconcile re-installs anything a fresh/replaced host is missing —
 // on startup, after connection changes, and periodically.
 
-const extensionsKey = "extensions"
+const (
+	extensionsKey  = "extensions"
+	sourcePrefsKey = "source_prefs"
+)
 
 type desiredExtensions struct {
 	Packages []string `json:"packages"`
 }
+
+// storedPrefs is sourceID → preference key → value (JSON-typed).
+type storedPrefs map[string]map[string]json.RawMessage
 
 // ExtensionView is one host extension plus Sento's desired flag.
 type ExtensionView struct {
@@ -119,37 +126,126 @@ func (e *ExtensionService) Uninstall(ctx context.Context, pkgName string) error 
 	return e.saveDesired(ctx, desired)
 }
 
-// Reconcile installs every desired package the host is missing. It never
-// uninstalls extras (manual host-side installs are not Sento's to
-// remove). No-op when the backend has no manager.
+// Reconcile installs every desired package the host is missing, then
+// replays stored source preferences. It never uninstalls extras (manual
+// host-side installs are not Sento's to remove). No-op when the backend
+// has no manager.
 func (e *ExtensionService) Reconcile(ctx context.Context) error {
 	mgr := e.manager()
 	if mgr == nil {
 		return nil
 	}
+	var errs []error
 	desired := e.desired(ctx)
-	if len(desired) == 0 {
+	if len(desired) > 0 {
+		infos, err := mgr.Extensions(ctx)
+		if err != nil {
+			return fmt.Errorf("listing host extensions: %w", err)
+		}
+		installed := map[string]bool{}
+		for _, info := range infos {
+			if info.InstalledVersion != "" {
+				installed[info.PkgName] = true
+			}
+		}
+		for _, pkg := range desired {
+			if installed[pkg] {
+				continue
+			}
+			slog.Info("reconciling extension onto host", "pkg", pkg)
+			if err := mgr.InstallExtension(ctx, pkg); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", pkg, err))
+			}
+		}
+	}
+	if err := e.reconcilePrefs(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+// --- source preferences (ConfigurableSource) ---
+
+func (e *ExtensionService) prefManager() sourcehost.PreferenceManager {
+	mgr, _ := e.host().(sourcehost.PreferenceManager)
+	return mgr
+}
+
+func (e *ExtensionService) storedSourcePrefs(ctx context.Context) storedPrefs {
+	prefs := storedPrefs{}
+	if raw, err := e.store.GetSetting(ctx, sourcePrefsKey); err == nil {
+		_ = json.Unmarshal(raw, &prefs)
+	}
+	return prefs
+}
+
+// Preferences proxies the host's preference form for one source.
+func (e *ExtensionService) Preferences(ctx context.Context, sourceID string) ([]sourcehost.Preference, error) {
+	mgr := e.prefManager()
+	if mgr == nil {
+		return nil, fmt.Errorf("the configured source backend does not manage source preferences")
+	}
+	return mgr.SourcePreferences(ctx, sourceID)
+}
+
+// SetPreference pushes one value to the host and records it so
+// reconciliation replays it onto fresh hosts.
+func (e *ExtensionService) SetPreference(ctx context.Context, sourceID, key string, value json.RawMessage) error {
+	mgr := e.prefManager()
+	if mgr == nil {
+		return fmt.Errorf("the configured source backend does not manage source preferences")
+	}
+	if err := mgr.SetSourcePreference(ctx, sourceID, key, value); err != nil {
+		return err
+	}
+	prefs := e.storedSourcePrefs(ctx)
+	if prefs[sourceID] == nil {
+		prefs[sourceID] = map[string]json.RawMessage{}
+	}
+	prefs[sourceID][key] = value
+	raw, err := json.Marshal(prefs)
+	if err != nil {
+		return err
+	}
+	return e.store.PutSetting(ctx, sourcePrefsKey, raw)
+}
+
+// reconcilePrefs replays stored values that differ from the host's
+// current ones (a fresh host starts at the extension defaults).
+func (e *ExtensionService) reconcilePrefs(ctx context.Context) error {
+	mgr := e.prefManager()
+	if mgr == nil {
 		return nil
 	}
-	infos, err := mgr.Extensions(ctx)
-	if err != nil {
-		return fmt.Errorf("listing host extensions: %w", err)
-	}
-	installed := map[string]bool{}
-	for _, info := range infos {
-		if info.InstalledVersion != "" {
-			installed[info.PkgName] = true
-		}
-	}
 	var errs []error
-	for _, pkg := range desired {
-		if installed[pkg] {
+	for sourceID, values := range e.storedSourcePrefs(ctx) {
+		current, err := mgr.SourcePreferences(ctx, sourceID)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("source %s preferences: %w", sourceID, err))
 			continue
 		}
-		slog.Info("reconciling extension onto host", "pkg", pkg)
-		if err := mgr.InstallExtension(ctx, pkg); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", pkg, err))
+		currentByKey := map[string]json.RawMessage{}
+		for _, p := range current {
+			currentByKey[p.Key] = p.Current
+		}
+		for key, want := range values {
+			if jsonEqual(currentByKey[key], want) {
+				continue
+			}
+			slog.Info("reconciling source preference onto host", "source", sourceID, "key", key)
+			if err := mgr.SetSourcePreference(ctx, sourceID, key, want); err != nil {
+				errs = append(errs, fmt.Errorf("source %s pref %s: %w", sourceID, key, err))
+			}
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// jsonEqual compares two JSON values structurally.
+func jsonEqual(a, b json.RawMessage) bool {
+	var av, bv any
+	if json.Unmarshal(a, &av) != nil || json.Unmarshal(b, &bv) != nil {
+		return false
+	}
+	return reflect.DeepEqual(av, bv)
 }

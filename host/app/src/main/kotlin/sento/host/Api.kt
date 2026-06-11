@@ -166,6 +166,19 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
         response.body.byteStream().use { ctx.result(it.readBytes()) }
     }
 
+    // --- source preferences (ConfigurableSource) ---
+
+    get("/api/v1/sources/{sid}/preferences") { ctx ->
+        val source = ctx.sourceOrNull() ?: return@get ctx.notFound("unknown source")
+        ctx.respond(SourcePrefs.list(source))
+    }
+
+    post("/api/v1/sources/{sid}/preferences") { ctx ->
+        val source = ctx.sourceOrNull() ?: return@post ctx.notFound("unknown source")
+        SourcePrefs.set(source, json.decodeFromString<SetPreferenceBody>(ctx.body()))
+        ctx.status(HttpStatus.NO_CONTENT)
+    }
+
     // --- extension management ---
 
     get("/api/v1/extensions") { ctx ->
