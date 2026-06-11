@@ -34,22 +34,16 @@ export interface QBittorrentConn {
   password: string;
   category: string;
 }
-export interface SuwayomiConn {
-  url: string;
-  username: string;
-  password: string;
-}
+/**
+ * SourceHostConn points at a sento-host sidecar (host/), the extension
+ * runtime. Empty URL = no extension sources.
+ */
 export interface SourceHostConn {
   url: string;
 }
 export interface ConnectionSettings {
   prowlarr: ProwlarrConn;
   qbittorrent: QBittorrentConn;
-  /**
-   * SourceBackend picks who serves extension sources.
-   */
-  sourceBackend: 'none' | 'suwayomi' | 'host';
-  suwayomi: SuwayomiConn;
   sourceHost: SourceHostConn;
 }
 /**

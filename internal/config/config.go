@@ -17,7 +17,6 @@ type Config struct {
 	Library     Library     `yaml:"library"`
 	Downloads   Downloads   `yaml:"downloads"`
 	SourceHost  SourceHost  `yaml:"source_host"`
-	Suwayomi    Suwayomi    `yaml:"suwayomi"`
 	Prowlarr    Prowlarr    `yaml:"prowlarr"`
 	QBittorrent QBittorrent `yaml:"qbittorrent"`
 	MangaBaka   MangaBaka   `yaml:"mangabaka"`
@@ -49,16 +48,10 @@ type Database struct {
 	Path string `yaml:"path"`
 }
 
-// SourceHost points at a sento-host sidecar (host/). When set it serves
-// the extension sources and Suwayomi is ignored.
+// SourceHost points at a sento-host sidecar (host/), the extension
+// runtime serving manga sources.
 type SourceHost struct {
 	URL string `yaml:"url"`
-}
-
-type Suwayomi struct {
-	URL      string `yaml:"url"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
 }
 
 type Prowlarr struct {
@@ -120,9 +113,6 @@ func applyEnv(c *Config) {
 	str("SENTO_LIBRARY_PATH", &c.Library.Path)
 	str("SENTO_DOWNLOADS_DIR", &c.Downloads.Dir)
 	str("SENTO_SOURCE_HOST_URL", &c.SourceHost.URL)
-	str("SENTO_SUWAYOMI_URL", &c.Suwayomi.URL)
-	str("SENTO_SUWAYOMI_USERNAME", &c.Suwayomi.Username)
-	str("SENTO_SUWAYOMI_PASSWORD", &c.Suwayomi.Password)
 	str("SENTO_PROWLARR_URL", &c.Prowlarr.URL)
 	str("SENTO_PROWLARR_API_KEY", &c.Prowlarr.APIKey)
 	str("SENTO_QBITTORRENT_URL", &c.QBittorrent.URL)

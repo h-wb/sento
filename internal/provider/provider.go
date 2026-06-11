@@ -138,7 +138,7 @@ type Payload struct {
 }
 
 type Provider interface {
-	// ID is the stable provider key ("suwayomi", "torrent").
+	// ID is the stable provider key ("host", "torrent").
 	ID() string
 	// Protocol names the download protocol this provider owns.
 	Protocol() string

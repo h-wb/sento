@@ -13,6 +13,8 @@ CGO_ENABLED = "0"
 # which is gitignored — e.g. SENTO_SUWAYOMI_URL, SENTO_PROWLARR_API_KEY).
 SENTO_DB_PATH = "data/sento.db"
 SENTO_LIBRARY_PATH = "data/library"
+# Dev default: sento-host sidecar on its default port (mise run host:run).
+SENTO_SOURCE_HOST_URL = "http://localhost:8901"
 
 [tasks.build]
 description = "Build the sento binary"

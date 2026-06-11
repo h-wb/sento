@@ -17,11 +17,10 @@ export interface Client {
 Package sourcehost defines the protocol-adapter contract for extension
 sources: the host knows how to talk to manga sites (search, chapter
 lists, page images); Sento owns everything stateful around it (queueing,
-pacing, CBZ assembly, import). Suwayomi implements this today; the
-Kotlin sidecar implements the same shape natively.
+pacing, CBZ assembly, import). The Kotlin sidecar (host/) implements
+it; any other extension runtime could.
 
 All identifiers below sourceID are opaque keys minted by the host —
-Suwayomi uses its database ids, a stateless host uses source URLs.
 Sento persists them (bindings, queue items) but never interprets them.
 */
 
@@ -68,8 +67,7 @@ export interface ExtensionInfo {
 /**
  * ExtensionManager is an optional host capability: the sento-host sidecar
  * is stateless cattle whose installed extensions Sento reconciles from
- * the desired list it stores. Suwayomi manages its own extensions and
- * does not implement this.
+ * the desired list it stores.
  */
 export type ExtensionManager = any;
 /**

@@ -109,8 +109,8 @@ func TestExtensionReconcile(t *testing.T) {
 	}
 }
 
-// Backends without management (Suwayomi) make reconcile a no-op and the
-// management API unavailable.
+// Without a host, reconcile is a no-op and the management API
+// unavailable.
 func TestExtensionsNoManager(t *testing.T) {
 	_, st := setup(t)
 	svc := NewExtensionService(st, func() sourcehost.Host { return nil })

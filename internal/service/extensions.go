@@ -49,7 +49,7 @@ func NewExtensionService(st *store.Store, host func() sourcehost.Host) *Extensio
 }
 
 // manager returns the current host's management capability, nil when the
-// backend doesn't support it (Suwayomi, or none configured).
+// backend doesn't support it (none configured).
 func (e *ExtensionService) manager() sourcehost.ExtensionManager {
 	mgr, _ := e.host().(sourcehost.ExtensionManager)
 	return mgr

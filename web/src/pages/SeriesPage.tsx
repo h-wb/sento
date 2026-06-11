@@ -960,7 +960,7 @@ function IndexersTab({
                   />
                 </Table.Td>
                 <Table.Td>
-                  {s.provider === 'suwayomi' ? (
+                  {s.protocol === 'source' ? (
                     <BindingList seriesID={seriesID} site={s} run={run} />
                   ) : (
                     <Text size="xs" c="dimmed">
@@ -985,7 +985,7 @@ function IndexersTab({
                         Reset
                       </Button>
                     )}
-                    {s.provider === 'suwayomi' && (
+                    {s.protocol === 'source' && (
                       <Button size="compact-xs" variant="default" onClick={() => setRebind(s)}>
                         {s.bindings?.some((b) => b.state === 'active') ? 'Bind more' : 'Bind'}
                       </Button>

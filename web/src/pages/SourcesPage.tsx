@@ -7,7 +7,6 @@ import {
   Group,
   Loader,
   PasswordInput,
-  SegmentedControl,
   Stack,
   Text,
   TextInput,
@@ -40,7 +39,7 @@ export default function SourcesPage() {
           queryClient.invalidateQueries({ queryKey: ['extensions'] })
         }}
       />
-      {settings.data.sourceBackend === 'host' && <ExtensionsCard />}
+      {settings.data.sourceHost.url !== '' && <ExtensionsCard />}
     </>
   )
 }
@@ -48,7 +47,6 @@ export default function SourcesPage() {
 const testLabels: Record<string, string> = {
   prowlarr: 'Prowlarr',
   qbittorrent: 'qBittorrent',
-  suwayomi: 'Suwayomi',
   sourceHost: 'Source host',
 }
 
@@ -98,65 +96,18 @@ function SourcesForm({
       <Stack maw={640}>
         <Card withBorder padding="md">
           <Title order={5} mb={4}>
-            Extension sources
+            Source host
           </Title>
           <Text size="xs" c="dimmed" mb="sm">
-            Tachiyomi-style extensions serve chapter downloads. Either a Suwayomi server or the
-            sento-host sidecar provides them; Sento downloads the pages itself.
+            The sento-host sidecar runs Tachiyomi-style extensions that serve chapter downloads;
+            Sento fetches the pages itself. Leave the URL empty to disable extension sources.
           </Text>
-          <SegmentedControl
-            value={form.sourceBackend}
-            onChange={(v) => set({ sourceBackend: v as ConnectionSettings['sourceBackend'] })}
-            data={[
-              { value: 'none', label: 'None' },
-              { value: 'suwayomi', label: 'Suwayomi' },
-              { value: 'host', label: 'Sento host' },
-            ]}
-            mb="sm"
+          <TextInput
+            label="URL"
+            placeholder="http://localhost:8901"
+            value={form.sourceHost.url}
+            onChange={(e) => set({ sourceHost: { url: e.currentTarget.value } })}
           />
-          {form.sourceBackend === 'suwayomi' && (
-            <Stack gap="xs">
-              <TextInput
-                label="URL"
-                placeholder="http://localhost:4567"
-                value={form.suwayomi.url}
-                onChange={(e) => set({ suwayomi: { ...form.suwayomi, url: e.currentTarget.value } })}
-              />
-              <Group grow>
-                <TextInput
-                  label="Username"
-                  value={form.suwayomi.username}
-                  onChange={(e) =>
-                    set({ suwayomi: { ...form.suwayomi, username: e.currentTarget.value } })
-                  }
-                />
-                <PasswordInput
-                  label="Password"
-                  value={form.suwayomi.password}
-                  onChange={(e) =>
-                    set({ suwayomi: { ...form.suwayomi, password: e.currentTarget.value } })
-                  }
-                />
-              </Group>
-            </Stack>
-          )}
-          {form.sourceBackend === 'host' && (
-            <TextInput
-              label="URL"
-              placeholder="http://localhost:8901"
-              description="The sento-host sidecar (host/ in the repo) — runs keiyoushi extensions directly"
-              value={form.sourceHost.url}
-              onChange={(e) => set({ sourceHost: { url: e.currentTarget.value } })}
-            />
-          )}
-          {form.sourceBackend !== 'none' &&
-            initial.sourceBackend !== 'none' &&
-            form.sourceBackend !== initial.sourceBackend && (
-              <Alert color="yellow" p="xs" mt="sm">
-                Switching backends re-resolves source bindings: manga identities differ between
-                hosts, so the next search re-binds each series automatically.
-              </Alert>
-            )}
         </Card>
 
         <Card withBorder padding="md">

@@ -14,7 +14,6 @@ import (
 	"github.com/h-wb/sento/internal/qbittorrent"
 	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
-	"github.com/h-wb/sento/internal/suwayomi"
 )
 
 // Connection settings are the service endpoints Sento talks to. They live
@@ -35,12 +34,8 @@ type QBittorrentConn struct {
 	Category string `json:"category"`
 }
 
-type SuwayomiConn struct {
-	URL      string `json:"url"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
+// SourceHostConn points at a sento-host sidecar (host/), the extension
+// runtime. Empty URL = no extension sources.
 type SourceHostConn struct {
 	URL string `json:"url"`
 }
@@ -48,51 +43,25 @@ type SourceHostConn struct {
 type ConnectionSettings struct {
 	Prowlarr    ProwlarrConn    `json:"prowlarr"`
 	QBittorrent QBittorrentConn `json:"qbittorrent"`
-	// SourceBackend picks who serves extension sources.
-	SourceBackend string         `json:"sourceBackend" tstype:"'none' | 'suwayomi' | 'host'"`
-	Suwayomi      SuwayomiConn   `json:"suwayomi"`
-	SourceHost    SourceHostConn `json:"sourceHost"`
+	SourceHost  SourceHostConn  `json:"sourceHost"`
 }
 
 // DefaultConnections seeds settings from the file/env config.
 func DefaultConnections(cfg config.Config) ConnectionSettings {
-	cs := ConnectionSettings{
+	return ConnectionSettings{
 		Prowlarr: ProwlarrConn{URL: cfg.Prowlarr.URL, APIKey: cfg.Prowlarr.APIKey},
 		QBittorrent: QBittorrentConn{
 			URL: cfg.QBittorrent.URL, Username: cfg.QBittorrent.Username,
 			Password: cfg.QBittorrent.Password, Category: cfg.QBittorrent.Category,
 		},
-		Suwayomi: SuwayomiConn{
-			URL: cfg.Suwayomi.URL, Username: cfg.Suwayomi.Username, Password: cfg.Suwayomi.Password,
-		},
 		SourceHost: SourceHostConn{URL: cfg.SourceHost.URL},
 	}
-	switch {
-	case cfg.SourceHost.URL != "":
-		cs.SourceBackend = "host"
-	case cfg.Suwayomi.URL != "":
-		cs.SourceBackend = "suwayomi"
-	default:
-		cs.SourceBackend = "none"
-	}
-	return cs
 }
 
 func ValidateConnections(cs ConnectionSettings) error {
-	switch cs.SourceBackend {
-	case "none", "suwayomi", "host":
-	default:
-		return fmt.Errorf("sourceBackend must be none, suwayomi or host")
-	}
-	if cs.SourceBackend == "suwayomi" && cs.Suwayomi.URL == "" {
-		return fmt.Errorf("suwayomi backend selected but no suwayomi url set")
-	}
-	if cs.SourceBackend == "host" && cs.SourceHost.URL == "" {
-		return fmt.Errorf("host backend selected but no source host url set")
-	}
 	for name, u := range map[string]string{
 		"prowlarr": cs.Prowlarr.URL, "qbittorrent": cs.QBittorrent.URL,
-		"suwayomi": cs.Suwayomi.URL, "sourceHost": cs.SourceHost.URL,
+		"sourceHost": cs.SourceHost.URL,
 	} {
 		if u != "" && !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
 			return fmt.Errorf("%s url must start with http:// or https://", name)
@@ -178,13 +147,10 @@ func (c *Connections) Apply(cs ConnectionSettings) {
 }
 
 func buildHost(cs ConnectionSettings) sourcehost.Host {
-	switch cs.SourceBackend {
-	case "host":
-		return sourcehost.NewClient(cs.SourceHost.URL)
-	case "suwayomi":
-		return suwayomi.New(cs.Suwayomi.URL, cs.Suwayomi.Username, cs.Suwayomi.Password)
+	if cs.SourceHost.URL == "" {
+		return nil
 	}
-	return nil
+	return sourcehost.NewClient(cs.SourceHost.URL)
 }
 
 // ConnectionTest reports one service check ("" error = healthy).
@@ -217,13 +183,6 @@ func TestConnections(ctx context.Context, cs ConnectionSettings) []ConnectionTes
 		qb := qbittorrent.New(cs.QBittorrent.URL, cs.QBittorrent.Username, cs.QBittorrent.Password)
 		probes = append(probes, probe{"qbittorrent", func() (string, error) {
 			return "", qb.Ping(ctx)
-		}})
-	}
-	if cs.Suwayomi.URL != "" {
-		su := suwayomi.New(cs.Suwayomi.URL, cs.Suwayomi.Username, cs.Suwayomi.Password)
-		probes = append(probes, probe{"suwayomi", func() (string, error) {
-			version, err := su.About(ctx)
-			return version, err
 		}})
 	}
 	if cs.SourceHost.URL != "" {

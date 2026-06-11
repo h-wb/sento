@@ -15,7 +15,6 @@ export default function IndexersPage() {
     queryKey: ['indexers'],
     queryFn: api.indexerSettings,
   })
-  const connections = useQuery({ queryKey: ['connections'], queryFn: api.connections })
   const [prefsFor, setPrefsFor] = useState<SiteView | null>(null)
   const patch = useMutation({
     mutationFn: ({ s, p }: { s: SiteView; p: Parameters<typeof api.updateIndexerSetting>[2] }) =>
@@ -60,7 +59,7 @@ export default function IndexersPage() {
               <Table.Td>
                 <Text size="sm">
                   {s.name}
-                  {s.protocol === 'source' && connections.data?.sourceBackend === 'host' && (
+                  {s.protocol === 'source' && (
                     <Tooltip label="Source settings (login, mirrors…)">
                       <ActionIcon
                         size="xs"
@@ -138,7 +137,7 @@ export default function IndexersPage() {
       )}
       {sites && sites.length === 0 && (
         <Text c="dimmed" size="sm">
-          No providers configured — set Suwayomi and/or Prowlarr in the config.
+          No providers configured — connect a source host and/or Prowlarr on the Sources page.
         </Text>
       )}
     </>
