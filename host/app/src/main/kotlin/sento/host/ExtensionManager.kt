@@ -96,12 +96,24 @@ object ExtensionManager {
     private fun jarPath(apkName: String) =
         "${applicationDirs.extensionsRoot}/${apkName.substringBefore(".apk")}.jar"
 
-    suspend fun available(): List<OnlineExtension> =
-        HostConfig.repos.flatMap { repo ->
-            runCatching { ExtensionGithubApi.findExtensions(repo) }
-                .onFailure { logger.warn(it) { "extension repo $repo failed" } }
-                .getOrDefault(emptyList())
+    // The repo index is ~1500 entries fetched from GitHub raw; cache it
+    // briefly — Sento's reconcile loop polls regularly.
+    @Volatile
+    private var availableCache: Pair<Long, List<OnlineExtension>>? = null
+
+    suspend fun available(): List<OnlineExtension> {
+        availableCache?.let { (fetchedAt, list) ->
+            if (System.currentTimeMillis() - fetchedAt < 5 * 60_000) return list
         }
+        val list =
+            HostConfig.repos.flatMap { repo ->
+                runCatching { ExtensionGithubApi.findExtensions(repo) }
+                    .onFailure { logger.warn(it) { "extension repo $repo failed" } }
+                    .getOrDefault(emptyList())
+            }
+        if (list.isNotEmpty()) availableCache = System.currentTimeMillis() to list
+        return list
+    }
 
     suspend fun install(pkgName: String): InstalledExtension {
         val ext =

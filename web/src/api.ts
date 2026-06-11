@@ -19,6 +19,7 @@ import type {
   AddSeriesRequest,
   ConnectionSettings,
   ConnectionTest,
+  ExtensionView,
   ImportProposal,
   MediaSettings,
   ReleaseCandidate,
@@ -45,6 +46,7 @@ export type {
   Binding,
   ConnectionSettings,
   ConnectionTest,
+  ExtensionView,
   BlocklistEntry,
   CalendarEntry,
   ChapterLedger,
@@ -135,6 +137,11 @@ export const api = {
   files: (id: number) => request<SeriesFile[]>(`/series/${id}/files`),
 
   connections: () => request<ConnectionSettings>('/settings/connections'),
+  extensions: () => request<ExtensionView[]>('/extensions'),
+  installExtension: (pkg: string) =>
+    request<void>(`/extensions/${encodeURIComponent(pkg)}`, { method: 'POST' }),
+  uninstallExtension: (pkg: string) =>
+    request<void>(`/extensions/${encodeURIComponent(pkg)}`, { method: 'DELETE' }),
   saveConnections: (c: ConnectionSettings) =>
     request<ConnectionSettings>('/settings/connections', { method: 'PUT', body: JSON.stringify(c) }),
   testConnections: (c: ConnectionSettings) =>

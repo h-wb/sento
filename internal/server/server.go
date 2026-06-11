@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,17 +24,18 @@ import (
 )
 
 type Server struct {
-	cfg      config.Config
-	db       *sql.DB
-	store    *store.Store
-	provider metadata.Provider
-	library  *service.Library
-	conns    *service.Connections
-	registry *provider.Registry
-	search   *service.SearchService
-	sites    *service.SiteService
-	importer *service.Importer
-	scanner  *service.Scanner
+	cfg        config.Config
+	db         *sql.DB
+	store      *store.Store
+	provider   metadata.Provider
+	library    *service.Library
+	conns      *service.Connections
+	registry   *provider.Registry
+	search     *service.SearchService
+	sites      *service.SiteService
+	importer   *service.Importer
+	scanner    *service.Scanner
+	extensions *service.ExtensionService
 }
 
 func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
@@ -57,7 +59,25 @@ func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 	s.search = service.NewSearchService(st, s.registry)
 	s.sites = service.NewSiteService(st, s.registry)
 	s.importer = service.NewImporter(st, s.registry, cfg.Library.Path, cfg.Library.PathMappings)
+	s.extensions = service.NewExtensionService(st, s.conns.Host)
+	s.reconcileExtensions()
 	return s
+}
+
+// reconcileExtensions converges the host's installed extensions with the
+// desired list, off the request path (installs dex2jar APKs and can take
+// a while).
+func (s *Server) reconcileExtensions() {
+	if !s.extensions.HasManager() {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		if err := s.extensions.Reconcile(ctx); err != nil {
+			slog.Warn("extension reconcile failed", "error", err)
+		}
+	}()
 }
 
 // Volumes exposes the volume searcher for background loops.
@@ -67,6 +87,9 @@ func (s *Server) Importer() *service.Importer { return s.importer }
 
 // SearchSvc exposes the unified search for background loops.
 func (s *Server) SearchSvc() *service.SearchService { return s.search }
+
+// ExtensionsSvc exposes extension reconciliation for background loops.
+func (s *Server) ExtensionsSvc() *service.ExtensionService { return s.extensions }
 
 // Store exposes the persistence layer for background loops.
 func (s *Server) Store() *store.Store { return s.store }

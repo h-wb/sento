@@ -2,6 +2,7 @@
 /* eslint-disable */
 import type { SeriesRef } from "./metadata"
 import type { Result } from "./parse"
+import type { ExtensionInfo } from "./sourcehost"
 import type { Binding, SiteOverride } from "./store"
 
 //////////
@@ -66,6 +67,23 @@ export interface ConnectionTest {
   ok: boolean;
   error?: string;
   detail?: string;
+}
+
+//////////
+// source: extensions.go
+
+/**
+ * ExtensionView is one host extension plus Sento's desired flag.
+ */
+export interface ExtensionView extends ExtensionInfo {
+  desired: boolean;
+}
+/**
+ * ExtensionService manages extensions on hosts that expose management
+ * (the sidecar). The host accessor is indirect: connections may swap the
+ * backend at runtime.
+ */
+export interface ExtensionService {
 }
 
 //////////

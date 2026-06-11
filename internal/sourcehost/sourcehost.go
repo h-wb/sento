@@ -38,6 +38,29 @@ type Chapter struct {
 	Scanlator string  `json:"scanlator,omitempty"`
 }
 
+// ExtensionInfo describes one extension on a host: available from its
+// repos, installed, or both.
+type ExtensionInfo struct {
+	PkgName          string `json:"pkgName"`
+	Name             string `json:"name"`
+	Lang             string `json:"lang"`
+	NSFW             bool   `json:"nsfw"`
+	InstalledVersion string `json:"installedVersion,omitempty"`
+	AvailableVersion string `json:"availableVersion,omitempty"`
+	HasUpdate        bool   `json:"hasUpdate,omitempty"`
+}
+
+// ExtensionManager is an optional host capability: the sento-host sidecar
+// is stateless cattle whose installed extensions Sento reconciles from
+// the desired list it stores. Suwayomi manages its own extensions and
+// does not implement this.
+type ExtensionManager interface {
+	Extensions(ctx context.Context) ([]ExtensionInfo, error)
+	// InstallExtension installs or updates to the latest repo version.
+	InstallExtension(ctx context.Context, pkgName string) error
+	UninstallExtension(ctx context.Context, pkgName string) error
+}
+
 // Host is the protocol adapter. Implementations must be safe for
 // concurrent use; rate limiting against the remote sites is the host's
 // concern (the extension runtime owns per-source HTTP behavior).

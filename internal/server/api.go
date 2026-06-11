@@ -32,6 +32,9 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/settings/connections", s.handleGetConnections)
 	r.Put("/settings/connections", s.handlePutConnections)
 	r.Post("/settings/connections/test", s.handleTestConnections)
+	r.Get("/extensions", s.handleListExtensions)
+	r.Post("/extensions/{pkg}", s.handleInstallExtension)
+	r.Delete("/extensions/{pkg}", s.handleUninstallExtension)
 	s.mountSourceAPI(r)
 
 	r.Route("/series", func(r chi.Router) {
@@ -490,7 +493,41 @@ func (s *Server) handlePutConnections(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// A (re)connected sidecar may be fresh: converge its extensions.
+	s.reconcileExtensions()
 	writeJSON(w, http.StatusOK, cs)
+}
+
+// --- extensions (sidecar host management) ---
+
+func (s *Server) handleListExtensions(w http.ResponseWriter, r *http.Request) {
+	if !s.extensions.HasManager() {
+		writeError(w, http.StatusServiceUnavailable,
+			"the configured source backend does not manage extensions")
+		return
+	}
+	views, err := s.extensions.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	respondList(w, views, nil)
+}
+
+func (s *Server) handleInstallExtension(w http.ResponseWriter, r *http.Request) {
+	if err := s.extensions.Install(r.Context(), chi.URLParam(r, "pkg")); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleUninstallExtension(w http.ResponseWriter, r *http.Request) {
+	if err := s.extensions.Uninstall(r.Context(), chi.URLParam(r, "pkg")); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleTestConnections probes the services in the posted settings (the

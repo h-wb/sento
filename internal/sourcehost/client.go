@@ -104,4 +104,48 @@ func (c *Client) Page(ctx context.Context, sourceID, pageRef string) (io.ReadClo
 	return resp.Body, nil
 }
 
-var _ Host = (*Client)(nil)
+// --- extension management (sidecar only) ---
+
+func (c *Client) Extensions(ctx context.Context) ([]ExtensionInfo, error) {
+	var out []ExtensionInfo
+	err := c.get(ctx, "/api/v1/extensions", nil, &out)
+	return out, err
+}
+
+func (c *Client) request(ctx context.Context, method, path string) error {
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	// Installs download + dex2jar the APK: allow more than the read
+	// timeout of the shared client.
+	resp, err := (&http.Client{Timeout: 3 * time.Minute}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		var e struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(raw, &e) == nil && e.Error != "" {
+			return fmt.Errorf("host: %s", e.Error)
+		}
+		return fmt.Errorf("host: HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *Client) InstallExtension(ctx context.Context, pkgName string) error {
+	return c.request(ctx, http.MethodPost, "/api/v1/extensions/"+url.PathEscape(pkgName))
+}
+
+func (c *Client) UninstallExtension(ctx context.Context, pkgName string) error {
+	return c.request(ctx, http.MethodDelete, "/api/v1/extensions/"+url.PathEscape(pkgName))
+}
+
+var (
+	_ Host             = (*Client)(nil)
+	_ ExtensionManager = (*Client)(nil)
+)

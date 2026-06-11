@@ -53,6 +53,26 @@ export interface Chapter {
   scanlator?: string;
 }
 /**
+ * ExtensionInfo describes one extension on a host: available from its
+ * repos, installed, or both.
+ */
+export interface ExtensionInfo {
+  pkgName: string;
+  name: string;
+  lang: string;
+  nsfw: boolean;
+  installedVersion?: string;
+  availableVersion?: string;
+  hasUpdate?: boolean;
+}
+/**
+ * ExtensionManager is an optional host capability: the sento-host sidecar
+ * is stateless cattle whose installed extensions Sento reconciles from
+ * the desired list it stores. Suwayomi manages its own extensions and
+ * does not implement this.
+ */
+export type ExtensionManager = any;
+/**
  * Host is the protocol adapter. Implementations must be safe for
  * concurrent use; rate limiting against the remote sites is the host's
  * concern (the extension runtime owns per-source HTTP behavior).

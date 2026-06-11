@@ -52,7 +52,7 @@ func run(configPath string) error {
 	schedCtx, stopSched := context.WithCancel(context.Background())
 	defer stopSched()
 	scheduler.New(app.Store(), app.LibraryService(), app.SearchSvc(),
-		app.Importer(), scheduler.DefaultIntervals()).Start(schedCtx)
+		app.Importer(), app.ExtensionsSvc(), scheduler.DefaultIntervals()).Start(schedCtx)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{

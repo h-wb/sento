@@ -13,6 +13,7 @@ import (
 
 type Intervals struct {
 	QueueProcess     time.Duration
+	ExtensionSync    time.Duration
 	RefreshSweep     time.Duration
 	ChapterCheck     time.Duration
 	VolumeSweep      time.Duration
@@ -23,6 +24,7 @@ type Intervals struct {
 func DefaultIntervals() Intervals {
 	return Intervals{
 		QueueProcess:     time.Minute,
+		ExtensionSync:    30 * time.Minute,
 		RefreshSweep:     time.Hour,
 		ChapterCheck:     2 * time.Hour,
 		VolumeSweep:      12 * time.Hour,
@@ -32,25 +34,31 @@ func DefaultIntervals() Intervals {
 }
 
 type Scheduler struct {
-	store     *store.Store
-	libraries *service.Library
-	search    *service.SearchService
-	importer  *service.Importer
-	intervals Intervals
+	store      *store.Store
+	libraries  *service.Library
+	search     *service.SearchService
+	importer   *service.Importer
+	extensions *service.ExtensionService
+	intervals  Intervals
 }
 
 func New(st *store.Store, lib *service.Library, search *service.SearchService,
-	importer *service.Importer, intervals Intervals,
+	importer *service.Importer, extensions *service.ExtensionService, intervals Intervals,
 ) *Scheduler {
 	return &Scheduler{
 		store: st, libraries: lib, search: search,
-		importer: importer, intervals: intervals,
+		importer: importer, extensions: extensions, intervals: intervals,
 	}
 }
 
 // Start launches all loops; they stop when ctx is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {
 	go s.loop(ctx, "queue-process", s.intervals.QueueProcess, s.tickQueue)
+	if s.extensions != nil {
+		// Converges a replaced/wiped sidecar back to the desired
+		// extension list (no-op for other backends).
+		go s.loop(ctx, "extension-sync", s.intervals.ExtensionSync, s.extensions.Reconcile)
+	}
 	go s.loop(ctx, "metadata-refresh", s.intervals.RefreshSweep, s.tickRefresh)
 	if s.search.HasProviders() {
 		go s.loop(ctx, "chapter-check", s.intervals.ChapterCheck, s.tickChapters)
