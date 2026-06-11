@@ -84,3 +84,20 @@ type OverridePatch struct {
 type ScanBody struct {
 	Path string `json:"path"`
 }
+
+// ImportScanBody is POST /library/import/scan (empty root = library path).
+type ImportScanBody struct {
+	Root string `json:"root"`
+}
+
+// ImportFolderBody is POST /library/import.
+type ImportFolderBody struct {
+	Dir         string `json:"dir"`
+	MangaBakaID int64  `json:"mangabakaId"`
+}
+
+// ImportFolderResponse confirms one folder import.
+type ImportFolderResponse struct {
+	SeriesID int64               `json:"seriesId"`
+	Scan     *service.ScanResult `json:"scan"`
+}

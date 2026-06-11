@@ -23,6 +23,8 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/lookup", s.handleLookup)
 	r.Get("/calendar", s.handleCalendar)
 	r.Delete("/files/{fid}", s.handleDeleteFile)
+	r.Post("/library/import/scan", s.handleImportScan)
+	r.Post("/library/import", s.handleImportFolder)
 	s.mountSourceAPI(r)
 
 	r.Route("/series", func(r chi.Router) {
@@ -72,6 +74,45 @@ func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
 	to := now.AddDate(0, 0, days).Format("2006-01-02")
 	entries, err := s.store.Calendar(r.Context(), from, to)
 	respondList(w, entries, err)
+}
+
+// handleImportScan proposes MangaBaka matches for a root folder's
+// subfolders (read-only; §11.4 bulk import).
+func (s *Server) handleImportScan(w http.ResponseWriter, r *http.Request) {
+	var body ImportScanBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if body.Root == "" {
+		body.Root = s.cfg.Library.Path
+	}
+	proposals, err := s.library.ProposeImports(r.Context(), body.Root)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	respondList(w, proposals, nil)
+}
+
+// handleImportFolder confirms one proposal: add the series with the
+// folder as its path and link its files in place.
+func (s *Server) handleImportFolder(w http.ResponseWriter, r *http.Request) {
+	var body ImportFolderBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if body.Dir == "" || body.MangaBakaID == 0 {
+		writeError(w, http.StatusBadRequest, "dir and mangabakaId are required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 55*time.Second)
+	defer cancel()
+	id, result, err := s.library.ImportFolder(ctx, s.scanner, body.Dir, body.MangaBakaID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, ImportFolderResponse{SeriesID: id, Scan: result})
 }
 
 // --- series ---

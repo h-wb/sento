@@ -37,25 +37,28 @@ packages:
     output_path: "web/src/types/service.ts"
     frontmatter: |
       /* eslint-disable */
+      import type { SeriesRef } from "./metadata"
       import type { Result } from "./parse"
       import type { Binding, SiteOverride } from "./store"
     type_mappings:
       parse.Result: "Result"
       store.Binding: "Binding"
       store.SiteOverride: "SiteOverride"
+      metadata.SeriesRef: "SeriesRef"
 
   - path: "github.com/h-wb/sento/internal/server"
     output_path: "web/src/types/server.ts"
     frontmatter: |
       /* eslint-disable */
       import type { ChapterSlot, VolumeSlot } from "./ledger"
-      import type { SearchResult, TargetSlot } from "./service"
+      import type { ScanResult, SearchResult, TargetSlot } from "./service"
       import type { ChapterLedger, Collection, Series } from "./store"
     type_mappings:
       ledger.VolumeSlot: "VolumeSlot"
       ledger.ChapterSlot: "ChapterSlot"
       service.TargetSlot: "TargetSlot"
       service.SearchResult: "SearchResult"
+      service.ScanResult: "ScanResult"
       store.Series: "Series"
       store.Collection: "Collection"
       store.ChapterLedger: "ChapterLedger"

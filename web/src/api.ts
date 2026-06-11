@@ -14,6 +14,7 @@ import type {
 } from './types/server'
 import type {
   AddSeriesRequest,
+  ImportProposal,
   ReleaseCandidate,
   ScanResult,
   SearchEvent,
@@ -42,6 +43,7 @@ export type {
   ChapterSlot,
   Collection,
   Decision,
+  ImportProposal,
   QueueItem,
   ReleaseCandidate,
   ScanResult,
@@ -185,6 +187,16 @@ export const api = {
     request<ScanResult>(`/series/${id}/import`, {
       method: 'POST',
       body: JSON.stringify({ path }),
+    }),
+  importScan: (root?: string) =>
+    request<ImportProposal[]>('/library/import/scan', {
+      method: 'POST',
+      body: JSON.stringify({ root: root ?? '' }),
+    }),
+  importFolder: (dir: string, mangabakaId: number) =>
+    request<{ seriesId: number; scan: ScanResult | null }>('/library/import', {
+      method: 'POST',
+      body: JSON.stringify({ dir, mangabakaId }),
     }),
 
   queue: (all = false) => request<QueueItem[]>(`/queue${all ? '?all=1' : ''}`),
