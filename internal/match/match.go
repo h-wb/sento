@@ -18,7 +18,8 @@ const (
 )
 
 // Normalize folds a title for comparison: NFKC, lowercase, diacritics
-// stripped, punctuation → space, whitespace collapsed, '&' → "and".
+// stripped, punctuation → space, whitespace collapsed, '&' → "and",
+// '×' → "x".
 func Normalize(s string) string {
 	s = norm.NFKC.String(s)
 	var b strings.Builder
@@ -29,6 +30,10 @@ func Normalize(s string) string {
 			// possessives don't shed stray "s" tokens.
 		case r == '&':
 			b.WriteString(" and ")
+		case r == '×' || r == '✕':
+			// The multiplication sign reads as "x" ("HUNTER×HUNTER" is
+			// written "Hunter x Hunter" everywhere else).
+			b.WriteString(" x ")
 		case unicode.IsLetter(r) || unicode.IsDigit(r):
 			if r > 127 {
 				dec := []rune(norm.NFD.String(string(r)))

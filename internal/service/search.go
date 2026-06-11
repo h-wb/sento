@@ -130,10 +130,6 @@ const maxAutoBindings = 5
 func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.MangaResolver, seriesID int64, titles []string, st siteState) ([]store.Binding, string) {
 	resolveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	refs, err := resolver.ResolveManga(resolveCtx, st.site.ID, titles[0])
-	if err != nil {
-		return nil, fmt.Sprintf("%s: search failed (%v)", st.site.Name, err)
-	}
 
 	type scored struct {
 		ref   provider.MangaRef
@@ -141,18 +137,34 @@ func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.M
 	}
 	var matches []scored
 	bestScore, bestRef := 0.0, provider.MangaRef{}
-	for _, ref := range refs {
-		score := 0.0
-		for _, t := range titles {
-			if sc := match.Similarity(match.Normalize(t), match.Normalize(ref.Title)); sc > score {
-				score = sc
+	for i, query := range resolveQueries(titles) {
+		refs, err := resolver.ResolveManga(resolveCtx, st.site.ID, query)
+		if err != nil {
+			if i == 0 {
+				return nil, fmt.Sprintf("%s: search failed (%v)", st.site.Name, err)
+			}
+			break // keep what earlier queries found
+		}
+		seen := map[int64]bool{}
+		for _, m := range matches {
+			seen[m.ref.ID] = true
+		}
+		for _, ref := range refs {
+			score := 0.0
+			for _, t := range titles {
+				if sc := match.Similarity(match.Normalize(t), match.Normalize(ref.Title)); sc > score {
+					score = sc
+				}
+			}
+			if score > bestScore {
+				bestScore, bestRef = score, ref
+			}
+			if score >= match.AutoThreshold && !seen[ref.ID] {
+				matches = append(matches, scored{ref, score})
 			}
 		}
-		if score > bestScore {
-			bestScore, bestRef = score, ref
-		}
-		if score >= match.AutoThreshold {
-			matches = append(matches, scored{ref, score})
+		if len(matches) > 0 {
+			break
 		}
 	}
 	sort.SliceStable(matches, func(i, j int) bool { return matches[i].score > matches[j].score })
@@ -193,6 +205,40 @@ func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.M
 		names = append(names, fmt.Sprintf("%q", m.ref.Title))
 	}
 	return bound, fmt.Sprintf("auto-bound %s → %s", st.site.Name, strings.Join(names, ", "))
+}
+
+// resolveQueries lists the queries to try against a source, in order:
+// the primary title, its normalized form, then Latin-script aliases.
+// Source search engines differ in fuzziness — Japscan finds "Hunter x
+// Hunter" but not "HUNTER×HUNTER" — so a miss retries with a variant.
+func resolveQueries(titles []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(q string) {
+		key := strings.ToLower(strings.TrimSpace(q))
+		if key == "" || seen[key] || len(out) >= 3 {
+			return
+		}
+		seen[key] = true
+		out = append(out, q)
+	}
+	add(titles[0])
+	add(match.Normalize(titles[0]))
+	for _, t := range titles[1:] {
+		if hasLatin(t) {
+			add(t)
+		}
+	}
+	return out
+}
+
+func hasLatin(s string) bool {
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			return true
+		}
+	}
+	return false
 }
 
 // SearchEvent is one frame of a streaming search: "sites" announces what

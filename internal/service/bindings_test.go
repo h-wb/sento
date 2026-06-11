@@ -76,3 +76,19 @@ func TestMultiBindings(t *testing.T) {
 		t.Fatal("want ErrNotFound for unknown binding id")
 	}
 }
+
+func TestResolveQueries(t *testing.T) {
+	got := resolveQueries([]string{"HUNTER×HUNTER", "ハンター×ハンター", "Hunter x Hunter", "Cazador X"})
+	// Primary, its normalized form, then the first distinct Latin alias —
+	// the native-script alias is skipped, "Hunter x Hunter" dedupes against
+	// the normalized primary.
+	want := []string{"HUNTER×HUNTER", "hunter x hunter", "Cazador X"}
+	if len(got) != len(want) {
+		t.Fatalf("resolveQueries = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("resolveQueries = %v, want %v", got, want)
+		}
+	}
+}

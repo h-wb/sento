@@ -9,6 +9,8 @@ func TestNormalize(t *testing.T) {
 		"Pokémon RéBURST":               "pokemon reburst",
 		"Tate & Yari":                   "tate and yari",
 		"ONE PIECE":                     "one piece",
+		"HUNTER×HUNTER":                 "hunter x hunter",
+		"Hunter x Hunter":               "hunter x hunter",
 	}
 	for in, want := range cases {
 		if got := Normalize(in); got != want {
