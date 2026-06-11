@@ -94,6 +94,12 @@ export interface OverridePatch {
   useChapters?: boolean;
 }
 /**
+ * BindingPatch is PUT /series/{id}/bindings/{bid}.
+ */
+export interface BindingPatch {
+  state: 'active' | 'disabled';
+}
+/**
  * ScanBody is POST /series/{id}/import.
  */
 export interface ScanBody {

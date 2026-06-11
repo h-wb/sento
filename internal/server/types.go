@@ -80,6 +80,11 @@ type OverridePatch struct {
 	UseChapters *bool `json:"useChapters"`
 }
 
+// BindingPatch is PUT /series/{id}/bindings/{bid}.
+type BindingPatch struct {
+	State string `json:"state" tstype:"'active' | 'disabled'"`
+}
+
 // ScanBody is POST /series/{id}/import.
 type ScanBody struct {
 	Path string `json:"path"`

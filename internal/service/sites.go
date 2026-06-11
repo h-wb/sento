@@ -33,11 +33,12 @@ type SiteView struct {
 	Priority    int    `json:"priority"`
 }
 
-// SeriesSiteView adds per-series override state and binding status.
+// SeriesSiteView adds per-series override state and the binding set (a
+// site can bind several manga entries; the funnel picks per slot).
 type SeriesSiteView struct {
 	SiteView `tstype:",extends"`
 	Override *store.SiteOverride `json:"override,omitempty"`
-	Binding  *store.Binding      `json:"binding,omitempty"`
+	Bindings []store.Binding     `json:"bindings,omitempty"`
 }
 
 func (s *SiteService) liveSites(ctx context.Context) ([]siteState, error) {
@@ -99,9 +100,9 @@ func (s *SiteService) Effective(ctx context.Context, seriesID int64) ([]SeriesSi
 	if err != nil {
 		return nil, err
 	}
-	bound := map[string]store.Binding{}
+	bound := map[string][]store.Binding{}
 	for _, b := range bindings {
-		bound[b.SourceID] = b
+		bound[b.SourceID] = append(bound[b.SourceID], b)
 	}
 
 	out := make([]SeriesSiteView, 0, len(states))
@@ -121,9 +122,8 @@ func (s *SiteService) Effective(ctx context.Context, seriesID int64) ([]SeriesSi
 			},
 			Override: ov,
 		}
-		if b, ok := bound[st.site.ID]; ok && st.providerID == "suwayomi" {
-			binding := b
-			view.Binding = &binding
+		if st.providerID == "suwayomi" {
+			view.Bindings = bound[st.site.ID]
 		}
 		out = append(out, view)
 	}

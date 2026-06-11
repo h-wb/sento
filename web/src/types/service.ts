@@ -167,9 +167,10 @@ export interface SiteView {
   priority: number /* int */;
 }
 /**
- * SeriesSiteView adds per-series override state and binding status.
+ * SeriesSiteView adds per-series override state and the binding set (a
+ * site can bind several manga entries; the funnel picks per slot).
  */
 export interface SeriesSiteView extends SiteView {
   override?: SiteOverride;
-  binding?: Binding;
+  bindings?: Binding[];
 }

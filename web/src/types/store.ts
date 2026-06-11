@@ -196,6 +196,7 @@ export interface Binding {
   sourceId: string;
   sourceMangaId: number /* int64 */;
   sourceName: string;
+  mangaTitle: string;
   state: string;
   priority: number /* int */;
 }

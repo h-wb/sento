@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import {
+  ActionIcon,
   Alert,
   Badge,
   Button,
@@ -18,7 +19,7 @@ import {
   Title,
   Tooltip,
 } from '@mantine/core'
-import { IconRefresh, IconSearch, IconTrash } from '@tabler/icons-react'
+import { IconEye, IconEyeOff, IconRefresh, IconSearch, IconTrash, IconX } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
@@ -595,8 +596,9 @@ function IndexersTab({
     <Stack>
       <Text size="sm" c="dimmed">
         Defaults come from the global Indexers page; switches here override them for this series
-        only. Extension sources are bound automatically on first search (≥0.90 title match) —
-        rebind if the wrong manga matched.
+        only. Extension sources bind automatically on first search (every entry at ≥0.90 title
+        match — sites often list a series several times); all active entries are searched and the
+        best release wins per slot. Disable or remove an entry if it produces garbage.
       </Text>
       <Table maw={860}>
         <Table.Thead>
@@ -652,15 +654,7 @@ function IndexersTab({
                 </Table.Td>
                 <Table.Td>
                   {s.provider === 'suwayomi' ? (
-                    s.binding ? (
-                      <Text size="xs" c="dimmed">
-                        manga #{s.binding.sourceMangaId}
-                      </Text>
-                    ) : (
-                      <Text size="xs" c="dimmed">
-                        auto on search
-                      </Text>
-                    )
+                    <BindingList seriesID={seriesID} site={s} run={run} />
                   ) : (
                     <Text size="xs" c="dimmed">
                       —
@@ -686,7 +680,7 @@ function IndexersTab({
                     )}
                     {s.provider === 'suwayomi' && (
                       <Button size="compact-xs" variant="default" onClick={() => setRebind(s)}>
-                        {s.binding ? 'Rebind' : 'Bind'}
+                        {s.bindings?.some((b) => b.state === 'active') ? 'Bind more' : 'Bind'}
                       </Button>
                     )}
                   </Group>
@@ -700,11 +694,85 @@ function IndexersTab({
       <RebindModal
         seriesID={seriesID}
         seriesTitle={seriesTitle}
-        site={rebind}
+        site={
+          rebind &&
+          (sites?.find((x) => x.provider === rebind.provider && x.siteId === rebind.siteId) ??
+            rebind)
+        }
         busy={busy}
         run={run}
         onClose={() => setRebind(null)}
       />
+    </Stack>
+  )
+}
+
+// BindingList shows a site's bound manga entries: every entry that cleared
+// auto-matching is searched in parallel and the funnel picks per slot —
+// disable an entry only if it produces garbage.
+function BindingList({
+  seriesID,
+  site,
+  run,
+}: {
+  seriesID: number
+  site: SeriesSiteView
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+}) {
+  const bindings = site.bindings ?? []
+  if (bindings.length === 0) {
+    return (
+      <Text size="xs" c="dimmed">
+        auto on search
+      </Text>
+    )
+  }
+  return (
+    <Stack gap={2}>
+      {bindings.map((b) =>
+        b.state === 'unmatched' ? (
+          <Text key={b.id} size="xs" c="dimmed">
+            no confident match{b.mangaTitle ? ` (best: ${b.mangaTitle})` : ''}
+          </Text>
+        ) : (
+          <Group key={b.id} gap={4} wrap="nowrap">
+            <Text size="xs" c={b.state === 'active' ? undefined : 'dimmed'} truncate maw={220}>
+              {b.mangaTitle || 'manga'}{' '}
+              <Text span size="xs" c="dimmed">
+                #{b.sourceMangaId}
+              </Text>
+            </Text>
+            <Tooltip label={b.state === 'active' ? 'Disable entry' : 'Enable entry'}>
+              <ActionIcon
+                size="xs"
+                variant="subtle"
+                color={b.state === 'active' ? 'gray' : 'yellow'}
+                onClick={() =>
+                  run(() =>
+                    api.setBindingState(
+                      seriesID,
+                      b.id,
+                      b.state === 'active' ? 'disabled' : 'active',
+                    ),
+                  )
+                }
+              >
+                {b.state === 'active' ? <IconEye size={12} /> : <IconEyeOff size={12} />}
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="Remove binding">
+              <ActionIcon
+                size="xs"
+                variant="subtle"
+                color="red"
+                onClick={() => run(() => api.deleteBinding(seriesID, b.id))}
+              >
+                <IconX size={12} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        ),
+      )}
     </Stack>
   )
 }
@@ -752,29 +820,34 @@ function RebindModal({
             Search
           </Button>
         </Group>
-        {results.map((m) => (
-          <Group key={m.id} justify="space-between">
-            <Text size="sm">{m.title}</Text>
-            <Button
-              size="compact-xs"
-              onClick={() =>
-                run(
-                  () =>
-                    api
-                      .addBinding(seriesID, {
+        {results.map((m) => {
+          const isBound = site.bindings?.some(
+            (b) => b.sourceMangaId === m.id && b.state !== 'unmatched',
+          )
+          return (
+            <Group key={m.id} justify="space-between">
+              <Text size="sm">{m.title}</Text>
+              <Button
+                size="compact-xs"
+                disabled={isBound}
+                onClick={() =>
+                  run(
+                    () =>
+                      api.addBinding(seriesID, {
                         sourceId: site.siteId,
                         sourceMangaId: m.id,
                         sourceName: site.name,
-                      })
-                      .then(onClose),
-                  'Source bound',
-                )
-              }
-            >
-              Bind
-            </Button>
-          </Group>
-        ))}
+                        mangaTitle: m.title,
+                      }),
+                    'Source bound',
+                  )
+                }
+              >
+                {isBound ? 'Bound' : 'Bind'}
+              </Button>
+            </Group>
+          )
+        })}
       </Stack>
     </Modal>
   )

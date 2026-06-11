@@ -41,6 +41,7 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Post("/import", s.handleScanSeries)
 			r.Get("/bindings", s.handleListBindings)
 			r.Post("/bindings", s.handleAddBinding)
+			r.Put("/bindings/{bid}", s.handleUpdateBinding)
 			r.Delete("/bindings/{bid}", s.handleDeleteBinding)
 		})
 	})
@@ -382,6 +383,30 @@ func (s *Server) handleAddBinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": bid})
+}
+
+func (s *Server) handleUpdateBinding(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	bid, ok := pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	var patch BindingPatch
+	if !decodeBody(w, r, &patch) {
+		return
+	}
+	if patch.State != "active" && patch.State != "disabled" {
+		writeError(w, http.StatusBadRequest, "state must be active or disabled")
+		return
+	}
+	if err := s.store.SetBindingState(r.Context(), id, bid, patch.State); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteBinding(w http.ResponseWriter, r *http.Request) {

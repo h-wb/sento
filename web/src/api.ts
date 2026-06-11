@@ -126,8 +126,16 @@ export const api = {
   sourceSearch: (sid: string, q: string) =>
     request<MangaPage>(`/sources/${sid}/search?q=${encodeURIComponent(q)}`),
   bindings: (id: number) => request<Binding[]>(`/series/${id}/bindings`),
-  addBinding: (id: number, body: { sourceId: string; sourceMangaId: number; sourceName?: string }) =>
+  addBinding: (
+    id: number,
+    body: { sourceId: string; sourceMangaId: number; sourceName?: string; mangaTitle?: string },
+  ) =>
     request<{ id: number }>(`/series/${id}/bindings`, { method: 'POST', body: JSON.stringify(body) }),
+  setBindingState: (id: number, bid: number, state: 'active' | 'disabled') =>
+    request<void>(`/series/${id}/bindings/${bid}`, {
+      method: 'PUT',
+      body: JSON.stringify({ state }),
+    }),
   deleteBinding: (id: number, bid: number) =>
     request<void>(`/series/${id}/bindings/${bid}`, { method: 'DELETE' }),
 

@@ -100,6 +100,7 @@ type Binding struct {
 	SourceID      string `json:"sourceId"`
 	SourceMangaID int64  `json:"sourceMangaId"`
 	SourceName    string `json:"sourceName"`
+	MangaTitle    string `json:"mangaTitle"`
 	State         string `json:"state"`
 	Priority      int    `json:"priority"`
 }
@@ -335,23 +336,41 @@ func SlotKey(ledger string, collectionID, number int64) string {
 func (s *Store) ListBindings(ctx context.Context, seriesID int64) ([]Binding, error) {
 	return list[Binding](ctx, s, `
 		SELECT id, series_id, source_id, source_manga_id,
-		       COALESCE(source_name,'') AS source_name, state, priority
-		FROM source_bindings WHERE series_id = ? ORDER BY priority`, seriesID)
+		       COALESCE(source_name,'') AS source_name,
+		       COALESCE(manga_title,'') AS manga_title, state, priority
+		FROM source_bindings WHERE series_id = ? ORDER BY priority, id`, seriesID)
 }
 
+// AddBinding upserts one series↔manga binding (a site can hold several).
+// An active binding obsoletes any "unmatched" sentinel of the same site.
 func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO source_bindings (series_id, source_id, source_manga_id, source_name, state, priority)
-		VALUES (?,?,?,?,?,?)
-		ON CONFLICT(series_id, source_id) DO UPDATE SET
-			source_manga_id = excluded.source_manga_id,
+	state := orDefault(b.State, "active")
+	var id int64
+	err := s.db.QueryRowContext(ctx, `
+		INSERT INTO source_bindings (series_id, source_id, source_manga_id, source_name, manga_title, state, priority)
+		VALUES (?,?,?,?,?,?,?)
+		ON CONFLICT(series_id, source_id, source_manga_id) DO UPDATE SET
 			source_name = excluded.source_name,
-			state = excluded.state`,
-		b.SeriesID, b.SourceID, b.SourceMangaID, b.SourceName, orDefault(b.State, "active"), b.Priority)
+			manga_title = excluded.manga_title,
+			state = excluded.state
+		RETURNING id`,
+		b.SeriesID, b.SourceID, b.SourceMangaID, b.SourceName, b.MangaTitle, state, b.Priority).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	if state == "active" {
+		_, _ = s.db.ExecContext(ctx, `
+			DELETE FROM source_bindings
+			WHERE series_id = ? AND source_id = ? AND state = 'unmatched'`,
+			b.SeriesID, b.SourceID)
+	}
+	return id, nil
+}
+
+// SetBindingState toggles one binding ("active" / "disabled").
+func (s *Store) SetBindingState(ctx context.Context, seriesID, bindingID int64, state string) error {
+	return s.touch(ctx, `UPDATE source_bindings SET state = ? WHERE id = ? AND series_id = ?`,
+		state, bindingID, seriesID)
 }
 
 func (s *Store) DeleteBinding(ctx context.Context, seriesID, bindingID int64) error {

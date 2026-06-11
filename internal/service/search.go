@@ -115,47 +115,84 @@ func (s *SearchService) effectiveSites(ctx context.Context, seriesID int64, sear
 	return states, nil
 }
 
-// resolveBinding auto-resolves one site's series↔manga binding (spec.md
-// §6: auto-bind at ≥0.9 title similarity) under a time budget. Definitive
-// misses are persisted as state "unmatched" so slow sources aren't
-// re-probed on every search (rebind in the UI retries); transient errors
-// are not persisted. Returns the persisted binding, if any.
-func (s *SearchService) resolveBinding(ctx context.Context, resolver provider.MangaResolver, seriesID int64, titles []string, st siteState) (*store.Binding, string) {
+// maxAutoBindings caps how many entries one site auto-binds: enough to
+// cover duplicate listings, small enough that a generic title can't fan a
+// search out over a whole result page.
+const maxAutoBindings = 5
+
+// resolveBindings auto-resolves one site's series↔manga bindings (spec.md
+// §6: auto-bind at ≥0.9 title similarity) under a time budget. EVERY entry
+// clearing the threshold is bound — sites like Madokami list the same
+// series several times and the funnel picks per slot at search time, with
+// better information than a bind-time argmax. Definitive misses persist as
+// one "unmatched" sentinel so slow sources aren't re-probed on every
+// search (rebind in the UI retries); transient errors are not persisted.
+func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.MangaResolver, seriesID int64, titles []string, st siteState) ([]store.Binding, string) {
 	resolveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	refs, err := resolver.ResolveManga(resolveCtx, st.site.ID, titles[0])
 	if err != nil {
 		return nil, fmt.Sprintf("%s: search failed (%v)", st.site.Name, err)
 	}
+
+	type scored struct {
+		ref   provider.MangaRef
+		score float64
+	}
+	var matches []scored
 	bestScore, bestRef := 0.0, provider.MangaRef{}
 	for _, ref := range refs {
+		score := 0.0
 		for _, t := range titles {
-			if sc := match.Similarity(match.Normalize(t), match.Normalize(ref.Title)); sc > bestScore {
-				bestScore, bestRef = sc, ref
+			if sc := match.Similarity(match.Normalize(t), match.Normalize(ref.Title)); sc > score {
+				score = sc
 			}
 		}
+		if score > bestScore {
+			bestScore, bestRef = score, ref
+		}
+		if score >= match.AutoThreshold {
+			matches = append(matches, scored{ref, score})
+		}
 	}
-	bind := store.Binding{
-		SeriesID: seriesID, SourceID: st.site.ID,
-		SourceMangaID: bestRef.ID, SourceName: st.site.Name,
-		State: "unmatched",
+	sort.SliceStable(matches, func(i, j int) bool { return matches[i].score > matches[j].score })
+	if len(matches) > maxAutoBindings {
+		matches = matches[:maxAutoBindings]
 	}
-	var note string
-	switch {
-	case bestScore >= match.AutoThreshold:
-		bind.State, bind.Priority = "active", st.setting.Priority
-		note = fmt.Sprintf("auto-bound %s → %q", st.site.Name, bestRef.Title)
-	case bestScore > 0:
-		note = fmt.Sprintf("%s: no confident match (best %q %.2f)", st.site.Name, bestRef.Title, bestScore)
-	default:
-		note = fmt.Sprintf("%s: no results", st.site.Name)
+
+	if len(matches) == 0 {
+		bind := store.Binding{
+			SeriesID: seriesID, SourceID: st.site.ID,
+			SourceMangaID: bestRef.ID, SourceName: st.site.Name,
+			MangaTitle: bestRef.Title, State: "unmatched",
+		}
+		note := fmt.Sprintf("%s: no results", st.site.Name)
+		if bestScore > 0 {
+			note = fmt.Sprintf("%s: no confident match (best %q %.2f)", st.site.Name, bestRef.Title, bestScore)
+		}
+		if _, err := s.store.AddBinding(ctx, bind); err != nil {
+			slog.Warn("persisting binding failed", "site", st.site.Name, "error", err)
+		}
+		return nil, note
 	}
-	if id, err := s.store.AddBinding(ctx, bind); err != nil {
-		slog.Warn("persisting binding failed", "site", st.site.Name, "error", err)
-	} else {
-		bind.ID = id
+
+	var bound []store.Binding
+	var names []string
+	for _, m := range matches {
+		bind := store.Binding{
+			SeriesID: seriesID, SourceID: st.site.ID,
+			SourceMangaID: m.ref.ID, SourceName: st.site.Name,
+			MangaTitle: m.ref.Title, State: "active", Priority: st.setting.Priority,
+		}
+		if id, err := s.store.AddBinding(ctx, bind); err != nil {
+			slog.Warn("persisting binding failed", "site", st.site.Name, "error", err)
+		} else {
+			bind.ID = id
+		}
+		bound = append(bound, bind)
+		names = append(names, fmt.Sprintf("%q", m.ref.Title))
 	}
-	return &bind, note
+	return bound, fmt.Sprintf("auto-bound %s → %s", st.site.Name, strings.Join(names, ", "))
 }
 
 // SearchEvent is one frame of a streaming search: "sites" announces what
@@ -327,11 +364,9 @@ func (s *SearchService) streamProvider(ctx context.Context, p provider.Provider,
 			siteBindings := bySite[st.site.ID]
 			var notes []string
 			if len(siteBindings) == 0 { // never probed: resolve now
-				bind, note := s.resolveBinding(ctx, resolver, run.seriesID, run.titles, st)
+				bound, note := s.resolveBindings(ctx, resolver, run.seriesID, run.titles, st)
 				notes = append(notes, note)
-				if bind != nil {
-					siteBindings = []store.Binding{*bind}
-				}
+				siteBindings = bound
 			}
 			var active []provider.Binding
 			for _, b := range siteBindings {
