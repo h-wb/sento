@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -550,8 +551,30 @@ func (s *Server) handleSetExtensionRepos(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, ExtensionRepos{URLs: s.extensions.Repos(r.Context())})
 }
 
+// sourceIDForEntry maps a source indexer entry id to the host source id.
+func (s *Server) sourceIDForEntry(r *http.Request) (string, error) {
+	iid, err := strconv.ParseInt(chi.URLParam(r, "sid"), 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("invalid indexer id")
+	}
+	ix, err := s.store.GetIndexer(r.Context(), iid)
+	if err != nil {
+		return "", err
+	}
+	var ss service.SourceSettings
+	if err := json.Unmarshal(ix.Settings, &ss); err != nil || ss.SourceID == "" {
+		return "", fmt.Errorf("indexer is not an extension source")
+	}
+	return ss.SourceID, nil
+}
+
 func (s *Server) handleSourcePreferences(w http.ResponseWriter, r *http.Request) {
-	prefs, err := s.extensions.Preferences(r.Context(), chi.URLParam(r, "sid"))
+	sourceID, err := s.sourceIDForEntry(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	prefs, err := s.extensions.Preferences(r.Context(), sourceID)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -568,7 +591,12 @@ func (s *Server) handleSetSourcePreference(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "key is required")
 		return
 	}
-	if err := s.extensions.SetPreference(r.Context(), chi.URLParam(r, "sid"), body.Key, body.Value); err != nil {
+	sourceID, err := s.sourceIDForEntry(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.extensions.SetPreference(r.Context(), sourceID, body.Key, body.Value); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}

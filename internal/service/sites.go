@@ -2,14 +2,16 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
+	"strconv"
 
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
-// SiteService backs the Indexers configuration UI: a uniform list of every
-// site across providers with global settings and per-series overrides.
+// SiteService backs the Indexers UI: the configured entries with
+// reachability, plus per-series override views.
 type SiteService struct {
 	store    *store.Store
 	registry *provider.Registry
@@ -19,76 +21,138 @@ func NewSiteService(st *store.Store, registry *provider.Registry) *SiteService {
 	return &SiteService{store: st, registry: registry}
 }
 
-// SiteView is one site with its global configuration.
-type SiteView struct {
-	Provider    string `json:"provider"` // owning provider id
-	SiteID      string `json:"siteId"`
-	Name        string `json:"name"`
-	Protocol    string `json:"protocol"`
-	Lang        string `json:"lang,omitempty"`
-	Reachable   bool   `json:"reachable"` // enabled on the remote side
-	Enabled     bool   `json:"enabled"`
-	UseVolumes  bool   `json:"useVolumes"`
-	UseChapters bool   `json:"useChapters"`
-	Priority    int    `json:"priority"`
+// IndexerView is one entry with live reachability and a display summary.
+type IndexerView struct {
+	store.Indexer `tstype:",extends"`
+	Reachable     bool   `json:"reachable"`
+	Summary       string `json:"summary"` // endpoint host / source name
 }
 
-// SeriesSiteView adds per-series override state and the binding set (a
-// site can bind several manga entries; the funnel picks per slot).
-type SeriesSiteView struct {
-	SiteView `tstype:",extends"`
-	Override *store.SiteOverride `json:"override,omitempty"`
-	Bindings []store.Binding     `json:"bindings,omitempty"`
+// SeriesIndexerView adds per-series override state and the binding set (a
+// source entry can bind several manga entries; the funnel picks per slot).
+type SeriesIndexerView struct {
+	IndexerView `tstype:",extends"`
+	Override    *store.SiteOverride `json:"override,omitempty"`
+	Bindings    []store.Binding     `json:"bindings,omitempty"`
 }
 
-func (s *SiteService) liveSites(ctx context.Context) ([]siteState, error) {
-	globals, err := s.store.ListSiteSettings(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var out []siteState
+// siteState is the search-time view of one entry: effective settings
+// after per-series overrides, plus usability for the requested ledger.
+type siteState struct {
+	providerID string
+	entryID    string
+	name       string
+	protocol   string
+	reachable  bool
+	eff        store.Indexer
+	usable     bool
+}
+
+// reachability asks the providers which entries answer right now (source
+// entries go stale when their extension is uninstalled).
+func (s *SiteService) reachability(ctx context.Context) map[string]bool {
+	out := map[string]bool{}
 	for _, p := range s.registry.All() {
 		sites, err := p.Sites(ctx)
 		if err != nil {
-			return nil, err
+			continue
 		}
 		for _, site := range sites {
-			key := [2]string{p.ID(), site.ID}
-			global, ok := globals[key]
-			if !ok {
-				global = store.SiteSetting{
-					Provider: key[0], SiteID: key[1],
-					Enabled: true, UseVolumes: true, UseChapters: true,
-				}
-			}
-			out = append(out, siteState{providerID: p.ID(), site: site, setting: global})
+			out[site.ID] = site.Enabled
 		}
 	}
-	return out, nil
+	return out
 }
 
-// List returns all sites with their global configuration.
-func (s *SiteService) List(ctx context.Context) ([]SiteView, error) {
-	states, err := s.liveSites(ctx)
+func (s *SiteService) providerFor(protocol string) string {
+	var proto string
+	switch protocol {
+	case store.IndexerTorznab:
+		proto = provider.ProtocolTorrent
+	case store.IndexerSource:
+		proto = provider.ProtocolSource
+	}
+	if p := s.registry.ForProtocol(proto); p != nil {
+		return p.ID()
+	}
+	return ""
+}
+
+// liveSites resolves all entries with reachability.
+func (s *SiteService) liveSites(ctx context.Context) ([]siteState, error) {
+	entries, err := s.store.ListIndexers(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]SiteView, 0, len(states))
-	for _, st := range states {
-		out = append(out, SiteView{
-			Provider: st.providerID, SiteID: st.site.ID, Name: st.site.Name,
-			Protocol: st.site.Protocol, Lang: st.site.Lang, Reachable: st.site.Enabled,
-			Enabled: st.setting.Enabled, UseVolumes: st.setting.UseVolumes,
-			UseChapters: st.setting.UseChapters, Priority: st.setting.Priority,
-		})
+	reach := s.reachability(ctx)
+	out := make([]siteState, 0, len(entries))
+	for _, ix := range entries {
+		st := siteState{
+			providerID: s.providerFor(ix.Protocol),
+			entryID:    entryID(ix.ID),
+			name:       ix.Name,
+			protocol:   protocolOf(ix),
+			reachable:  reach[entryID(ix.ID)],
+			eff:        ix,
+		}
+		out = append(out, st)
 	}
-	sortSites(out)
 	return out, nil
 }
 
-// Effective returns sites with the series overrides applied + bindings.
-func (s *SiteService) Effective(ctx context.Context, seriesID int64) ([]SeriesSiteView, error) {
-	states, err := s.liveSites(ctx)
+func protocolOf(ix store.Indexer) string {
+	if ix.Protocol == store.IndexerTorznab {
+		return provider.ProtocolTorrent
+	}
+	return provider.ProtocolSource
+}
+
+func entryID(id int64) string {
+	return strconv.FormatInt(id, 10)
+}
+
+// summary renders the entry's protocol-specific detail for lists.
+func summary(ix store.Indexer) string {
+	switch ix.Protocol {
+	case store.IndexerTorznab:
+		var ts TorznabSettings
+		_ = json.Unmarshal(ix.Settings, &ts)
+		return hostString(ts.URL)
+	case store.IndexerSource:
+		var ss SourceSettings
+		_ = json.Unmarshal(ix.Settings, &ss)
+		return "source " + ss.SourceID
+	}
+	return ""
+}
+
+// List returns all entries for the Indexers page.
+func (s *SiteService) List(ctx context.Context) ([]IndexerView, error) {
+	entries, err := s.store.ListIndexers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reach := s.reachability(ctx)
+	out := make([]IndexerView, 0, len(entries))
+	for _, ix := range entries {
+		out = append(out, IndexerView{
+			Indexer:   ix,
+			Reachable: reach[entryID(ix.ID)],
+			Summary:   summary(ix),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Protocol != out[j].Protocol {
+			return out[i].Protocol < out[j].Protocol
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out, nil
+}
+
+// Effective returns entries with the series overrides applied + bindings.
+func (s *SiteService) Effective(ctx context.Context, seriesID int64) ([]SeriesIndexerView, error) {
+	views, err := s.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -105,46 +169,18 @@ func (s *SiteService) Effective(ctx context.Context, seriesID int64) ([]SeriesSi
 		bound[b.SourceID] = append(bound[b.SourceID], b)
 	}
 
-	out := make([]SeriesSiteView, 0, len(states))
-	for _, st := range states {
-		key := [2]string{st.providerID, st.site.ID}
+	out := make([]SeriesIndexerView, 0, len(views))
+	for _, v := range views {
 		var ov *store.SiteOverride
-		if o, ok := overrides[key]; ok {
+		if o, ok := overrides[v.ID]; ok {
 			ov = &o
 		}
-		eff := store.EffectiveSiteSetting(st.setting, ov)
-		view := SeriesSiteView{
-			SiteView: SiteView{
-				Provider: st.providerID, SiteID: st.site.ID, Name: st.site.Name,
-				Protocol: st.site.Protocol, Lang: st.site.Lang, Reachable: st.site.Enabled,
-				Enabled: eff.Enabled, UseVolumes: eff.UseVolumes,
-				UseChapters: eff.UseChapters, Priority: eff.Priority,
-			},
-			Override: ov,
-		}
-		if st.site.Protocol == provider.ProtocolSource {
-			view.Bindings = bound[st.site.ID]
+		v.Indexer = store.EffectiveIndexer(v.Indexer, ov)
+		view := SeriesIndexerView{IndexerView: v, Override: ov}
+		if v.Protocol == store.IndexerSource {
+			view.Bindings = bound[entryID(v.ID)]
 		}
 		out = append(out, view)
 	}
-	sortSeriesSites(out)
 	return out, nil
-}
-
-func sortSites(sites []SiteView) {
-	sort.Slice(sites, func(i, j int) bool {
-		if sites[i].Provider != sites[j].Provider {
-			return sites[i].Provider < sites[j].Provider
-		}
-		return sites[i].Name < sites[j].Name
-	})
-}
-
-func sortSeriesSites(sites []SeriesSiteView) {
-	sort.Slice(sites, func(i, j int) bool {
-		if sites[i].Provider != sites[j].Provider {
-			return sites[i].Provider < sites[j].Provider
-		}
-		return sites[i].Name < sites[j].Name
-	})
 }

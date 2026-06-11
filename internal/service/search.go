@@ -79,14 +79,8 @@ type SearchResult struct {
 	BindingNotes   []string           `json:"bindingNotes,omitempty"`
 }
 
-type siteState struct {
-	providerID string
-	site       provider.Site
-	setting    store.SiteSetting
-	usable     bool
-}
-
-// effectiveSites resolves the per-series site configuration for a ledger.
+// effectiveSites resolves the per-series indexer configuration for a
+// ledger: entries with overrides applied and ledger usability.
 func (s *SearchService) effectiveSites(ctx context.Context, seriesID int64, searchLedger string) ([]siteState, error) {
 	states, err := (&SiteService{store: s.store, registry: s.registry}).liveSites(ctx)
 	if err != nil {
@@ -99,17 +93,17 @@ func (s *SearchService) effectiveSites(ctx context.Context, seriesID int64, sear
 	for i := range states {
 		st := &states[i]
 		var ov *store.SiteOverride
-		if o, ok := overrides[[2]string{st.providerID, st.site.ID}]; ok {
+		if o, ok := overrides[st.eff.ID]; ok {
 			ov = &o
 		}
-		st.setting = store.EffectiveSiteSetting(st.setting, ov)
-		use := st.setting.Enabled && st.site.Enabled
+		st.eff = store.EffectiveIndexer(st.eff, ov)
+		use := st.eff.Enabled && st.reachable
 		if use {
 			switch searchLedger {
 			case LedgerVolume:
-				use = st.setting.UseVolumes
+				use = st.eff.UseVolumes
 			case LedgerChapter:
-				use = st.setting.UseChapters
+				use = st.eff.UseChapters
 			}
 		}
 		st.usable = use
@@ -140,10 +134,10 @@ func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.M
 	var matches []scored
 	bestScore, bestRef := 0.0, sourcehost.Manga{}
 	for i, query := range resolveQueries(titles) {
-		refs, err := resolver.ResolveManga(resolveCtx, st.site.ID, query)
+		refs, err := resolver.ResolveManga(resolveCtx, st.entryID, query)
 		if err != nil {
 			if i == 0 {
-				return nil, fmt.Sprintf("%s: search failed (%v)", st.site.Name, err)
+				return nil, fmt.Sprintf("%s: search failed (%v)", st.name, err)
 			}
 			break // keep what earlier queries found
 		}
@@ -176,16 +170,16 @@ func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.M
 
 	if len(matches) == 0 {
 		bind := store.Binding{
-			SeriesID: seriesID, SourceID: st.site.ID,
-			SourceMangaKey: bestRef.Key, SourceName: st.site.Name,
+			SeriesID: seriesID, SourceID: st.entryID,
+			SourceMangaKey: bestRef.Key, SourceName: st.name,
 			MangaTitle: bestRef.Title, State: "unmatched",
 		}
-		note := fmt.Sprintf("%s: no results", st.site.Name)
+		note := fmt.Sprintf("%s: no results", st.name)
 		if bestScore > 0 {
-			note = fmt.Sprintf("%s: no confident match (best %q %.2f)", st.site.Name, bestRef.Title, bestScore)
+			note = fmt.Sprintf("%s: no confident match (best %q %.2f)", st.name, bestRef.Title, bestScore)
 		}
 		if _, err := s.store.AddBinding(ctx, bind); err != nil {
-			slog.Warn("persisting binding failed", "site", st.site.Name, "error", err)
+			slog.Warn("persisting binding failed", "site", st.name, "error", err)
 		}
 		return nil, note
 	}
@@ -194,19 +188,19 @@ func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.M
 	var names []string
 	for _, m := range matches {
 		bind := store.Binding{
-			SeriesID: seriesID, SourceID: st.site.ID,
-			SourceMangaKey: m.ref.Key, SourceName: st.site.Name,
-			MangaTitle: m.ref.Title, State: "active", Priority: st.setting.Priority,
+			SeriesID: seriesID, SourceID: st.entryID,
+			SourceMangaKey: m.ref.Key, SourceName: st.name,
+			MangaTitle: m.ref.Title, State: "active", Priority: st.eff.Priority,
 		}
 		if id, err := s.store.AddBinding(ctx, bind); err != nil {
-			slog.Warn("persisting binding failed", "site", st.site.Name, "error", err)
+			slog.Warn("persisting binding failed", "site", st.name, "error", err)
 		} else {
 			bind.ID = id
 		}
 		bound = append(bound, bind)
 		names = append(names, fmt.Sprintf("%q", m.ref.Title))
 	}
-	return bound, fmt.Sprintf("auto-bound %s → %s", st.site.Name, strings.Join(names, ", "))
+	return bound, fmt.Sprintf("auto-bound %s → %s", st.name, strings.Join(names, ", "))
 }
 
 // resolveQueries lists the queries to try against a source, in order:
@@ -298,10 +292,10 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 			run.allowed[st.providerID] = map[string]bool{}
 		}
 		if st.usable {
-			run.allowed[st.providerID][st.site.ID] = true
-			run.searched = append(run.searched, st.providerID+"/"+st.site.Name)
+			run.allowed[st.providerID][st.entryID] = true
+			run.searched = append(run.searched, st.providerID+"/"+st.name)
 		}
-		run.priorities[[2]string{st.providerID, st.site.ID}] = st.setting.Priority
+		run.priorities[[2]string{st.providerID, st.entryID}] = st.eff.Priority
 	}
 	run.wanted, run.collections, run.chapterLang, err = s.wantedSlots(ctx, seriesID, searchLedger, target)
 	if err != nil {
@@ -371,34 +365,25 @@ func (s *SearchService) searchOnce(ctx context.Context, p provider.Provider, run
 	return ev
 }
 
-// streamProvider fans one provider out into search units. Extension
-// providers get one unit per site, each resolving its own missing binding
-// before searching — a sluggish source (or a slow first-time resolution)
-// doesn't hold back its siblings. Other providers are one unit: their
-// fan-out is server-side (Prowlarr).
+// streamProvider fans one provider out into one search unit per usable
+// indexer entry — a slow indexer (or a slow first-time binding
+// resolution) doesn't hold back its siblings. Source entries resolve
+// their missing bindings before searching.
 func (s *SearchService) streamProvider(ctx context.Context, p provider.Provider, run *searchRun, ch chan<- SearchEvent, wg *sync.WaitGroup) {
-	var mySites []string
-	for _, st := range run.sites {
-		if st.usable && st.providerID == p.ID() {
-			mySites = append(mySites, st.providerID+"/"+st.site.Name)
-		}
-	}
-
 	resolver, isResolver := p.(provider.MangaResolver)
-	if !isResolver {
-		ch <- s.searchOnce(ctx, p, run, run.allowed, mySites, nil)
-		return
-	}
 
-	bindings, err := s.store.ListBindings(ctx, run.seriesID)
-	if err != nil {
-		ch <- SearchEvent{Type: "batch", Provider: p.ID(), Sites: mySites,
-			Error: fmt.Sprintf("%s: %v", p.ID(), err)}
-		return
-	}
-	bySite := map[string][]store.Binding{}
-	for _, b := range bindings {
-		bySite[b.SourceID] = append(bySite[b.SourceID], b)
+	var bySite map[string][]store.Binding
+	if isResolver {
+		bindings, err := s.store.ListBindings(ctx, run.seriesID)
+		if err != nil {
+			ch <- SearchEvent{Type: "batch", Provider: p.ID(),
+				Error: fmt.Sprintf("%s: %v", p.ID(), err)}
+			return
+		}
+		bySite = map[string][]store.Binding{}
+		for _, b := range bindings {
+			bySite[b.SourceID] = append(bySite[b.SourceID], b)
+		}
 	}
 
 	for _, st := range run.sites {
@@ -408,26 +393,28 @@ func (s *SearchService) streamProvider(ctx context.Context, p provider.Provider,
 		wg.Add(1)
 		go func(st siteState) {
 			defer wg.Done()
-			siteBindings := bySite[st.site.ID]
 			var notes []string
-			if len(siteBindings) == 0 { // never probed: resolve now
-				bound, note := s.resolveBindings(ctx, resolver, run.seriesID, run.titles, st)
-				notes = append(notes, note)
-				siteBindings = bound
-			}
 			var active []provider.Binding
-			for _, b := range siteBindings {
-				if b.State != "active" {
-					continue
+			if isResolver {
+				siteBindings := bySite[st.entryID]
+				if len(siteBindings) == 0 { // never probed: resolve now
+					bound, note := s.resolveBindings(ctx, resolver, run.seriesID, run.titles, st)
+					notes = append(notes, note)
+					siteBindings = bound
 				}
-				active = append(active, provider.Binding{
-					BindingID: b.ID, SourceID: b.SourceID,
-					SourceMangaKey: b.SourceMangaKey, SourceName: b.SourceName,
-				})
+				for _, b := range siteBindings {
+					if b.State != "active" {
+						continue
+					}
+					active = append(active, provider.Binding{
+						BindingID: b.ID, SourceID: b.SourceID,
+						SourceMangaKey: b.SourceMangaKey, SourceName: b.SourceName,
+					})
+				}
 			}
 			ev := s.searchOnce(ctx, p, run,
-				map[string]map[string]bool{p.ID(): {st.site.ID: true}},
-				[]string{st.providerID + "/" + st.site.Name}, active)
+				map[string]map[string]bool{p.ID(): {st.entryID: true}},
+				[]string{st.providerID + "/" + st.name}, active)
 			ev.BindingNotes = notes
 			ch <- ev
 		}(st)

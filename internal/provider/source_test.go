@@ -44,6 +44,11 @@ func (f *fakeHost) Page(_ context.Context, _, _ string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(string(pngHeader))), nil
 }
 
+// testEntries serves one source indexer entry ("1" → src1).
+func testEntries(ctx context.Context) ([]IndexerEntry, error) {
+	return []IndexerEntry{{ID: 1, Name: "Fake Source", Enabled: true, SourceID: "src1"}}, nil
+}
+
 func waitDone(t *testing.T, p Provider, externalID string) DownloadState {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -66,11 +71,11 @@ func waitDone(t *testing.T, p Provider, externalID string) DownloadState {
 // external id.
 func TestSourceDownloadLifecycle(t *testing.T) {
 	host := &fakeHost{}
-	p := NewSource(host, t.TempDir())
+	p := NewSource(host, t.TempDir(), testEntries)
 	ctx := context.Background()
 
 	cands, err := p.Search(ctx, SearchRequest{
-		Bindings: []Binding{{BindingID: 1, SourceID: "src1", SourceMangaKey: "/manga/op", SourceName: "Fake"}},
+		Bindings: []Binding{{BindingID: 1, SourceID: "1", SourceMangaKey: "/manga/op", SourceName: "Fake"}},
 	})
 	if err != nil || len(cands) != 1 {
 		t.Fatalf("search: %v %v", cands, err)
@@ -120,7 +125,7 @@ func TestSourceDownloadResume(t *testing.T) {
 	host := &fakeHost{}
 	// Fresh provider simulates a process restart: queue knows the id, the
 	// provider doesn't.
-	p := NewSource(host, dir)
+	p := NewSource(host, dir, testEntries)
 	externalID := "src1|/manga/op/ch-1100"
 
 	st, err := p.State(context.Background(), externalID)
@@ -138,7 +143,7 @@ func TestSourceDownloadResume(t *testing.T) {
 // Failed jobs report their error; Recover clears them for a retry.
 func TestSourceDownloadFailureAndRecover(t *testing.T) {
 	host := &fakeHost{failPages: true}
-	p := NewSource(host, t.TempDir())
+	p := NewSource(host, t.TempDir(), testEntries)
 	externalID := "src1|/manga/op/ch-1100"
 
 	st, _ := p.State(context.Background(), externalID) // kicks the job

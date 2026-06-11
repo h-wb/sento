@@ -110,17 +110,38 @@ export interface MergeCollectionResponse {
   unmatched: number /* int64 */[];
 }
 /**
- * IndexerSettingPatch is PUT /settings/indexers/{provider}/{sid} (nil = keep).
+ * IndexerBody creates or updates one indexer entry. Settings is the
+ * protocol-specific document: {url, apiKey} for torznab, {sourceId} for
+ * source.
  */
-export interface IndexerSettingPatch {
+export interface IndexerBody {
+  name: string;
+  protocol: 'torznab' | 'source';
+  enabled: boolean;
+  useVolumes: boolean;
+  useChapters: boolean;
+  priority: number /* int */;
+  settings: any;
+}
+/**
+ * IndexerPatch toggles entry fields inline (nil = keep).
+ */
+export interface IndexerPatch {
   enabled?: boolean;
   useVolumes?: boolean;
   useChapters?: boolean;
   priority?: number /* int */;
 }
 /**
- * OverridePatch is PUT /series/{id}/indexers/{provider}/{sid}; all-nil
- * clears the override (inherit globals).
+ * BrowseProwlarrBody asks for the Add Indexer discovery assist.
+ */
+export interface BrowseProwlarrBody {
+  url: string;
+  apiKey: string;
+}
+/**
+ * OverridePatch is PUT /series/{id}/indexers/{iid}; all-nil clears the
+ * override (inherit globals).
  */
 export interface OverridePatch {
   enabled?: boolean;

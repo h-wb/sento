@@ -40,10 +40,11 @@ packages:
       import type { SeriesRef } from "./metadata"
       import type { Result } from "./parse"
       import type { ExtensionInfo } from "./sourcehost"
-      import type { Binding, SiteOverride } from "./store"
+      import type { Binding, Indexer, SiteOverride } from "./store"
     type_mappings:
       parse.Result: "Result"
       store.Binding: "Binding"
+      store.Indexer: "Indexer"
       store.SiteOverride: "SiteOverride"
       metadata.SeriesRef: "SeriesRef"
       sourcehost.ExtensionInfo: "ExtensionInfo"

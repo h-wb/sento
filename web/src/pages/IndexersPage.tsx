@@ -1,48 +1,82 @@
 import { useState } from 'react'
-import { ActionIcon, Alert, Badge, NumberInput, Switch, Table, Text, Title, Tooltip } from '@mantine/core'
-import { IconSettings } from '@tabler/icons-react'
-import SourcePrefsModal from '../components/SourcePrefsModal'
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Button,
+  Group,
+  Modal,
+  NumberInput,
+  PasswordInput,
+  SegmentedControl,
+  Select,
+  Stack,
+  Switch,
+  Table,
+  Text,
+  TextInput,
+  Title,
+  Tooltip,
+} from '@mantine/core'
+import { IconCopy, IconPencil, IconPlugConnected, IconSettings, IconTrash } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type SiteView } from '../api'
+import { api, type IndexerBody, type IndexerView, type ProwlarrIndexer } from '../api'
+import SourcePrefsModal from '../components/SourcePrefsModal'
 import { notify, usePageTitle } from '../ui'
 
-// Global indexer configuration: every site Sento can search, uniformly,
-// with per-ledger enablement.
+// Indexers are explicit entries (Sonarr's model): every searchable thing
+// with its protocol — a Torznab endpoint or an extension source on the
+// host. The entry's name is the display name everywhere.
 export default function IndexersPage() {
   usePageTitle('Indexers')
   const queryClient = useQueryClient()
-  const { data: sites, error } = useQuery({
-    queryKey: ['indexers'],
-    queryFn: api.indexerSettings,
-  })
-  const [prefsFor, setPrefsFor] = useState<SiteView | null>(null)
+  const { data: indexers, error } = useQuery({ queryKey: ['indexers'], queryFn: api.indexers })
+  const [editing, setEditing] = useState<IndexerView | 'new' | null>(null)
+  const [duplicating, setDuplicating] = useState<IndexerView | null>(null)
+  const [prefsFor, setPrefsFor] = useState<IndexerView | null>(null)
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['indexers'] })
+
   const patch = useMutation({
-    mutationFn: ({ s, p }: { s: SiteView; p: Parameters<typeof api.updateIndexerSetting>[2] }) =>
-      api.updateIndexerSetting(s.provider, s.siteId, p),
+    mutationFn: ({ id, p }: { id: number; p: Parameters<typeof api.patchIndexer>[1] }) =>
+      api.patchIndexer(id, p),
     onError: notify.err,
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['indexers'] }),
+    onSettled: refresh,
+  })
+  const test = useMutation({
+    mutationFn: (ix: IndexerView) => api.testIndexer(ix.id),
+    onSuccess: (_d, ix) => notify.ok(`${ix.name} is reachable`),
+    onError: notify.err,
+  })
+  const remove = useMutation({
+    mutationFn: (ix: IndexerView) => api.deleteIndexer(ix.id),
+    onSuccess: () => notify.ok('Indexer removed'),
+    onError: notify.err,
+    onSettled: refresh,
   })
 
   return (
     <>
-      <Title order={2} mb="xs">
-        Indexers
-      </Title>
+      <Group justify="space-between" mb="xs">
+        <Title order={2}>Indexers</Title>
+        <Button size="xs" onClick={() => setEditing('new')}>
+          Add indexer
+        </Button>
+      </Group>
       <Text size="sm" c="dimmed" mb="md">
-        Every site Sento can search — torrent indexers and extension sources alike. Configure
-        which ledgers each site serves; series can override these defaults individually.
+        Everything Sento searches, with its protocol: Torznab endpoints (torrents) and extension
+        sources from the host. The name you give an entry is how it appears in results, history
+        and the queue. Series can override the toggles individually.
       </Text>
-      {(error || patch.error) && (
+      {error && (
         <Alert color="red" mb="md">
-          {String(error ?? patch.error)}
+          {String(error)}
         </Alert>
       )}
-      <Table striped maw={760}>
+      <Table striped maw={860}>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Site</Table.Th>
+            <Table.Th>Name</Table.Th>
             <Table.Th>Protocol</Table.Th>
-            <Table.Th>Lang</Table.Th>
             <Table.Th>Enabled</Table.Th>
             <Table.Th>Volumes</Table.Th>
             <Table.Th>Chapters</Table.Th>
@@ -51,63 +85,63 @@ export default function IndexersPage() {
                 <span>Priority</span>
               </Tooltip>
             </Table.Th>
+            <Table.Th />
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {sites?.map((s) => (
-            <Table.Tr key={`${s.provider}-${s.siteId}`} opacity={s.reachable ? 1 : 0.5}>
+          {indexers?.map((ix) => (
+            <Table.Tr key={ix.id} opacity={ix.reachable ? 1 : 0.55}>
               <Table.Td>
-                <Text size="sm">
-                  {s.name}
-                  {s.protocol === 'source' && (
+                <Group gap={4} wrap="nowrap">
+                  <Text size="sm">{ix.name}</Text>
+                  {ix.protocol === 'source' && (
                     <Tooltip label="Source settings (login, mirrors…)">
                       <ActionIcon
                         size="xs"
                         variant="subtle"
                         color="gray"
-                        ml={4}
-                        onClick={() => setPrefsFor(s)}
+                        onClick={() => setPrefsFor(ix)}
                       >
                         <IconSettings size={12} />
                       </ActionIcon>
                     </Tooltip>
                   )}
-                </Text>
+                </Group>
                 <Text size="xs" c="dimmed">
-                  {s.provider}/{s.siteId}
+                  {ix.summary}
+                  {!ix.reachable && ' — unreachable'}
                 </Text>
               </Table.Td>
               <Table.Td>
-                <Badge size="xs" variant="outline" color={s.protocol === 'torrent' ? 'blue' : 'teal'}>
-                  {s.protocol}
+                <Badge size="xs" variant="outline" color={ix.protocol === 'torznab' ? 'blue' : 'teal'}>
+                  {ix.protocol}
                 </Badge>
               </Table.Td>
               <Table.Td>
-                <Text size="xs" c="dimmed">
-                  {s.lang ?? '—'}
-                </Text>
-              </Table.Td>
-              <Table.Td>
                 <Switch
                   size="xs"
-                  checked={s.enabled}
-                  onChange={(e) => patch.mutate({ s, p: { enabled: e.currentTarget.checked } })}
+                  checked={ix.enabled}
+                  onChange={(e) => patch.mutate({ id: ix.id, p: { enabled: e.currentTarget.checked } })}
                 />
               </Table.Td>
               <Table.Td>
                 <Switch
                   size="xs"
-                  checked={s.useVolumes}
-                  disabled={!s.enabled}
-                  onChange={(e) => patch.mutate({ s, p: { useVolumes: e.currentTarget.checked } })}
+                  checked={ix.useVolumes}
+                  disabled={!ix.enabled}
+                  onChange={(e) =>
+                    patch.mutate({ id: ix.id, p: { useVolumes: e.currentTarget.checked } })
+                  }
                 />
               </Table.Td>
               <Table.Td>
                 <Switch
                   size="xs"
-                  checked={s.useChapters}
-                  disabled={!s.enabled}
-                  onChange={(e) => patch.mutate({ s, p: { useChapters: e.currentTarget.checked } })}
+                  checked={ix.useChapters}
+                  disabled={!ix.enabled}
+                  onChange={(e) =>
+                    patch.mutate({ id: ix.id, p: { useChapters: e.currentTarget.checked } })
+                  }
                 />
               </Table.Td>
               <Table.Td>
@@ -116,30 +150,270 @@ export default function IndexersPage() {
                   w={70}
                   min={0}
                   max={99}
-                  defaultValue={s.priority}
-                  disabled={!s.enabled}
+                  defaultValue={ix.priority}
+                  disabled={!ix.enabled}
                   onBlur={(e) => {
                     const v = Number(e.currentTarget.value)
-                    if (!isNaN(v) && v !== s.priority) patch.mutate({ s, p: { priority: v } })
+                    if (!isNaN(v) && v !== ix.priority) patch.mutate({ id: ix.id, p: { priority: v } })
                   }}
                 />
+              </Table.Td>
+              <Table.Td>
+                <Group gap={2} wrap="nowrap" justify="flex-end">
+                  <Tooltip label="Test">
+                    <ActionIcon
+                      size="sm"
+                      variant="subtle"
+                      loading={test.isPending && test.variables?.id === ix.id}
+                      onClick={() => test.mutate(ix)}
+                    >
+                      <IconPlugConnected size={14} />
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label="Edit">
+                    <ActionIcon size="sm" variant="subtle" onClick={() => setEditing(ix)}>
+                      <IconPencil size={14} />
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label="Duplicate">
+                    <ActionIcon size="sm" variant="subtle" onClick={() => setDuplicating(ix)}>
+                      <IconCopy size={14} />
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label="Delete">
+                    <ActionIcon
+                      size="sm"
+                      variant="subtle"
+                      color="red"
+                      onClick={() => {
+                        if (window.confirm(`Remove indexer “${ix.name}”?`)) remove.mutate(ix)
+                      }}
+                    >
+                      <IconTrash size={14} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
               </Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>
       </Table>
+      {indexers && indexers.length === 0 && (
+        <Text c="dimmed" size="sm">
+          No indexers yet. Add a Torznab endpoint (every Prowlarr/Jackett indexer is one) or an
+          extension source from the host.
+        </Text>
+      )}
+      {(editing || duplicating) && (
+        <IndexerModal
+          initial={editing === 'new' ? null : (editing ?? duplicating)}
+          asCopy={!!duplicating}
+          onClose={() => {
+            setEditing(null)
+            setDuplicating(null)
+          }}
+          onSaved={() => {
+            setEditing(null)
+            setDuplicating(null)
+            refresh()
+          }}
+        />
+      )}
       {prefsFor && (
         <SourcePrefsModal
-          sourceId={prefsFor.siteId}
+          sourceId={String(prefsFor.id)}
           sourceName={prefsFor.name}
           onClose={() => setPrefsFor(null)}
         />
       )}
-      {sites && sites.length === 0 && (
-        <Text c="dimmed" size="sm">
-          No providers configured — connect a source host and/or Prowlarr on the Sources page.
-        </Text>
-      )}
     </>
+  )
+}
+
+type TorznabForm = { url: string; apiKey: string }
+
+function IndexerModal({
+  initial,
+  asCopy,
+  onClose,
+  onSaved,
+}: {
+  initial: IndexerView | null
+  asCopy: boolean
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const isEdit = !!initial && !asCopy
+  const init = initial?.settings as Partial<TorznabForm & { sourceId: string }> | undefined
+  const [protocol, setProtocol] = useState<'torznab' | 'source'>(initial?.protocol ?? 'torznab')
+  const [name, setName] = useState(asCopy ? `${initial?.name} (copy)` : (initial?.name ?? ''))
+  const [torznab, setTorznab] = useState<TorznabForm>({
+    url: init?.url ?? '',
+    apiKey: init?.apiKey ?? '',
+  })
+  const [sourceId, setSourceId] = useState(init?.sourceId ?? '')
+
+  // Source picker: the host's installed sources.
+  const sources = useQuery({
+    queryKey: ['host-sources'],
+    queryFn: api.sources,
+    enabled: protocol === 'source',
+  })
+
+  // Prowlarr browse assist for torznab entries.
+  const [browse, setBrowse] = useState<{ url: string; apiKey: string } | null>(null)
+  const [found, setFound] = useState<ProwlarrIndexer[] | null>(null)
+  const browseMut = useMutation({
+    mutationFn: () => api.browseProwlarr(browse!),
+    onSuccess: setFound,
+    onError: notify.err,
+  })
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body: IndexerBody = {
+        name,
+        protocol,
+        enabled: initial?.enabled ?? true,
+        useVolumes: initial?.useVolumes ?? true,
+        useChapters: initial?.useChapters ?? true,
+        priority: initial?.priority ?? 0,
+        settings: protocol === 'torznab' ? torznab : { sourceId },
+      }
+      return isEdit ? api.updateIndexer(initial.id, body) : api.addIndexer(body)
+    },
+    onSuccess: () => {
+      notify.ok(isEdit ? 'Indexer updated' : 'Indexer added')
+      onSaved()
+    },
+    onError: notify.err,
+  })
+
+  return (
+    <Modal opened onClose={onClose} title={isEdit ? `Edit ${initial.name}` : 'Add indexer'} size="lg">
+      <Stack gap="sm">
+        {!isEdit && (
+          <SegmentedControl
+            value={protocol}
+            onChange={(v) => setProtocol(v as 'torznab' | 'source')}
+            data={[
+              { value: 'torznab', label: 'Torznab (torrents)' },
+              { value: 'source', label: 'Extension source' },
+            ]}
+          />
+        )}
+        <TextInput
+          label="Name"
+          description="Shown in results, history and the queue"
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+          data-autofocus
+        />
+
+        {protocol === 'torznab' && (
+          <>
+            <TextInput
+              label="Torznab URL"
+              placeholder="http://prowlarr:9696/1/api"
+              description="Prowlarr and Jackett expose every indexer as a Torznab endpoint"
+              value={torznab.url}
+              onChange={(e) => setTorznab({ ...torznab, url: e.currentTarget.value })}
+            />
+            <PasswordInput
+              label="API key"
+              value={torznab.apiKey}
+              onChange={(e) => setTorznab({ ...torznab, apiKey: e.currentTarget.value })}
+            />
+            {!browse && (
+              <Button
+                variant="subtle"
+                size="compact-sm"
+                style={{ alignSelf: 'flex-start' }}
+                onClick={() => setBrowse({ url: '', apiKey: torznab.apiKey })}
+              >
+                Browse a Prowlarr instead…
+              </Button>
+            )}
+            {browse && (
+              <Stack
+                gap="xs"
+                p="xs"
+                style={{ border: '1px dashed var(--mantine-color-gray-6)', borderRadius: 6 }}
+              >
+                <Text size="xs" c="dimmed">
+                  Pick an indexer from a Prowlarr — the per-indexer Torznab URL and key fill in.
+                </Text>
+                <Group grow>
+                  <TextInput
+                    size="xs"
+                    placeholder="Prowlarr URL"
+                    value={browse.url}
+                    onChange={(e) => setBrowse({ ...browse, url: e.currentTarget.value })}
+                  />
+                  <PasswordInput
+                    size="xs"
+                    placeholder="API key"
+                    value={browse.apiKey}
+                    onChange={(e) => setBrowse({ ...browse, apiKey: e.currentTarget.value })}
+                  />
+                </Group>
+                <Button
+                  size="compact-sm"
+                  variant="default"
+                  loading={browseMut.isPending}
+                  disabled={!browse.url}
+                  onClick={() => browseMut.mutate()}
+                >
+                  List indexers
+                </Button>
+                {found && (
+                  <Select
+                    size="xs"
+                    placeholder={`${found.length} indexers — pick one`}
+                    data={found.map((f) => ({ value: f.url, label: f.name }))}
+                    searchable
+                    onChange={(url) => {
+                      const pick = found.find((f) => f.url === url)
+                      if (!pick) return
+                      setTorznab({ url: pick.url, apiKey: browse.apiKey })
+                      if (!name) setName(pick.name)
+                    }}
+                  />
+                )}
+              </Stack>
+            )}
+          </>
+        )}
+
+        {protocol === 'source' && (
+          <Select
+            label="Source"
+            description="Sources come from the extensions installed on the host (Sources page)"
+            placeholder={sources.isPending ? 'Loading…' : 'Pick a source'}
+            data={(sources.data ?? []).map((s) => ({
+              value: s.id,
+              label: `${s.name} (${s.lang})`,
+            }))}
+            value={sourceId || null}
+            searchable
+            onChange={(v) => {
+              if (!v) return
+              setSourceId(v)
+              const src = (sources.data ?? []).find((s) => s.id === v)
+              if (!name && src) setName(`${src.name} (${src.lang})`)
+            }}
+          />
+        )}
+
+        <Group justify="flex-end" mt="xs">
+          <Button variant="default" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button loading={save.isPending} disabled={!name.trim()} onClick={() => save.mutate()}>
+            {isEdit ? 'Save' : 'Add'}
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   )
 }

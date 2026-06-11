@@ -3,7 +3,7 @@
 import type { SeriesRef } from "./metadata"
 import type { Result } from "./parse"
 import type { ExtensionInfo } from "./sourcehost"
-import type { Binding, SiteOverride } from "./store"
+import type { Binding, Indexer, SiteOverride } from "./store"
 
 //////////
 // source: bulkimport.go
@@ -24,6 +24,10 @@ export interface ImportProposal {
 //////////
 // source: connections.go
 
+/**
+ * ProwlarrConn is remembered for the Add Indexer "browse Prowlarr"
+ * assist — it is not a search connection (indexer entries are).
+ */
 export interface ProwlarrConn {
   url: string;
   apiKey: string;
@@ -90,6 +94,33 @@ export interface ExtensionService {
  * agnostic; only the payload shape varies (stream vs directory).
  */
 export interface Importer {
+}
+
+//////////
+// source: indexers.go
+
+/**
+ * TorznabSettings configures one torznab indexer entry.
+ */
+export interface TorznabSettings {
+  url: string;
+  apiKey: string;
+}
+/**
+ * SourceSettings configures one extension-source indexer entry.
+ */
+export interface SourceSettings {
+  sourceId: string;
+}
+/**
+ * ProwlarrIndexer is one discovery result from the browse assist.
+ */
+export interface ProwlarrIndexer {
+  name: string;
+  /**
+   * URL is the per-indexer Torznab endpoint, ready for an entry.
+   */
+  url: string;
 }
 
 //////////
@@ -223,31 +254,23 @@ export interface SearchEvent {
 // source: sites.go
 
 /**
- * SiteService backs the Indexers configuration UI: a uniform list of every
- * site across providers with global settings and per-series overrides.
+ * SiteService backs the Indexers UI: the configured entries with
+ * reachability, plus per-series override views.
  */
 export interface SiteService {
 }
 /**
- * SiteView is one site with its global configuration.
+ * IndexerView is one entry with live reachability and a display summary.
  */
-export interface SiteView {
-  provider: string; // owning provider id
-  siteId: string;
-  name: string;
-  protocol: string;
-  lang?: string;
-  reachable: boolean; // enabled on the remote side
-  enabled: boolean;
-  useVolumes: boolean;
-  useChapters: boolean;
-  priority: number /* int */;
+export interface IndexerView extends Indexer {
+  reachable: boolean;
+  summary: string; // endpoint host / source name
 }
 /**
- * SeriesSiteView adds per-series override state and the binding set (a
- * site can bind several manga entries; the funnel picks per slot).
+ * SeriesIndexerView adds per-series override state and the binding set (a
+ * source entry can bind several manga entries; the funnel picks per slot).
  */
-export interface SeriesSiteView extends SiteView {
+export interface SeriesIndexerView extends IndexerView {
   override?: SiteOverride;
   bindings?: Binding[];
 }

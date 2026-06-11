@@ -3,28 +3,67 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/h-wb/sento/internal/provider"
-	"github.com/h-wb/sento/internal/prowlarr"
 	"github.com/h-wb/sento/internal/store"
 )
 
-func fakeProwlarr(t *testing.T, releases []map[string]any) *httptest.Server {
+type fakeRelease struct {
+	guid, title, magnet, infohash string
+	size                          int64
+	seeders                       int
+}
+
+// fakeTorznab serves a Torznab feed for any search.
+func fakeTorznab(t *testing.T, releases []fakeRelease) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/indexer" {
-			_ = json.NewEncoder(w).Encode([]map[string]any{
-				{"id": 7, "name": "nyaa", "protocol": "torrent", "enable": true},
-			})
+		w.Header().Set("Content-Type", "application/xml")
+		if r.URL.Query().Get("t") == "caps" {
+			_, _ = w.Write([]byte(`<caps><searching><search available="yes"/></searching></caps>`))
 			return
 		}
-		_ = json.NewEncoder(w).Encode(releases)
+		var b strings.Builder
+		b.WriteString(`<rss xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel>`)
+		for _, rel := range releases {
+			fmt.Fprintf(&b, `<item><title>%s</title><guid>%s</guid><size>%d</size>`,
+				rel.title, rel.guid, rel.size)
+			fmt.Fprintf(&b, `<torznab:attr name="seeders" value="%d"/>`, rel.seeders)
+			fmt.Fprintf(&b, `<torznab:attr name="magneturl" value="%s"/>`, rel.magnet)
+			if rel.infohash != "" {
+				fmt.Fprintf(&b, `<torznab:attr name="infohash" value="%s"/>`, rel.infohash)
+			}
+			b.WriteString(`</item>`)
+		}
+		b.WriteString(`</channel></rss>`)
+		_, _ = w.Write([]byte(b.String()))
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// addTorznabEntry registers one torznab indexer entry pointed at a fake.
+func addTorznabEntry(t *testing.T, st *store.Store, name, url string) int64 {
+	t.Helper()
+	settings, _ := json.Marshal(TorznabSettings{URL: url, APIKey: "key"})
+	id, err := st.AddIndexer(context.Background(), store.Indexer{
+		Name: name, Protocol: store.IndexerTorznab,
+		Enabled: true, UseVolumes: true, UseChapters: true, Settings: settings,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func torrentRegistry(st *store.Store) *provider.Registry {
+	return provider.NewRegistry(
+		provider.NewTorrent(IndexerEntries(st, store.IndexerTorznab), nil, "sento"))
 }
 
 func TestUnifiedVolumeFunnel(t *testing.T) {
@@ -35,18 +74,18 @@ func TestUnifiedVolumeFunnel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	releases := []map[string]any{
-		{"guid": "g1", "indexerId": 7, "indexer": "nyaa", "title": "ONE PIECE v01 (Digital) (LuCaZ)", "size": 100 << 20, "seeders": 30, "magnetUrl": "magnet:?xt=1", "infoHash": "aaa"},
-		{"guid": "g2", "indexerId": 7, "indexer": "nyaa", "title": "ONE PIECE v01-v38 (Digital)", "size": 38 * 100 << 20, "seeders": 10, "magnetUrl": "magnet:?xt=2", "infoHash": "bbb"},
-		{"guid": "g3", "indexerId": 7, "indexer": "nyaa", "title": "ONE PIECE (Novel) [Yen Press]", "size": 100 << 20, "seeders": 5, "magnetUrl": "magnet:?xt=3"},
-		{"guid": "g4", "indexerId": 7, "indexer": "nyaa", "title": "Totally Different Series v01", "size": 100 << 20, "seeders": 5, "magnetUrl": "magnet:?xt=4"},
-		{"guid": "g5", "indexerId": 7, "indexer": "nyaa", "title": "ONE PIECE: Ace's Story v01 (Digital)", "size": 100 << 20, "seeders": 9, "magnetUrl": "magnet:?xt=5"},
-		{"guid": "g6", "indexerId": 7, "indexer": "nyaa", "title": "One.Piece.T01.FRENCH.RETAiL", "size": 100 << 20, "seeders": 9, "magnetUrl": "magnet:?xt=6"},
-		{"guid": "g7", "indexerId": 7, "indexer": "nyaa", "title": "ONE PIECE 1056 (Digital)", "size": 30 << 20, "seeders": 9, "magnetUrl": "magnet:?xt=7"},
+	releases := []fakeRelease{
+		{"g1", "ONE PIECE v01 (Digital) (LuCaZ)", "magnet:?xt=1", "aaa", 100 << 20, 30},
+		{"g2", "ONE PIECE v01-v38 (Digital)", "magnet:?xt=2", "bbb", 38 * 100 << 20, 10},
+		{"g3", "ONE PIECE (Novel) [Yen Press]", "magnet:?xt=3", "", 100 << 20, 5},
+		{"g4", "Totally Different Series v01", "magnet:?xt=4", "", 100 << 20, 5},
+		{"g5", "ONE PIECE: Ace&#39;s Story v01 (Digital)", "magnet:?xt=5", "", 100 << 20, 9},
+		{"g6", "One.Piece.T01.FRENCH.RETAiL", "magnet:?xt=6", "", 100 << 20, 9},
+		{"g7", "ONE PIECE 1056 (Digital)", "magnet:?xt=7", "", 30 << 20, 9},
 	}
-	fake := fakeProwlarr(t, releases)
-	registry := provider.NewRegistry(provider.NewTorrent(prowlarr.New(fake.URL, "key"), nil, "sento"))
-	svc := NewSearchService(st, registry)
+	fake := fakeTorznab(t, releases)
+	addTorznabEntry(t, st, "nyaa", fake.URL)
+	svc := NewSearchService(st, torrentRegistry(st))
 
 	result, err := svc.FindCandidates(ctx, seriesID, LedgerVolume, nil)
 	if err != nil {
@@ -70,6 +109,9 @@ func TestUnifiedVolumeFunnel(t *testing.T) {
 	}
 	if c := byGUID["g1"]; len(c.Rejections) != 0 || c.Score < 1000 {
 		t.Errorf("g1 should be eligible: %+v", c.Rejections)
+	}
+	if c := byGUID["g1"]; c.Site != "nyaa" {
+		t.Errorf("g1 site should be the entry name, got %q", c.Site)
 	}
 	checkReject("g2", "rejected.pack_threshold")
 	checkReject("g4", "rejected.series_match")
@@ -118,18 +160,20 @@ func TestSiteConfigFiltering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	releases := []map[string]any{
-		{"guid": "g1", "indexerId": 7, "indexer": "nyaa", "title": "ONE PIECE v01 (Digital)", "size": 100 << 20, "seeders": 30, "magnetUrl": "magnet:?xt=1", "infoHash": "aaa"},
+	releases := []fakeRelease{
+		{"g1", "ONE PIECE v01 (Digital)", "magnet:?xt=1", "aaa", 100 << 20, 30},
 	}
-	fake := fakeProwlarr(t, releases)
-	registry := provider.NewRegistry(provider.NewTorrent(prowlarr.New(fake.URL, "key"), nil, "sento"))
-	svc := NewSearchService(st, registry)
+	fake := fakeTorznab(t, releases)
+	entryID := addTorznabEntry(t, st, "nyaa", fake.URL)
+	svc := NewSearchService(st, torrentRegistry(st))
 
-	// Globally disable the site for volumes.
-	if err := st.UpsertSiteSetting(ctx, store.SiteSetting{
-		Provider: "torrent", SiteID: "7",
-		Enabled: true, UseVolumes: false, UseChapters: true,
-	}); err != nil {
+	// Globally disable the entry for volumes.
+	ix, err := st.GetIndexer(ctx, entryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ix.UseVolumes = false
+	if err := st.UpdateIndexer(ctx, *ix); err != nil {
 		t.Fatal(err)
 	}
 	result, err := svc.FindCandidates(ctx, seriesID, LedgerVolume, nil)
@@ -137,13 +181,13 @@ func TestSiteConfigFiltering(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(result.Candidates) != 0 {
-		t.Fatalf("volume-disabled site must contribute no candidates: %d", len(result.Candidates))
+		t.Fatalf("volume-disabled entry must contribute no candidates: %d", len(result.Candidates))
 	}
 
 	// Series override re-enables it for volumes.
 	on := true
 	if err := st.UpsertSiteOverride(ctx, store.SiteOverride{
-		SeriesID: seriesID, Provider: "torrent", SiteID: "7", UseVolumes: &on,
+		SeriesID: seriesID, IndexerID: entryID, UseVolumes: &on,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -152,6 +196,6 @@ func TestSiteConfigFiltering(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(result.Candidates) != 1 {
-		t.Fatalf("override should re-enable the site: got %d candidates", len(result.Candidates))
+		t.Fatalf("override should re-enable the entry: got %d candidates", len(result.Candidates))
 	}
 }

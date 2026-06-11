@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -31,9 +32,27 @@ type Site struct {
 	Enabled  bool   `json:"enabled"`
 }
 
+// IndexerEntry is the provider-facing view of one configured indexer:
+// protocol-specific connection details plus the user-given name that
+// becomes the candidate's Site. Providers receive entries through an
+// accessor so runtime edits apply immediately.
+type IndexerEntry struct {
+	ID      int64
+	Name    string
+	Enabled bool
+	// Torznab entries.
+	URL    string
+	APIKey string
+	// Source entries: the host-side source id.
+	SourceID string
+}
+
+// EntryID is the entry's site id used in Allowed filters and SiteIDs.
+func (e IndexerEntry) EntryID() string { return strconv.FormatInt(e.ID, 10) }
+
 // Binding scopes a search to a series on a specific extension source
-// (providers that need it; others ignore it). SourceMangaKey is the
-// host-minted opaque manga key.
+// (providers that need it; others ignore it). SourceID is the indexer
+// entry id; SourceMangaKey is the host-minted opaque manga key.
 type Binding struct {
 	BindingID      int64
 	SourceID       string

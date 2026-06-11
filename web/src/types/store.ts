@@ -58,6 +58,46 @@ export interface BlocklistEntry {
 }
 
 //////////
+// source: indexers.go
+
+/**
+ * Indexer protocols.
+ */
+export const IndexerTorznab = "torznab";
+/**
+ * Indexer protocols.
+ */
+export const IndexerSource = "source";
+/**
+ * Indexer is one explicit searchable entry (Sonarr's model): a Torznab
+ * endpoint or an extension source on the host. The user-given name is
+ * the display name everywhere (candidates, history, queue). Settings is
+ * the protocol-specific document (TorznabSettings / SourceSettings in
+ * the service layer).
+ */
+export interface Indexer {
+  id: number /* int64 */;
+  name: string;
+  protocol: 'torznab' | 'source';
+  enabled: boolean;
+  useVolumes: boolean;
+  useChapters: boolean;
+  priority: number /* int */;
+  settings: any;
+}
+/**
+ * LegacySiteSetting is a row of the pre-entry site_settings table.
+ */
+export interface LegacySiteSetting {
+  Provider: string;
+  SiteID: string;
+  Enabled: boolean;
+  UseVolumes: boolean;
+  UseChapters: boolean;
+  Priority: number /* int */;
+}
+
+//////////
 // source: queue.go
 
 /**
@@ -95,23 +135,13 @@ export interface ExpectedSlot {
 // source: sites.go
 
 /**
- * SiteSetting is the global configuration of one search site.
- */
-export interface SiteSetting {
-  provider: string;
-  siteId: string;
-  enabled: boolean;
-  useVolumes: boolean;
-  useChapters: boolean;
-  priority: number /* int */;
-}
-/**
- * SiteOverride is a per-series override; nil fields inherit the global.
+ * SiteOverride is a per-series override of one indexer entry; nil fields
+ * inherit the entry's global setting. Rows live in series_site_settings
+ * with provider='indexer' and site_id = the indexer id.
  */
 export interface SiteOverride {
   seriesId: number /* int64 */;
-  provider: string;
-  siteId: string;
+  indexerId: number /* int64 */;
   enabled?: boolean;
   useVolumes?: boolean;
   useChapters?: boolean;

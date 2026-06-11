@@ -28,21 +28,20 @@ func TestConnectionSettings(t *testing.T) {
 	if conns.Registry().ForProtocol(provider.ProtocolSource) == nil {
 		t.Fatal("source provider missing after apply")
 	}
-	if conns.Registry().ForProtocol(provider.ProtocolTorrent) != nil {
-		t.Fatal("torrent provider should be absent without prowlarr/qbit")
+	// The torrent provider is always present: it searches whatever
+	// torznab indexer entries exist.
+	if conns.Registry().ForProtocol(provider.ProtocolTorrent) == nil {
+		t.Fatal("torrent provider missing")
 	}
 	if conns.Host() == nil || conns.Host().Name() != "host" {
 		t.Fatalf("host = %v", conns.Host())
 	}
 
-	// Saving prowlarr + a new host URL rebuilds everything.
+	// Saving prowlarr (browse-assist creds) + a new host URL persists.
 	cs.SourceHost.URL = "http://host2.example"
 	cs.Prowlarr = ProwlarrConn{URL: "http://prowlarr.example", APIKey: "k"}
 	if err := conns.Save(ctx, cs); err != nil {
 		t.Fatal(err)
-	}
-	if conns.Registry().ForProtocol(provider.ProtocolTorrent) == nil {
-		t.Fatal("torrent provider missing after save")
 	}
 
 	// A fresh service sees the saved settings, not the config seed.

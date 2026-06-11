@@ -96,16 +96,35 @@ type MergeCollectionResponse struct {
 	Unmatched []int64 `json:"unmatched"`
 }
 
-// IndexerSettingPatch is PUT /settings/indexers/{provider}/{sid} (nil = keep).
-type IndexerSettingPatch struct {
+// IndexerBody creates or updates one indexer entry. Settings is the
+// protocol-specific document: {url, apiKey} for torznab, {sourceId} for
+// source.
+type IndexerBody struct {
+	Name        string          `json:"name"`
+	Protocol    string          `json:"protocol" tstype:"'torznab' | 'source'"`
+	Enabled     bool            `json:"enabled"`
+	UseVolumes  bool            `json:"useVolumes"`
+	UseChapters bool            `json:"useChapters"`
+	Priority    int             `json:"priority"`
+	Settings    json.RawMessage `json:"settings" tstype:"any"`
+}
+
+// IndexerPatch toggles entry fields inline (nil = keep).
+type IndexerPatch struct {
 	Enabled     *bool `json:"enabled"`
 	UseVolumes  *bool `json:"useVolumes"`
 	UseChapters *bool `json:"useChapters"`
 	Priority    *int  `json:"priority"`
 }
 
-// OverridePatch is PUT /series/{id}/indexers/{provider}/{sid}; all-nil
-// clears the override (inherit globals).
+// BrowseProwlarrBody asks for the Add Indexer discovery assist.
+type BrowseProwlarrBody struct {
+	URL    string `json:"url"`
+	APIKey string `json:"apiKey"`
+}
+
+// OverridePatch is PUT /series/{id}/indexers/{iid}; all-nil clears the
+// override (inherit globals).
 type OverridePatch struct {
 	Enabled     *bool `json:"enabled"`
 	UseVolumes  *bool `json:"useVolumes"`

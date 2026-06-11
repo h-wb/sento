@@ -15,10 +15,15 @@ func (s *Server) mountSourceAPI(r chi.Router) {
 	r.Get("/sources", s.handleListSources)
 	r.Get("/sources/{sid}/search", s.handleSourceSearch)
 
-	r.Get("/settings/indexers", s.handleListIndexerSettings)
-	r.Put("/settings/indexers/{provider}/{sid}", s.handleUpdateIndexerSetting)
+	r.Get("/indexers", s.handleListIndexers)
+	r.Post("/indexers", s.handleAddIndexer)
+	r.Post("/indexers/browse", s.handleBrowseProwlarr)
+	r.Put("/indexers/{iid}", s.handleUpdateIndexer)
+	r.Patch("/indexers/{iid}", s.handlePatchIndexer)
+	r.Delete("/indexers/{iid}", s.handleDeleteIndexer)
+	r.Post("/indexers/{iid}/test", s.handleTestIndexer)
 	r.Get("/series/{id}/indexers", s.handleSeriesIndexers)
-	r.Put("/series/{id}/indexers/{provider}/{sid}", s.handleSeriesIndexerOverride)
+	r.Put("/series/{id}/indexers/{iid}", s.handleSeriesIndexerOverride)
 
 	r.Post("/series/{id}/search", s.handleSearch)
 	r.Get("/queue", s.handleQueue)
@@ -94,46 +99,153 @@ func (s *Server) handleQueueBlocklist(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "queue item not found")
 }
 
-// --- indexer settings ---
+// --- indexer entries ---
 
-func (s *Server) handleListIndexerSettings(w http.ResponseWriter, r *http.Request) {
-	sites, err := s.sites.List(r.Context())
+func (s *Server) handleListIndexers(w http.ResponseWriter, r *http.Request) {
+	views, err := s.sites.List(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	respondList(w, sites, nil)
+	respondList(w, views, nil)
 }
 
-func (s *Server) handleUpdateIndexerSetting(w http.ResponseWriter, r *http.Request) {
-	providerID := chi.URLParam(r, "provider")
-	siteID := chi.URLParam(r, "sid")
-	current, err := s.store.GlobalSiteSetting(r.Context(), providerID, siteID)
+func indexerFromBody(body IndexerBody) store.Indexer {
+	return store.Indexer{
+		Name: body.Name, Protocol: body.Protocol,
+		Enabled: body.Enabled, UseVolumes: body.UseVolumes, UseChapters: body.UseChapters,
+		Priority: body.Priority, Settings: store.JSONText(body.Settings),
+	}
+}
+
+func (s *Server) handleAddIndexer(w http.ResponseWriter, r *http.Request) {
+	var body IndexerBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	ix := indexerFromBody(body)
+	if err := service.ValidateIndexer(ix); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	id, err := s.store.AddIndexer(r.Context(), ix)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	var body IndexerSettingPatch
+	ix.ID = id
+	writeJSON(w, http.StatusCreated, ix)
+}
+
+func (s *Server) handleUpdateIndexer(w http.ResponseWriter, r *http.Request) {
+	iid, ok := pathID(w, r, "iid")
+	if !ok {
+		return
+	}
+	existing, err := s.store.GetIndexer(r.Context(), iid)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	var body IndexerBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	ix := indexerFromBody(body)
+	ix.ID = iid
+	ix.Protocol = existing.Protocol // protocol is immutable
+	if err := service.ValidateIndexer(ix); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.store.UpdateIndexer(r.Context(), ix); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ix)
+}
+
+// handlePatchIndexer toggles entry fields inline (table switches).
+func (s *Server) handlePatchIndexer(w http.ResponseWriter, r *http.Request) {
+	iid, ok := pathID(w, r, "iid")
+	if !ok {
+		return
+	}
+	ix, err := s.store.GetIndexer(r.Context(), iid)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	var body IndexerPatch
 	if !decodeBody(w, r, &body) {
 		return
 	}
 	if body.Enabled != nil {
-		current.Enabled = *body.Enabled
+		ix.Enabled = *body.Enabled
 	}
 	if body.UseVolumes != nil {
-		current.UseVolumes = *body.UseVolumes
+		ix.UseVolumes = *body.UseVolumes
 	}
 	if body.UseChapters != nil {
-		current.UseChapters = *body.UseChapters
+		ix.UseChapters = *body.UseChapters
 	}
 	if body.Priority != nil {
-		current.Priority = *body.Priority
+		ix.Priority = *body.Priority
 	}
-	if err := s.store.UpsertSiteSetting(r.Context(), current); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if err := s.store.UpdateIndexer(r.Context(), *ix); err != nil {
+		writeStoreError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, current)
+	writeJSON(w, http.StatusOK, ix)
+}
+
+func (s *Server) handleDeleteIndexer(w http.ResponseWriter, r *http.Request) {
+	iid, ok := pathID(w, r, "iid")
+	if !ok {
+		return
+	}
+	if err := s.store.DeleteIndexer(r.Context(), iid); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleTestIndexer(w http.ResponseWriter, r *http.Request) {
+	iid, ok := pathID(w, r, "iid")
+	if !ok {
+		return
+	}
+	ix, err := s.store.GetIndexer(r.Context(), iid)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if err := service.TestIndexer(r.Context(), *ix, s.conns.Host()); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleBrowseProwlarr lists a Prowlarr's indexers as ready-to-add
+// Torznab endpoints, remembering the credentials for next time.
+func (s *Server) handleBrowseProwlarr(w http.ResponseWriter, r *http.Request) {
+	var body BrowseProwlarrBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	indexers, err := service.BrowseProwlarr(r.Context(), body.URL, body.APIKey)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	cs := s.conns.Load(r.Context())
+	if cs.Prowlarr.URL != body.URL || cs.Prowlarr.APIKey != body.APIKey {
+		cs.Prowlarr.URL, cs.Prowlarr.APIKey = body.URL, body.APIKey
+		_ = s.conns.Save(r.Context(), cs)
+	}
+	respondList(w, indexers, nil)
 }
 
 func (s *Server) handleSeriesIndexers(w http.ResponseWriter, r *http.Request) {
@@ -156,11 +268,11 @@ func (s *Server) handleSeriesIndexerOverride(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	ov := store.SiteOverride{
-		SeriesID: id,
-		Provider: chi.URLParam(r, "provider"),
-		SiteID:   chi.URLParam(r, "sid"),
+	iid, ok := pathID(w, r, "iid")
+	if !ok {
+		return
 	}
+	ov := store.SiteOverride{SeriesID: id, IndexerID: iid}
 	var body OverridePatch
 	if !decodeBody(w, r, &body) {
 		return
@@ -265,6 +377,8 @@ func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sources)
 }
 
+// handleSourceSearch searches one source indexer entry's manga catalog
+// (the manual bind UI). {sid} is the indexer entry id.
 func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 	host := s.conns.Host()
 	if host == nil {
@@ -276,7 +390,21 @@ func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing query parameter q")
 		return
 	}
-	mangas, err := host.Search(r.Context(), chi.URLParam(r, "sid"), q)
+	iid, ok := pathID(w, r, "sid")
+	if !ok {
+		return
+	}
+	ix, err := s.store.GetIndexer(r.Context(), iid)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	var ss service.SourceSettings
+	if err := json.Unmarshal(ix.Settings, &ss); err != nil || ss.SourceID == "" {
+		writeError(w, http.StatusBadRequest, "indexer is not an extension source")
+		return
+	}
+	mangas, err := host.Search(r.Context(), ss.SourceID, q)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

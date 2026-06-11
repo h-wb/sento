@@ -5,94 +5,105 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
-	"github.com/h-wb/sento/internal/prowlarr"
 	"github.com/h-wb/sento/internal/qbittorrent"
+	"github.com/h-wb/sento/internal/torznab"
 )
 
-// TorrentProvider adapts Prowlarr (search) + qBittorrent (download).
-// Either half may be absent: search-only or download-only configurations
-// degrade cleanly.
+// TorrentProvider searches the configured Torznab indexer entries and
+// downloads grabs through qBittorrent. Search works without a download
+// client (qb nil = no grabs).
 type TorrentProvider struct {
-	prowlarr *prowlarr.Client    // nil = no search
+	entries  func(ctx context.Context) ([]IndexerEntry, error)
 	qbit     *qbittorrent.Client // nil = no grabs
 	category string
 }
 
-// NewTorrent returns nil (interface) when neither half is configured, so
-// it can feed NewRegistry directly.
-func NewTorrent(pr *prowlarr.Client, qb *qbittorrent.Client, category string) Provider {
-	if pr == nil && qb == nil {
-		return nil
-	}
-	return &TorrentProvider{prowlarr: pr, qbit: qb, category: category}
+func NewTorrent(entries func(ctx context.Context) ([]IndexerEntry, error),
+	qb *qbittorrent.Client, category string,
+) Provider {
+	return &TorrentProvider{entries: entries, qbit: qb, category: category}
 }
 
 func (p *TorrentProvider) ID() string       { return "torrent" }
 func (p *TorrentProvider) Protocol() string { return ProtocolTorrent }
 
 func (p *TorrentProvider) Sites(ctx context.Context) ([]Site, error) {
-	if p.prowlarr == nil {
-		return nil, nil
-	}
-	indexers, err := p.prowlarr.ListIndexers(ctx)
+	entries, err := p.entries(ctx)
 	if err != nil {
 		return nil, err
 	}
-	sites := make([]Site, 0, len(indexers))
-	for _, i := range indexers {
+	sites := make([]Site, 0, len(entries))
+	for _, e := range entries {
 		sites = append(sites, Site{
-			Provider: p.ID(), ID: strconv.Itoa(i.ID), Name: i.Name,
-			Protocol: ProtocolTorrent, Enabled: i.Enable,
+			Provider: p.ID(), ID: e.EntryID(), Name: e.Name,
+			Protocol: ProtocolTorrent, Enabled: true,
 		})
 	}
 	return sites, nil
 }
 
+// Search queries every allowed Torznab entry in parallel. A failing
+// indexer degrades with an error; the rest still answer.
 func (p *TorrentProvider) Search(ctx context.Context, req SearchRequest) ([]Candidate, error) {
-	if p.prowlarr == nil {
-		return nil, nil
-	}
-	// Restrict at the Prowlarr level when a site filter is present.
-	var indexerIDs []int
-	if allowed, ok := req.Allowed[p.ID()]; ok {
-		if len(allowed) == 0 {
-			return nil, nil // provider allowed-set exists but is empty
-		}
-		for id := range allowed {
-			if n, err := strconv.Atoi(id); err == nil {
-				indexerIDs = append(indexerIDs, n)
-			}
-		}
-	}
-	releases, err := p.prowlarr.Search(ctx, req.Query, nil, indexerIDs)
+	entries, err := p.entries(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Candidate, 0, len(releases))
-	for _, rel := range releases {
-		if !req.SiteAllowed(p.ID(), strconv.Itoa(rel.IndexerID)) {
+	type res struct {
+		cands []Candidate
+		err   error
+	}
+	ch := make(chan res, len(entries))
+	active := 0
+	for _, e := range entries {
+		if !e.Enabled || !req.SiteAllowed(p.ID(), e.EntryID()) {
 			continue
 		}
-		out = append(out, Candidate{
-			Provider: p.ID(),
-			Site:     rel.Indexer,
-			SiteID:   strconv.Itoa(rel.IndexerID),
-			Protocol: ProtocolTorrent,
-			Title:    rel.Title,
-			Torrent: &TorrentRef{
-				GUID:        rel.GUID,
-				InfoHash:    strings.ToLower(rel.InfoHash),
-				MagnetURL:   rel.MagnetURL,
-				DownloadURL: rel.DownloadURL,
-				Size:        rel.Size,
-				Seeders:     rel.Seeders,
-			},
-		})
+		active++
+		go func(e IndexerEntry) {
+			releases, err := torznab.New(e.URL, e.APIKey).Search(ctx, req.Query)
+			if err != nil {
+				ch <- res{err: fmt.Errorf("%s: %w", e.Name, err)}
+				return
+			}
+			cands := make([]Candidate, 0, len(releases))
+			for _, rel := range releases {
+				cands = append(cands, Candidate{
+					Provider: p.ID(),
+					Site:     e.Name,
+					SiteID:   e.EntryID(),
+					Protocol: ProtocolTorrent,
+					Title:    rel.Title,
+					Torrent: &TorrentRef{
+						GUID:        rel.GUID,
+						InfoHash:    rel.InfoHash,
+						MagnetURL:   rel.MagnetURL,
+						DownloadURL: rel.DownloadURL,
+						Size:        rel.Size,
+						Seeders:     rel.Seeders,
+					},
+				})
+			}
+			ch <- res{cands: cands}
+		}(e)
 	}
-	return out, nil
+	var out []Candidate
+	var firstErr error
+	for range active {
+		rr := <-ch
+		if rr.err != nil && firstErr == nil {
+			firstErr = rr.err
+		}
+		out = append(out, rr.cands...)
+	}
+	return out, firstErr
+}
+
+// Test verifies one entry's endpoint (caps request).
+func (p *TorrentProvider) Test(ctx context.Context, e IndexerEntry) error {
+	return torznab.New(e.URL, e.APIKey).Ping(ctx)
 }
 
 func (p *TorrentProvider) Grab(ctx context.Context, c Candidate) (string, error) {

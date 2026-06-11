@@ -10,7 +10,6 @@ import (
 
 	"github.com/h-wb/sento/internal/config"
 	"github.com/h-wb/sento/internal/provider"
-	"github.com/h-wb/sento/internal/prowlarr"
 	"github.com/h-wb/sento/internal/qbittorrent"
 	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
@@ -22,6 +21,8 @@ import (
 
 const connectionsKey = "connections"
 
+// ProwlarrConn is remembered for the Add Indexer "browse Prowlarr"
+// assist — it is not a search connection (indexer entries are).
 type ProwlarrConn struct {
 	URL    string `json:"url"`
 	APIKey string `json:"apiKey"`
@@ -128,18 +129,14 @@ func (c *Connections) Save(ctx context.Context, cs ConnectionSettings) error {
 func (c *Connections) Apply(cs ConnectionSettings) {
 	host := buildHost(cs)
 
-	var pr *prowlarr.Client
-	if cs.Prowlarr.URL != "" {
-		pr = prowlarr.New(cs.Prowlarr.URL, cs.Prowlarr.APIKey)
-	}
 	var qb *qbittorrent.Client
 	if cs.QBittorrent.URL != "" {
 		qb = qbittorrent.New(cs.QBittorrent.URL, cs.QBittorrent.Username, cs.QBittorrent.Password)
 	}
 
 	c.registry.Replace(
-		provider.NewSource(host, c.cfg.Downloads.Dir),
-		provider.NewTorrent(pr, qb, cs.QBittorrent.Category),
+		provider.NewSource(host, c.cfg.Downloads.Dir, IndexerEntries(c.store, store.IndexerSource)),
+		provider.NewTorrent(IndexerEntries(c.store, store.IndexerTorznab), qb, cs.QBittorrent.Category),
 	)
 	c.mu.Lock()
 	c.host = host
@@ -172,13 +169,6 @@ func TestConnections(ctx context.Context, cs ConnectionSettings) []ConnectionTes
 		run     func() (string, error)
 	}
 	var probes []probe
-	if cs.Prowlarr.URL != "" {
-		pr := prowlarr.New(cs.Prowlarr.URL, cs.Prowlarr.APIKey)
-		probes = append(probes, probe{"prowlarr", func() (string, error) {
-			indexers, err := pr.ListIndexers(ctx)
-			return fmt.Sprintf("%d indexers", len(indexers)), err
-		}})
-	}
 	if cs.QBittorrent.URL != "" {
 		qb := qbittorrent.New(cs.QBittorrent.URL, cs.QBittorrent.Username, cs.QBittorrent.Password)
 		probes = append(probes, probe{"qbittorrent", func() (string, error) {

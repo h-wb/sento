@@ -40,7 +40,7 @@ import {
   type ChapterLedger,
   type Collection,
   type SearchResponse,
-  type SeriesSiteView,
+  type SeriesIndexerView,
   type Slots,
 } from '../api'
 import CandidateList from '../components/CandidateList'
@@ -880,7 +880,7 @@ function IndexersTab({
   run: (fn: () => Promise<unknown>, msg?: string) => void
   busy: boolean
 }) {
-  const [rebind, setRebind] = useState<SeriesSiteView | null>(null)
+  const [rebind, setRebind] = useState<SeriesIndexerView | null>(null)
   const { data: sites } = useQuery({
     queryKey: ['series', seriesID, 'indexers'],
     queryFn: () => api.seriesIndexers(seriesID),
@@ -889,9 +889,9 @@ function IndexersTab({
   // Omitted fields decode to nil pointers server-side (= inherit), so
   // undefined and an explicit null are equivalent here. run() invalidates
   // the series queries, which re-fetches this tab.
-  const override = (s: SeriesSiteView, patch: Record<string, boolean | undefined>) =>
+  const override = (s: SeriesIndexerView, patch: Record<string, boolean | undefined>) =>
     run(() =>
-      api.setSeriesIndexerOverride(seriesID, s.provider, s.siteId, {
+      api.setSeriesIndexerOverride(seriesID, s.id, {
         enabled: s.override?.enabled ?? undefined,
         useVolumes: s.override?.useVolumes ?? undefined,
         useChapters: s.override?.useChapters ?? undefined,
@@ -922,11 +922,11 @@ function IndexersTab({
           {sites?.map((s) => {
             const overridden = !!s.override
             return (
-              <Table.Tr key={`${s.provider}-${s.siteId}`} opacity={s.reachable ? 1 : 0.5}>
+              <Table.Tr key={s.id} opacity={s.reachable ? 1 : 0.5}>
                 <Table.Td>
                   <Group gap={6}>
                     <Text size="sm">{s.name}</Text>
-                    <Badge size="xs" variant="outline" color={s.protocol === 'torrent' ? 'blue' : 'teal'}>
+                    <Badge size="xs" variant="outline" color={s.protocol === 'torznab' ? 'blue' : 'teal'}>
                       {s.protocol}
                     </Badge>
                     {overridden && (
@@ -1003,7 +1003,7 @@ function IndexersTab({
         seriesTitle={seriesTitle}
         site={
           rebind &&
-          (sites?.find((x) => x.provider === rebind.provider && x.siteId === rebind.siteId) ??
+          (sites?.find((x) => x.id === rebind.id) ??
             rebind)
         }
         busy={busy}
@@ -1023,7 +1023,7 @@ function BindingList({
   run,
 }: {
   seriesID: number
-  site: SeriesSiteView
+  site: SeriesIndexerView
   run: (fn: () => Promise<unknown>, msg?: string) => void
 }) {
   const bindings = site.bindings ?? []
@@ -1094,7 +1094,7 @@ function RebindModal({
 }: {
   seriesID: number
   seriesTitle: string
-  site: SeriesSiteView | null
+  site: SeriesIndexerView | null
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onClose: () => void
@@ -1119,7 +1119,7 @@ function RebindModal({
             onClick={() =>
               run(() =>
                 api
-                  .sourceSearch(site.siteId, query)
+                  .sourceSearch(String(site.id), query)
                   .then((r) => setResults(r.map((m) => ({ key: m.key, title: m.title })))),
               )
             }
@@ -1141,7 +1141,7 @@ function RebindModal({
                   run(
                     () =>
                       api.addBinding(seriesID, {
-                        sourceId: site.siteId,
+                        sourceId: String(site.id),
                         sourceMangaKey: m.key,
                         sourceName: site.name,
                         mangaTitle: m.title,

@@ -24,6 +24,7 @@ import (
 type SourceProvider struct {
 	host       sourcehost.Host
 	stagingDir string
+	entries    func(ctx context.Context) ([]IndexerEntry, error)
 
 	mu   sync.Mutex
 	jobs map[string]*sourceJob // externalID → live or failed job
@@ -32,16 +33,33 @@ type SourceProvider struct {
 
 // NewSource returns nil (interface) when no host is configured, so it can
 // feed NewRegistry directly.
-func NewSource(host sourcehost.Host, stagingDir string) Provider {
+func NewSource(host sourcehost.Host, stagingDir string,
+	entries func(ctx context.Context) ([]IndexerEntry, error),
+) Provider {
 	if host == nil {
 		return nil
 	}
 	return &SourceProvider{
 		host:       host,
 		stagingDir: stagingDir,
+		entries:    entries,
 		jobs:       map[string]*sourceJob{},
 		sem:        make(chan struct{}, 2),
 	}
+}
+
+// entry resolves one indexer entry by its site id.
+func (p *SourceProvider) entry(ctx context.Context, entryID string) (IndexerEntry, error) {
+	entries, err := p.entries(ctx)
+	if err != nil {
+		return IndexerEntry{}, err
+	}
+	for _, e := range entries {
+		if e.EntryID() == entryID {
+			return e, nil
+		}
+	}
+	return IndexerEntry{}, fmt.Errorf("source: no indexer entry %s", entryID)
 }
 
 func (p *SourceProvider) ID() string       { return p.host.Name() }
@@ -61,16 +79,25 @@ func parseSourceExternalID(externalID string) (sourceID, chapterKey string, err 
 	return sourceID, chapterKey, nil
 }
 
+// Sites lists the source indexer entries; an entry whose source is
+// missing on the host (extension uninstalled) reports Enabled=false.
 func (p *SourceProvider) Sites(ctx context.Context) ([]Site, error) {
-	sources, err := p.host.Sources(ctx)
+	entries, err := p.entries(ctx)
 	if err != nil {
 		return nil, err
 	}
-	sites := make([]Site, 0, len(sources))
-	for _, s := range sources {
+	available := map[string]sourcehost.Source{}
+	if sources, err := p.host.Sources(ctx); err == nil {
+		for _, s := range sources {
+			available[s.ID] = s
+		}
+	}
+	sites := make([]Site, 0, len(entries))
+	for _, e := range entries {
+		src, ok := available[e.SourceID]
 		sites = append(sites, Site{
-			Provider: p.ID(), ID: s.ID, Name: s.Name,
-			Protocol: ProtocolSource, Lang: s.Lang, Enabled: true,
+			Provider: p.ID(), ID: e.EntryID(), Name: e.Name,
+			Protocol: ProtocolSource, Lang: src.Lang, Enabled: ok,
 		})
 	}
 	return sites, nil
@@ -92,20 +119,23 @@ func (p *SourceProvider) Search(ctx context.Context, req SearchRequest) ([]Candi
 		}
 		active++
 		go func(b Binding) {
-			chapters, err := p.host.Chapters(ctx, b.SourceID, b.SourceMangaKey)
+			// Binding.SourceID is the indexer entry id; the entry maps to
+			// the host-side source.
+			e, err := p.entry(ctx, b.SourceID)
 			if err != nil {
-				ch <- res{err: fmt.Errorf("binding %d (%s): %w", b.BindingID, b.SourceName, err)}
+				ch <- res{err: err}
 				return
 			}
-			site := b.SourceName
-			if site == "" {
-				site = b.SourceID
+			chapters, err := p.host.Chapters(ctx, e.SourceID, b.SourceMangaKey)
+			if err != nil {
+				ch <- res{err: fmt.Errorf("binding %d (%s): %w", b.BindingID, e.Name, err)}
+				return
 			}
 			cands := make([]Candidate, 0, len(chapters))
 			for _, c := range chapters {
 				cands = append(cands, Candidate{
 					Provider: p.ID(),
-					Site:     site,
+					Site:     e.Name,
 					SiteID:   b.SourceID,
 					Protocol: ProtocolSource,
 					Title:    c.Name,
@@ -113,7 +143,7 @@ func (p *SourceProvider) Search(ctx context.Context, req SearchRequest) ([]Candi
 						ChapterKey:    c.Key,
 						ChapterNumber: c.Number,
 						Scanlator:     c.Scanlator,
-						SourceID:      b.SourceID,
+						SourceID:      e.SourceID,
 						BindingID:     b.BindingID,
 					},
 				})
@@ -133,9 +163,14 @@ func (p *SourceProvider) Search(ctx context.Context, req SearchRequest) ([]Candi
 	return out, firstErr
 }
 
-// ResolveManga searches a source for series candidates (auto-binding).
+// ResolveManga searches an entry's source for series candidates
+// (auto-binding). siteID is the indexer entry id.
 func (p *SourceProvider) ResolveManga(ctx context.Context, siteID, query string) ([]sourcehost.Manga, error) {
-	return p.host.Search(ctx, siteID, query)
+	e, err := p.entry(ctx, siteID)
+	if err != nil {
+		return nil, err
+	}
+	return p.host.Search(ctx, e.SourceID, query)
 }
 
 // --- download lifecycle (Sento is the download client for sources) ---

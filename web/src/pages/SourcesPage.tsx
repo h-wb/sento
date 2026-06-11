@@ -45,7 +45,6 @@ export default function SourcesPage() {
 }
 
 const testLabels: Record<string, string> = {
-  prowlarr: 'Prowlarr',
   qbittorrent: 'qBittorrent',
   sourceHost: 'Source host',
 }
@@ -89,8 +88,8 @@ function SourcesForm({
         Sources
       </Title>
       <Text size="sm" c="dimmed" mb="md">
-        Where releases come from and how they download. Saving applies immediately; the Indexers
-        tab reflects the sites of whatever is connected here.
+        The source host serves extension sources, qBittorrent downloads torrent grabs. Individual
+        indexers (Torznab endpoints and extension sources) are managed on the Indexers page.
       </Text>
 
       <Stack maw={640}>
@@ -108,28 +107,6 @@ function SourcesForm({
             value={form.sourceHost.url}
             onChange={(e) => set({ sourceHost: { url: e.currentTarget.value } })}
           />
-        </Card>
-
-        <Card withBorder padding="md">
-          <Title order={5} mb={4}>
-            Prowlarr
-          </Title>
-          <Text size="xs" c="dimmed" mb="sm">
-            Indexer aggregator for torrent releases (volumes). Leave the URL empty to disable.
-          </Text>
-          <Stack gap="xs">
-            <TextInput
-              label="URL"
-              placeholder="http://localhost:9696"
-              value={form.prowlarr.url}
-              onChange={(e) => set({ prowlarr: { ...form.prowlarr, url: e.currentTarget.value } })}
-            />
-            <PasswordInput
-              label="API key"
-              value={form.prowlarr.apiKey}
-              onChange={(e) => set({ prowlarr: { ...form.prowlarr, apiKey: e.currentTarget.value } })}
-            />
-          </Stack>
         </Card>
 
         <Card withBorder padding="md">

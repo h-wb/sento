@@ -4,10 +4,12 @@
 import type { ChapterSlot, VolumeSlot } from './types/ledger'
 import type { SeriesRef } from './types/metadata'
 import type {
+  BrowseProwlarrBody,
   ChapterLedgerPatch,
   CreateCollectionBody,
   ExtensionRepos,
-  IndexerSettingPatch,
+  IndexerBody,
+  IndexerPatch,
   MergeCollectionResponse,
   NamingPreview,
   OverridePatch,
@@ -24,10 +26,11 @@ import type {
   ImportProposal,
   MediaSettings,
   ReleaseCandidate,
+  IndexerView,
+  ProwlarrIndexer,
   ScanResult,
   SearchEvent,
-  SeriesSiteView,
-  SiteView,
+  SeriesIndexerView,
   TargetSlot,
 } from './types/service'
 import type {
@@ -45,10 +48,15 @@ import type { Manga as SourceManga, Preference, Source } from './types/sourcehos
 
 export type {
   Binding,
+  BrowseProwlarrBody,
   ConnectionSettings,
   ConnectionTest,
   ExtensionView,
+  IndexerBody,
+  IndexerPatch,
+  IndexerView,
   Preference,
+  ProwlarrIndexer,
   BlocklistEntry,
   CalendarEntry,
   ChapterLedger,
@@ -66,8 +74,7 @@ export type {
   Series,
   SeriesDetail,
   SeriesFile,
-  SeriesSiteView,
-  SiteView,
+  SeriesIndexerView,
   Source,
   SourceManga,
   TargetSlot,
@@ -169,15 +176,20 @@ export const api = {
     request<NamingPreview>('/settings/media/preview', { method: 'POST', body: JSON.stringify(m) }),
 
   sources: () => request<Source[]>('/sources'),
-  indexerSettings: () => request<SiteView[]>('/settings/indexers'),
-  updateIndexerSetting: (provider: string, siteId: string, patch: IndexerSettingPatch) =>
-    request<SiteView>(`/settings/indexers/${provider}/${encodeURIComponent(siteId)}`, {
-      method: 'PUT',
-      body: JSON.stringify(patch),
-    }),
-  seriesIndexers: (id: number) => request<SeriesSiteView[]>(`/series/${id}/indexers`),
-  setSeriesIndexerOverride: (id: number, provider: string, siteId: string, ov: OverridePatch) =>
-    request<unknown>(`/series/${id}/indexers/${provider}/${encodeURIComponent(siteId)}`, {
+  indexers: () => request<IndexerView[]>('/indexers'),
+  addIndexer: (body: IndexerBody) =>
+    request<IndexerView>('/indexers', { method: 'POST', body: JSON.stringify(body) }),
+  updateIndexer: (iid: number, body: IndexerBody) =>
+    request<IndexerView>(`/indexers/${iid}`, { method: 'PUT', body: JSON.stringify(body) }),
+  patchIndexer: (iid: number, patch: IndexerPatch) =>
+    request<IndexerView>(`/indexers/${iid}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteIndexer: (iid: number) => request<void>(`/indexers/${iid}`, { method: 'DELETE' }),
+  testIndexer: (iid: number) => request<void>(`/indexers/${iid}/test`, { method: 'POST' }),
+  browseProwlarr: (body: BrowseProwlarrBody) =>
+    request<ProwlarrIndexer[]>('/indexers/browse', { method: 'POST', body: JSON.stringify(body) }),
+  seriesIndexers: (id: number) => request<SeriesIndexerView[]>(`/series/${id}/indexers`),
+  setSeriesIndexerOverride: (id: number, indexerId: number, ov: OverridePatch) =>
+    request<unknown>(`/series/${id}/indexers/${indexerId}`, {
       method: 'PUT',
       body: JSON.stringify(ov),
     }),
