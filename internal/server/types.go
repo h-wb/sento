@@ -80,6 +80,14 @@ type OverridePatch struct {
 	UseChapters *bool `json:"useChapters"`
 }
 
+// NamingPreview is POST /settings/media/preview: the templates of the
+// posted MediaSettings rendered against a fixed sample series.
+type NamingPreview struct {
+	SeriesFolder string `json:"seriesFolder"`
+	VolumeFile   string `json:"volumeFile"`
+	ChapterFile  string `json:"chapterFile"`
+}
+
 // BindingPatch is PUT /series/{id}/bindings/{bid}.
 type BindingPatch struct {
 	State string `json:"state" tstype:"'active' | 'disabled'"`

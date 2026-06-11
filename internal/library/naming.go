@@ -107,11 +107,13 @@ func renderNum(hundredths int64, pad int) string {
 
 var unsafeChars = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
 
-// sanitize makes a string safe as a path component.
-func sanitize(s string) string {
+// Sanitize makes a string safe as a path component.
+func Sanitize(s string) string {
 	s = unsafeChars.ReplaceAllString(s, "")
 	return strings.TrimSpace(strings.Trim(s, "."))
 }
+
+func sanitize(s string) string { return Sanitize(s) }
 
 func slug(s string) string {
 	s = strings.ToLower(sanitize(s))

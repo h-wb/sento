@@ -50,6 +50,24 @@ export interface AddSeriesRequest {
 }
 
 //////////
+// source: mediasettings.go
+
+/**
+ * MediaSettings is the post-processing configuration: naming templates,
+ * transfer mode and metadata writing. Stored in the settings table so
+ * changes apply without a restart; defaults when unset.
+ */
+export interface MediaSettings {
+  seriesFolder: string;
+  volumeFile: string;
+  chapterFile: string;
+  chapterDir: string; // "" = no chapter subfolder
+  renameImports: boolean;
+  alwaysCopy: boolean; // copy even when a hardlink would work
+  writeComicInfo: boolean;
+}
+
+//////////
 // source: scan.go
 
 /**

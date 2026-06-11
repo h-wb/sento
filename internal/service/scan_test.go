@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/h-wb/sento/internal/ledger"
-	"github.com/h-wb/sento/internal/library"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -37,7 +36,7 @@ func TestScanSeriesFolder(t *testing.T) {
 		}
 	}
 
-	sc := NewScanner(st, library.DefaultNaming(), dir)
+	sc := NewScanner(st, dir)
 	res, err := sc.ScanSeriesFolder(ctx, seriesID, dir)
 	if err != nil {
 		t.Fatal(err)

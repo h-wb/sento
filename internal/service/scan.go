@@ -17,12 +17,11 @@ import (
 // files are linked where they are — nothing is moved, renamed or rewritten.
 type Scanner struct {
 	store       *store.Store
-	naming      library.NamingConfig
 	libraryRoot string
 }
 
-func NewScanner(st *store.Store, naming library.NamingConfig, libraryRoot string) *Scanner {
-	return &Scanner{store: st, naming: naming, libraryRoot: libraryRoot}
+func NewScanner(st *store.Store, libraryRoot string) *Scanner {
+	return &Scanner{store: st, libraryRoot: libraryRoot}
 }
 
 type ScanResult struct {
@@ -49,7 +48,8 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 		dir = series.Path
 	}
 	if dir == "" {
-		dir = filepath.Join(sc.libraryRoot, library.Render(sc.naming.SeriesFolder, library.NameTokens{
+		naming := LoadMediaSettings(ctx, sc.store).Naming()
+		dir = filepath.Join(sc.libraryRoot, library.Render(naming.SeriesFolder, library.NameTokens{
 			SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1,
 		}))
 	}

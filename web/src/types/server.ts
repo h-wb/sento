@@ -94,6 +94,15 @@ export interface OverridePatch {
   useChapters?: boolean;
 }
 /**
+ * NamingPreview is POST /settings/media/preview: the templates of the
+ * posted MediaSettings rendered against a fixed sample series.
+ */
+export interface NamingPreview {
+  seriesFolder: string;
+  volumeFile: string;
+  chapterFile: string;
+}
+/**
  * BindingPatch is PUT /series/{id}/bindings/{bid}.
  */
 export interface BindingPatch {

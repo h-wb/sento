@@ -14,7 +14,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/h-wb/sento/internal/config"
-	"github.com/h-wb/sento/internal/library"
 	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/prowlarr"
@@ -41,14 +40,13 @@ type Server struct {
 
 func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 	st := store.New(db)
-	naming := library.DefaultNaming()
 	s := &Server{
 		cfg:      cfg,
 		db:       db,
 		store:    st,
 		provider: mdProvider,
 		library:  service.NewLibrary(st, mdProvider),
-		scanner:  service.NewScanner(st, naming, cfg.Library.Path),
+		scanner:  service.NewScanner(st, cfg.Library.Path),
 	}
 
 	if cfg.Suwayomi.URL != "" {
@@ -70,7 +68,7 @@ func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 	)
 	s.search = service.NewSearchService(st, s.registry)
 	s.sites = service.NewSiteService(st, s.registry)
-	s.importer = service.NewImporter(st, s.registry, naming, cfg.Library.Path, cfg.Library.PathMappings)
+	s.importer = service.NewImporter(st, s.registry, cfg.Library.Path, cfg.Library.PathMappings)
 	return s
 }
 

@@ -25,6 +25,9 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Delete("/files/{fid}", s.handleDeleteFile)
 	r.Post("/library/import/scan", s.handleImportScan)
 	r.Post("/library/import", s.handleImportFolder)
+	r.Get("/settings/media", s.handleGetMediaSettings)
+	r.Put("/settings/media", s.handlePutMediaSettings)
+	r.Post("/settings/media/preview", s.handlePreviewMediaSettings)
 	s.mountSourceAPI(r)
 
 	r.Route("/series", func(r chi.Router) {
@@ -350,6 +353,35 @@ func (s *Server) handleScanSeries(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// --- media settings ---
+
+func (s *Server) handleGetMediaSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, service.LoadMediaSettings(r.Context(), s.store))
+}
+
+func (s *Server) handlePutMediaSettings(w http.ResponseWriter, r *http.Request) {
+	var m service.MediaSettings
+	if !decodeBody(w, r, &m) {
+		return
+	}
+	if err := service.SaveMediaSettings(r.Context(), s.store, m); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, m)
+}
+
+func (s *Server) handlePreviewMediaSettings(w http.ResponseWriter, r *http.Request) {
+	var m service.MediaSettings
+	if !decodeBody(w, r, &m) {
+		return
+	}
+	p := service.PreviewMediaSettings(m)
+	writeJSON(w, http.StatusOK, NamingPreview{
+		SeriesFolder: p["seriesFolder"], VolumeFile: p["volumeFile"], ChapterFile: p["chapterFile"],
+	})
 }
 
 // --- bindings ---

@@ -25,13 +25,12 @@ import (
 type Importer struct {
 	store        *store.Store
 	registry     *provider.Registry
-	naming       library.NamingConfig
 	libraryRoot  string
 	pathMappings []string // "remote=local" download-client path translations
 }
 
-func NewImporter(st *store.Store, registry *provider.Registry, naming library.NamingConfig, libraryRoot string, pathMappings []string) *Importer {
-	return &Importer{store: st, registry: registry, naming: naming, libraryRoot: libraryRoot, pathMappings: pathMappings}
+func NewImporter(st *store.Store, registry *provider.Registry, libraryRoot string, pathMappings []string) *Importer {
+	return &Importer{store: st, registry: registry, libraryRoot: libraryRoot, pathMappings: pathMappings}
 }
 
 // mapPath translates a download-client path to a local one (longest
@@ -156,6 +155,8 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 // importStream imports a single-archive payload into the slot(s) the queue
 // item expects — ledger-aware: volume slots get volume naming.
 func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stream io.Reader) error {
+	ms := LoadMediaSettings(ctx, im.store)
+	naming := ms.Naming()
 	series, err := im.store.GetSeries(ctx, item.SeriesID)
 	if err != nil {
 		return err
@@ -177,7 +178,7 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 		lang = cl.Language
 	}
 
-	seriesDir, err := im.seriesDir(ctx, series)
+	seriesDir, err := im.seriesDir(ctx, series, naming)
 	if err != nil {
 		return err
 	}
@@ -191,29 +192,39 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 		Notes:       fmt.Sprintf("mangabaka:%d sento:v1", series.MangaBakaID),
 	}
 	if isVolume {
-		fileName := library.Render(im.naming.VolumeFile, library.NameTokens{
+		fileName := library.Render(naming.VolumeFile, library.NameTokens{
 			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
 			Volume: first.Number, Chapter: -1, Edition: editionName, Lang: lang,
 		})
+		if !ms.RenameImports {
+			fileName = library.Sanitize(item.Title) + ".cbz"
+		}
 		destPath = filepath.Join(seriesDir, fileName)
 		info.Volume = library.RenderPlainNum(first.Number)
 		// Also set Number: the merge would otherwise preserve whatever the
 		// source's ComicInfo guessed (often a year mis-parse).
 		info.Number = info.Volume
 	} else {
-		fileName := library.Render(im.naming.ChapterFile, library.NameTokens{
+		fileName := library.Render(naming.ChapterFile, library.NameTokens{
 			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
 			Volume: -1, Chapter: first.Number, Lang: lang,
 		})
+		if !ms.RenameImports {
+			fileName = library.Sanitize(item.Title) + ".cbz"
+		}
 		destPath = seriesDir
-		if im.naming.ChapterDir != "" {
-			destPath = filepath.Join(destPath, im.naming.ChapterDir)
+		if naming.ChapterDir != "" {
+			destPath = filepath.Join(destPath, naming.ChapterDir)
 		}
 		destPath = filepath.Join(destPath, fileName)
 		info.Number = library.RenderPlainNum(first.Number)
 	}
 
-	size, err := library.ImportCBZ(stream, destPath, info)
+	writeInfo := &info
+	if !ms.WriteComicInfo {
+		writeInfo = nil
+	}
+	size, err := library.ImportCBZ(stream, destPath, writeInfo)
 	if err != nil {
 		return err
 	}
@@ -235,6 +246,8 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 // parsed and hardlinked into the library for each expected slot it covers.
 // Payload data is never moved (seeding, spec.md §7).
 func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir string, files []string) error {
+	ms := LoadMediaSettings(ctx, im.store)
+	naming := ms.Naming()
 	series, err := im.store.GetSeries(ctx, item.SeriesID)
 	if err != nil {
 		return err
@@ -268,7 +281,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 		lang = cl.Language
 	}
 
-	seriesDir, err := im.seriesDir(ctx, series)
+	seriesDir, err := im.seriesDir(ctx, series, naming)
 	if err != nil {
 		return err
 	}
@@ -291,14 +304,20 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 					continue
 				}
 				var dest string
-				if slotLedger == "volume" {
-					dest = filepath.Join(seriesDir, library.Render(im.naming.VolumeFile, library.NameTokens{
+				switch {
+				case !ms.RenameImports:
+					dest = filepath.Join(seriesDir, filepath.Base(rel))
+					if slotLedger == "chapter" && naming.ChapterDir != "" {
+						dest = filepath.Join(seriesDir, naming.ChapterDir, filepath.Base(rel))
+					}
+				case slotLedger == "volume":
+					dest = filepath.Join(seriesDir, library.Render(naming.VolumeFile, library.NameTokens{
 						SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
 						Volume: n, Chapter: -1, Edition: editionName, Lang: lang,
 					}))
-				} else {
-					dest = filepath.Join(seriesDir, im.naming.ChapterDir,
-						library.Render(im.naming.ChapterFile, library.NameTokens{
+				default:
+					dest = filepath.Join(seriesDir, naming.ChapterDir,
+						library.Render(naming.ChapterFile, library.NameTokens{
 							SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
 							Volume: -1, Chapter: n, Lang: lang,
 						}))
@@ -307,7 +326,11 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 				// (a CBR renamed .cbz would lie about its contents).
 				dest = strings.TrimSuffix(dest, filepath.Ext(dest)) + ext
 				src := filepath.Join(dir, rel)
-				if err := library.HardlinkOrCopy(src, dest); err != nil {
+				transfer := library.HardlinkOrCopy
+				if ms.AlwaysCopy {
+					transfer = library.CopyFile
+				}
+				if err := transfer(src, dest); err != nil {
 					return fmt.Errorf("linking %s: %w", rel, err)
 				}
 				size := int64(0)
@@ -332,11 +355,11 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	return nil
 }
 
-func (im *Importer) seriesDir(ctx context.Context, series *store.Series) (string, error) {
+func (im *Importer) seriesDir(ctx context.Context, series *store.Series, naming library.NamingConfig) (string, error) {
 	if series.Path != "" {
 		return series.Path, nil
 	}
-	dir := filepath.Join(im.libraryRoot, library.Render(im.naming.SeriesFolder, library.NameTokens{
+	dir := filepath.Join(im.libraryRoot, library.Render(naming.SeriesFolder, library.NameTokens{
 		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1,
 	}))
 	if err := im.store.SetSeriesPath(ctx, series.ID, dir); err != nil {

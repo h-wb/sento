@@ -14,7 +14,7 @@ import (
 // verifying it is a readable archive with ≥1 image, and rewrites its
 // ComicInfo.xml with sentoInfo merged over any existing one (original
 // preserved once as ComicInfo.orig.xml). Returns the final file size.
-func ImportCBZ(src io.Reader, destPath string, sentoInfo ComicInfo) (int64, error) {
+func ImportCBZ(src io.Reader, destPath string, sentoInfo *ComicInfo) (int64, error) {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return 0, err
 	}
@@ -35,7 +35,17 @@ func ImportCBZ(src io.Reader, destPath string, sentoInfo ComicInfo) (int64, erro
 		return 0, err
 	}
 
-	if err := rewriteArchive(tmpPath, destPath, sentoInfo); err != nil {
+	if sentoInfo == nil {
+		// No ComicInfo rewrite: verify the archive, store it verbatim.
+		zr, err := zip.OpenReader(tmpPath)
+		if err != nil {
+			return 0, fmt.Errorf("verify: not a readable zip: %w", err)
+		}
+		_ = zr.Close()
+		if err := os.Rename(tmpPath, destPath); err != nil {
+			return 0, err
+		}
+	} else if err := rewriteArchive(tmpPath, destPath, *sentoInfo); err != nil {
 		return 0, err
 	}
 	info, err := os.Stat(destPath)
@@ -172,6 +182,14 @@ func HardlinkOrCopy(src, dest string) error {
 	}
 	if err := os.Link(src, dest); err == nil {
 		return nil
+	}
+	return CopyFile(src, dest)
+}
+
+// CopyFile copies src to dest, creating parent directories.
+func CopyFile(src, dest string) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
 	}
 	in, err := os.Open(src)
 	if err != nil {

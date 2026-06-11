@@ -3,6 +3,7 @@ import {
   IconBooks,
   IconCalendar,
   IconDownload,
+  IconFiles,
   IconPlus,
   IconServerBolt,
   IconWorldSearch,
@@ -14,6 +15,7 @@ import SeriesPage from './pages/SeriesPage'
 import CalendarPage from './pages/CalendarPage'
 import QueuePage from './pages/QueuePage'
 import IndexersPage from './pages/IndexersPage'
+import MediaPage from './pages/MediaPage'
 import SystemPage from './pages/SystemPage'
 
 const links = [
@@ -22,6 +24,7 @@ const links = [
   { to: '/calendar', label: 'Calendar', icon: IconCalendar },
   { to: '/queue', label: 'Activity', icon: IconDownload },
   { to: '/indexers', label: 'Indexers', icon: IconWorldSearch },
+  { to: '/media', label: 'Media', icon: IconFiles },
   { to: '/system', label: 'System', icon: IconServerBolt },
 ]
 
@@ -61,6 +64,7 @@ export default function App() {
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/queue" element={<QueuePage />} />
           <Route path="/indexers" element={<IndexersPage />} />
+          <Route path="/media" element={<MediaPage />} />
           <Route path="/system" element={<SystemPage />} />
         </Routes>
       </AppShell.Main>

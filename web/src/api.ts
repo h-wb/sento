@@ -6,6 +6,7 @@ import type { SeriesRef } from './types/metadata'
 import type {
   ChapterLedgerPatch,
   IndexerSettingPatch,
+  NamingPreview,
   OverridePatch,
   SearchResponse,
   SeriesDetail,
@@ -15,6 +16,7 @@ import type {
 import type {
   AddSeriesRequest,
   ImportProposal,
+  MediaSettings,
   ReleaseCandidate,
   ScanResult,
   SearchEvent,
@@ -44,6 +46,8 @@ export type {
   Collection,
   Decision,
   ImportProposal,
+  MediaSettings,
+  NamingPreview,
   QueueItem,
   ReleaseCandidate,
   ScanResult,
@@ -109,6 +113,12 @@ export const api = {
       body: JSON.stringify(body),
     }),
   files: (id: number) => request<SeriesFile[]>(`/series/${id}/files`),
+
+  mediaSettings: () => request<MediaSettings>('/settings/media'),
+  saveMediaSettings: (m: MediaSettings) =>
+    request<MediaSettings>('/settings/media', { method: 'PUT', body: JSON.stringify(m) }),
+  previewNaming: (m: MediaSettings) =>
+    request<NamingPreview>('/settings/media/preview', { method: 'POST', body: JSON.stringify(m) }),
 
   sources: () => request<Source[]>('/sources'),
   indexerSettings: () => request<SiteView[]>('/settings/indexers'),
