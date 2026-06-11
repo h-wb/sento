@@ -64,6 +64,30 @@ type CollectionPatch struct {
 	Monitored bool `json:"monitored"`
 }
 
+// CreateCollectionBody is POST /series/{id}/collections — a custom
+// edition. Slot structure clones from basedOn (language variants) or
+// generates volumes 1..N (editions MangaBaka doesn't know).
+type CreateCollectionBody struct {
+	EditionName string `json:"editionName"`
+	Language    string `json:"language"`
+	Publisher   string `json:"publisher"`
+	Medium      string `json:"medium"`
+	BasedOn     int64  `json:"basedOn"` // collection id; 0 = from scratch
+	Volumes     int    `json:"volumes"` // only when basedOn is 0
+	Monitored   bool   `json:"monitored"`
+}
+
+// MergeCollectionBody is POST /series/{id}/collections/{cid}/merge.
+type MergeCollectionBody struct {
+	Into int64 `json:"into"`
+}
+
+// MergeCollectionResponse lists volume numbers (hundredths) whose files
+// have no matching slot in the target edition.
+type MergeCollectionResponse struct {
+	Unmatched []int64 `json:"unmatched"`
+}
+
 // IndexerSettingPatch is PUT /settings/indexers/{provider}/{sid} (nil = keep).
 type IndexerSettingPatch struct {
 	Enabled     *bool `json:"enabled"`

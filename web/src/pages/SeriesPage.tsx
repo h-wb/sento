@@ -7,9 +7,11 @@ import {
   Card,
   Group,
   Image,
+  Menu,
   Modal,
   NumberInput,
   Progress,
+  Select,
   Stack,
   Switch,
   Table,
@@ -19,7 +21,15 @@ import {
   Title,
   Tooltip,
 } from '@mantine/core'
-import { IconEye, IconEyeOff, IconRefresh, IconSearch, IconTrash, IconX } from '@tabler/icons-react'
+import {
+  IconDotsVertical,
+  IconEye,
+  IconEyeOff,
+  IconRefresh,
+  IconSearch,
+  IconTrash,
+  IconX,
+} from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
@@ -313,6 +323,7 @@ function VolumesTab({
   onSlot: (s: SlotSelection) => void
 }) {
   const [funnel, setFunnel] = useState<SearchResponse | null>(null)
+  const [addEdition, setAddEdition] = useState(false)
   const volumeCollections = collections.filter((c) => c.type === 'volume')
 
   return (
@@ -341,7 +352,19 @@ function VolumesTab({
         >
           Search (dry run)
         </Button>
+        <Button size="xs" variant="default" onClick={() => setAddEdition(true)}>
+          Add edition
+        </Button>
       </Group>
+
+      <AddEditionModal
+        seriesID={seriesID}
+        collections={volumeCollections}
+        opened={addEdition}
+        busy={busy}
+        run={run}
+        onClose={() => setAddEdition(false)}
+      />
 
       {volumeCollections.map((c) => {
         const colSlots = slots?.volumes?.[String(c.id)] ?? []
@@ -353,20 +376,35 @@ function VolumesTab({
                 <Text fw={600}>
                   {c.editionName}{' '}
                   <Text span c="dimmed" size="sm">
-                    {c.language} · {c.medium} · {c.publisher}
-                  </Text>
+                    {[c.language, c.medium, c.publisher].filter(Boolean).join(' · ')}
+                  </Text>{' '}
+                  {c.custom && (
+                    <Badge size="xs" color="grape" variant="light">
+                      custom
+                    </Badge>
+                  )}
                 </Text>
                 <Text size="xs" c="dimmed">
                   {owned}/{colSlots.length} owned
                 </Text>
               </div>
-              <Switch
-                label="Monitored"
-                checked={c.monitored}
-                onChange={(e) =>
-                  run(() => api.setCollectionMonitored(seriesID, c.id, e.currentTarget.checked))
-                }
-              />
+              <Group gap="xs">
+                {c.custom && (
+                  <CustomEditionActions
+                    seriesID={seriesID}
+                    collection={c}
+                    others={volumeCollections.filter((o) => o.id !== c.id)}
+                    run={run}
+                  />
+                )}
+                <Switch
+                  label="Monitored"
+                  checked={c.monitored}
+                  onChange={(e) =>
+                    run(() => api.setCollectionMonitored(seriesID, c.id, e.currentTarget.checked))
+                  }
+                />
+              </Group>
             </Group>
             {colSlots.length > 0 && (
               <Progress value={(owned / Math.max(colSlots.length, 1)) * 100} mb="xs" />
@@ -408,6 +446,160 @@ function VolumesTab({
 
       {funnel && <FunnelCard funnel={funnel} />}
     </Stack>
+  )
+}
+
+// AddEditionModal creates a custom edition: based on an existing one
+// (clones the volume numbering — language variants) or from scratch with
+// a volume count (editions MangaBaka doesn't know yet). Metadata refresh
+// adopts a custom edition automatically if MangaBaka later lists the same
+// name/language/publisher/medium.
+function AddEditionModal({
+  seriesID,
+  collections,
+  opened,
+  busy,
+  run,
+  onClose,
+}: {
+  seriesID: number
+  collections: Collection[]
+  opened: boolean
+  busy: boolean
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+  onClose: () => void
+}) {
+  const [name, setName] = useState('Standard Edition')
+  const [language, setLanguage] = useState('')
+  const [publisher, setPublisher] = useState('')
+  const [medium, setMedium] = useState('')
+  const [basedOn, setBasedOn] = useState<string | null>(null)
+  const [volumes, setVolumes] = useState<number | string>(12)
+
+  const create = () =>
+    run(
+      () =>
+        api
+          .createCollection(seriesID, {
+            editionName: name,
+            language,
+            publisher,
+            medium,
+            basedOn: basedOn ? Number(basedOn) : 0,
+            volumes: basedOn ? 0 : Number(volumes) || 0,
+            monitored: true,
+          })
+          .then(onClose),
+      'Edition created',
+    )
+
+  return (
+    <Modal opened={opened} onClose={onClose} title="Add edition" size="md">
+      <Stack gap="xs">
+        <Select
+          label="Based on"
+          description="Clones the volume numbering (release dates stay unknown); pick nothing to start from scratch"
+          placeholder="From scratch"
+          clearable
+          data={collections.map((c) => ({
+            value: String(c.id),
+            label: `${c.editionName} · ${c.language} · ${c.medium || '?'} (${c.countMain} vols)`,
+          }))}
+          value={basedOn}
+          onChange={setBasedOn}
+        />
+        {!basedOn && (
+          <NumberInput label="Volumes" min={1} max={500} value={volumes} onChange={setVolumes} />
+        )}
+        <TextInput
+          label="Edition name"
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+        />
+        <TextInput
+          label="Language"
+          placeholder="fr"
+          value={language}
+          onChange={(e) => setLanguage(e.currentTarget.value)}
+        />
+        <Group grow>
+          <TextInput
+            label="Publisher (optional)"
+            value={publisher}
+            onChange={(e) => setPublisher(e.currentTarget.value)}
+          />
+          <TextInput
+            label="Medium (optional)"
+            placeholder="paperback"
+            value={medium}
+            onChange={(e) => setMedium(e.currentTarget.value)}
+          />
+        </Group>
+        <Button
+          mt="xs"
+          loading={busy}
+          disabled={!name.trim() || !language.trim()}
+          onClick={create}
+        >
+          Create (monitored)
+        </Button>
+      </Stack>
+    </Modal>
+  )
+}
+
+// CustomEditionActions: merge a custom edition into another one (links
+// re-point by volume number) or delete it (files stay in the library).
+function CustomEditionActions({
+  seriesID,
+  collection,
+  others,
+  run,
+}: {
+  seriesID: number
+  collection: Collection
+  others: Collection[]
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+}) {
+  return (
+    <Menu position="bottom-end" withinPortal>
+      <Menu.Target>
+        <Button size="compact-xs" variant="subtle" px={4}>
+          <IconDotsVertical size={14} />
+        </Button>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Label>Merge into</Menu.Label>
+        {others.map((o) => (
+          <Menu.Item
+            key={o.id}
+            onClick={() =>
+              run(async () => {
+                const r = await api.mergeCollection(seriesID, collection.id, o.id)
+                if (r.unmatched?.length) {
+                  window.alert(
+                    `Merged, but ${r.unmatched.map((n) => 'v' + n / 100).join(', ')} had no matching slot in "${o.editionName}" — the files stay linked but won't show on its grid.`,
+                  )
+                }
+              }, 'Editions merged')
+            }
+          >
+            {o.editionName} · {o.language} {o.medium ? `· ${o.medium}` : ''}
+          </Menu.Item>
+        ))}
+        {others.length === 0 && <Menu.Item disabled>No other edition</Menu.Item>}
+        <Menu.Divider />
+        <Menu.Item
+          color="red"
+          leftSection={<IconTrash size={14} />}
+          onClick={() =>
+            run(() => api.deleteCollection(seriesID, collection.id), 'Edition deleted')
+          }
+        >
+          Delete edition
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
   )
 }
 

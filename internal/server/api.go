@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -38,7 +39,10 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Delete("/", s.handleDeleteSeries)
 			r.Post("/refresh", s.handleRefreshSeries)
 			r.Get("/slots", s.handleSlots)
+			r.Post("/collections", s.handleCreateCollection)
 			r.Put("/collections/{cid}", s.handleUpdateCollection)
+			r.Post("/collections/{cid}/merge", s.handleMergeCollection)
+			r.Delete("/collections/{cid}", s.handleDeleteCollection)
 			r.Put("/chapter-ledger", s.handleUpdateChapterLedger)
 			r.Get("/files", s.handleListFiles)
 			r.Post("/import", s.handleScanSeries)
@@ -243,6 +247,84 @@ func (s *Server) handleSlots(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- collection / chapter ledger updates ---
+
+func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body CreateCollectionBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.EditionName) == "" || strings.TrimSpace(body.Language) == "" {
+		writeError(w, http.StatusBadRequest, "editionName and language are required")
+		return
+	}
+	if body.BasedOn == 0 && (body.Volumes < 1 || body.Volumes > 500) {
+		writeError(w, http.StatusBadRequest, "volumes must be 1-500 when not based on an existing edition")
+		return
+	}
+	cid, err := s.store.AddCustomCollection(r.Context(), store.Collection{
+		SeriesID: id, EditionName: body.EditionName, Language: body.Language,
+		Publisher: body.Publisher, Medium: body.Medium, Monitored: body.Monitored,
+	}, body.BasedOn, body.Volumes)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			writeError(w, http.StatusConflict, "an edition with this name/language/publisher/medium already exists")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	col, err := s.store.GetCollection(r.Context(), cid)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, col)
+}
+
+func (s *Server) handleMergeCollection(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	cid, ok := pathID(w, r, "cid")
+	if !ok {
+		return
+	}
+	var body MergeCollectionBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if body.Into == 0 || body.Into == cid {
+		writeError(w, http.StatusBadRequest, "merge target must be a different collection")
+		return
+	}
+	unmatched, err := s.store.MergeCollection(r.Context(), id, cid, body.Into)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, MergeCollectionResponse{Unmatched: unmatched})
+}
+
+func (s *Server) handleDeleteCollection(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	cid, ok := pathID(w, r, "cid")
+	if !ok {
+		return
+	}
+	if err := s.store.DeleteCustomCollection(r.Context(), id, cid); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
 
 func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")

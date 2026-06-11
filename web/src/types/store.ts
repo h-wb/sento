@@ -158,6 +158,7 @@ export interface Collection {
   countOther: number /* int */;
   startDate?: string;
   endDate?: string;
+  custom: boolean;
 }
 export interface Work {
   id: number /* int64 */;

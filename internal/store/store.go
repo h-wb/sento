@@ -57,6 +57,7 @@ type Collection struct {
 	CountOther  int    `json:"countOther"`
 	StartDate   string `json:"startDate,omitempty"`
 	EndDate     string `json:"endDate,omitempty"`
+	Custom      bool   `json:"custom"`
 }
 
 type Work struct {
@@ -222,7 +223,7 @@ const collectionColumns = `
 	edition_name, language, publisher, medium, ctype, monitored,
 	COALESCE(count_main,0) AS count_main, COALESCE(count_extra,0) AS count_extra,
 	COALESCE(count_other,0) AS count_other,
-	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date`
+	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date, custom`
 
 func (s *Store) ListCollections(ctx context.Context, seriesID int64) ([]Collection, error) {
 	return list[Collection](ctx, s, `SELECT `+collectionColumns+`
@@ -236,6 +237,133 @@ func (s *Store) GetCollection(ctx context.Context, id int64) (*Collection, error
 func (s *Store) SetCollectionMonitored(ctx context.Context, seriesID, collectionID int64, monitored bool) error {
 	return s.touch(ctx, `UPDATE collections SET monitored = ? WHERE id = ? AND series_id = ?`,
 		monitored, collectionID, seriesID)
+}
+
+// AddCustomCollection creates a user-defined edition. Its work list is
+// cloned from basedOn (numbering only — release dates of a variant are
+// unknown, the calendar must not lie) or generated 1..volumes. Metadata
+// refresh adopts the row if MangaBaka later lists the same identity.
+func (s *Store) AddCustomCollection(ctx context.Context, c Collection, basedOn int64, volumes int) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO collections (series_id, edition_name, language, publisher, medium,
+			ctype, monitored, custom, updated_at)
+		VALUES (?,?,?,?,?,'volume',?,1,datetime('now'))`,
+		c.SeriesID, c.EditionName, c.Language, c.Publisher, c.Medium, c.Monitored)
+	if err != nil {
+		return 0, fmt.Errorf("inserting custom collection: %w", err)
+	}
+	colID, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	if basedOn > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO works (collection_id, sequence_num, sequence_string, count_type)
+			SELECT ?, sequence_num, sequence_string, count_type
+			FROM works WHERE collection_id = ?
+			  AND collection_id IN (SELECT id FROM collections WHERE series_id = ?)`,
+			colID, basedOn, c.SeriesID); err != nil {
+			return 0, fmt.Errorf("cloning works: %w", err)
+		}
+	} else {
+		for i := 1; i <= volumes; i++ {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO works (collection_id, sequence_num, sequence_string, count_type)
+				VALUES (?,?,?,'main')`, colID, int64(i)*100, fmt.Sprintf("%d", i)); err != nil {
+				return 0, fmt.Errorf("generating work %d: %w", i, err)
+			}
+		}
+	}
+	return colID, tx.Commit()
+}
+
+// MergeCollection folds a custom edition into another collection of the
+// same series: file/override links re-point by volume number, monitoring
+// is OR-ed, the custom row is deleted (works cascade). Returns the slot
+// numbers that have no work in the target (links move anyway — files stay
+// owned — but those slots won't show on the target's grid).
+func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID int64) ([]int64, error) {
+	from, err := s.GetCollection(ctx, fromID)
+	if err != nil {
+		return nil, err
+	}
+	into, err := s.GetCollection(ctx, intoID)
+	if err != nil {
+		return nil, err
+	}
+	if from.SeriesID != seriesID || into.SeriesID != seriesID {
+		return nil, fmt.Errorf("collections belong to another series")
+	}
+	if !from.Custom {
+		return nil, fmt.Errorf("only custom editions can be merged away")
+	}
+
+	unmatched, err := list[int64](ctx, s, `
+		SELECT DISTINCT number FROM file_slot_links
+		WHERE ledger = 'volume' AND collection_id = ?
+		  AND number NOT IN (SELECT sequence_num FROM works WHERE collection_id = ?)
+		ORDER BY number`, fromID, intoID)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, table := range []string{"file_slot_links", "slot_overrides"} {
+		// UPDATE OR IGNORE skips rows that would collide with an existing
+		// link in the target; the DELETE clears those leftovers.
+		if _, err := tx.ExecContext(ctx, `UPDATE OR IGNORE `+table+`
+			SET collection_id = ? WHERE ledger = 'volume' AND collection_id = ?`,
+			intoID, fromID); err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+`
+			WHERE ledger = 'volume' AND collection_id = ?`, fromID); err != nil {
+			return nil, err
+		}
+	}
+	if from.Monitored && !into.Monitored {
+		if _, err := tx.ExecContext(ctx, `UPDATE collections SET monitored = 1 WHERE id = ?`, intoID); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM collections WHERE id = ?`, fromID); err != nil {
+		return nil, err
+	}
+	return unmatched, tx.Commit()
+}
+
+// DeleteCustomCollection removes a custom edition and its volume links
+// (files themselves stay in the library).
+func (s *Store) DeleteCustomCollection(ctx context.Context, seriesID, collectionID int64) error {
+	col, err := s.GetCollection(ctx, collectionID)
+	if err != nil {
+		return err
+	}
+	if col.SeriesID != seriesID {
+		return ErrNotFound
+	}
+	if !col.Custom {
+		return fmt.Errorf("only custom editions can be deleted")
+	}
+	for _, table := range []string{"file_slot_links", "slot_overrides"} {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM `+table+`
+			WHERE ledger = 'volume' AND collection_id = ?`, collectionID); err != nil {
+			return err
+		}
+	}
+	return s.touch(ctx, `DELETE FROM collections WHERE id = ?`, collectionID)
 }
 
 func (s *Store) ListWorks(ctx context.Context, collectionID int64) ([]Work, error) {

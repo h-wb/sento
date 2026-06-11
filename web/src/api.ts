@@ -5,7 +5,9 @@ import type { ChapterSlot, VolumeSlot } from './types/ledger'
 import type { SeriesRef } from './types/metadata'
 import type {
   ChapterLedgerPatch,
+  CreateCollectionBody,
   IndexerSettingPatch,
+  MergeCollectionResponse,
   NamingPreview,
   OverridePatch,
   SearchResponse,
@@ -107,6 +109,18 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ monitored }),
     }),
+  createCollection: (id: number, body: CreateCollectionBody) =>
+    request<Collection>(`/series/${id}/collections`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  mergeCollection: (id: number, cid: number, into: number) =>
+    request<MergeCollectionResponse>(`/series/${id}/collections/${cid}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ into }),
+    }),
+  deleteCollection: (id: number, cid: number) =>
+    request<void>(`/series/${id}/collections/${cid}`, { method: 'DELETE' }),
   updateChapterLedger: (id: number, body: ChapterLedgerPatch) =>
     request<ChapterLedger>(`/series/${id}/chapter-ledger`, {
       method: 'PUT',

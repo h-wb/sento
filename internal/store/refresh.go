@@ -67,10 +67,12 @@ func (s *Store) ReconcileMetadata(
 			return err
 		default:
 			// Existing descriptor: re-bind provider id and refresh counts.
+			// A custom edition with the same identity is adopted here —
+			// MangaBaka caught up with what the user hand-created.
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE collections SET mb_collection_id = ?, count_main = ?,
 					count_extra = ?, count_other = ?, start_date = ?, end_date = ?,
-					raw_json = ?, updated_at = datetime('now')
+					raw_json = ?, custom = 0, updated_at = datetime('now')
 				WHERE id = ?`,
 				col.ProviderID, col.CountMain, col.CountExtra, col.CountOther,
 				col.StartDate, col.EndDate, string(col.RawJSON), colID); err != nil {

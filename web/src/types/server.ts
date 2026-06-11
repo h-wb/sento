@@ -76,6 +76,33 @@ export interface CollectionPatch {
   monitored: boolean;
 }
 /**
+ * CreateCollectionBody is POST /series/{id}/collections — a custom
+ * edition. Slot structure clones from basedOn (language variants) or
+ * generates volumes 1..N (editions MangaBaka doesn't know).
+ */
+export interface CreateCollectionBody {
+  editionName: string;
+  language: string;
+  publisher: string;
+  medium: string;
+  basedOn: number /* int64 */; // collection id; 0 = from scratch
+  volumes: number /* int */; // only when basedOn is 0
+  monitored: boolean;
+}
+/**
+ * MergeCollectionBody is POST /series/{id}/collections/{cid}/merge.
+ */
+export interface MergeCollectionBody {
+  into: number /* int64 */;
+}
+/**
+ * MergeCollectionResponse lists volume numbers (hundredths) whose files
+ * have no matching slot in the target edition.
+ */
+export interface MergeCollectionResponse {
+  unmatched: number /* int64 */[];
+}
+/**
  * IndexerSettingPatch is PUT /settings/indexers/{provider}/{sid} (nil = keep).
  */
 export interface IndexerSettingPatch {

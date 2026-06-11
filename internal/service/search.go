@@ -693,7 +693,10 @@ func baseLang(lang string) string {
 	return strings.ToLower(base)
 }
 
-// routeEdition maps edition hints to a monitored collection (R6).
+// routeEdition maps edition hints to a monitored collection (R6). A
+// language-tagged release prefers collections of that language (custom
+// fr variants receive FR releases; en/untagged keep the original) —
+// falling back to all monitored when no language matches.
 func routeEdition(p parse.Result, collections []store.Collection,
 	wanted map[int64]map[int64]bool,
 ) (int64, bool) {
@@ -705,6 +708,17 @@ func routeEdition(p parse.Result, collections []store.Collection,
 	}
 	if len(monitored) == 0 {
 		return 0, false
+	}
+	if p.Language != "" && p.Language != "multi" {
+		var sameLang []store.Collection
+		for _, col := range monitored {
+			if baseLang(col.Language) == baseLang(p.Language) {
+				sameLang = append(sameLang, col)
+			}
+		}
+		if len(sameLang) > 0 {
+			monitored = sameLang
+		}
 	}
 	matchName := func(substr string) (int64, bool) {
 		for _, col := range monitored {
