@@ -1,0 +1,48 @@
+# Vendored Suwayomi-Server pieces (MPL-2.0; files keep their headers and
+# license). `vendir sync` (mise run host:vendor) materializes them into
+# vendor/ — gitignored, pinned by vendir.lock.yml. Two layers come in:
+#
+# - AndroidCompat (+ Config): the fake Android runtime. A standalone
+#   Gradle module upstream; built as-is, never patched.
+# - The eu.kanade.tachiyomi API surface + APK loading machinery: not a
+#   module upstream (entangled with their server tree); compiled into
+#   app/ against the suwayomi.tachidesk.server stand-ins. Files that we
+#   replace (GetCatalogueSource, StubSource) or that drag in Suwayomi's
+#   database/local-source are excluded — extend the stand-ins instead of
+#   patching vendored files.
+#
+# To pick up upstream fixes: bump ref, `mise run host:vendor`, fix what
+# moved.
+apiVersion: vendir.k14s.io/v1alpha1
+kind: Config
+directories:
+  - path: vendor/suwayomi
+    contents:
+      - path: .
+        git:
+          url: https://github.com/Suwayomi/Suwayomi-Server
+          ref: 8fbc8fd3d4405b3f8f5be442eda1d5b746ccfac1
+          depth: 1
+        includePaths:
+          - AndroidCompat/**
+          - gradle/libs.versions.toml
+          - LICENSE
+          - server/src/main/kotlin/eu/kanade/tachiyomi/**
+          - server/src/main/kotlin/suwayomi/tachidesk/manga/impl/util/PackageTools.kt
+          - server/src/main/kotlin/suwayomi/tachidesk/manga/impl/util/BytecodeEditor.kt
+          - server/src/main/kotlin/suwayomi/tachidesk/manga/impl/util/ChildFirstURLClassLoader.kt
+          - server/src/main/kotlin/suwayomi/tachidesk/manga/impl/util/lang/**
+          - server/src/main/kotlin/suwayomi/tachidesk/manga/impl/util/network/**
+          - server/src/main/kotlin/suwayomi/tachidesk/manga/impl/util/storage/**
+          - server/src/main/kotlin/suwayomi/tachidesk/manga/impl/extension/github/**
+        excludePaths:
+          # Suwayomi's filesystem-manga source and app bootstrap (ours
+          # lives in app/src/main/kotlin/sento/host).
+          - server/src/main/kotlin/eu/kanade/tachiyomi/source/local/**
+          - server/src/main/kotlin/eu/kanade/tachiyomi/App.kt
+          - server/src/main/kotlin/eu/kanade/tachiyomi/AppModule.kt
+          # Pull Suwayomi-only dependencies (commons-compress, Exposed).
+          - server/src/main/kotlin/eu/kanade/tachiyomi/util/chapter/ChapterSanitizer.kt
+          - server/src/main/kotlin/eu/kanade/tachiyomi/util/storage/EpubFile.kt
+          - server/src/main/kotlin/eu/kanade/tachiyomi/util/lang/StringExtensions.kt
+          - server/src/main/kotlin/suwayomi/tachidesk/manga/impl/util/lang/ExposedExtensions.kt

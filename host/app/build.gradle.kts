@@ -4,6 +4,11 @@ plugins {
     application
 }
 
+// The vendored extension-runtime shims (eu.kanade API surface + APK
+// loading) compile as part of this module, against the
+// suwayomi.tachidesk.server stand-ins in src/main/kotlin.
+sourceSets["main"].kotlin.srcDir("../vendor/suwayomi/server/src/main/kotlin")
+
 dependencies {
     implementation(libs.bundles.shared)
     implementation(project(":AndroidCompat"))

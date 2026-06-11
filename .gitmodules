@@ -1,5 +1,0 @@
-[submodule "host/Suwayomi-Server"]
-	path = host/Suwayomi-Server
-	url = https://github.com/Suwayomi/Suwayomi-Server.git
-	shallow = true
-	branch = master

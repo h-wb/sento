@@ -3,6 +3,13 @@ rootProject.name = "sento-host"
 // AndroidCompat's build file uses typesafe accessors (projects.androidCompat.config).
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
+// Vendored Suwayomi pieces are materialized by vendir (pinned in
+// vendir.lock.yml), not committed.
+val vendor = file("vendor/suwayomi")
+require(vendor.isDirectory) {
+    "vendor/suwayomi is missing — run: mise run host:vendor (vendir sync)"
+}
+
 dependencyResolutionManagement {
     repositories {
         mavenCentral()
@@ -14,20 +21,20 @@ dependencyResolutionManagement {
         maven("https://packages.jetbrains.team/maven/p/ij/intellij-dependencies")
     }
     versionCatalogs {
-        // Dependency versions come from the pinned Suwayomi-Server
-        // submodule, so vendored code and its modules always compile
-        // against the versions upstream tested.
+        // Dependency versions come from the pinned Suwayomi sync, so
+        // vendored code always compiles against the versions upstream
+        // tested.
         create("libs") {
-            from(files("Suwayomi-Server/gradle/libs.versions.toml"))
+            from(files("vendor/suwayomi/gradle/libs.versions.toml"))
         }
     }
 }
 
-// The fake Android runtime builds straight from the submodule — it is a
+// The fake Android runtime builds straight from the sync — it is a
 // standalone module with no imports from the rest of Suwayomi-Server.
 include(":AndroidCompat")
-project(":AndroidCompat").projectDir = file("Suwayomi-Server/AndroidCompat")
+project(":AndroidCompat").projectDir = vendor.resolve("AndroidCompat")
 include(":AndroidCompat:Config")
-project(":AndroidCompat:Config").projectDir = file("Suwayomi-Server/AndroidCompat/Config")
+project(":AndroidCompat:Config").projectDir = vendor.resolve("AndroidCompat/Config")
 
 include(":app")
