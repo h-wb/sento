@@ -4,6 +4,8 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.serialization) apply false
+    // Applied by the submodule's AndroidCompat build files.
+    alias(libs.plugins.ktlint) apply false
 }
 
 subprojects {

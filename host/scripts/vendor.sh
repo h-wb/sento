@@ -1,21 +1,21 @@
 #!/bin/sh
-# Vendors the extension-runtime layers from a Suwayomi-Server checkout
-# (MPL-2.0; file-level copyleft — vendored files keep their headers and
-# stay under MPL). Re-run against a newer checkout to pick up upstream
-# fixes, then re-apply local patches if any fail to compile.
+# Vendors the runtime shim layers from Suwayomi-Server (MPL-2.0;
+# file-level copyleft — vendored files keep their headers and stay under
+# MPL). Only the files that are NOT a standalone module upstream are
+# copied: the eu.kanade.tachiyomi API surface extensions compile against
+# and the APK loading machinery, both entangled with Suwayomi's server
+# tree upstream and patched here via the suwayomi.tachidesk.server
+# stand-ins in app/. The AndroidCompat module builds straight from the
+# Suwayomi-Server git submodule and is never copied.
 #
-# Usage: host/scripts/vendor.sh [path-to-Suwayomi-Server]
+# Usage: host/scripts/vendor.sh   (after bumping the submodule pin)
 set -eu
 
-SRC="${1:-../Suwayomi-Server}"
 HOST="$(cd "$(dirname "$0")/.." && pwd)"
+SRC="${1:-$HOST/Suwayomi-Server}"
 KT="$SRC/server/src/main/kotlin"
 
-[ -d "$KT" ] || { echo "Suwayomi-Server checkout not found at $SRC" >&2; exit 1; }
-
-# The fake Android runtime (standalone module, no server imports).
-rsync -a --delete "$SRC/AndroidCompat/src/" "$HOST/AndroidCompat/src/"
-rsync -a --delete "$SRC/AndroidCompat/Config/src/" "$HOST/AndroidCompat/Config/src/"
+[ -d "$KT" ] || { echo "Suwayomi-Server checkout not found at $SRC (git submodule update --init?)" >&2; exit 1; }
 
 # The eu.kanade.tachiyomi runtime extensions compile against. The local
 # source (filesystem manga) is Suwayomi-specific and excluded.
@@ -36,7 +36,4 @@ cp "$KT/suwayomi/tachidesk/manga/impl/extension/github/ExtensionGithubApi.kt" \
    "$KT/suwayomi/tachidesk/manga/impl/extension/github/OnlineExtension.kt" \
    "$APP/extension/github/"
 
-# Dependency versions follow upstream so vendored code keeps compiling.
-cp "$SRC/gradle/libs.versions.toml" "$HOST/gradle/libs.versions.toml"
-
-echo "vendored from $SRC"
+echo "vendored shim layer from $SRC"

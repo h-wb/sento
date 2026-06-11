@@ -15,12 +15,22 @@ index) and the fake-Android `shared_prefs` for configurable sources.
 
 Extensions are APKs of Dalvik bytecode. Install converts them with
 dex2jar, then loads the jar in a child-first classloader against a fake
-Android runtime — the `AndroidCompat/` module and the
-`eu.kanade.tachiyomi` API surface, both vendored from
-[Suwayomi-Server](https://github.com/Suwayomi/Suwayomi-Server) (MPL-2.0;
-vendored files keep their headers and license). `scripts/vendor.sh`
-re-syncs them from a checkout; `suwayomi.tachidesk.server.*` stand-ins in
-`app/` keep the vendored files compiling without Suwayomi's server tree.
+Android runtime from [Suwayomi-Server](https://github.com/Suwayomi/Suwayomi-Server)
+(MPL-2.0), consumed two ways:
+
+- **`Suwayomi-Server/` git submodule** (shallow, pinned): the
+  `AndroidCompat` module and the dependency version catalog build
+  straight from it — it is a standalone Gradle module upstream.
+- **Vendored shim layer** (`app/src/main/kotlin/eu/kanade`,
+  `…/suwayomi/tachidesk/manga`): the extension API surface and APK
+  loading machinery, which upstream are entangled with the server tree.
+  `scripts/vendor.sh` re-syncs them from the submodule after a pin bump;
+  `suwayomi.tachidesk.server.*` stand-ins in `app/` keep them compiling
+  without Suwayomi's server.
+
+Clone with `--recursive` (or run `git submodule update --init`) before
+building. To pick up upstream fixes: bump the submodule pin, re-run
+`scripts/vendor.sh`, fix what moved.
 
 ## Run
 
