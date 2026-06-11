@@ -50,7 +50,11 @@ func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 		scanner:  service.NewScanner(st, cfg.Library.Path),
 	}
 
-	if cfg.Suwayomi.URL != "" {
+	// Source host: the sento-host sidecar when configured, else Suwayomi.
+	switch {
+	case cfg.SourceHost.URL != "":
+		s.host = sourcehost.NewClient(cfg.SourceHost.URL)
+	case cfg.Suwayomi.URL != "":
 		s.host = suwayomi.New(cfg.Suwayomi.URL, cfg.Suwayomi.Username, cfg.Suwayomi.Password)
 	}
 	var pr *prowlarr.Client

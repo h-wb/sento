@@ -1,6 +1,8 @@
 [tools]
 go = "1.24"
 node = "24"
+java = "temurin-21"
+gradle = "9.5.1"
 sqlc = "latest"
 golangci-lint = "latest"
 
@@ -36,6 +38,16 @@ run = "npm run dev"
 description = "Build the web UI"
 dir = "web"
 run = "npm run build"
+
+[tasks."host:build"]
+description = "Build the sento-host sidecar (JVM)"
+dir = "host"
+run = "gradle :app:installDist"
+
+[tasks."host:run"]
+description = "Run the sento-host sidecar"
+dir = "host"
+run = "./app/build/install/app/bin/app"
 
 [tasks.gen]
 description = "Generate TypeScript API types from Go structs"
