@@ -10,11 +10,12 @@ import {
   Modal,
   Stack,
   Text,
-  Tooltip,
 } from '@mantine/core'
+import { useMediaQuery } from '@mantine/hooks'
 import { IconSearch, IconTrash } from '@tabler/icons-react'
 import { api, fmtNum, fmtSize, type ReleaseCandidate, type SeriesFile } from '../api'
 import { notify } from '../ui'
+import CandidateList from './CandidateList'
 
 export type SlotSelection = {
   ledger: 'volume' | 'chapter'
@@ -26,15 +27,6 @@ export type SlotSelection = {
   wanted: boolean
   fileIds: number[]
 }
-
-// Rejections force-grab cannot bypass (mirror of the backend's hard set).
-const hardRejections = new Set([
-  'rejected.content_type',
-  'rejected.series_match',
-  'rejected.edition_routing',
-  'rejected.no_coverage',
-  'rejected.blocklisted',
-])
 
 // Accumulated state of one streaming search: batches land per provider.
 type StreamResult = {
@@ -63,6 +55,7 @@ export default function SlotModal({
   const [busy, setBusy] = useState(false)
   const [searching, setSearching] = useState(false)
   const [result, setResult] = useState<StreamResult | null>(null)
+  const small = useMediaQuery('(max-width: 48em)')
 
   if (!sel) return null
   const linked = files.filter((f) => sel.fileIds.includes(f.id))
@@ -154,7 +147,7 @@ export default function SlotModal({
   }
 
   return (
-    <Modal opened onClose={close} title={label} size="xl">
+    <Modal opened onClose={close} title={label} size="xl" fullScreen={small}>
       <Stack gap="sm">
         <Group gap={6}>
           {sel.collectionName && <Badge variant="light">{sel.collectionName}</Badge>}
@@ -235,10 +228,6 @@ export default function SlotModal({
 
         {result && (
           <Stack gap={4}>
-            <Text size="xs" c="dimmed">
-              {result.done ? 'Searched' : 'Searching'} {result.searched.join(', ') || 'nothing'}
-              {result.dropped > 0 && ` · ${result.dropped} entries for the other ledger skipped`}
-            </Text>
             {result.notes.map((n) => (
               <Text key={n} size="xs" c="dimmed">
                 {n}
@@ -255,70 +244,14 @@ export default function SlotModal({
                 enabled for this ledger, and extension sources need a confident title match.
               </Text>
             )}
-            {result.candidates.map((c) => {
-              const rejected = c.rejections?.length ? c.rejections[0] : null
-              const hard = rejected !== null && hardRejections.has(rejected)
-              return (
-                <Group key={c.guid} justify="space-between" wrap="nowrap">
-                  <Text size="xs" lineClamp={1} style={{ flex: 1 }} title={c.title}>
-                    {c.title}
-                  </Text>
-                  <Group gap={6} wrap="nowrap">
-                    <Badge
-                      size="xs"
-                      variant="outline"
-                      color={c.protocol === 'torrent' ? 'blue' : 'teal'}
-                    >
-                      {c.provider}/{c.site}
-                    </Badge>
-                    {c.protocol === 'torrent' && (
-                      <Text size="xs" c="dimmed">
-                        {fmtSize(c.size ?? 0)} · {c.seeders ?? 0}S
-                      </Text>
-                    )}
-                    {c.scanlator && (
-                      <Badge size="xs" variant="light">
-                        {c.scanlator}
-                      </Badge>
-                    )}
-                    {(c.covered?.length ?? 0) > 1 && (
-                      <Tooltip label={`Covers ${c.covered!.length} wanted slots`}>
-                        <Badge size="xs" variant="light" color="cyan">
-                          ×{c.covered!.length}
-                        </Badge>
-                      </Tooltip>
-                    )}
-                    {rejected ? (
-                      <Badge size="xs" color="red" variant="light">
-                        {rejected.replace('rejected.', '')}
-                      </Badge>
-                    ) : (
-                      <Badge size="xs" color="green" variant="light">
-                        {c.score}
-                      </Badge>
-                    )}
-                    <Tooltip
-                      label={
-                        hard
-                          ? 'Hard rejection — cannot grab'
-                          : rejected
-                            ? 'Force grab (bypasses soft rejection)'
-                            : 'Grab'
-                      }
-                    >
-                      <Button
-                        size="compact-xs"
-                        color={rejected ? 'orange' : 'indigo'}
-                        disabled={hard || busy}
-                        onClick={() => grab(c, !!rejected)}
-                      >
-                        {rejected ? 'Force' : 'Grab'}
-                      </Button>
-                    </Tooltip>
-                  </Group>
-                </Group>
-              )
-            })}
+            {result.candidates.length > 0 && (
+              <CandidateList
+                candidates={result.candidates}
+                dropped={result.dropped}
+                onGrab={grab}
+                busy={busy}
+              />
+            )}
           </Stack>
         )}
       </Stack>

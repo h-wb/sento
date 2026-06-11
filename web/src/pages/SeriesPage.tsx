@@ -39,11 +39,11 @@ import {
   fmtSize,
   type ChapterLedger,
   type Collection,
-  type ReleaseCandidate,
   type SearchResponse,
   type SeriesSiteView,
   type Slots,
 } from '../api'
+import CandidateList from '../components/CandidateList'
 import SlotModal, { type SlotSelection } from '../components/SlotModal'
 import { fmtWhen, notify, usePageTitle } from '../ui'
 
@@ -512,7 +512,9 @@ function VolumesTab({
         )
       })}
 
-      {funnel && <FunnelCard funnel={funnel} />}
+      {funnel && (
+        <FunnelCard funnel={funnel} seriesID={seriesID} ledger="volume" run={run} busy={busy} />
+      )}
     </Stack>
   )
 }
@@ -671,44 +673,60 @@ function CustomEditionActions({
   )
 }
 
-function FunnelCard({ funnel }: { funnel: SearchResponse }) {
+// FunnelCard shows a ledger-wide search result; grabs work directly from
+// here (queued items show in the toast and the Activity page).
+function FunnelCard({
+  funnel,
+  seriesID,
+  ledger,
+  run,
+  busy,
+}: {
+  funnel: SearchResponse
+  seriesID: number
+  ledger: 'volume' | 'chapter'
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+  busy: boolean
+}) {
   return (
     <Card withBorder padding="sm">
-      <Text fw={600} mb={4}>
-        Search funnel ({funnel.candidates.length} releases)
-      </Text>
-      <Text size="xs" c="dimmed" mb="xs">
-        Searched {funnel.searched.join(', ') || 'nothing'}
-        {funnel.dropped > 0 && ` · ${funnel.dropped} entries for the other ledger skipped`}
-      </Text>
-      <Stack gap={4}>
-        {funnel.candidates.slice(0, 30).map((c: ReleaseCandidate) => (
-          <Group key={c.guid} justify="space-between" wrap="nowrap">
-            <Text size="xs" lineClamp={1} style={{ flex: 1 }}>
-              {c.title}
-            </Text>
-            <Group gap={6} wrap="nowrap">
-              <Badge size="xs" variant="outline" color={c.protocol === 'torrent' ? 'blue' : 'teal'}>
-                {c.provider}/{c.site}
-              </Badge>
-              {c.protocol === 'torrent' && (
-                <Text size="xs" c="dimmed">
-                  {fmtSize(c.size ?? 0)} · {c.seeders ?? 0}S
-                </Text>
-              )}
-              {c.rejections?.length ? (
-                <Badge size="xs" color="red" variant="light">
-                  {c.rejections[0].replace('rejected.', '')}
-                </Badge>
-              ) : (
-                <Badge size="xs" color="green" variant="light">
-                  score {c.score}
-                </Badge>
-              )}
-            </Group>
-          </Group>
-        ))}
-      </Stack>
+      <Group justify="space-between" mb={6}>
+        <Text fw={600}>Search results</Text>
+        <Tooltip label={funnel.searched.join(', ') || 'nothing'}>
+          <Text size="xs" c="dimmed">
+            {funnel.searched.length} sites searched
+            {funnel.queued?.length ? ` · ${funnel.queued.length} grabbed` : ''}
+          </Text>
+        </Tooltip>
+      </Group>
+      {funnel.bindingNotes?.map((n) => (
+        <Text key={n} size="xs" c="dimmed">
+          {n}
+        </Text>
+      ))}
+      {funnel.providerErrors?.map((e) => (
+        <Text key={e} size="xs" c="orange">
+          {e}
+        </Text>
+      ))}
+      {funnel.candidates.length === 0 ? (
+        <Text size="sm" c="dimmed">
+          Nothing found. Sites must be enabled for this ledger (Indexers tab), and extension
+          sources need a confident title match.
+        </Text>
+      ) : (
+        <CandidateList
+          candidates={funnel.candidates}
+          dropped={funnel.dropped}
+          busy={busy}
+          onGrab={(c, force) =>
+            run(
+              () => api.search(seriesID, { ledger, grab: c.guid, force }),
+              `Grabbed via ${c.site}`,
+            )
+          }
+        />
+      )}
     </Card>
   )
 }
@@ -733,6 +751,7 @@ function ChaptersTab({
   const owned = monitored.filter((c) => (c.fileIds?.length ?? 0) > 0).length
   const wanted = chapters.filter((c) => c.wanted)
   const [showAll, setShowAll] = useState(false)
+  const [funnel, setFunnel] = useState<SearchResponse | null>(null)
   const [cutoff, setCutoff] = useState<number | ''>('')
   // Adjust-during-render: re-sync the input when the ledger (re)loads.
   const [prevCutoff, setPrevCutoff] = useState<number | null>(null)
@@ -782,10 +801,24 @@ function ChaptersTab({
           leftSection={<IconSearch size={14} />}
           loading={busy}
           onClick={() =>
-            run(() => api.search(seriesID, { ledger: 'chapter' }), 'Chapter search queued')
+            run(
+              () => api.search(seriesID, { ledger: 'chapter' }).then(setFunnel),
+              'Chapter search done',
+            )
           }
         >
           Search &amp; grab wanted
+        </Button>
+        <Button
+          size="xs"
+          mt={20}
+          variant="default"
+          loading={busy}
+          onClick={() =>
+            run(() => api.search(seriesID, { ledger: 'chapter', dryRun: true }).then(setFunnel))
+          }
+        >
+          Search (dry run)
         </Button>
       </Group>
       <Text size="sm" c="dimmed">
@@ -826,6 +859,10 @@ function ChaptersTab({
           </Tooltip>
         ))}
       </Group>
+
+      {funnel && (
+        <FunnelCard funnel={funnel} seriesID={seriesID} ledger="chapter" run={run} busy={busy} />
+      )}
     </Stack>
   )
 }
