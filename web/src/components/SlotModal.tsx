@@ -14,6 +14,7 @@ import {
 } from '@mantine/core'
 import { IconSearch, IconTrash } from '@tabler/icons-react'
 import { api, fmtNum, fmtSize, type ReleaseCandidate, type SeriesFile } from '../api'
+import { notify } from '../ui'
 
 export type SlotSelection = {
   ledger: 'volume' | 'chapter'
@@ -32,6 +33,7 @@ const hardRejections = new Set([
   'rejected.series_match',
   'rejected.edition_routing',
   'rejected.no_coverage',
+  'rejected.blocklisted',
 ])
 
 // Accumulated state of one streaming search: batches land per provider.
@@ -60,8 +62,6 @@ export default function SlotModal({
 }) {
   const [busy, setBusy] = useState(false)
   const [searching, setSearching] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   const [result, setResult] = useState<StreamResult | null>(null)
 
   if (!sel) return null
@@ -70,12 +70,11 @@ export default function SlotModal({
 
   const run = async (fn: () => Promise<unknown>, doneMsg?: string) => {
     setBusy(true)
-    setError(null)
     try {
       await fn()
-      if (doneMsg) setNotice(doneMsg)
+      if (doneMsg) notify.ok(doneMsg)
     } catch (e) {
-      setError(String(e))
+      notify.err(e)
     } finally {
       setBusy(false)
     }
@@ -87,7 +86,6 @@ export default function SlotModal({
   // so fast extension sources show up while torrent indexers still load.
   const interactiveSearch = async () => {
     setSearching(true)
-    setError(null)
     setResult({
       searched: [],
       pending: [],
@@ -134,7 +132,7 @@ export default function SlotModal({
         })
       })
     } catch (e) {
-      setError(String(e))
+      notify.err(e)
     } finally {
       setSearching(false)
       setResult((prev) => (prev ? { ...prev, pending: [], done: true } : prev))
@@ -152,8 +150,6 @@ export default function SlotModal({
 
   const close = () => {
     setResult(null)
-    setError(null)
-    setNotice(null)
     onClose()
   }
 
@@ -176,17 +172,6 @@ export default function SlotModal({
             </Badge>
           )}
         </Group>
-
-        {error && (
-          <Alert color="red" withCloseButton onClose={() => setError(null)}>
-            {error}
-          </Alert>
-        )}
-        {notice && (
-          <Alert color="green" withCloseButton onClose={() => setNotice(null)}>
-            {notice}
-          </Alert>
-        )}
 
         <Divider label="Files" labelPosition="left" />
         {linked.length === 0 && (
@@ -295,6 +280,13 @@ export default function SlotModal({
                       <Badge size="xs" variant="light">
                         {c.scanlator}
                       </Badge>
+                    )}
+                    {(c.covered?.length ?? 0) > 1 && (
+                      <Tooltip label={`Covers ${c.covered!.length} wanted slots`}>
+                        <Badge size="xs" variant="light" color="cyan">
+                          ×{c.covered!.length}
+                        </Badge>
+                      </Tooltip>
                     )}
                     {rejected ? (
                       <Badge size="xs" color="red" variant="light">

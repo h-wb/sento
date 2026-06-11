@@ -1,8 +1,10 @@
 import { Alert, Badge, Card, Group, Text, Title } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
+import { usePageTitle } from '../ui'
 
 export default function SystemPage() {
+  usePageTitle('System')
   const { data: status, error } = useQuery({ queryKey: ['status'], queryFn: api.status })
 
   return (

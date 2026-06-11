@@ -102,6 +102,8 @@ export const api = {
     request<Series>('/series/', { method: 'POST', body: JSON.stringify(body) }),
   getSeries: (id: number) => request<SeriesDetail>(`/series/${id}/`),
   deleteSeries: (id: number) => request<void>(`/series/${id}/`, { method: 'DELETE' }),
+  setSeriesMonitored: (id: number, monitored: boolean) =>
+    request<void>(`/series/${id}/`, { method: 'PUT', body: JSON.stringify({ monitored }) }),
   refreshSeries: (id: number) => request<unknown>(`/series/${id}/refresh`, { method: 'POST' }),
   slots: (id: number) => request<Slots>(`/series/${id}/slots`),
   setCollectionMonitored: (id: number, cid: number, monitored: boolean) =>

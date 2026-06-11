@@ -70,6 +70,13 @@ export interface ChapterLedgerPatch {
   cutoffNum?: number /* int64 */;
 }
 /**
+ * SeriesPatch is PUT /series/{id}: series-level monitoring (gates the
+ * scheduler's automatic searches).
+ */
+export interface SeriesPatch {
+  monitored: boolean;
+}
+/**
  * CollectionPatch is PUT /series/{id}/collections/{cid}.
  */
 export interface CollectionPatch {

@@ -2,10 +2,12 @@ import { Alert, Badge, Card, Group, Stack, Text, Title } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, fmtNum } from '../api'
+import { fmtDay, usePageTitle } from '../ui'
 
 // Upcoming (and recent) dated volume releases of monitored collections,
 // grouped by date — Sonarr's calendar, list-shaped.
 export default function CalendarPage() {
+  usePageTitle('Calendar')
   const { data: entries, error } = useQuery({
     queryKey: ['calendar'],
     queryFn: () => api.calendar(),
@@ -35,8 +37,8 @@ export default function CalendarPage() {
         {[...byDate.entries()].map(([date, list]) => (
           <div key={date}>
             <Group gap={8} mb={6}>
-              <Text fw={600} size="sm">
-                {date}
+              <Text fw={600} size="sm" title={date}>
+                {fmtDay(date)}
               </Text>
               {date === today && (
                 <Badge size="xs" color="indigo">

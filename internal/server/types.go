@@ -59,6 +59,12 @@ type ChapterLedgerPatch struct {
 	CutoffNum *int64  `json:"cutoffNum"`
 }
 
+// SeriesPatch is PUT /series/{id}: series-level monitoring (gates the
+// scheduler's automatic searches).
+type SeriesPatch struct {
+	Monitored bool `json:"monitored"`
+}
+
 // CollectionPatch is PUT /series/{id}/collections/{cid}.
 type CollectionPatch struct {
 	Monitored bool `json:"monitored"`

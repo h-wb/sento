@@ -36,6 +36,7 @@ func (s *Server) mountAPI(r chi.Router) {
 		r.Post("/", s.handleAddSeries)
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", s.handleGetSeries)
+			r.Put("/", s.handleUpdateSeries)
 			r.Delete("/", s.handleDeleteSeries)
 			r.Post("/refresh", s.handleRefreshSeries)
 			r.Get("/slots", s.handleSlots)
@@ -182,6 +183,22 @@ func (s *Server) handleGetSeries(w http.ResponseWriter, r *http.Request) {
 		Collections:   collections,
 		ChapterLedger: chapterLedger,
 	})
+}
+
+func (s *Server) handleUpdateSeries(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var patch SeriesPatch
+	if !decodeBody(w, r, &patch) {
+		return
+	}
+	if err := s.store.SetSeriesMonitored(r.Context(), id, patch.Monitored); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteSeries(w http.ResponseWriter, r *http.Request) {

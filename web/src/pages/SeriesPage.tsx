@@ -12,6 +12,7 @@ import {
   NumberInput,
   Progress,
   Select,
+  Skeleton,
   Stack,
   Switch,
   Table,
@@ -44,16 +45,16 @@ import {
   type Slots,
 } from '../api'
 import SlotModal, { type SlotSelection } from '../components/SlotModal'
+import { fmtWhen, notify, usePageTitle } from '../ui'
 
 export default function SeriesPage() {
   const { id } = useParams()
   const seriesID = Number(id)
   const navigate = useNavigate()
 
-  const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [slotSel, setSlotSel] = useState<SlotSelection | null>(null)
+  const [fullDesc, setFullDesc] = useState(false)
 
   const queryClient = useQueryClient()
   const detail = useQuery({
@@ -70,6 +71,7 @@ export default function SeriesPage() {
   })
 
   const series = detail.data?.series ?? null
+  usePageTitle(series?.title ?? '')
   const collections = detail.data?.collections ?? []
   const ledger = detail.data?.chapterLedger ?? null
   const slots = slotsQuery.data ?? null
@@ -83,41 +85,74 @@ export default function SeriesPage() {
 
   const run = async (fn: () => Promise<unknown>, doneMsg?: string) => {
     setBusy(true)
-    setError(null)
     try {
       await fn()
-      if (doneMsg) setNotice(doneMsg)
+      if (doneMsg) notify.ok(doneMsg)
       load()
     } catch (e) {
-      setError(String(e))
+      notify.err(e)
     } finally {
       setBusy(false)
     }
   }
 
   if (!series) {
-    const err = error ?? (detail.error ? String(detail.error) : null)
-    return err ? <Alert color="red">{err}</Alert> : null
+    if (detail.error) return <Alert color="red">{String(detail.error)}</Alert>
+    return (
+      <Group align="flex-start">
+        <Skeleton w={140} h={200} radius="sm" />
+        <Stack style={{ flex: 1 }}>
+          <Skeleton h={28} w="40%" />
+          <Skeleton h={16} w="60%" />
+          <Skeleton h={60} />
+        </Stack>
+      </Group>
+    )
   }
 
   return (
     <>
       <Group align="flex-start" wrap="nowrap" mb="md">
-        <Image src={series.coverUrl} w={140} radius="sm" alt="" />
+        <Image src={series.coverUrl} w={140} radius="sm" alt="" visibleFrom="xs" />
         <div style={{ flex: 1 }}>
           <Title order={2}>{series.title}</Title>
           <Group gap={6} mt={4}>
             <Badge>{series.status}</Badge>
             <Badge variant="light">{series.type}</Badge>
+            {series.year ? <Badge variant="default">{series.year}</Badge> : null}
             {series.finalVolume > 0 && <Badge variant="outline">{series.finalVolume} volumes</Badge>}
             {series.totalChapters > 0 && (
               <Badge variant="outline">{series.totalChapters} chapters</Badge>
             )}
+            {series.contentRating && series.contentRating !== 'safe' && (
+              <Badge variant="outline" color="pink">
+                {series.contentRating}
+              </Badge>
+            )}
           </Group>
-          <Text size="sm" c="dimmed" mt="xs" lineClamp={3}>
-            {series.description}
-          </Text>
+          {series.description && (
+            <Text
+              size="sm"
+              c="dimmed"
+              mt="xs"
+              lineClamp={fullDesc ? undefined : 3}
+              onClick={() => setFullDesc((v) => !v)}
+              style={{ cursor: 'pointer' }}
+              title={fullDesc ? 'Click to collapse' : 'Click to expand'}
+            >
+              {series.description}
+            </Text>
+          )}
           <Group mt="sm">
+            <Switch
+              size="sm"
+              label="Monitored"
+              description="Off pauses all automatic searches"
+              checked={series.monitored}
+              onChange={(e) =>
+                run(() => api.setSeriesMonitored(seriesID, e.currentTarget.checked))
+              }
+            />
             <Button
               size="xs"
               variant="default"
@@ -132,24 +167,21 @@ export default function SeriesPage() {
               color="red"
               variant="outline"
               leftSection={<IconTrash size={14} />}
-              onClick={() => run(() => api.deleteSeries(seriesID).then(() => navigate('/')))}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    `Remove "${series.title}" from Sento?\n\nLibrary files stay on disk; monitoring, history and slot links are deleted.`,
+                  )
+                )
+                  return
+                run(() => api.deleteSeries(seriesID).then(() => navigate('/')))
+              }}
             >
               Remove
             </Button>
           </Group>
         </div>
       </Group>
-
-      {error && (
-        <Alert color="red" mb="sm" withCloseButton onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-      {notice && (
-        <Alert color="green" mb="sm" withCloseButton onClose={() => setNotice(null)}>
-          {notice}
-        </Alert>
-      )}
 
       <Tabs defaultValue="volumes">
         <Tabs.List>
@@ -198,7 +230,7 @@ export default function SeriesPage() {
                     api
                       .scanSeries(seriesID)
                       .then((r) =>
-                        setNotice(
+                        notify.ok(
                           `Scan: ${r.scanned} new files, ${r.linked} linked, ${r.unrequested} unrequested`,
                         ),
                       ),
@@ -274,8 +306,8 @@ function HistoryTab({ seriesID }: { seriesID: number }) {
         {events?.map((d) => (
           <Table.Tr key={d.id}>
             <Table.Td>
-              <Text size="xs" c="dimmed">
-                {d.createdAt}
+              <Text size="xs" c="dimmed" title={d.createdAt}>
+                {fmtWhen(d.createdAt)}
               </Text>
             </Table.Td>
             <Table.Td>
@@ -304,6 +336,41 @@ function HistoryTab({ seriesID }: { seriesID: number }) {
         ))}
       </Table.Tbody>
     </Table>
+  )
+}
+
+// SlotLegend decodes the slot badge colors (shared by both ledgers).
+function SlotLegend() {
+  return (
+    <Group gap="md">
+      <Group gap={4}>
+        <Badge size="sm" variant="filled" color="green">
+          1
+        </Badge>
+        <Text size="xs" c="dimmed">
+          owned
+        </Text>
+      </Group>
+      <Group gap={4}>
+        <Badge size="sm" variant="outline" color="yellow">
+          2
+        </Badge>
+        <Text size="xs" c="dimmed">
+          wanted
+        </Text>
+      </Group>
+      <Group gap={4}>
+        <Badge size="sm" variant="light" color="gray">
+          3
+        </Badge>
+        <Text size="xs" c="dimmed">
+          not monitored / future
+        </Text>
+      </Group>
+      <Text size="xs" c="dimmed">
+        — click any slot for files &amp; interactive search
+      </Text>
+    </Group>
   )
 }
 
@@ -356,6 +423,7 @@ function VolumesTab({
           Add edition
         </Button>
       </Group>
+      <SlotLegend />
 
       <AddEditionModal
         seriesID={seriesID}
@@ -664,6 +732,7 @@ function ChaptersTab({
   const monitored = chapters.filter((c) => c.monitored)
   const owned = monitored.filter((c) => (c.fileIds?.length ?? 0) > 0).length
   const wanted = chapters.filter((c) => c.wanted)
+  const [showAll, setShowAll] = useState(false)
   const [cutoff, setCutoff] = useState<number | ''>('')
   // Adjust-during-render: re-sync the input when the ledger (re)loads.
   const [prevCutoff, setPrevCutoff] = useState<number | null>(null)
@@ -722,8 +791,17 @@ function ChaptersTab({
       <Text size="sm" c="dimmed">
         {owned}/{monitored.length} monitored chapters owned · {wanted.length} wanted
       </Text>
+      <SlotLegend />
+      {!showAll && chapters.length > 300 && (
+        <Text size="xs" c="dimmed">
+          Showing the last 300 of {chapters.length} chapters —{' '}
+          <Text span size="xs" c="indigo" style={{ cursor: 'pointer' }} onClick={() => setShowAll(true)}>
+            show all
+          </Text>
+        </Text>
+      )}
       <Group gap={3}>
-        {chapters.slice(-300).map((c) => (
+        {(showAll ? chapters : chapters.slice(-300)).map((c) => (
           <Tooltip
             key={c.number}
             label={`c${fmtNum(c.number)}${c.wanted ? ' · wanted' : ''} — click for details`}

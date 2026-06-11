@@ -15,6 +15,7 @@ import {
 import { useDebouncedValue } from '@mantine/hooks'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type MediaSettings } from '../api'
+import { notify, usePageTitle } from '../ui'
 
 // Token reference shown next to the templates ({token:000} pads numbers).
 const tokens: [string, string][] = [
@@ -31,6 +32,7 @@ const tokens: [string, string][] = [
 ]
 
 export default function MediaPage() {
+  usePageTitle('Media')
   const queryClient = useQueryClient()
   const settings = useQuery({ queryKey: ['media-settings'], queryFn: api.mediaSettings })
 
@@ -60,8 +62,10 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
     mutationFn: () => api.saveMediaSettings(form),
     onSuccess: () => {
       setSaved(true)
+      notify.ok('Media settings saved — applies to future imports')
       onSaved()
     },
+    onError: notify.err,
   })
 
   const dirty = JSON.stringify(form) !== JSON.stringify(initial)
@@ -141,7 +145,6 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
               </Button>
             )}
           </Group>
-          {save.error && <Alert color="red">{String(save.error)}</Alert>}
         </Stack>
 
         <Card withBorder padding="sm" style={{ minWidth: 320 }}>

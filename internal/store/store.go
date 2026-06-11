@@ -129,6 +129,11 @@ func (s *Store) DeleteSeries(ctx context.Context, id int64) error {
 	return s.touch(ctx, `DELETE FROM series WHERE id = ?`, id)
 }
 
+// SetSeriesMonitored gates all automatic searches for the series.
+func (s *Store) SetSeriesMonitored(ctx context.Context, id int64, monitored bool) error {
+	return s.touch(ctx, `UPDATE series SET monitored = ? WHERE id = ?`, monitored, id)
+}
+
 // AddSeriesParams carries everything needed to create a library entry from
 // fetched metadata in one transaction.
 type AddSeriesParams struct {

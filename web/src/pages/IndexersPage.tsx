@@ -1,10 +1,12 @@
-import { Alert, Badge, Switch, Table, Text, Title } from '@mantine/core'
+import { Alert, Badge, NumberInput, Switch, Table, Text, Title, Tooltip } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type SiteView } from '../api'
+import { notify, usePageTitle } from '../ui'
 
 // Global indexer configuration: every site Sento can search, uniformly,
 // with per-ledger enablement.
 export default function IndexersPage() {
+  usePageTitle('Indexers')
   const queryClient = useQueryClient()
   const { data: sites, error } = useQuery({
     queryKey: ['indexers'],
@@ -13,6 +15,7 @@ export default function IndexersPage() {
   const patch = useMutation({
     mutationFn: ({ s, p }: { s: SiteView; p: Parameters<typeof api.updateIndexerSetting>[2] }) =>
       api.updateIndexerSetting(s.provider, s.siteId, p),
+    onError: notify.err,
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['indexers'] }),
   })
 
@@ -39,6 +42,11 @@ export default function IndexersPage() {
             <Table.Th>Enabled</Table.Th>
             <Table.Th>Volumes</Table.Th>
             <Table.Th>Chapters</Table.Th>
+            <Table.Th>
+              <Tooltip label="Tie-breaker between equally good releases: lower number wins">
+                <span>Priority</span>
+              </Tooltip>
+            </Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -81,6 +89,20 @@ export default function IndexersPage() {
                   checked={s.useChapters}
                   disabled={!s.enabled}
                   onChange={(e) => patch.mutate({ s, p: { useChapters: e.currentTarget.checked } })}
+                />
+              </Table.Td>
+              <Table.Td>
+                <NumberInput
+                  size="xs"
+                  w={70}
+                  min={0}
+                  max={99}
+                  defaultValue={s.priority}
+                  disabled={!s.enabled}
+                  onBlur={(e) => {
+                    const v = Number(e.currentTarget.value)
+                    if (!isNaN(v) && v !== s.priority) patch.mutate({ s, p: { priority: v } })
+                  }}
                 />
               </Table.Td>
             </Table.Tr>
