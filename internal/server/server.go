@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -16,12 +17,8 @@ import (
 	"github.com/h-wb/sento/internal/config"
 	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/provider"
-	"github.com/h-wb/sento/internal/prowlarr"
-	"github.com/h-wb/sento/internal/qbittorrent"
 	"github.com/h-wb/sento/internal/service"
-	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
-	"github.com/h-wb/sento/internal/suwayomi"
 	"github.com/h-wb/sento/internal/version"
 )
 
@@ -31,7 +28,7 @@ type Server struct {
 	store    *store.Store
 	provider metadata.Provider
 	library  *service.Library
-	host     sourcehost.Host // nil when unconfigured; binding endpoints only
+	conns    *service.Connections
 	registry *provider.Registry
 	search   *service.SearchService
 	sites    *service.SiteService
@@ -50,27 +47,13 @@ func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 		scanner:  service.NewScanner(st, cfg.Library.Path),
 	}
 
-	// Source host: the sento-host sidecar when configured, else Suwayomi.
-	switch {
-	case cfg.SourceHost.URL != "":
-		s.host = sourcehost.NewClient(cfg.SourceHost.URL)
-	case cfg.Suwayomi.URL != "":
-		s.host = suwayomi.New(cfg.Suwayomi.URL, cfg.Suwayomi.Username, cfg.Suwayomi.Password)
-	}
-	var pr *prowlarr.Client
-	if cfg.Prowlarr.URL != "" {
-		pr = prowlarr.New(cfg.Prowlarr.URL, cfg.Prowlarr.APIKey)
-	}
-	var qb *qbittorrent.Client
-	if cfg.QBittorrent.URL != "" {
-		qb = qbittorrent.New(cfg.QBittorrent.URL, cfg.QBittorrent.Username, cfg.QBittorrent.Password)
-	}
+	// Service connections live in settings (file/env seeds the first
+	// run); the registry is shared and rebuilt in place on save.
+	s.conns = service.NewConnections(st, cfg)
+	s.conns.Apply(s.conns.Load(context.Background()))
+	s.registry = s.conns.Registry()
 
 	// Everything downstream of here is provider-agnostic.
-	s.registry = provider.NewRegistry(
-		provider.NewSource(s.host, cfg.Downloads.Dir),
-		provider.NewTorrent(pr, qb, cfg.QBittorrent.Category),
-	)
 	s.search = service.NewSearchService(st, s.registry)
 	s.sites = service.NewSiteService(st, s.registry)
 	s.importer = service.NewImporter(st, s.registry, cfg.Library.Path, cfg.Library.PathMappings)

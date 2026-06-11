@@ -21,6 +21,54 @@ export interface ImportProposal {
 }
 
 //////////
+// source: connections.go
+
+export interface ProwlarrConn {
+  url: string;
+  apiKey: string;
+}
+export interface QBittorrentConn {
+  url: string;
+  username: string;
+  password: string;
+  category: string;
+}
+export interface SuwayomiConn {
+  url: string;
+  username: string;
+  password: string;
+}
+export interface SourceHostConn {
+  url: string;
+}
+export interface ConnectionSettings {
+  prowlarr: ProwlarrConn;
+  qbittorrent: QBittorrentConn;
+  /**
+   * SourceBackend picks who serves extension sources.
+   */
+  sourceBackend: 'none' | 'suwayomi' | 'host';
+  suwayomi: SuwayomiConn;
+  sourceHost: SourceHostConn;
+}
+/**
+ * Connections owns the live service clients: it loads settings, builds
+ * providers into the shared registry, and rebuilds on save. The registry
+ * pointer never changes, so search/import/sites services follow along.
+ */
+export interface Connections {
+}
+/**
+ * ConnectionTest reports one service check ("" error = healthy).
+ */
+export interface ConnectionTest {
+  service: string;
+  ok: boolean;
+  error?: string;
+  detail?: string;
+}
+
+//////////
 // source: importer.go
 
 /**

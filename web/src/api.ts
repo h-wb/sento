@@ -17,6 +17,8 @@ import type {
 } from './types/server'
 import type {
   AddSeriesRequest,
+  ConnectionSettings,
+  ConnectionTest,
   ImportProposal,
   MediaSettings,
   ReleaseCandidate,
@@ -41,6 +43,8 @@ import type { Manga as SourceManga, Source } from './types/sourcehost'
 
 export type {
   Binding,
+  ConnectionSettings,
+  ConnectionTest,
   BlocklistEntry,
   CalendarEntry,
   ChapterLedger,
@@ -129,6 +133,15 @@ export const api = {
       body: JSON.stringify(body),
     }),
   files: (id: number) => request<SeriesFile[]>(`/series/${id}/files`),
+
+  connections: () => request<ConnectionSettings>('/settings/connections'),
+  saveConnections: (c: ConnectionSettings) =>
+    request<ConnectionSettings>('/settings/connections', { method: 'PUT', body: JSON.stringify(c) }),
+  testConnections: (c: ConnectionSettings) =>
+    request<ConnectionTest[]>('/settings/connections/test', {
+      method: 'POST',
+      body: JSON.stringify(c),
+    }),
 
   mediaSettings: () => request<MediaSettings>('/settings/media'),
   saveMediaSettings: (m: MediaSettings) =>

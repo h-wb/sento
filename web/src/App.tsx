@@ -7,6 +7,7 @@ import {
   IconFiles,
   IconPlus,
   IconServerBolt,
+  IconPlug,
   IconWorldSearch,
 } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
@@ -18,6 +19,7 @@ import SeriesPage from './pages/SeriesPage'
 import CalendarPage from './pages/CalendarPage'
 import QueuePage from './pages/QueuePage'
 import IndexersPage from './pages/IndexersPage'
+import SourcesPage from './pages/SourcesPage'
 import MediaPage from './pages/MediaPage'
 import SystemPage from './pages/SystemPage'
 
@@ -26,6 +28,7 @@ const links = [
   { to: '/add', label: 'Add Series', icon: IconPlus },
   { to: '/calendar', label: 'Calendar', icon: IconCalendar },
   { to: '/queue', label: 'Activity', icon: IconDownload },
+  { to: '/sources', label: 'Sources', icon: IconPlug },
   { to: '/indexers', label: 'Indexers', icon: IconWorldSearch },
   { to: '/media', label: 'Media', icon: IconFiles },
   { to: '/system', label: 'System', icon: IconServerBolt },
@@ -99,6 +102,7 @@ export default function App() {
           <Route path="/series/:id" element={<SeriesPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/queue" element={<QueuePage />} />
+          <Route path="/sources" element={<SourcesPage />} />
           <Route path="/indexers" element={<IndexersPage />} />
           <Route path="/media" element={<MediaPage />} />
           <Route path="/system" element={<SystemPage />} />

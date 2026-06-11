@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/h-wb/sento/internal/sourcehost"
 )
@@ -165,14 +166,28 @@ type MangaResolver interface {
 	ResolveManga(ctx context.Context, siteID, query string) ([]sourcehost.Manga, error)
 }
 
-// Registry holds the configured providers.
+// Registry holds the configured providers. It is mutable: connection
+// settings are editable at runtime and Replace swaps the provider set in
+// place, so every service holding the registry sees the change.
 type Registry struct {
+	mu        sync.RWMutex
 	providers []Provider
 	byID      map[string]Provider
 }
 
 func NewRegistry(providers ...Provider) *Registry {
-	r := &Registry{byID: map[string]Provider{}}
+	r := &Registry{}
+	r.Replace(providers...)
+	return r
+}
+
+// Replace swaps the provider set (nil entries are skipped, so optional
+// constructors can feed it directly).
+func (r *Registry) Replace(providers ...Provider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.providers = nil
+	r.byID = map[string]Provider{}
 	for _, p := range providers {
 		if p == nil {
 			continue
@@ -180,17 +195,32 @@ func NewRegistry(providers ...Provider) *Registry {
 		r.providers = append(r.providers, p)
 		r.byID[p.ID()] = p
 	}
-	return r
 }
 
-func (r *Registry) All() []Provider        { return r.providers }
-func (r *Registry) Get(id string) Provider { return r.byID[id] }
-func (r *Registry) Empty() bool            { return len(r.providers) == 0 }
+func (r *Registry) All() []Provider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]Provider(nil), r.providers...)
+}
+
+func (r *Registry) Get(id string) Provider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.byID[id]
+}
+
+func (r *Registry) Empty() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.providers) == 0
+}
 
 // ForProtocol maps a queue item's protocol back to its owning provider.
 // Valid while protocol↔provider is 1:1; revisit when a second source-
 // protocol provider exists (then queue items must store the provider id).
 func (r *Registry) ForProtocol(protocol string) Provider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	for _, p := range r.providers {
 		if p.Protocol() == protocol {
 			return p

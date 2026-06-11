@@ -252,11 +252,12 @@ func (s *Server) streamSearch(w http.ResponseWriter, r *http.Request, id int64, 
 // --- source-host endpoints (binding fix-ups) ---
 
 func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
-	if s.host == nil {
+	host := s.conns.Host()
+	if host == nil {
 		writeError(w, http.StatusServiceUnavailable, "no source host is configured")
 		return
 	}
-	sources, err := s.host.Sources(r.Context())
+	sources, err := host.Sources(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -265,7 +266,8 @@ func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
-	if s.host == nil {
+	host := s.conns.Host()
+	if host == nil {
 		writeError(w, http.StatusServiceUnavailable, "no source host is configured")
 		return
 	}
@@ -274,7 +276,7 @@ func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing query parameter q")
 		return
 	}
-	mangas, err := s.host.Search(r.Context(), chi.URLParam(r, "sid"), q)
+	mangas, err := host.Search(r.Context(), chi.URLParam(r, "sid"), q)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

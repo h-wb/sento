@@ -29,6 +29,9 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/settings/media", s.handleGetMediaSettings)
 	r.Put("/settings/media", s.handlePutMediaSettings)
 	r.Post("/settings/media/preview", s.handlePreviewMediaSettings)
+	r.Get("/settings/connections", s.handleGetConnections)
+	r.Put("/settings/connections", s.handlePutConnections)
+	r.Post("/settings/connections/test", s.handleTestConnections)
 	s.mountSourceAPI(r)
 
 	r.Route("/series", func(r chi.Router) {
@@ -470,6 +473,34 @@ func (s *Server) handlePutMediaSettings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, m)
+}
+
+// --- connection settings ---
+
+func (s *Server) handleGetConnections(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.conns.Load(r.Context()))
+}
+
+func (s *Server) handlePutConnections(w http.ResponseWriter, r *http.Request) {
+	var cs service.ConnectionSettings
+	if !decodeBody(w, r, &cs) {
+		return
+	}
+	if err := s.conns.Save(r.Context(), cs); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, cs)
+}
+
+// handleTestConnections probes the services in the posted settings (the
+// UI tests before saving).
+func (s *Server) handleTestConnections(w http.ResponseWriter, r *http.Request) {
+	var cs service.ConnectionSettings
+	if !decodeBody(w, r, &cs) {
+		return
+	}
+	respondList(w, service.TestConnections(r.Context(), cs), nil)
 }
 
 func (s *Server) handlePreviewMediaSettings(w http.ResponseWriter, r *http.Request) {

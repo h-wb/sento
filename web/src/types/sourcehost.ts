@@ -2,6 +2,16 @@
 /* eslint-disable */
 
 //////////
+// source: client.go
+
+/**
+ * Client talks to a sento-host sidecar (host/), the native implementation
+ * of this package's contract. All keys pass through opaquely.
+ */
+export interface Client {
+}
+
+//////////
 // source: sourcehost.go
 /*
 Package sourcehost defines the protocol-adapter contract for extension
