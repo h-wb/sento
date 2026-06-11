@@ -504,8 +504,8 @@ func (s *Server) handleAddBinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.SeriesID = id
-	if b.SourceID == "" || b.SourceMangaID == 0 {
-		writeError(w, http.StatusBadRequest, "sourceId and sourceMangaId are required")
+	if b.SourceID == "" || b.SourceMangaKey == "" {
+		writeError(w, http.StatusBadRequest, "sourceId and sourceMangaKey are required")
 		return
 	}
 	bid, err := s.store.AddBinding(r.Context(), b)

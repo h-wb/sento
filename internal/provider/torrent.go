@@ -30,7 +30,8 @@ func NewTorrent(pr *prowlarr.Client, qb *qbittorrent.Client, category string) Pr
 	return &TorrentProvider{prowlarr: pr, qbit: qb, category: category}
 }
 
-func (p *TorrentProvider) ID() string { return "torrent" }
+func (p *TorrentProvider) ID() string       { return "torrent" }
+func (p *TorrentProvider) Protocol() string { return ProtocolTorrent }
 
 func (p *TorrentProvider) Sites(ctx context.Context) ([]Site, error) {
 	if p.prowlarr == nil {

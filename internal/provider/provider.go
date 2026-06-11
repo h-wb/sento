@@ -9,8 +9,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
+
+	"github.com/h-wb/sento/internal/sourcehost"
 )
 
 const (
@@ -30,12 +31,13 @@ type Site struct {
 }
 
 // Binding scopes a search to a series on a specific extension source
-// (providers that need it; others ignore it).
+// (providers that need it; others ignore it). SourceMangaKey is the
+// host-minted opaque manga key.
 type Binding struct {
-	BindingID     int64
-	SourceID      string
-	SourceMangaID int64
-	SourceName    string
+	BindingID      int64
+	SourceID       string
+	SourceMangaKey string
+	SourceName     string
 }
 
 type SearchRequest struct {
@@ -70,9 +72,10 @@ type TorrentRef struct {
 	Seeders     int    `json:"seeders,omitempty"`
 }
 
-// SourceRef carries extension-source handles.
+// SourceRef carries extension-source handles. ChapterKey is opaque,
+// minted by the source host.
 type SourceRef struct {
-	ChapterID     int64   `json:"chapterId"`
+	ChapterKey    string  `json:"chapterKey"`
 	ChapterNumber float64 `json:"-"` // the source's own recognition (corroboration)
 	Scanlator     string  `json:"scanlator,omitempty"`
 	SourceID      string  `json:"sourceId"`
@@ -97,14 +100,14 @@ func (c Candidate) GUID() string {
 	case c.Torrent != nil:
 		return c.Torrent.GUID
 	case c.Source != nil:
-		return fmt.Sprintf("source-%s-%d", c.Source.SourceID, c.Source.ChapterID)
+		return fmt.Sprintf("source-%s-%s", c.Source.SourceID, c.Source.ChapterKey)
 	}
 	return ""
 }
 
 // ExternalKey is the download-side identity of a candidate — the same key
-// providers return from Grab (infohash / chapter id), used to match queue
-// items and blocklist entries.
+// providers return from Grab (infohash / source+chapter key), used to
+// match queue items and blocklist entries.
 func (c Candidate) ExternalKey() string {
 	switch {
 	case c.Torrent != nil:
@@ -113,7 +116,7 @@ func (c Candidate) ExternalKey() string {
 		}
 		return strings.ToLower(c.Torrent.GUID)
 	case c.Source != nil:
-		return strconv.FormatInt(c.Source.ChapterID, 10)
+		return sourceExternalID(c.Source.SourceID, c.Source.ChapterKey)
 	}
 	return ""
 }
@@ -136,6 +139,8 @@ type Payload struct {
 type Provider interface {
 	// ID is the stable provider key ("suwayomi", "torrent").
 	ID() string
+	// Protocol names the download protocol this provider owns.
+	Protocol() string
 	Sites(ctx context.Context) ([]Site, error)
 	Search(ctx context.Context, req SearchRequest) ([]Candidate, error)
 	// Grab starts the download and returns the external id used for
@@ -153,18 +158,11 @@ type Recoverer interface {
 	Recover(ctx context.Context) error
 }
 
-// MangaRef is a series candidate on an extension source (for binding
-// resolution).
-type MangaRef struct {
-	ID    int64  `json:"id"`
-	Title string `json:"title"`
-}
-
 // MangaResolver is an optional capability: providers whose sites need a
 // series→manga identity mapping before they can be searched (extension
 // sources). Used by the auto-binding resolver.
 type MangaResolver interface {
-	ResolveManga(ctx context.Context, siteID, query string) ([]MangaRef, error)
+	ResolveManga(ctx context.Context, siteID, query string) ([]sourcehost.Manga, error)
 }
 
 // Registry holds the configured providers.
@@ -193,11 +191,10 @@ func (r *Registry) Empty() bool            { return len(r.providers) == 0 }
 // Valid while protocol↔provider is 1:1; revisit when a second source-
 // protocol provider exists (then queue items must store the provider id).
 func (r *Registry) ForProtocol(protocol string) Provider {
-	switch protocol {
-	case ProtocolSource:
-		return r.byID["suwayomi"]
-	case ProtocolTorrent:
-		return r.byID["torrent"]
+	for _, p := range r.providers {
+		if p.Protocol() == protocol {
+			return p
+		}
 	}
 	return nil
 }

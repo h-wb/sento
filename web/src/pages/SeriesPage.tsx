@@ -1046,7 +1046,7 @@ function BindingList({
             <Text size="xs" c={b.state === 'active' ? undefined : 'dimmed'} truncate maw={220}>
               {b.mangaTitle || 'manga'}{' '}
               <Text span size="xs" c="dimmed">
-                #{b.sourceMangaId}
+                #{b.sourceMangaKey}
               </Text>
             </Text>
             <Tooltip label={b.state === 'active' ? 'Disable entry' : 'Enable entry'}>
@@ -1100,7 +1100,7 @@ function RebindModal({
   onClose: () => void
 }) {
   const [query, setQuery] = useState(seriesTitle)
-  const [results, setResults] = useState<{ id: number; title: string }[]>([])
+  const [results, setResults] = useState<{ key: string; title: string }[]>([])
 
   if (!site) return null
 
@@ -1120,7 +1120,7 @@ function RebindModal({
               run(() =>
                 api
                   .sourceSearch(site.siteId, query)
-                  .then((r) => setResults(r.mangas.map((m) => ({ id: m.id, title: m.title })))),
+                  .then((r) => setResults(r.map((m) => ({ key: m.key, title: m.title })))),
               )
             }
           >
@@ -1129,10 +1129,10 @@ function RebindModal({
         </Group>
         {results.map((m) => {
           const isBound = site.bindings?.some(
-            (b) => b.sourceMangaId === m.id && b.state !== 'unmatched',
+            (b) => b.sourceMangaKey === m.key && b.state !== 'unmatched',
           )
           return (
-            <Group key={m.id} justify="space-between">
+            <Group key={m.key} justify="space-between">
               <Text size="sm">{m.title}</Text>
               <Button
                 size="compact-xs"
@@ -1142,7 +1142,7 @@ function RebindModal({
                     () =>
                       api.addBinding(seriesID, {
                         sourceId: site.siteId,
-                        sourceMangaId: m.id,
+                        sourceMangaKey: m.key,
                         sourceName: site.name,
                         mangaTitle: m.title,
                       }),

@@ -15,6 +15,7 @@ type Config struct {
 	Server      Server      `yaml:"server"`
 	Database    Database    `yaml:"database"`
 	Library     Library     `yaml:"library"`
+	Downloads   Downloads   `yaml:"downloads"`
 	Suwayomi    Suwayomi    `yaml:"suwayomi"`
 	Prowlarr    Prowlarr    `yaml:"prowlarr"`
 	QBittorrent QBittorrent `yaml:"qbittorrent"`
@@ -28,6 +29,12 @@ type Library struct {
 	// machine whose storage is mounted here (Sonarr's remote path
 	// mappings). Unmapped paths pass through.
 	PathMappings []string `yaml:"path_mappings"`
+}
+
+type Downloads struct {
+	// Dir stages in-progress source downloads (page fetches assembled
+	// into CBZs) before import.
+	Dir string `yaml:"dir"`
 }
 
 type Server struct {
@@ -70,6 +77,7 @@ func Default() Config {
 	c.Server.StaticDir = "web/dist"
 	c.Database.Path = "data/sento.db"
 	c.Library.Path = "library"
+	c.Downloads.Dir = "data/downloads"
 	c.QBittorrent.Category = "sento"
 	c.MangaBaka.BaseURL = "https://api.mangabaka.org/v1"
 	return c
@@ -103,6 +111,7 @@ func applyEnv(c *Config) {
 	str("SENTO_STATIC_DIR", &c.Server.StaticDir)
 	str("SENTO_DB_PATH", &c.Database.Path)
 	str("SENTO_LIBRARY_PATH", &c.Library.Path)
+	str("SENTO_DOWNLOADS_DIR", &c.Downloads.Dir)
 	str("SENTO_SUWAYOMI_URL", &c.Suwayomi.URL)
 	str("SENTO_SUWAYOMI_USERNAME", &c.Suwayomi.Username)
 	str("SENTO_SUWAYOMI_PASSWORD", &c.Suwayomi.Password)

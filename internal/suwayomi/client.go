@@ -1,5 +1,8 @@
-// Package suwayomi implements the SourceProvider contract against a
+// Package suwayomi implements the sourcehost.Host contract against a
 // Suwayomi-Server instance (specs/suwayomi-adapter.md — live-validated).
+// Suwayomi is used purely as a protocol adapter: search, chapter lists and
+// page images. Its downloader, library and categories are not touched —
+// Sento assembles CBZs itself from the page stream.
 package suwayomi
 
 import (
@@ -9,8 +12,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/h-wb/sento/internal/sourcehost"
 )
 
 type Client struct {
@@ -30,45 +36,7 @@ func New(baseURL, username, password string) *Client {
 	}
 }
 
-type Source struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Lang    string `json:"lang"`
-	IsNSFW  bool   `json:"isNsfw"`
-	PkgName string `json:"pkgName,omitempty"`
-}
-
-type Manga struct {
-	ID          int64  `json:"id"`
-	Title       string `json:"title"`
-	URL         string `json:"url"`
-	SourceID    string `json:"sourceId"`
-	InLibrary   bool   `json:"inLibrary"`
-	Initialized bool   `json:"initialized"`
-}
-
-type MangaPage struct {
-	Mangas      []Manga `json:"mangas"`
-	HasNextPage bool    `json:"hasNextPage"`
-}
-
-type Chapter struct {
-	ID            int64   `json:"id"`
-	SourceOrder   int     `json:"sourceOrder"`
-	Name          string  `json:"name"`
-	ChapterNumber float64 `json:"chapterNumber"`
-	Scanlator     string  `json:"scanlator"`
-	UploadDate    string  `json:"uploadDate"` // epoch millis as string
-	IsDownloaded  bool    `json:"isDownloaded"`
-}
-
-type DownloadState struct {
-	Downloaded bool    `json:"downloaded"`
-	Queued     bool    `json:"queued"`
-	State      string  `json:"state,omitempty"` // QUEUED|DOWNLOADING|ERROR|…
-	Progress   float64 `json:"progress,omitempty"`
-	Tries      int     `json:"tries,omitempty"`
-}
+func (c *Client) Name() string { return "suwayomi" }
 
 // --- GraphQL plumbing ---
 
@@ -133,7 +101,7 @@ func truncate(b []byte, n int) string {
 	return string(b)
 }
 
-// --- operations (adapter spec §1, §2) ---
+// --- sourcehost.Host ---
 
 func (c *Client) About(ctx context.Context) (string, error) {
 	var out struct {
@@ -145,134 +113,136 @@ func (c *Client) About(ctx context.Context) (string, error) {
 	return out.AboutServer.Version, err
 }
 
-// ListSources excludes the special Local source (id "0").
-func (c *Client) ListSources(ctx context.Context) ([]Source, error) {
+// Sources excludes the special Local source (id "0").
+func (c *Client) Sources(ctx context.Context) ([]sourcehost.Source, error) {
 	var out struct {
 		Sources struct {
 			Nodes []struct {
-				ID        string `json:"id"`
-				Name      string `json:"name"`
-				Lang      string `json:"lang"`
-				IsNsfw    bool   `json:"isNsfw"`
-				Extension struct {
-					PkgName string `json:"pkgName"`
-				} `json:"extension"`
+				ID     string `json:"id"`
+				Name   string `json:"name"`
+				Lang   string `json:"lang"`
+				IsNsfw bool   `json:"isNsfw"`
 			} `json:"nodes"`
 		} `json:"sources"`
 	}
-	if err := c.gql(ctx, `{ sources { nodes { id name lang isNsfw extension { pkgName } } } }`, nil, &out); err != nil {
+	if err := c.gql(ctx, `{ sources { nodes { id name lang isNsfw } } }`, nil, &out); err != nil {
 		return nil, err
 	}
-	sources := make([]Source, 0, len(out.Sources.Nodes))
+	sources := make([]sourcehost.Source, 0, len(out.Sources.Nodes))
 	for _, n := range out.Sources.Nodes {
 		if n.ID == "0" {
 			continue
 		}
-		sources = append(sources, Source{
-			ID: n.ID, Name: n.Name, Lang: n.Lang, IsNSFW: n.IsNsfw, PkgName: n.Extension.PkgName,
+		sources = append(sources, sourcehost.Source{
+			ID: n.ID, Name: n.Name, Lang: n.Lang, NSFW: n.IsNsfw,
 		})
 	}
 	return sources, nil
 }
 
-func (c *Client) SearchManga(ctx context.Context, sourceID, query string, page int) (*MangaPage, error) {
+// Search runs a source text search (first page — binding resolution wants
+// confident matches, not exhaustive listings). Manga keys are Suwayomi's
+// database ids.
+func (c *Client) Search(ctx context.Context, sourceID, query string) ([]sourcehost.Manga, error) {
 	var out struct {
 		FetchSourceManga struct {
-			HasNextPage bool    `json:"hasNextPage"`
-			Mangas      []Manga `json:"mangas"`
+			Mangas []struct {
+				ID    int64  `json:"id"`
+				Title string `json:"title"`
+			} `json:"mangas"`
 		} `json:"fetchSourceManga"`
 	}
 	err := c.gql(ctx, `
 		mutation($source: LongString!, $query: String, $page: Int!) {
 			fetchSourceManga(input: {type: SEARCH, source: $source, query: $query, page: $page}) {
-				hasNextPage
-				mangas { id title url sourceId inLibrary initialized }
+				mangas { id title }
 			}
 		}`,
-		map[string]any{"source": sourceID, "query": query, "page": page}, &out)
+		map[string]any{"source": sourceID, "query": query, "page": 1}, &out)
 	if err != nil {
 		return nil, err
 	}
-	return &MangaPage{Mangas: out.FetchSourceManga.Mangas, HasNextPage: out.FetchSourceManga.HasNextPage}, nil
+	mangas := make([]sourcehost.Manga, 0, len(out.FetchSourceManga.Mangas))
+	for _, m := range out.FetchSourceManga.Mangas {
+		mangas = append(mangas, sourcehost.Manga{
+			Key: strconv.FormatInt(m.ID, 10), Title: m.Title,
+		})
+	}
+	return mangas, nil
 }
 
-// GetChapters live-syncs and returns the source's chapter list (transient
+// Chapters live-syncs and returns the source's chapter list (transient
 // release candidates — never persisted as ledger state).
-func (c *Client) GetChapters(ctx context.Context, mangaID int64) ([]Chapter, error) {
+func (c *Client) Chapters(ctx context.Context, _ string, mangaKey string) ([]sourcehost.Chapter, error) {
+	mangaID, err := strconv.ParseInt(mangaKey, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("suwayomi: bad manga key %q", mangaKey)
+	}
 	var out struct {
 		FetchChapters struct {
-			Chapters []Chapter `json:"chapters"`
+			Chapters []struct {
+				ID            int64   `json:"id"`
+				Name          string  `json:"name"`
+				ChapterNumber float64 `json:"chapterNumber"`
+				Scanlator     string  `json:"scanlator"`
+			} `json:"chapters"`
 		} `json:"fetchChapters"`
 	}
-	err := c.gql(ctx, `
+	err = c.gql(ctx, `
 		mutation($mangaId: Int!) {
 			fetchChapters(input: {mangaId: $mangaId}) {
-				chapters { id sourceOrder name chapterNumber scanlator uploadDate isDownloaded }
+				chapters { id name chapterNumber scanlator }
 			}
 		}`,
 		map[string]any{"mangaId": mangaID}, &out)
 	if err != nil {
 		return nil, err
 	}
-	return out.FetchChapters.Chapters, nil
-}
-
-// EnqueueDownload queues a chapter; Suwayomi self-processes the queue
-// (adapter spec §1.4 — do not call startDownloader routinely).
-func (c *Client) EnqueueDownload(ctx context.Context, chapterID int64) error {
-	return c.gql(ctx, `
-		mutation($id: Int!) {
-			enqueueChapterDownload(input: {id: $id}) { downloadStatus { state } }
-		}`,
-		map[string]any{"id": chapterID}, nil)
-}
-
-// DownloadStateOf is a composite read: chapter.isDownloaded is the success
-// signal; the queue entry only describes in-flight state.
-func (c *Client) DownloadStateOf(ctx context.Context, chapterID int64) (*DownloadState, error) {
-	var out struct {
-		Chapter struct {
-			IsDownloaded bool `json:"isDownloaded"`
-		} `json:"chapter"`
-		DownloadStatus struct {
-			State string `json:"state"`
-			Queue []struct {
-				Chapter struct {
-					ID int64 `json:"id"`
-				} `json:"chapter"`
-				State    string  `json:"state"`
-				Progress float64 `json:"progress"`
-				Tries    int     `json:"tries"`
-			} `json:"queue"`
-		} `json:"downloadStatus"`
+	chapters := make([]sourcehost.Chapter, 0, len(out.FetchChapters.Chapters))
+	for _, ch := range out.FetchChapters.Chapters {
+		chapters = append(chapters, sourcehost.Chapter{
+			Key:       strconv.FormatInt(ch.ID, 10),
+			Name:      ch.Name,
+			Number:    ch.ChapterNumber,
+			Scanlator: ch.Scanlator,
+		})
 	}
-	err := c.gql(ctx, `
-		query($id: Int!) {
-			chapter(id: $id) { isDownloaded }
-			downloadStatus { state queue { chapter { id } state progress tries } }
+	return chapters, nil
+}
+
+// Pages fetches the page list of a chapter; the refs are server-relative
+// URLs into Suwayomi's page proxy (live-validated 2026-06-11).
+func (c *Client) Pages(ctx context.Context, _ string, chapterKey string) ([]string, error) {
+	chapterID, err := strconv.ParseInt(chapterKey, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("suwayomi: bad chapter key %q", chapterKey)
+	}
+	var out struct {
+		FetchChapterPages struct {
+			Pages []string `json:"pages"`
+		} `json:"fetchChapterPages"`
+	}
+	err = c.gql(ctx, `
+		mutation($chapterId: Int!) {
+			fetchChapterPages(input: {chapterId: $chapterId}) { pages }
 		}`,
-		map[string]any{"id": chapterID}, &out)
+		map[string]any{"chapterId": chapterID}, &out)
 	if err != nil {
 		return nil, err
 	}
-	st := &DownloadState{Downloaded: out.Chapter.IsDownloaded}
-	for _, q := range out.DownloadStatus.Queue {
-		if q.Chapter.ID == chapterID {
-			st.Queued = true
-			st.State = q.State
-			st.Progress = q.Progress
-			st.Tries = q.Tries
-		}
-	}
-	return st, nil
+	return out.FetchChapterPages.Pages, nil
 }
 
-// FetchCBZ streams the downloaded chapter as a CBZ over REST.
-func (c *Client) FetchCBZ(ctx context.Context, chapterID int64) (io.ReadCloser, string, error) {
-	url := fmt.Sprintf("%s/api/v1/chapter/%d/download", c.baseURL, chapterID)
+// Page streams one page image. Suwayomi proxies (and caches) the upstream
+// fetch, so source auth never surfaces here.
+func (c *Client) Page(ctx context.Context, _ string, pageRef string) (io.ReadCloser, error) {
+	url := pageRef
+	if strings.HasPrefix(pageRef, "/") {
+		url = c.baseURL + pageRef
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if c.username != "" {
 		req.SetBasicAuth(c.username, c.password)
@@ -280,29 +250,13 @@ func (c *Client) FetchCBZ(ctx context.Context, chapterID int64) (io.ReadCloser, 
 	// No client timeout on the streaming body: rely on ctx (adapter §3).
 	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
-		return nil, "", fmt.Errorf("suwayomi: CBZ fetch returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("suwayomi: page fetch returned %d", resp.StatusCode)
 	}
-	return resp.Body, resp.Header.Get("Content-Disposition"), nil
+	return resp.Body, nil
 }
 
-func (c *Client) DeleteDownload(ctx context.Context, chapterID int64) error {
-	return c.gql(ctx, `
-		mutation($id: Int!) {
-			deleteDownloadedChapter(input: {id: $id}) { chapters { id isDownloaded } }
-		}`,
-		map[string]any{"id": chapterID}, nil)
-}
-
-// Recover kicks a stuck queue. The 30s timeout error is benign here
-// (adapter spec §1.4 gotcha 1).
-func (c *Client) Recover(ctx context.Context) error {
-	err := c.gql(ctx, `mutation { startDownloader(input: {}) { downloadStatus { state } } }`, nil, nil)
-	if err != nil && strings.Contains(err.Error(), "Timed out") {
-		return nil
-	}
-	return err
-}
+var _ sourcehost.Host = (*Client)(nil)

@@ -14,6 +14,7 @@ import (
 	"github.com/h-wb/sento/internal/match"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/provider"
+	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -35,8 +36,10 @@ func NewSearchService(st *store.Store, registry *provider.Registry) *SearchServi
 	return &SearchService{store: st, registry: registry}
 }
 
-func (s *SearchService) HasProviders() bool      { return !s.registry.Empty() }
-func (s *SearchService) HasSourceProvider() bool { return s.registry.Get("suwayomi") != nil }
+func (s *SearchService) HasProviders() bool { return !s.registry.Empty() }
+func (s *SearchService) HasSourceProvider() bool {
+	return s.registry.ForProtocol(provider.ProtocolSource) != nil
+}
 
 // TargetSlot restricts an interactive search to one slot (collectionID 0 =
 // chapter ledger).
@@ -56,7 +59,6 @@ type ReleaseCandidate struct {
 	Title        string       `json:"title"`
 	Size         int64        `json:"size,omitempty"`
 	Seeders      int          `json:"seeders,omitempty"`
-	ChapterID    int64        `json:"chapterId,omitempty"`
 	Scanlator    string       `json:"scanlator,omitempty"`
 	CollectionID int64        `json:"collectionId,omitempty"`
 	Covered      []int64      `json:"covered,omitempty"`
@@ -132,11 +134,11 @@ func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.M
 	defer cancel()
 
 	type scored struct {
-		ref   provider.MangaRef
+		ref   sourcehost.Manga
 		score float64
 	}
 	var matches []scored
-	bestScore, bestRef := 0.0, provider.MangaRef{}
+	bestScore, bestRef := 0.0, sourcehost.Manga{}
 	for i, query := range resolveQueries(titles) {
 		refs, err := resolver.ResolveManga(resolveCtx, st.site.ID, query)
 		if err != nil {
@@ -145,9 +147,9 @@ func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.M
 			}
 			break // keep what earlier queries found
 		}
-		seen := map[int64]bool{}
+		seen := map[string]bool{}
 		for _, m := range matches {
-			seen[m.ref.ID] = true
+			seen[m.ref.Key] = true
 		}
 		for _, ref := range refs {
 			score := 0.0
@@ -159,7 +161,7 @@ func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.M
 			if score > bestScore {
 				bestScore, bestRef = score, ref
 			}
-			if score >= match.AutoThreshold && !seen[ref.ID] {
+			if score >= match.AutoThreshold && !seen[ref.Key] {
 				matches = append(matches, scored{ref, score})
 			}
 		}
@@ -175,7 +177,7 @@ func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.M
 	if len(matches) == 0 {
 		bind := store.Binding{
 			SeriesID: seriesID, SourceID: st.site.ID,
-			SourceMangaID: bestRef.ID, SourceName: st.site.Name,
+			SourceMangaKey: bestRef.Key, SourceName: st.site.Name,
 			MangaTitle: bestRef.Title, State: "unmatched",
 		}
 		note := fmt.Sprintf("%s: no results", st.site.Name)
@@ -193,7 +195,7 @@ func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.M
 	for _, m := range matches {
 		bind := store.Binding{
 			SeriesID: seriesID, SourceID: st.site.ID,
-			SourceMangaID: m.ref.ID, SourceName: st.site.Name,
+			SourceMangaKey: m.ref.Key, SourceName: st.site.Name,
 			MangaTitle: m.ref.Title, State: "active", Priority: st.setting.Priority,
 		}
 		if id, err := s.store.AddBinding(ctx, bind); err != nil {
@@ -327,7 +329,6 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 			rc.Seeders = cand.Torrent.Seeders
 		}
 		if cand.Source != nil {
-			rc.ChapterID = cand.Source.ChapterID
 			rc.Scanlator = cand.Source.Scanlator
 		}
 		rc.Parse = parse.ParseAnchored(cand.Title, channel, run.titles)
@@ -421,7 +422,7 @@ func (s *SearchService) streamProvider(ctx context.Context, p provider.Provider,
 				}
 				active = append(active, provider.Binding{
 					BindingID: b.ID, SourceID: b.SourceID,
-					SourceMangaID: b.SourceMangaID, SourceName: b.SourceName,
+					SourceMangaKey: b.SourceMangaKey, SourceName: b.SourceName,
 				})
 			}
 			ev := s.searchOnce(ctx, p, run,

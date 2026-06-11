@@ -28,8 +28,8 @@ packages:
     frontmatter: |
       /* eslint-disable */
 
-  - path: "github.com/h-wb/sento/internal/suwayomi"
-    output_path: "web/src/types/suwayomi.ts"
+  - path: "github.com/h-wb/sento/internal/sourcehost"
+    output_path: "web/src/types/sourcehost.ts"
     frontmatter: |
       /* eslint-disable */
 

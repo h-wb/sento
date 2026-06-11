@@ -21,7 +21,7 @@ func NewSiteService(st *store.Store, registry *provider.Registry) *SiteService {
 
 // SiteView is one site with its global configuration.
 type SiteView struct {
-	Provider    string `json:"provider"` // owning provider id (torrent/suwayomi)
+	Provider    string `json:"provider"` // owning provider id
 	SiteID      string `json:"siteId"`
 	Name        string `json:"name"`
 	Protocol    string `json:"protocol"`
@@ -122,7 +122,7 @@ func (s *SiteService) Effective(ctx context.Context, seriesID int64) ([]SeriesSi
 			},
 			Override: ov,
 		}
-		if st.providerID == "suwayomi" {
+		if st.site.Protocol == provider.ProtocolSource {
 			view.Bindings = bound[st.site.ID]
 		}
 		out = append(out, view)

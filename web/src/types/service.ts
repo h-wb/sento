@@ -122,7 +122,6 @@ export interface ReleaseCandidate {
   title: string;
   size?: number /* int64 */;
   seeders?: number /* int */;
-  chapterId?: number /* int64 */;
   scanlator?: string;
   collectionId?: number /* int64 */;
   covered?: number /* int64 */[];
@@ -173,7 +172,7 @@ export interface SiteService {
  * SiteView is one site with its global configuration.
  */
 export interface SiteView {
-  provider: string; // owning provider id (torrent/suwayomi)
+  provider: string; // owning provider id
   siteId: string;
   name: string;
   protocol: string;

@@ -37,7 +37,7 @@ import type {
   QueueItem,
   Series,
 } from './types/store'
-import type { Manga as SourceManga, MangaPage, Source } from './types/suwayomi'
+import type { Manga as SourceManga, Source } from './types/sourcehost'
 
 export type {
   Binding,
@@ -150,11 +150,11 @@ export const api = {
       body: JSON.stringify(ov),
     }),
   sourceSearch: (sid: string, q: string) =>
-    request<MangaPage>(`/sources/${sid}/search?q=${encodeURIComponent(q)}`),
+    request<SourceManga[]>(`/sources/${sid}/search?q=${encodeURIComponent(q)}`),
   bindings: (id: number) => request<Binding[]>(`/series/${id}/bindings`),
   addBinding: (
     id: number,
-    body: { sourceId: string; sourceMangaId: number; sourceName?: string; mangaTitle?: string },
+    body: { sourceId: string; sourceMangaKey: string; sourceName?: string; mangaTitle?: string },
   ) =>
     request<{ id: number }>(`/series/${id}/bindings`, { method: 'POST', body: JSON.stringify(body) }),
   setBindingState: (id: number, bid: number, state: 'active' | 'disabled') =>

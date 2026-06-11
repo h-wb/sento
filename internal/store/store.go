@@ -96,14 +96,14 @@ type SlotLink struct {
 }
 
 type Binding struct {
-	ID            int64  `json:"id"`
-	SeriesID      int64  `json:"seriesId"`
-	SourceID      string `json:"sourceId"`
-	SourceMangaID int64  `json:"sourceMangaId"`
-	SourceName    string `json:"sourceName"`
-	MangaTitle    string `json:"mangaTitle"`
-	State         string `json:"state"`
-	Priority      int    `json:"priority"`
+	ID             int64  `json:"id"`
+	SeriesID       int64  `json:"seriesId"`
+	SourceID       string `json:"sourceId"`
+	SourceMangaKey string `json:"sourceMangaKey"` // opaque, minted by the source host
+	SourceName     string `json:"sourceName"`
+	MangaTitle     string `json:"mangaTitle"`
+	State          string `json:"state"`
+	Priority       int    `json:"priority"`
 }
 
 // --- series ---
@@ -468,7 +468,7 @@ func SlotKey(ledger string, collectionID, number int64) string {
 
 func (s *Store) ListBindings(ctx context.Context, seriesID int64) ([]Binding, error) {
 	return list[Binding](ctx, s, `
-		SELECT id, series_id, source_id, source_manga_id,
+		SELECT id, series_id, source_id, source_manga_key,
 		       COALESCE(source_name,'') AS source_name,
 		       COALESCE(manga_title,'') AS manga_title, state, priority
 		FROM source_bindings WHERE series_id = ? ORDER BY priority, id`, seriesID)
@@ -480,14 +480,14 @@ func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
 	state := orDefault(b.State, "active")
 	var id int64
 	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO source_bindings (series_id, source_id, source_manga_id, source_name, manga_title, state, priority)
+		INSERT INTO source_bindings (series_id, source_id, source_manga_key, source_name, manga_title, state, priority)
 		VALUES (?,?,?,?,?,?,?)
-		ON CONFLICT(series_id, source_id, source_manga_id) DO UPDATE SET
+		ON CONFLICT(series_id, source_id, source_manga_key) DO UPDATE SET
 			source_name = excluded.source_name,
 			manga_title = excluded.manga_title,
 			state = excluded.state
 		RETURNING id`,
-		b.SeriesID, b.SourceID, b.SourceMangaID, b.SourceName, b.MangaTitle, state, b.Priority).Scan(&id)
+		b.SeriesID, b.SourceID, b.SourceMangaKey, b.SourceName, b.MangaTitle, state, b.Priority).Scan(&id)
 	if err != nil {
 		return 0, err
 	}

@@ -249,14 +249,14 @@ func (s *Server) streamSearch(w http.ResponseWriter, r *http.Request, id int64, 
 	}
 }
 
-// --- suwayomi-specific endpoints (binding fix-ups) ---
+// --- source-host endpoints (binding fix-ups) ---
 
 func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
-	if s.suwa == nil {
-		writeError(w, http.StatusServiceUnavailable, "suwayomi is not configured")
+	if s.host == nil {
+		writeError(w, http.StatusServiceUnavailable, "no source host is configured")
 		return
 	}
-	sources, err := s.suwa.ListSources(r.Context())
+	sources, err := s.host.Sources(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -265,8 +265,8 @@ func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
-	if s.suwa == nil {
-		writeError(w, http.StatusServiceUnavailable, "suwayomi is not configured")
+	if s.host == nil {
+		writeError(w, http.StatusServiceUnavailable, "no source host is configured")
 		return
 	}
 	q := r.URL.Query().Get("q")
@@ -274,16 +274,12 @@ func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing query parameter q")
 		return
 	}
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if page < 1 {
-		page = 1
-	}
-	result, err := s.suwa.SearchManga(r.Context(), chi.URLParam(r, "sid"), q, page)
+	mangas, err := s.host.Search(r.Context(), chi.URLParam(r, "sid"), q)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	respondList(w, mangas, nil)
 }
 
 // --- queue ---

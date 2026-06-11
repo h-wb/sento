@@ -195,7 +195,7 @@ export interface Binding {
   id: number /* int64 */;
   seriesId: number /* int64 */;
   sourceId: string;
-  sourceMangaId: number /* int64 */;
+  sourceMangaKey: string; // opaque, minted by the source host
   sourceName: string;
   mangaTitle: string;
   state: string;

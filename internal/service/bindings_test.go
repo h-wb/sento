@@ -20,16 +20,16 @@ func TestMultiBindings(t *testing.T) {
 
 	// A probe that found nothing confident persists one sentinel.
 	if _, err := st.AddBinding(ctx, store.Binding{
-		SeriesID: id, SourceID: "madokami", SourceMangaID: 7,
+		SeriesID: id, SourceID: "madokami", SourceMangaKey: "7",
 		MangaTitle: "One Piece Party", State: "unmatched",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Two confident entries on the same site both bind; the sentinel goes.
-	for mangaID, title := range map[int64]string{1: "One Piece", 2: "One Piece (2024)"} {
+	for mangaKey, title := range map[string]string{"1": "One Piece", "2": "One Piece (2024)"} {
 		if _, err := st.AddBinding(ctx, store.Binding{
-			SeriesID: id, SourceID: "madokami", SourceMangaID: mangaID,
+			SeriesID: id, SourceID: "madokami", SourceMangaKey: mangaKey,
 			MangaTitle: title,
 		}); err != nil {
 			t.Fatal(err)
@@ -50,7 +50,7 @@ func TestMultiBindings(t *testing.T) {
 
 	// Re-binding the same entry upserts in place, no duplicate row.
 	bid, err := st.AddBinding(ctx, store.Binding{
-		SeriesID: id, SourceID: "madokami", SourceMangaID: 1, MangaTitle: "One Piece (retitled)",
+		SeriesID: id, SourceID: "madokami", SourceMangaKey: "1", MangaTitle: "One Piece (retitled)",
 	})
 	if err != nil {
 		t.Fatal(err)

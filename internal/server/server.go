@@ -19,6 +19,7 @@ import (
 	"github.com/h-wb/sento/internal/prowlarr"
 	"github.com/h-wb/sento/internal/qbittorrent"
 	"github.com/h-wb/sento/internal/service"
+	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
 	"github.com/h-wb/sento/internal/suwayomi"
 	"github.com/h-wb/sento/internal/version"
@@ -30,7 +31,7 @@ type Server struct {
 	store    *store.Store
 	provider metadata.Provider
 	library  *service.Library
-	suwa     *suwayomi.Client // nil when unconfigured; binding endpoints only
+	host     sourcehost.Host // nil when unconfigured; binding endpoints only
 	registry *provider.Registry
 	search   *service.SearchService
 	sites    *service.SiteService
@@ -50,7 +51,7 @@ func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 	}
 
 	if cfg.Suwayomi.URL != "" {
-		s.suwa = suwayomi.New(cfg.Suwayomi.URL, cfg.Suwayomi.Username, cfg.Suwayomi.Password)
+		s.host = suwayomi.New(cfg.Suwayomi.URL, cfg.Suwayomi.Username, cfg.Suwayomi.Password)
 	}
 	var pr *prowlarr.Client
 	if cfg.Prowlarr.URL != "" {
@@ -63,7 +64,7 @@ func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 
 	// Everything downstream of here is provider-agnostic.
 	s.registry = provider.NewRegistry(
-		provider.NewSuwayomi(s.suwa),
+		provider.NewSource(s.host, cfg.Downloads.Dir),
 		provider.NewTorrent(pr, qb, cfg.QBittorrent.Category),
 	)
 	s.search = service.NewSearchService(st, s.registry)
