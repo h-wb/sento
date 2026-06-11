@@ -1,10 +1,10 @@
 # sento-host
 
-A thin JVM sidecar that runs Tachiyomi/Mihon extensions (the
-[keiyoushi](https://github.com/keiyoushi/extensions) ecosystem) and exposes
-them over a small HTTP API shaped like Sento's `internal/sourcehost.Host`
+A thin JVM sidecar that runs Tachiyomi/Mihon extensions and exposes them
+over a small HTTP API shaped like Sento's `internal/sourcehost.Host`
 contract: sources, manga search, chapter lists, page refs, page bytes,
-plus extension install/uninstall.
+plus extension repo/install management. No extensions or repos ship with
+it — users add Mihon-compatible extension repo index URLs in Sento.
 
 The host is a stateless protocol adapter — Sento owns queueing, pacing,
 CBZ assembly and import. The only state here is the directory of
@@ -41,9 +41,10 @@ SENTO_HOST_PORT=8901 SENTO_HOST_DATA=data app/build/install/app/bin/app
 ```
 
 Environment: `SENTO_HOST_PORT` (8901), `SENTO_HOST_DATA` (data),
-`SENTO_HOST_REPOS` (comma-separated extension repo index URLs, defaults
-to keiyoushi), `SENTO_HOST_FLARESOLVERR_URL` (optional, for
-Cloudflare-protected sources).
+`SENTO_HOST_REPOS` (optional comma-separated extension repo index URLs
+for standalone use — Sento normally pushes its configured repo list),
+`SENTO_HOST_FLARESOLVERR_URL` (optional, for Cloudflare-protected
+sources).
 
 Point Sento at it with `SENTO_SOURCE_HOST_URL=http://localhost:8901`
 (takes precedence over Suwayomi).
@@ -52,6 +53,7 @@ Point Sento at it with `SENTO_SOURCE_HOST_URL=http://localhost:8901`
 
 ```
 GET    /health
+GET/PUT /api/v1/repos
 GET    /api/v1/sources
 GET    /api/v1/sources/{sid}/search?q=
 GET    /api/v1/sources/{sid}/chapters?manga={key}

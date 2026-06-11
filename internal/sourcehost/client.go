@@ -147,6 +147,38 @@ func (c *Client) UninstallExtension(ctx context.Context, pkgName string) error {
 	return c.request(ctx, http.MethodDelete, "/api/v1/extensions/"+url.PathEscape(pkgName))
 }
 
+type repoList struct {
+	URLs []string `json:"urls"`
+}
+
+func (c *Client) Repos(ctx context.Context) ([]string, error) {
+	var out repoList
+	err := c.get(ctx, "/api/v1/repos", nil, &out)
+	return out.URLs, err
+}
+
+func (c *Client) SetRepos(ctx context.Context, urls []string) error {
+	body, err := json.Marshal(repoList{URLs: urls})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+		c.baseURL+"/api/v1/repos", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("host: HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // --- source preferences (sidecar only) ---
 
 func (c *Client) SourcePreferences(ctx context.Context, sourceID string) ([]Preference, error) {

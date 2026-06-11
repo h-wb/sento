@@ -6,6 +6,7 @@ import type { SeriesRef } from './types/metadata'
 import type {
   ChapterLedgerPatch,
   CreateCollectionBody,
+  ExtensionRepos,
   IndexerSettingPatch,
   MergeCollectionResponse,
   NamingPreview,
@@ -139,6 +140,9 @@ export const api = {
 
   connections: () => request<ConnectionSettings>('/settings/connections'),
   extensions: () => request<ExtensionView[]>('/extensions'),
+  extensionRepos: () => request<ExtensionRepos>('/extensions/repos'),
+  setExtensionRepos: (urls: string[]) =>
+    request<ExtensionRepos>('/extensions/repos', { method: 'PUT', body: JSON.stringify({ urls }) }),
   sourcePreferences: (sid: string) =>
     request<Preference[]>(`/sources/${encodeURIComponent(sid)}/preferences`),
   setSourcePreference: (sid: string, key: string, value: unknown) =>

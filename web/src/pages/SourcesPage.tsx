@@ -206,8 +206,20 @@ function SourcesForm({
 function ExtensionsCard() {
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState('')
+  const repos = useQuery({ queryKey: ['extension-repos'], queryFn: api.extensionRepos })
   const extensions = useQuery({ queryKey: ['extensions'], queryFn: api.extensions })
   const [busyPkg, setBusyPkg] = useState<string | null>(null)
+  const [newRepo, setNewRepo] = useState('')
+  const saveRepos = useMutation({
+    mutationFn: (urls: string[]) => api.setExtensionRepos(urls),
+    onSuccess: () => {
+      setNewRepo('')
+      notify.ok('Extension repos updated')
+      queryClient.invalidateQueries({ queryKey: ['extension-repos'] })
+      queryClient.invalidateQueries({ queryKey: ['extensions'] })
+    },
+    onError: notify.err,
+  })
 
   const act = (pkg: string, fn: () => Promise<void>, msg: string) => {
     setBusyPkg(pkg)
@@ -313,11 +325,51 @@ function ExtensionsCard() {
         Extensions
       </Title>
       <Text size="xs" c="dimmed" mb="sm">
-        Installed extensions provide the sources on the Indexers tab. Sento remembers this list
-        and re-installs it automatically if the host is replaced.
+        Installed extensions provide the sources on the Indexers tab. Sento remembers the repos,
+        the extensions and their settings, and re-applies everything if the host is replaced.
+        None ship with Sento — add a Mihon-compatible repo to get started.
       </Text>
+      <Stack gap={4} mb="sm">
+        {repos.data?.urls.map((u) => (
+          <Group key={u} gap={6} wrap="nowrap" justify="space-between">
+            <Text size="xs" style={{ fontFamily: 'monospace' }} truncate>
+              {u}
+            </Text>
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              color="red"
+              onClick={() => saveRepos.mutate((repos.data?.urls ?? []).filter((x) => x !== u))}
+            >
+              Remove
+            </Button>
+          </Group>
+        ))}
+        <Group gap={6} wrap="nowrap">
+          <TextInput
+            size="xs"
+            style={{ flex: 1 }}
+            placeholder="Extension repo URL (…/index.min.json)"
+            value={newRepo}
+            onChange={(e) => setNewRepo(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && newRepo.trim())
+                saveRepos.mutate([...(repos.data?.urls ?? []), newRepo.trim()])
+            }}
+          />
+          <Button
+            size="compact-sm"
+            variant="default"
+            loading={saveRepos.isPending}
+            disabled={!newRepo.trim()}
+            onClick={() => saveRepos.mutate([...(repos.data?.urls ?? []), newRepo.trim()])}
+          >
+            Add repo
+          </Button>
+        </Group>
+      </Stack>
       <Stack gap={6}>
-        {installed.length === 0 && (
+        {installed.length === 0 && (repos.data?.urls.length ?? 0) > 0 && (
           <Text size="sm" c="dimmed">
             No extensions installed yet — search below to add sources.
           </Text>

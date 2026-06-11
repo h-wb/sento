@@ -33,6 +33,8 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Put("/settings/connections", s.handlePutConnections)
 	r.Post("/settings/connections/test", s.handleTestConnections)
 	r.Get("/extensions", s.handleListExtensions)
+	r.Get("/extensions/repos", s.handleGetExtensionRepos)
+	r.Put("/extensions/repos", s.handleSetExtensionRepos)
 	r.Post("/extensions/{pkg}", s.handleInstallExtension)
 	r.Delete("/extensions/{pkg}", s.handleUninstallExtension)
 	r.Get("/sources/{sid}/preferences", s.handleSourcePreferences)
@@ -530,6 +532,22 @@ func (s *Server) handleUninstallExtension(w http.ResponseWriter, r *http.Request
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleGetExtensionRepos(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, ExtensionRepos{URLs: s.extensions.Repos(r.Context())})
+}
+
+func (s *Server) handleSetExtensionRepos(w http.ResponseWriter, r *http.Request) {
+	var body ExtensionRepos
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if err := s.extensions.SetRepos(r.Context(), body.URLs); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, ExtensionRepos{URLs: s.extensions.Repos(r.Context())})
 }
 
 func (s *Server) handleSourcePreferences(w http.ResponseWriter, r *http.Request) {

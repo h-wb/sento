@@ -58,6 +58,12 @@ type ExtensionManager interface {
 	// InstallExtension installs or updates to the latest repo version.
 	InstallExtension(ctx context.Context, pkgName string) error
 	UninstallExtension(ctx context.Context, pkgName string) error
+	// Repos is the host's current extension repo index URLs; SetRepos
+	// replaces the pushed set (volatile host-side — Sento reconciles its
+	// stored list). No repos ship by default; users add Mihon-compatible
+	// repo URLs.
+	Repos(ctx context.Context) ([]string, error)
+	SetRepos(ctx context.Context, urls []string) error
 }
 
 // Preference is one ConfigurableSource setting (login, mirror, quality…)

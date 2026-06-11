@@ -64,6 +64,9 @@ private data class ChapterKey(val url: String, val name: String)
 private data class PageRef(val index: Int, val url: String, val imageUrl: String? = null)
 
 @Serializable
+data class RepoListDto(val urls: List<String>)
+
+@Serializable
 private data class ErrorDto(val error: String)
 
 private inline fun <reified T> Context.respond(value: T) {
@@ -176,6 +179,17 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
     post("/api/v1/sources/{sid}/preferences") { ctx ->
         val source = ctx.sourceOrNull() ?: return@post ctx.notFound("unknown source")
         SourcePrefs.set(source, json.decodeFromString<SetPreferenceBody>(ctx.body()))
+        ctx.status(HttpStatus.NO_CONTENT)
+    }
+
+    // --- extension repos (volatile; Sento reconciles its stored list) ---
+
+    get("/api/v1/repos") { ctx ->
+        ctx.respond(RepoListDto(ExtensionManager.repos()))
+    }
+
+    put("/api/v1/repos") { ctx ->
+        ExtensionManager.setRepos(json.decodeFromString<RepoListDto>(ctx.body()).urls)
         ctx.status(HttpStatus.NO_CONTENT)
     }
 

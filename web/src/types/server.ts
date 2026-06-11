@@ -176,3 +176,10 @@ export interface SetPreferenceBody {
   key: string;
   value: unknown;
 }
+/**
+ * ExtensionRepos is the extension repo index URL list (none by default;
+ * the user adds Mihon-compatible repos).
+ */
+export interface ExtensionRepos {
+  urls: string[];
+}

@@ -15,6 +15,7 @@ type fakeExtHost struct {
 	catalog   []string
 	installed map[string]bool
 	installs  []string
+	repos     []string
 }
 
 func (f *fakeExtHost) Name() string                                         { return "fake" }
@@ -53,6 +54,13 @@ func (f *fakeExtHost) UninstallExtension(_ context.Context, pkg string) error {
 	return nil
 }
 
+func (f *fakeExtHost) Repos(context.Context) ([]string, error) { return f.repos, nil }
+
+func (f *fakeExtHost) SetRepos(_ context.Context, urls []string) error {
+	f.repos = urls
+	return nil
+}
+
 // Sento owns the desired list; a wiped host converges back to it.
 func TestExtensionReconcile(t *testing.T) {
 	_, st := setup(t)
@@ -63,6 +71,18 @@ func TestExtensionReconcile(t *testing.T) {
 		installed: map[string]bool{},
 	}
 	svc := NewExtensionService(st, func() sourcehost.Host { return host })
+
+	// The repo list is user-added (nothing ships by default) and pushed
+	// to the host on set.
+	if err := svc.SetRepos(ctx, []string{"https://repo.example/index.min.json", ""}); err != nil {
+		t.Fatal(err)
+	}
+	if len(host.repos) != 1 {
+		t.Fatalf("host repos = %v", host.repos)
+	}
+	if err := svc.SetRepos(ctx, []string{"not-a-url"}); err == nil {
+		t.Fatal("want validation error for scheme-less repo url")
+	}
 
 	// Installing records desire and installs on the host.
 	if err := svc.Install(ctx, "ext.a"); err != nil {
@@ -90,12 +110,16 @@ func TestExtensionReconcile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The host gets wiped (fresh pod); reconcile reinstalls only what is
-	// desired and missing.
+	// The host gets wiped (fresh pod); reconcile restores the repo list
+	// first, then reinstalls only what is desired and missing.
 	host.installed = map[string]bool{}
 	host.installs = nil
+	host.repos = nil
 	if err := svc.Reconcile(ctx); err != nil {
 		t.Fatal(err)
+	}
+	if len(host.repos) != 1 {
+		t.Fatalf("reconcile did not restore repos: %v", host.repos)
 	}
 	if len(host.installs) != 1 || host.installs[0] != "ext.a" {
 		t.Fatalf("reconcile installs = %v, want [ext.a]", host.installs)

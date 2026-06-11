@@ -8,12 +8,12 @@ object HostConfig {
     val port: Int = env("SENTO_HOST_PORT", "8901").toInt()
     val dataRoot: String = File(env("SENTO_HOST_DATA", "data")).absolutePath
 
-    // Extension repo index URLs (keiyoushi by default). Comma-separated.
+    // Extension repo index URLs, comma-separated. None ship by default —
+    // the user adds Mihon-compatible repos (Sento pushes its configured
+    // list on connect; this env var is an optional extra for standalone
+    // use).
     val repos: List<String> =
-        env(
-            "SENTO_HOST_REPOS",
-            "https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.min.json",
-        ).split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        env("SENTO_HOST_REPOS", "").split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
     // Optional FlareSolverr for Cloudflare-protected sources.
     val flareSolverrUrl: String = env("SENTO_HOST_FLARESOLVERR_URL", "")

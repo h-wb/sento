@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
@@ -21,6 +22,7 @@ import (
 const (
 	extensionsKey  = "extensions"
 	sourcePrefsKey = "source_prefs"
+	repoListKey    = "extension_repos"
 )
 
 type desiredExtensions struct {
@@ -74,6 +76,83 @@ func (e *ExtensionService) saveDesired(ctx context.Context, packages []string) e
 		return err
 	}
 	return e.store.PutSetting(ctx, extensionsKey, raw)
+}
+
+// repoURLs is the stored extension repo list (none by default — the
+// user adds Mihon-compatible index URLs).
+func (e *ExtensionService) repoURLs(ctx context.Context) []string {
+	var r struct {
+		URLs []string `json:"urls"`
+	}
+	if raw, err := e.store.GetSetting(ctx, repoListKey); err == nil {
+		_ = json.Unmarshal(raw, &r)
+	}
+	return r.URLs
+}
+
+// Repos returns the stored extension repo URLs.
+func (e *ExtensionService) Repos(ctx context.Context) []string {
+	urls := e.repoURLs(ctx)
+	if urls == nil {
+		urls = []string{}
+	}
+	return urls
+}
+
+// SetRepos stores the repo list and pushes it to the host.
+func (e *ExtensionService) SetRepos(ctx context.Context, urls []string) error {
+	mgr := e.manager()
+	if mgr == nil {
+		return fmt.Errorf("the configured source backend does not manage extensions")
+	}
+	cleaned := make([]string, 0, len(urls))
+	for _, u := range urls {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			return fmt.Errorf("repo url must start with http:// or https://: %s", u)
+		}
+		if !slices.Contains(cleaned, u) {
+			cleaned = append(cleaned, u)
+		}
+	}
+	if err := mgr.SetRepos(ctx, cleaned); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(struct {
+		URLs []string `json:"urls"`
+	}{cleaned})
+	if err != nil {
+		return err
+	}
+	return e.store.PutSetting(ctx, repoListKey, raw)
+}
+
+// reconcileRepos pushes the stored repo list when the host differs (a
+// fresh host knows only its env-provided extras).
+func (e *ExtensionService) reconcileRepos(ctx context.Context, mgr sourcehost.ExtensionManager) error {
+	want := e.repoURLs(ctx)
+	if len(want) == 0 {
+		return nil
+	}
+	have, err := mgr.Repos(ctx)
+	if err != nil {
+		return fmt.Errorf("listing host repos: %w", err)
+	}
+	missing := false
+	for _, u := range want {
+		if !slices.Contains(have, u) {
+			missing = true
+			break
+		}
+	}
+	if !missing {
+		return nil
+	}
+	slog.Info("reconciling extension repos onto host", "count", len(want))
+	return mgr.SetRepos(ctx, want)
 }
 
 // List merges the host's extension catalog with the desired flags.
@@ -136,6 +215,10 @@ func (e *ExtensionService) Reconcile(ctx context.Context) error {
 		return nil
 	}
 	var errs []error
+	// Repos first: installs resolve through them.
+	if err := e.reconcileRepos(ctx, mgr); err != nil {
+		errs = append(errs, err)
+	}
 	desired := e.desired(ctx)
 	if len(desired) > 0 {
 		infos, err := mgr.Extensions(ctx)

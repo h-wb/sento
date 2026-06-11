@@ -153,3 +153,9 @@ type SetPreferenceBody struct {
 	Key   string          `json:"key"`
 	Value json.RawMessage `json:"value" tstype:"unknown"`
 }
+
+// ExtensionRepos is the extension repo index URL list (none by default;
+// the user adds Mihon-compatible repos).
+type ExtensionRepos struct {
+	URLs []string `json:"urls"`
+}

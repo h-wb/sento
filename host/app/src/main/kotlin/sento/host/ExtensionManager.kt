@@ -96,7 +96,19 @@ object ExtensionManager {
     private fun jarPath(apkName: String) =
         "${applicationDirs.extensionsRoot}/${apkName.substringBefore(".apk")}.jar"
 
-    // The repo index is ~1500 entries fetched from GitHub raw; cache it
+    // Repo list: the env-provided extras plus whatever Sento pushed
+    // (volatile — Sento reconciles it like extensions and preferences).
+    @Volatile
+    private var pushedRepos: List<String> = emptyList()
+
+    fun repos(): List<String> = (HostConfig.repos + pushedRepos).distinct()
+
+    fun setRepos(urls: List<String>) {
+        pushedRepos = urls
+        availableCache = null
+    }
+
+    // A repo index is ~1500 entries fetched from a raw URL; cache it
     // briefly — Sento's reconcile loop polls regularly.
     @Volatile
     private var availableCache: Pair<Long, List<OnlineExtension>>? = null
@@ -106,7 +118,7 @@ object ExtensionManager {
             if (System.currentTimeMillis() - fetchedAt < 5 * 60_000) return list
         }
         val list =
-            HostConfig.repos.flatMap { repo ->
+            repos().flatMap { repo ->
                 runCatching { ExtensionGithubApi.findExtensions(repo) }
                     .onFailure { logger.warn(it) { "extension repo $repo failed" } }
                     .getOrDefault(emptyList())
