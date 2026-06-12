@@ -136,6 +136,10 @@ export default function SeriesPage() {
           top: 'var(--app-shell-header-height, 56px)',
           zIndex: 20,
           background: 'var(--mantine-color-body)',
+          // Bleed into the AppShell.Main padding on all sides so the bar
+          // sits flush under the header at rest — the same place it pins
+          // when stuck — instead of gaining the gutter as extra height.
+          marginTop: 'calc(var(--mantine-spacing-md) * -1)',
           marginInline: 'calc(var(--mantine-spacing-md) * -1)',
           paddingInline: 'var(--mantine-spacing-md)',
           marginBottom: 'var(--mantine-spacing-md)',
