@@ -112,3 +112,25 @@ func (l *Library) Refresh(ctx context.Context, seriesID int64) error {
 	}
 	return l.store.ReconcileMetadata(ctx, seriesID, series, collections, works)
 }
+
+// PatchChapterLedger applies a partial chapter-ledger update (nil = keep)
+// and returns the updated ledger.
+func (l *Library) PatchChapterLedger(ctx context.Context, seriesID int64, monitored *bool, language *string, cutoffNum *int64) (*store.ChapterLedger, error) {
+	current, err := l.store.GetChapterLedger(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	if monitored != nil {
+		current.Monitored = *monitored
+	}
+	if language != nil {
+		current.Language = *language
+	}
+	if cutoffNum != nil {
+		current.CutoffNum = *cutoffNum
+	}
+	if err := l.store.UpdateChapterLedger(ctx, *current); err != nil {
+		return nil, err
+	}
+	return current, nil
+}

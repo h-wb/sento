@@ -76,27 +76,11 @@ func (s *Server) handleQueueBlocklist(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := s.store.ListQueueItems(r.Context(), false)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if err := s.importer.BlocklistQueueItem(r.Context(), qid); err != nil {
+		writeStoreError(w, err)
 		return
 	}
-	for _, item := range items {
-		if item.ID != qid {
-			continue
-		}
-		if err := s.store.AddBlocklist(r.Context(), item.Protocol, item.ExternalID, "blocked manually"); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		_ = s.store.UpdateQueueItem(r.Context(), item.ID, store.QueueFailed, "blocked manually")
-		_ = s.store.AddDecision(r.Context(), item.SeriesID, store.DecisionBody{
-			Event: "blocklisted", Title: item.Title, Key: item.ExternalID,
-		})
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	writeError(w, http.StatusNotFound, "queue item not found")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- indexer entries ---

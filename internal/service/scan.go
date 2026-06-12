@@ -197,3 +197,22 @@ func (sc *Scanner) LowestOwnedChapter(ctx context.Context, seriesID int64) (int6
 	}
 	return lowest, nil
 }
+
+// ScanAndAdoptCutoff runs ScanSeriesFolder and, when chapter files were
+// linked, lowers the chapter cutoff to just below the lowest owned
+// chapter so owned chapters land in-ledger (spec.md §11.4).
+func (sc *Scanner) ScanAndAdoptCutoff(ctx context.Context, seriesID int64, dir string) (*ScanResult, error) {
+	result, err := sc.ScanSeriesFolder(ctx, seriesID, dir)
+	if err != nil {
+		return nil, err
+	}
+	if result.Linked > 0 {
+		if lowest, err := sc.LowestOwnedChapter(ctx, seriesID); err == nil && lowest > 0 {
+			if cl, err := sc.store.GetChapterLedger(ctx, seriesID); err == nil && lowest-100 < cl.CutoffNum {
+				cl.CutoffNum = lowest - 100
+				_ = sc.store.UpdateChapterLedger(ctx, *cl)
+			}
+		}
+	}
+	return result, nil
+}

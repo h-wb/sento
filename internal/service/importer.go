@@ -376,3 +376,26 @@ func parseTime(s string) time.Time {
 	}
 	return time.Now()
 }
+
+// BlocklistQueueItem manually bans a queue item's release and marks the
+// item failed (typically a failed import whose release is actually bad).
+func (im *Importer) BlocklistQueueItem(ctx context.Context, qid int64) error {
+	items, err := im.store.ListQueueItems(ctx, false)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if item.ID != qid {
+			continue
+		}
+		if err := im.store.AddBlocklist(ctx, item.Protocol, item.ExternalID, "blocked manually"); err != nil {
+			return err
+		}
+		_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueFailed, "blocked manually")
+		_ = im.store.AddDecision(ctx, item.SeriesID, store.DecisionBody{
+			Event: "blocklisted", Title: item.Title, Key: item.ExternalID,
+		})
+		return nil
+	}
+	return store.ErrNotFound
+}

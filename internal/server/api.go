@@ -403,25 +403,12 @@ func (s *Server) handleUpdateChapterLedger(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	current, err := s.store.GetChapterLedger(r.Context(), id)
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
 	var body ChapterLedgerPatch
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if body.Monitored != nil {
-		current.Monitored = *body.Monitored
-	}
-	if body.Language != nil {
-		current.Language = *body.Language
-	}
-	if body.CutoffNum != nil {
-		current.CutoffNum = *body.CutoffNum
-	}
-	if err := s.store.UpdateChapterLedger(r.Context(), *current); err != nil {
+	current, err := s.library.PatchChapterLedger(r.Context(), id, body.Monitored, body.Language, body.CutoffNum)
+	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
@@ -471,20 +458,10 @@ func (s *Server) handleScanSeries(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength > 0 && !decodeBody(w, r, &body) {
 		return
 	}
-	result, err := s.scanner.ScanSeriesFolder(r.Context(), id, body.Path)
+	result, err := s.scanner.ScanAndAdoptCutoff(r.Context(), id, body.Path)
 	if err != nil {
 		writeStoreError(w, err)
 		return
-	}
-	// §11.4: with chapter files present, default the cutoff to the lowest
-	// owned chapter so owned chapters land in-ledger.
-	if result.Linked > 0 {
-		if lowest, err := s.scanner.LowestOwnedChapter(r.Context(), id); err == nil && lowest > 0 {
-			if cl, err := s.store.GetChapterLedger(r.Context(), id); err == nil && lowest-100 < cl.CutoffNum {
-				cl.CutoffNum = lowest - 100
-				_ = s.store.UpdateChapterLedger(r.Context(), *cl)
-			}
-		}
 	}
 	writeJSON(w, http.StatusOK, result)
 }
