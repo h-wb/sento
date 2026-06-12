@@ -814,7 +814,7 @@ function EditionSection({
                 >
                   <Table.Td>
                     <Text size="sm" fw={500}>
-                      v{fmtNum(s.number)}
+                      {fmtNum(s.number)}
                     </Text>
                   </Table.Td>
                   <Table.Td>
@@ -1227,7 +1227,7 @@ function ChaptersTab({
                 <Table.Tr key={c.number} style={{ cursor: 'pointer' }} onClick={() => open()}>
                   <Table.Td>
                     <Text size="sm" fw={500}>
-                      c{fmtNum(c.number)}
+                      {fmtNum(c.number)}
                     </Text>
                   </Table.Td>
                   <Table.Td>
