@@ -35,10 +35,12 @@ import {
   IconDotsVertical,
   IconEye,
   IconEyeOff,
+  IconLayoutGrid,
   IconListSearch,
   IconRefresh,
   IconScissors,
   IconSearch,
+  IconTable,
   IconTrash,
   IconVersions,
   IconX,
@@ -537,6 +539,59 @@ function CutoffBarButton({
   )
 }
 
+// Both ledgers render as a detail table or the compact chip grid; the
+// pick persists per ledger in localStorage.
+type LedgerView = 'table' | 'chips'
+
+function useLedgerView(key: string): [LedgerView, (v: LedgerView) => void] {
+  const [view, setView] = useState<LedgerView>(() =>
+    localStorage.getItem(key) === 'chips' ? 'chips' : 'table',
+  )
+  return [
+    view,
+    (v: LedgerView) => {
+      localStorage.setItem(key, v)
+      setView(v)
+    },
+  ]
+}
+
+function ViewToggle({ value, onChange }: { value: LedgerView; onChange: (v: LedgerView) => void }) {
+  return (
+    <SegmentedControl
+      size="xs"
+      value={value}
+      onChange={(v) => onChange(v as LedgerView)}
+      data={[
+        {
+          value: 'table',
+          label: (
+            <Tooltip label="Table view">
+              <IconTable size={14} style={{ display: 'block' }} />
+            </Tooltip>
+          ),
+        },
+        {
+          value: 'chips',
+          label: (
+            <Tooltip label="Compact grid">
+              <IconLayoutGrid size={14} style={{ display: 'block' }} />
+            </Tooltip>
+          ),
+        },
+      ]}
+    />
+  )
+}
+
+// chipProps maps a slot's state to the badge styling of the compact grid.
+function chipProps(s: { fileIds?: number[]; wanted: boolean }) {
+  return {
+    variant: s.fileIds?.length ? 'filled' : s.wanted ? 'outline' : 'light',
+    color: s.fileIds?.length ? 'green' : s.wanted ? 'yellow' : 'gray',
+  } as const
+}
+
 // StatusBadge renders a slot's state in the ledger tables.
 function StatusBadge({
   slot,
@@ -667,6 +722,7 @@ function VolumesTab({
   // rest (reference data) live in the Editions manager on the action bar.
   const monitoredCols = volumeCollections.filter((c) => c.monitored)
   const fileById = new Map(files.map((f) => [f.id, f]))
+  const [view, setView] = useLedgerView('sento.volumesView')
 
   return (
     <Stack>
@@ -685,6 +741,11 @@ function VolumesTab({
           to pick the one you collect.
         </Text>
       )}
+      {monitoredCols.length > 0 && (
+        <Group justify="flex-end">
+          <ViewToggle value={view} onChange={setView} />
+        </Group>
+      )}
       {monitoredCols.map((c) => (
         <EditionSection
           key={c.id}
@@ -693,6 +754,7 @@ function VolumesTab({
           colSlots={slots?.volumes?.[String(c.id)] ?? []}
           fileById={fileById}
           defaultOpen={monitoredCols.length === 1}
+          view={view}
           busy={busy}
           run={run}
           onSlot={onSlot}
@@ -711,6 +773,7 @@ function EditionSection({
   colSlots,
   fileById,
   defaultOpen,
+  view,
   busy,
   run,
   onSlot,
@@ -720,12 +783,25 @@ function EditionSection({
   colSlots: VolumeSlot[]
   fileById: Map<number, SeriesFile>
   defaultOpen: boolean
+  view: LedgerView
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onSlot: (s: SlotSelection) => void
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const owned = colSlots.filter((s) => (s.fileIds?.length ?? 0) > 0).length
+  const openSlot = (s: VolumeSlot, autoSearch = false) =>
+    onSlot({
+      ledger: 'volume',
+      number: s.number,
+      collectionId: c.id,
+      collectionName: `${c.editionName} · ${c.language} · ${c.medium}`,
+      releaseDate: s.releaseDate,
+      monitored: s.monitored,
+      wanted: s.wanted,
+      fileIds: s.fileIds ?? [],
+      autoSearch,
+    })
 
   return (
     <Card withBorder padding="sm">
@@ -782,35 +858,43 @@ function EditionSection({
         <Progress size="xs" value={(owned / Math.max(colSlots.length, 1)) * 100} mt="xs" />
       )}
       <Collapse expanded={open}>
-        <Table highlightOnHover verticalSpacing={4} mt="xs">
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th w={70}>Volume</Table.Th>
-              <Table.Th w={120}>Released</Table.Th>
-              <Table.Th w={110}>Status</Table.Th>
-              <Table.Th>File</Table.Th>
-              <Table.Th w={70} />
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {colSlots.map((s) => {
-              const open = (autoSearch = false) =>
-                onSlot({
-                  ledger: 'volume',
-                  number: s.number,
-                  collectionId: c.id,
-                  collectionName: `${c.editionName} · ${c.language} · ${c.medium}`,
-                  releaseDate: s.releaseDate,
-                  monitored: s.monitored,
-                  wanted: s.wanted,
-                  fileIds: s.fileIds ?? [],
-                  autoSearch,
-                })
-              return (
+        {view === 'chips' ? (
+          <Group gap={4} mt="sm">
+            {colSlots.map((s) => (
+              <Tooltip
+                key={`${s.number}-${s.countType}`}
+                label={`v${fmtNum(s.number)}${s.releaseDate ? ' · ' + s.releaseDate : ''}${
+                  s.wanted ? ' · wanted' : ''
+                } — click for details`}
+              >
+                <Badge
+                  size="sm"
+                  style={{ cursor: 'pointer' }}
+                  {...chipProps(s)}
+                  onClick={() => openSlot(s)}
+                >
+                  {fmtNum(s.number)}
+                </Badge>
+              </Tooltip>
+            ))}
+          </Group>
+        ) : (
+          <Table highlightOnHover verticalSpacing={4} mt="xs">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th w={70}>Volume</Table.Th>
+                <Table.Th w={120}>Released</Table.Th>
+                <Table.Th w={110}>Status</Table.Th>
+                <Table.Th>File</Table.Th>
+                <Table.Th w={70} />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {colSlots.map((s) => (
                 <Table.Tr
                   key={`${s.number}-${s.countType}`}
                   style={{ cursor: 'pointer' }}
-                  onClick={() => open()}
+                  onClick={() => openSlot(s)}
                 >
                   <Table.Td>
                     <Text size="sm" fw={500}>
@@ -837,14 +921,14 @@ function EditionSection({
                       target={{ collectionId: c.id, number: s.number }}
                       busy={busy}
                       run={run}
-                      onInteractive={() => open(true)}
+                      onInteractive={() => openSlot(s, true)}
                     />
                   </Table.Td>
                 </Table.Tr>
-              )
-            })}
-          </Table.Tbody>
-        </Table>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
         {colSlots.length === 0 && (
           <Text size="sm" c="dimmed" mt="xs">
             No volumes known for this edition.
@@ -1158,26 +1242,37 @@ function ChaptersTab({
   const wanted = chapters.filter((c) => c.wanted)
   const [filter, setFilter] = useState<ChapterFilter>('wanted')
   const [showAll, setShowAll] = useState(false)
+  const [view, setView] = useLedgerView('sento.chaptersView')
   const fileById = new Map(files.map((f) => [f.id, f]))
 
   if (!ledger) return <Text c="dimmed">No chapter ledger.</Text>
 
-  // Newest first: the actionable chapters live at the head of the run.
-  const filtered = chapters
-    .filter((c) => {
-      switch (filter) {
-        case 'wanted':
-          return c.wanted
-        case 'missing':
-          return !c.fileIds?.length
-        case 'owned':
-          return !!c.fileIds?.length
-        default:
-          return true
-      }
+  const openSlot = (c: ChapterSlot, autoSearch = false) =>
+    onSlot({
+      ledger: 'chapter',
+      number: c.number,
+      monitored: c.monitored,
+      wanted: c.wanted,
+      fileIds: c.fileIds ?? [],
+      autoSearch,
     })
-    .reverse()
-  const visible = showAll ? filtered : filtered.slice(0, 200)
+
+  // Newest first in the table; the chip grid reads in story order.
+  const filtered = chapters.filter((c) => {
+    switch (filter) {
+      case 'wanted':
+        return c.wanted
+      case 'missing':
+        return !c.fileIds?.length
+      case 'owned':
+        return !!c.fileIds?.length
+      default:
+        return true
+    }
+  })
+  const tableRows = [...filtered].reverse()
+  const visible = showAll ? tableRows : tableRows.slice(0, 200)
+  const chipSlots = showAll ? filtered : filtered.slice(-200)
 
   return (
     <Stack>
@@ -1186,23 +1281,45 @@ function ChaptersTab({
         <Text size="sm" c="dimmed">
           {owned}/{monitored.length} monitored chapters owned · {wanted.length} wanted
         </Text>
-        <SegmentedControl
-          size="xs"
-          value={filter}
-          onChange={(v) => {
-            setFilter(v as ChapterFilter)
-            setShowAll(false)
-          }}
-          data={[
-            { value: 'wanted', label: `Wanted (${wanted.length})` },
-            { value: 'missing', label: 'Missing' },
-            { value: 'owned', label: 'Owned' },
-            { value: 'all', label: `All (${chapters.length})` },
-          ]}
-        />
+        <Group gap="xs">
+          <SegmentedControl
+            size="xs"
+            value={filter}
+            onChange={(v) => {
+              setFilter(v as ChapterFilter)
+              setShowAll(false)
+            }}
+            data={[
+              { value: 'wanted', label: `Wanted (${wanted.length})` },
+              { value: 'missing', label: 'Missing' },
+              { value: 'owned', label: 'Owned' },
+              { value: 'all', label: `All (${chapters.length})` },
+            ]}
+          />
+          <ViewToggle value={view} onChange={setView} />
+        </Group>
       </Group>
 
-      {visible.length > 0 && (
+      {view === 'chips' && chipSlots.length > 0 && (
+        <Group gap={3}>
+          {chipSlots.map((c) => (
+            <Tooltip
+              key={c.number}
+              label={`c${fmtNum(c.number)}${c.wanted ? ' · wanted' : ''} — click for details`}
+            >
+              <Badge
+                size="xs"
+                style={{ cursor: 'pointer' }}
+                {...chipProps(c)}
+                onClick={() => openSlot(c)}
+              >
+                {fmtNum(c.number)}
+              </Badge>
+            </Tooltip>
+          ))}
+        </Group>
+      )}
+      {view === 'table' && visible.length > 0 && (
         <Table highlightOnHover verticalSpacing={4}>
           <Table.Thead>
             <Table.Tr>
@@ -1213,50 +1330,39 @@ function ChaptersTab({
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {visible.map((c) => {
-              const open = (autoSearch = false) =>
-                onSlot({
-                  ledger: 'chapter',
-                  number: c.number,
-                  monitored: c.monitored,
-                  wanted: c.wanted,
-                  fileIds: c.fileIds ?? [],
-                  autoSearch,
-                })
-              return (
-                <Table.Tr key={c.number} style={{ cursor: 'pointer' }} onClick={() => open()}>
-                  <Table.Td>
-                    <Text size="sm" fw={500}>
-                      {fmtNum(c.number)}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <StatusBadge slot={c} />
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="xs" c="dimmed">
-                      {slotFileText(c.fileIds, fileById)}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <SlotActions
-                      seriesID={seriesID}
-                      ledger="chapter"
-                      target={{ collectionId: 0, number: c.number }}
-                      busy={busy}
-                      run={run}
-                      onInteractive={() => open(true)}
-                    />
-                  </Table.Td>
-                </Table.Tr>
-              )
-            })}
+            {visible.map((c) => (
+              <Table.Tr key={c.number} style={{ cursor: 'pointer' }} onClick={() => openSlot(c)}>
+                <Table.Td>
+                  <Text size="sm" fw={500}>
+                    {fmtNum(c.number)}
+                  </Text>
+                </Table.Td>
+                <Table.Td>
+                  <StatusBadge slot={c} />
+                </Table.Td>
+                <Table.Td>
+                  <Text size="xs" c="dimmed">
+                    {slotFileText(c.fileIds, fileById)}
+                  </Text>
+                </Table.Td>
+                <Table.Td>
+                  <SlotActions
+                    seriesID={seriesID}
+                    ledger="chapter"
+                    target={{ collectionId: 0, number: c.number }}
+                    busy={busy}
+                    run={run}
+                    onInteractive={() => openSlot(c, true)}
+                  />
+                </Table.Td>
+              </Table.Tr>
+            ))}
           </Table.Tbody>
         </Table>
       )}
-      {filtered.length > visible.length && (
+      {!showAll && filtered.length > 200 && (
         <Text size="xs" c="dimmed">
-          Showing {visible.length} of {filtered.length} —{' '}
+          Showing {view === 'chips' ? 'the latest' : ''} 200 of {filtered.length} —{' '}
           <Text
             span
             size="xs"
