@@ -20,19 +20,15 @@ import (
 // on startup, after connection changes, and periodically.
 
 const (
-	extensionsKey  = "extensions"
 	sourcePrefsKey = "source_prefs"
 	repoListKey    = "extension_repos"
 )
 
-type desiredExtensions struct {
-	Packages []string `json:"packages"`
-}
-
 // storedPrefs is sourceID → preference key → value (JSON-typed).
 type storedPrefs map[string]map[string]json.RawMessage
 
-// ExtensionView is one host extension plus Sento's desired flag.
+// ExtensionView is one host extension; Desired means an indexer entry
+// references it (the entry is what makes an extension wanted).
 type ExtensionView struct {
 	sourcehost.ExtensionInfo `tstype:",extends"`
 	Desired                  bool `json:"desired"`
@@ -61,21 +57,26 @@ func (e *ExtensionService) HasManager() bool {
 	return e.host() != nil && e.manager() != nil
 }
 
+// desired is the set of extensions referenced by source indexer entries
+// — entries drive the extension lifecycle.
 func (e *ExtensionService) desired(ctx context.Context) []string {
-	var d desiredExtensions
-	if raw, err := e.store.GetSetting(ctx, extensionsKey); err == nil {
-		_ = json.Unmarshal(raw, &d)
-	}
-	return d.Packages
-}
-
-func (e *ExtensionService) saveDesired(ctx context.Context, packages []string) error {
-	slices.Sort(packages)
-	raw, err := json.Marshal(desiredExtensions{Packages: packages})
+	entries, err := e.store.ListIndexers(ctx)
 	if err != nil {
-		return err
+		return nil
 	}
-	return e.store.PutSetting(ctx, extensionsKey, raw)
+	var pkgs []string
+	for _, ix := range entries {
+		if ix.Protocol != store.IndexerSource {
+			continue
+		}
+		var ss SourceSettings
+		if json.Unmarshal(ix.Settings, &ss) == nil && ss.PkgName != "" &&
+			!slices.Contains(pkgs, ss.PkgName) {
+			pkgs = append(pkgs, ss.PkgName)
+		}
+	}
+	slices.Sort(pkgs)
+	return pkgs
 }
 
 // repoURLs is the stored extension repo list (none by default — the
@@ -176,67 +177,140 @@ func (e *ExtensionService) List(ctx context.Context) ([]ExtensionView, error) {
 	return views, nil
 }
 
-// Install installs (or updates) on the host and records the package as
-// desired so reconciliation survives host replacement.
+// Install installs (or updates) the extension on the host. Persistence
+// of "wanted" comes from the indexer entry that references it.
 func (e *ExtensionService) Install(ctx context.Context, pkgName string) error {
 	mgr := e.manager()
 	if mgr == nil {
 		return fmt.Errorf("the configured source backend does not manage extensions")
 	}
-	if err := mgr.InstallExtension(ctx, pkgName); err != nil {
-		return err
-	}
-	desired := e.desired(ctx)
-	if !slices.Contains(desired, pkgName) {
-		desired = append(desired, pkgName)
-	}
-	return e.saveDesired(ctx, desired)
+	return mgr.InstallExtension(ctx, pkgName)
 }
 
-func (e *ExtensionService) Uninstall(ctx context.Context, pkgName string) error {
+// Sources lists the sources one installed extension provides (the Add
+// Indexer picker).
+func (e *ExtensionService) Sources(ctx context.Context, pkgName string) ([]sourcehost.Source, error) {
 	mgr := e.manager()
 	if mgr == nil {
-		return fmt.Errorf("the configured source backend does not manage extensions")
+		return nil, fmt.Errorf("the configured source backend does not manage extensions")
 	}
-	if err := mgr.UninstallExtension(ctx, pkgName); err != nil {
-		return err
-	}
-	desired := slices.DeleteFunc(e.desired(ctx), func(p string) bool { return p == pkgName })
-	return e.saveDesired(ctx, desired)
+	return mgr.ExtensionSources(ctx, pkgName)
 }
 
-// Reconcile installs every desired package the host is missing, then
-// replays stored source preferences. It never uninstalls extras (manual
-// host-side installs are not Sento's to remove). No-op when the backend
-// has no manager.
+// CleanupExtension uninstalls the package when no indexer entry
+// references it anymore (called after entry deletion). Best-effort.
+func (e *ExtensionService) CleanupExtension(ctx context.Context, pkgName string) {
+	if pkgName == "" || slices.Contains(e.desired(ctx), pkgName) {
+		return
+	}
+	mgr := e.manager()
+	if mgr == nil {
+		return
+	}
+	slog.Info("uninstalling extension (no indexer entry references it)", "pkg", pkgName)
+	if err := mgr.UninstallExtension(ctx, pkgName); err != nil {
+		slog.Warn("extension cleanup failed", "pkg", pkgName, "error", err)
+	}
+}
+
+// BackfillEntryPackages fills the owning extension package on source
+// entries that predate the field (one-time, best-effort): maps each
+// installed extension's sources back to entries.
+func (e *ExtensionService) BackfillEntryPackages(ctx context.Context) {
+	mgr := e.manager()
+	if mgr == nil {
+		return
+	}
+	entries, err := e.store.ListIndexers(ctx)
+	if err != nil {
+		return
+	}
+	var missing []store.Indexer
+	for _, ix := range entries {
+		var ss SourceSettings
+		if ix.Protocol == store.IndexerSource &&
+			json.Unmarshal(ix.Settings, &ss) == nil && ss.SourceID != "" && ss.PkgName == "" {
+			missing = append(missing, ix)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	infos, err := mgr.Extensions(ctx)
+	if err != nil {
+		return
+	}
+	pkgBySource := map[string]string{}
+	for _, info := range infos {
+		if info.InstalledVersion == "" {
+			continue
+		}
+		sources, err := mgr.ExtensionSources(ctx, info.PkgName)
+		if err != nil {
+			continue
+		}
+		for _, src := range sources {
+			pkgBySource[src.ID] = info.PkgName
+		}
+	}
+	for _, ix := range missing {
+		var ss SourceSettings
+		_ = json.Unmarshal(ix.Settings, &ss)
+		ss.PkgName = pkgBySource[ss.SourceID]
+		if ss.PkgName == "" {
+			continue
+		}
+		raw, _ := json.Marshal(ss)
+		ix.Settings = raw
+		if err := e.store.UpdateIndexer(ctx, ix); err == nil {
+			slog.Info("backfilled extension package on indexer entry", "entry", ix.ID, "pkg", ss.PkgName)
+		}
+	}
+}
+
+// Reconcile converges the host onto the indexer entries: repos pushed
+// first (installs resolve through them), missing extensions installed,
+// unreferenced ones removed (abandoned Add-Indexer picks, deleted
+// entries while the host was down), stored source preferences replayed.
+// No-op when the backend has no manager.
 func (e *ExtensionService) Reconcile(ctx context.Context) error {
 	mgr := e.manager()
 	if mgr == nil {
 		return nil
 	}
 	var errs []error
-	// Repos first: installs resolve through them.
 	if err := e.reconcileRepos(ctx, mgr); err != nil {
 		errs = append(errs, err)
 	}
-	desired := e.desired(ctx)
-	if len(desired) > 0 {
-		infos, err := mgr.Extensions(ctx)
-		if err != nil {
-			return fmt.Errorf("listing host extensions: %w", err)
+	desired, complete := e.desiredSet(ctx)
+	infos, err := mgr.Extensions(ctx)
+	if err != nil {
+		return fmt.Errorf("listing host extensions: %w", err)
+	}
+	installed := map[string]bool{}
+	for _, info := range infos {
+		if info.InstalledVersion != "" {
+			installed[info.PkgName] = true
 		}
-		installed := map[string]bool{}
-		for _, info := range infos {
-			if info.InstalledVersion != "" {
-				installed[info.PkgName] = true
-			}
+	}
+	for pkg := range desired {
+		if installed[pkg] {
+			continue
 		}
-		for _, pkg := range desired {
-			if installed[pkg] {
+		slog.Info("reconciling extension onto host", "pkg", pkg)
+		if err := mgr.InstallExtension(ctx, pkg); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", pkg, err))
+		}
+	}
+	// Garbage-collect only when every source entry declares its package —
+	// otherwise an unbackfilled entry's extension would be torn down.
+	if complete {
+		for pkg := range installed {
+			if desired[pkg] {
 				continue
 			}
-			slog.Info("reconciling extension onto host", "pkg", pkg)
-			if err := mgr.InstallExtension(ctx, pkg); err != nil {
+			slog.Info("uninstalling unreferenced extension", "pkg", pkg)
+			if err := mgr.UninstallExtension(ctx, pkg); err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", pkg, err))
 			}
 		}
@@ -245,6 +319,29 @@ func (e *ExtensionService) Reconcile(ctx context.Context) error {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+// desiredSet is the entry-referenced packages as a set, plus whether
+// every source entry declares its package (GC safety).
+func (e *ExtensionService) desiredSet(ctx context.Context) (map[string]bool, bool) {
+	set := map[string]bool{}
+	complete := true
+	entries, err := e.store.ListIndexers(ctx)
+	if err != nil {
+		return set, false
+	}
+	for _, ix := range entries {
+		if ix.Protocol != store.IndexerSource {
+			continue
+		}
+		var ss SourceSettings
+		if json.Unmarshal(ix.Settings, &ss) != nil || ss.PkgName == "" {
+			complete = false
+			continue
+		}
+		set[ss.PkgName] = true
+	}
+	return set, complete
 }
 
 // --- source preferences (ConfigurableSource) ---

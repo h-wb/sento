@@ -71,7 +71,8 @@ export interface ConnectionTest {
 // source: extensions.go
 
 /**
- * ExtensionView is one host extension plus Sento's desired flag.
+ * ExtensionView is one host extension; Desired means an indexer entry
+ * references it (the entry is what makes an extension wanted).
  */
 export interface ExtensionView extends ExtensionInfo {
   desired: boolean;
@@ -107,10 +108,13 @@ export interface TorznabSettings {
   apiKey: string;
 }
 /**
- * SourceSettings configures one extension-source indexer entry.
+ * SourceSettings configures one extension-source indexer entry. PkgName
+ * is the owning extension: the entry is what makes the extension wanted
+ * (reconcile installs it; deleting the last entry uninstalls it).
  */
 export interface SourceSettings {
   sourceId: string;
+  pkgName?: string;
 }
 /**
  * ProwlarrIndexer is one discovery result from the browse assist.

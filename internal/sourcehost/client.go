@@ -114,6 +114,12 @@ func (c *Client) Extensions(ctx context.Context) ([]ExtensionInfo, error) {
 	return out, err
 }
 
+func (c *Client) ExtensionSources(ctx context.Context, pkgName string) ([]Source, error) {
+	var out []Source
+	err := c.get(ctx, "/api/v1/extensions/"+url.PathEscape(pkgName)+"/sources", nil, &out)
+	return out, err
+}
+
 func (c *Client) request(ctx context.Context, method, path string) error {
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, nil)
 	if err != nil {

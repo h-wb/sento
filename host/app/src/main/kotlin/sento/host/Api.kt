@@ -229,6 +229,14 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
         ctx.respond(merged.values.sortedBy { it.pkgName }.toList())
     }
 
+    get("/api/v1/extensions/{pkg}/sources") { ctx ->
+        ctx.respond(
+            ExtensionManager.sourcesFor(ctx.pathParam("pkg")).map {
+                SourceDto(it.id.toString(), it.name, it.lang, isNsfw(it))
+            },
+        )
+    }
+
     post("/api/v1/extensions/{pkg}") { ctx ->
         val record = runBlocking { ExtensionManager.install(ctx.pathParam("pkg")) }
         ctx.status(HttpStatus.CREATED)

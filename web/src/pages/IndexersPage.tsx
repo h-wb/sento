@@ -20,7 +20,13 @@ import {
 } from '@mantine/core'
 import { IconCopy, IconPencil, IconPlugConnected, IconSettings, IconTrash } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type IndexerBody, type IndexerView, type ProwlarrIndexer } from '../api'
+import {
+  api,
+  type IndexerBody,
+  type IndexerView,
+  type ProwlarrIndexer,
+  type Source,
+} from '../api'
 import SourcePrefsModal from '../components/SourcePrefsModal'
 import { notify, usePageTitle } from '../ui'
 
@@ -231,6 +237,7 @@ export default function IndexersPage() {
 }
 
 type TorznabForm = { url: string; apiKey: string }
+type SourceForm = { sourceId: string; pkgName?: string }
 
 function IndexerModal({
   initial,
@@ -244,20 +251,43 @@ function IndexerModal({
   onSaved: () => void
 }) {
   const isEdit = !!initial && !asCopy
-  const init = initial?.settings as Partial<TorznabForm & { sourceId: string }> | undefined
+  const init = initial?.settings as Partial<TorznabForm & SourceForm> | undefined
   const [protocol, setProtocol] = useState<'torznab' | 'source'>(initial?.protocol ?? 'torznab')
   const [name, setName] = useState(asCopy ? `${initial?.name} (copy)` : (initial?.name ?? ''))
   const [torznab, setTorznab] = useState<TorznabForm>({
     url: init?.url ?? '',
     apiKey: init?.apiKey ?? '',
   })
-  const [sourceId, setSourceId] = useState(init?.sourceId ?? '')
+  const [source, setSource] = useState<SourceForm>({
+    sourceId: init?.sourceId ?? '',
+    pkgName: init?.pkgName,
+  })
 
-  // Source picker: the host's installed sources.
-  const sources = useQuery({
-    queryKey: ['host-sources'],
-    queryFn: api.sources,
-    enabled: protocol === 'source',
+  // Extension catalog: the source flow starts from the extension — adding
+  // its source as an indexer is what installs it.
+  const extensions = useQuery({
+    queryKey: ['extensions'],
+    queryFn: api.extensions,
+    enabled: protocol === 'source' && !isEdit,
+  })
+  const [pkg, setPkg] = useState(init?.pkgName ?? '')
+  const [extSources, setExtSources] = useState<Source[] | null>(null)
+  const pickedExt = (extensions.data ?? []).find((e) => e.pkgName === pkg)
+
+  const loadSources = useMutation({
+    mutationFn: async (p: string) => {
+      const ext = (extensions.data ?? []).find((e) => e.pkgName === p)
+      if (ext && !ext.installedVersion) await api.installExtension(p)
+      return api.extensionSources(p)
+    },
+    onSuccess: (srcs, p) => {
+      setExtSources(srcs)
+      if (srcs.length === 1) {
+        setSource({ sourceId: srcs[0].id, pkgName: p })
+        if (!name) setName(`${srcs[0].name} (${srcs[0].lang})`)
+      }
+    },
+    onError: notify.err,
   })
 
   // Prowlarr browse assist for torznab entries.
@@ -278,7 +308,7 @@ function IndexerModal({
         useVolumes: initial?.useVolumes ?? true,
         useChapters: initial?.useChapters ?? true,
         priority: initial?.priority ?? 0,
-        settings: protocol === 'torznab' ? torznab : { sourceId },
+        settings: protocol === 'torznab' ? torznab : source,
       }
       return isEdit ? api.updateIndexer(initial.id, body) : api.addIndexer(body)
     },
@@ -385,31 +415,77 @@ function IndexerModal({
           </>
         )}
 
-        {protocol === 'source' && (
-          <Select
-            label="Source"
-            description="Sources come from the extensions installed on the host (Sources page)"
-            placeholder={sources.isPending ? 'Loading…' : 'Pick a source'}
-            data={(sources.data ?? []).map((s) => ({
-              value: s.id,
-              label: `${s.name} (${s.lang})`,
-            }))}
-            value={sourceId || null}
-            searchable
-            onChange={(v) => {
-              if (!v) return
-              setSourceId(v)
-              const src = (sources.data ?? []).find((s) => s.id === v)
-              if (!name && src) setName(`${src.name} (${src.lang})`)
-            }}
-          />
+        {protocol === 'source' && isEdit && (
+          <Text size="xs" c="dimmed">
+            {initial?.summary} — the extension/source of an entry cannot change; add a new
+            indexer instead.
+          </Text>
+        )}
+        {protocol === 'source' && !isEdit && (
+          <>
+            <Select
+              label="Extension"
+              description={
+                extensions.isPending
+                  ? 'Loading the extension catalog…'
+                  : `${(extensions.data ?? []).length} extensions from your repos — picking one installs it`
+              }
+              placeholder="Search extensions…"
+              data={(extensions.data ?? []).map((e) => ({
+                value: e.pkgName,
+                label: `${e.name} (${e.lang})${e.nsfw ? ' · nsfw' : ''}${e.installedVersion ? ' · installed' : ''}`,
+              }))}
+              value={pkg || null}
+              searchable
+              limit={30}
+              nothingFoundMessage="No extension matches — check the repos on the Sources page"
+              onChange={(v) => {
+                if (!v) return
+                setPkg(v)
+                setExtSources(null)
+                setSource({ sourceId: '' })
+                loadSources.mutate(v)
+              }}
+            />
+            {loadSources.isPending && (
+              <Text size="xs" c="dimmed">
+                {pickedExt && !pickedExt.installedVersion
+                  ? `Installing ${pickedExt.name} on the host…`
+                  : 'Loading sources…'}
+              </Text>
+            )}
+            {extSources && extSources.length > 1 && (
+              <Select
+                label="Source"
+                description="This extension provides several sources (languages/mirrors)"
+                data={extSources.map((s) => ({ value: s.id, label: `${s.name} (${s.lang})` }))}
+                value={source.sourceId || null}
+                searchable
+                onChange={(v) => {
+                  if (!v) return
+                  const src = extSources.find((s) => s.id === v)
+                  setSource({ sourceId: v, pkgName: pkg })
+                  if (!name && src) setName(`${src.name} (${src.lang})`)
+                }}
+              />
+            )}
+            {extSources && extSources.length === 1 && (
+              <Text size="xs" c="dimmed">
+                Source: {extSources[0].name} ({extSources[0].lang})
+              </Text>
+            )}
+          </>
         )}
 
         <Group justify="flex-end" mt="xs">
           <Button variant="default" onClick={onClose}>
             Cancel
           </Button>
-          <Button loading={save.isPending} disabled={!name.trim()} onClick={() => save.mutate()}>
+          <Button
+            loading={save.isPending}
+            disabled={!name.trim() || (protocol === 'source' && !isEdit && !source.sourceId)}
+            onClick={() => save.mutate()}
+          >
             {isEdit ? 'Save' : 'Add'}
           </Button>
         </Group>

@@ -55,6 +55,8 @@ type ExtensionInfo struct {
 // the desired list it stores.
 type ExtensionManager interface {
 	Extensions(ctx context.Context) ([]ExtensionInfo, error)
+	// ExtensionSources lists the sources one installed extension provides.
+	ExtensionSources(ctx context.Context, pkgName string) ([]Source, error)
 	// InstallExtension installs or updates to the latest repo version.
 	InstallExtension(ctx context.Context, pkgName string) error
 	UninstallExtension(ctx context.Context, pkgName string) error

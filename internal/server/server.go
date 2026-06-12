@@ -76,6 +76,7 @@ func (s *Server) reconcileExtensions() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
+		s.extensions.BackfillEntryPackages(ctx)
 		if err := s.extensions.Reconcile(ctx); err != nil {
 			slog.Warn("extension reconcile failed", "error", err)
 		}

@@ -196,6 +196,14 @@ object ExtensionManager {
         persist(installed - pkgName)
     }
 
+    // sourcesFor lists the sources one installed extension provides (the
+    // Add Indexer flow picks among them).
+    fun sourcesFor(pkgName: String): List<CatalogueSource> {
+        val ext = installed[pkgName] ?: return emptyList()
+        return runCatching { sourcesOf(jarPath(ext.apkName), ext.className) }
+            .getOrDefault(emptyList())
+    }
+
     private fun registerSources(
         jarFilePath: String,
         className: String,

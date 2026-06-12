@@ -34,10 +34,10 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Put("/settings/connections", s.handlePutConnections)
 	r.Post("/settings/connections/test", s.handleTestConnections)
 	r.Get("/extensions", s.handleListExtensions)
+	r.Get("/extensions/{pkg}/sources", s.handleExtensionSources)
 	r.Get("/extensions/repos", s.handleGetExtensionRepos)
 	r.Put("/extensions/repos", s.handleSetExtensionRepos)
 	r.Post("/extensions/{pkg}", s.handleInstallExtension)
-	r.Delete("/extensions/{pkg}", s.handleUninstallExtension)
 	r.Get("/sources/{sid}/preferences", s.handleSourcePreferences)
 	r.Put("/sources/{sid}/preferences", s.handleSetSourcePreference)
 	s.mountSourceAPI(r)
@@ -527,12 +527,13 @@ func (s *Server) handleInstallExtension(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleUninstallExtension(w http.ResponseWriter, r *http.Request) {
-	if err := s.extensions.Uninstall(r.Context(), chi.URLParam(r, "pkg")); err != nil {
+func (s *Server) handleExtensionSources(w http.ResponseWriter, r *http.Request) {
+	sources, err := s.extensions.Sources(r.Context(), chi.URLParam(r, "pkg"))
+	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	respondList(w, sources, nil)
 }
 
 func (s *Server) handleGetExtensionRepos(w http.ResponseWriter, r *http.Request) {

@@ -159,8 +159,8 @@ export const api = {
     }),
   installExtension: (pkg: string) =>
     request<void>(`/extensions/${encodeURIComponent(pkg)}`, { method: 'POST' }),
-  uninstallExtension: (pkg: string) =>
-    request<void>(`/extensions/${encodeURIComponent(pkg)}`, { method: 'DELETE' }),
+  extensionSources: (pkg: string) =>
+    request<Source[]>(`/extensions/${encodeURIComponent(pkg)}/sources`),
   saveConnections: (c: ConnectionSettings) =>
     request<ConnectionSettings>('/settings/connections', { method: 'PUT', body: JSON.stringify(c) }),
   testConnections: (c: ConnectionSettings) =>

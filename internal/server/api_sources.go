@@ -204,10 +204,20 @@ func (s *Server) handleDeleteIndexer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Source entries drive the extension lifecycle: deleting the last
+	// entry of an extension uninstalls it from the host.
+	var pkg string
+	if ix, err := s.store.GetIndexer(r.Context(), iid); err == nil && ix.Protocol == store.IndexerSource {
+		var ss service.SourceSettings
+		if json.Unmarshal(ix.Settings, &ss) == nil {
+			pkg = ss.PkgName
+		}
+	}
 	if err := s.store.DeleteIndexer(r.Context(), iid); err != nil {
 		writeStoreError(w, err)
 		return
 	}
+	s.extensions.CleanupExtension(r.Context(), pkg)
 	w.WriteHeader(http.StatusNoContent)
 }
 

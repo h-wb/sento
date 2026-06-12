@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/h-wb/sento/internal/sourcehost"
+	"github.com/h-wb/sento/internal/store"
 )
 
 // fakeExtHost implements Host + ExtensionManager: a catalog of available
@@ -54,6 +55,10 @@ func (f *fakeExtHost) UninstallExtension(_ context.Context, pkg string) error {
 	return nil
 }
 
+func (f *fakeExtHost) ExtensionSources(_ context.Context, pkg string) ([]sourcehost.Source, error) {
+	return []sourcehost.Source{{ID: "src-" + pkg, Name: pkg}}, nil
+}
+
 func (f *fakeExtHost) Repos(context.Context) ([]string, error) { return f.repos, nil }
 
 func (f *fakeExtHost) SetRepos(_ context.Context, urls []string) error {
@@ -61,7 +66,22 @@ func (f *fakeExtHost) SetRepos(_ context.Context, urls []string) error {
 	return nil
 }
 
-// Sento owns the desired list; a wiped host converges back to it.
+// addSourceEntry registers a source indexer entry referencing a package.
+func addSourceEntry(t *testing.T, st *store.Store, name, sourceID, pkg string) int64 {
+	t.Helper()
+	settings, _ := json.Marshal(SourceSettings{SourceID: sourceID, PkgName: pkg})
+	id, err := st.AddIndexer(context.Background(), store.Indexer{
+		Name: name, Protocol: store.IndexerSource,
+		Enabled: true, UseVolumes: true, UseChapters: true, Settings: settings,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// Indexer entries drive the extension lifecycle; a wiped host converges
+// back to whatever the entries reference.
 func TestExtensionReconcile(t *testing.T) {
 	_, st := setup(t)
 	ctx := context.Background()
@@ -84,13 +104,8 @@ func TestExtensionReconcile(t *testing.T) {
 		t.Fatal("want validation error for scheme-less repo url")
 	}
 
-	// Installing records desire and installs on the host.
-	if err := svc.Install(ctx, "ext.a"); err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.Install(ctx, "ext.b"); err != nil {
-		t.Fatal(err)
-	}
+	// An indexer entry referencing the extension makes it desired.
+	addSourceEntry(t, st, "A", "src-ext.a", "ext.a")
 	views, err := svc.List(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -101,17 +116,12 @@ func TestExtensionReconcile(t *testing.T) {
 			desired++
 		}
 	}
-	if desired != 2 {
-		t.Fatalf("want 2 desired, got %+v", views)
-	}
-
-	// Uninstall removes the desire too.
-	if err := svc.Uninstall(ctx, "ext.b"); err != nil {
-		t.Fatal(err)
+	if desired != 1 {
+		t.Fatalf("want 1 desired, got %+v", views)
 	}
 
 	// The host gets wiped (fresh pod); reconcile restores the repo list
-	// first, then reinstalls only what is desired and missing.
+	// first, then reinstalls only what entries reference.
 	host.installed = map[string]bool{}
 	host.installs = nil
 	host.repos = nil
@@ -130,6 +140,30 @@ func TestExtensionReconcile(t *testing.T) {
 	}
 	if len(host.installs) != 1 {
 		t.Fatalf("reconcile not idempotent: %v", host.installs)
+	}
+
+	// Garbage collection: an installed extension no entry references
+	// (abandoned Add-Indexer pick) is removed on the next reconcile.
+	host.installed["ext.c"] = true
+	if err := svc.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if host.installed["ext.c"] {
+		t.Fatal("reconcile should uninstall unreferenced extensions")
+	}
+	if !host.installed["ext.a"] {
+		t.Fatal("reconcile must keep referenced extensions")
+	}
+
+	// CleanupExtension uninstalls only when no entry references the pkg.
+	svc.CleanupExtension(ctx, "ext.a")
+	if !host.installed["ext.a"] {
+		t.Fatal("cleanup must not uninstall a referenced extension")
+	}
+	host.installed["ext.b"] = true
+	svc.CleanupExtension(ctx, "ext.b")
+	if host.installed["ext.b"] {
+		t.Fatal("cleanup should uninstall an unreferenced extension")
 	}
 }
 

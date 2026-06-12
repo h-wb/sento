@@ -21,9 +21,12 @@ type TorznabSettings struct {
 	APIKey string `json:"apiKey"`
 }
 
-// SourceSettings configures one extension-source indexer entry.
+// SourceSettings configures one extension-source indexer entry. PkgName
+// is the owning extension: the entry is what makes the extension wanted
+// (reconcile installs it; deleting the last entry uninstalls it).
 type SourceSettings struct {
 	SourceID string `json:"sourceId"`
+	PkgName  string `json:"pkgName,omitempty"`
 }
 
 func parseEntry(ix store.Indexer) (provider.IndexerEntry, error) {
