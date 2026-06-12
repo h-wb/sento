@@ -105,8 +105,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(msg)
   }
-  if (res.status === 204) return undefined as T
-  return res.json()
+  // Empty bodies (204, 202, …) are valid void responses.
+  const text = await res.text()
+  return text ? (JSON.parse(text) as T) : (undefined as T)
 }
 
 export const api = {
