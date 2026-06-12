@@ -23,7 +23,7 @@ func TestCustomEditions(t *testing.T) {
 	lib, st := setup(t)
 	ctx := context.Background()
 
-	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, MonitorAll: true})
+	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "all"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -24,10 +24,9 @@ type AddSeriesRequest struct {
 	MangaBakaID int64 `json:"mangabakaId"`
 	// Monitor is the edition-monitoring mode: "" or "default" monitors the
 	// default edition (see defaultEditionID), "all" every volume edition,
-	// "none" nothing. MonitorAll/MonitorIDs override it when set.
+	// "none" nothing. MonitorIDs overrides it with explicit picks.
 	Monitor       string   `json:"monitor"`
-	MonitorAll    bool     `json:"monitorAll"`    // monitor all volume-type collections
-	MonitorIDs    []string `json:"monitorIds"`    // or explicit provider collection ids
+	MonitorIDs    []string `json:"monitorIds"`    // explicit provider collection ids
 	ChapterLang   string   `json:"chapterLang"`   // default "en"
 	ChapterCutoff int64    `json:"chapterCutoff"` // hundredths; 0 = latest at add (D6)
 }
@@ -46,7 +45,7 @@ func (l *Library) AddSeries(ctx context.Context, req AddSeriesRequest) (int64, e
 		return 0, fmt.Errorf("fetching works: %w", err)
 	}
 
-	monitorAll := req.MonitorAll || req.Monitor == "all"
+	monitorAll := req.Monitor == "all"
 	monitorIDs := req.MonitorIDs
 	if !monitorAll && len(monitorIDs) == 0 && req.Monitor != "none" {
 		if id := defaultEditionID(collections, req.ChapterLang); id != "" {

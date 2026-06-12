@@ -141,11 +141,10 @@ export interface AddSeriesRequest {
   /**
    * Monitor is the edition-monitoring mode: "" or "default" monitors the
    * default edition (see defaultEditionID), "all" every volume edition,
-   * "none" nothing. MonitorAll/MonitorIDs override it when set.
+   * "none" nothing. MonitorIDs overrides it with explicit picks.
    */
   monitor: string;
-  monitorAll: boolean; // monitor all volume-type collections
-  monitorIds: string[]; // or explicit provider collection ids
+  monitorIds: string[]; // explicit provider collection ids
   chapterLang: string; // default "en"
   chapterCutoff: number /* int64 */; // hundredths; 0 = latest at add (D6)
 }
@@ -204,11 +203,12 @@ export interface SearchService {
 }
 /**
  * TargetSlot restricts an interactive search to one slot (collectionID 0 =
- * chapter ledger).
+ * chapter ledger). Number 0 widens it to every wanted slot of the
+ * collection — the per-edition search, where packs shine.
  */
 export interface TargetSlot {
   collectionId: number /* int64 */;
-  number: number /* int64 */; // hundredths
+  number: number /* int64 */; // hundredths; 0 = whole collection
 }
 /**
  * ReleaseCandidate is one candidate run through the funnel, for either

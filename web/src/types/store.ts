@@ -85,17 +85,6 @@ export interface Indexer {
   priority: number /* int */;
   settings: any;
 }
-/**
- * LegacySiteSetting is a row of the pre-entry site_settings table.
- */
-export interface LegacySiteSetting {
-  Provider: string;
-  SiteID: string;
-  Enabled: boolean;
-  UseVolumes: boolean;
-  UseChapters: boolean;
-  Priority: number /* int */;
-}
 
 //////////
 // source: queue.go

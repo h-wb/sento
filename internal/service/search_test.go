@@ -69,7 +69,7 @@ func torrentRegistry(st *store.Store) *provider.Registry {
 func TestUnifiedVolumeFunnel(t *testing.T) {
 	lib, st := setup(t)
 	ctx := context.Background()
-	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, MonitorAll: true})
+	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "all"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestUnifiedVolumeFunnel(t *testing.T) {
 func TestSiteConfigFiltering(t *testing.T) {
 	lib, st := setup(t)
 	ctx := context.Background()
-	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, MonitorAll: true})
+	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "all"})
 	if err != nil {
 		t.Fatal(err)
 	}

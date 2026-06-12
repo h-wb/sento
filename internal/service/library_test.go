@@ -148,7 +148,7 @@ func TestAddSeriesAndSlots(t *testing.T) {
 	lib, st := setup(t)
 	ctx := context.Background()
 
-	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, MonitorAll: true})
+	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "all"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestAddSeriesAndSlots(t *testing.T) {
 	}
 	for _, c := range cols {
 		if !c.Monitored {
-			t.Errorf("collection %s should be monitored (MonitorAll)", c.EditionName)
+			t.Errorf("collection %s should be monitored (monitor: all)", c.EditionName)
 		}
 	}
 
@@ -256,7 +256,7 @@ func TestRefreshReconciliation(t *testing.T) {
 	lib, st := setup(t)
 	ctx := context.Background()
 
-	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, MonitorAll: true})
+	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "all"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -67,8 +67,6 @@ func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 	s.sites = service.NewSiteService(st, s.registry)
 	s.importer = service.NewImporter(st, s.registry, cfg.Library.Path, cfg.Library.PathMappings)
 	s.extensions = service.NewExtensionService(st, s.conns.Host)
-	// One-time conversion of the pre-entry indexer world.
-	service.MigrateIndexers(context.Background(), st, s.conns.Load(context.Background()), s.conns.Host())
 	s.reconcileExtensions()
 	return s
 }
@@ -83,7 +81,6 @@ func (s *Server) reconcileExtensions() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		s.extensions.BackfillEntryPackages(ctx)
 		if err := s.extensions.Reconcile(ctx); err != nil {
 			slog.Warn("extension reconcile failed", "error", err)
 		}

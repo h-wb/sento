@@ -213,61 +213,6 @@ func (e *ExtensionService) CleanupExtension(ctx context.Context, pkgName string)
 	}
 }
 
-// BackfillEntryPackages fills the owning extension package on source
-// entries that predate the field (one-time, best-effort): maps each
-// installed extension's sources back to entries.
-func (e *ExtensionService) BackfillEntryPackages(ctx context.Context) {
-	mgr := e.manager()
-	if mgr == nil {
-		return
-	}
-	entries, err := e.store.ListIndexers(ctx)
-	if err != nil {
-		return
-	}
-	var missing []store.Indexer
-	for _, ix := range entries {
-		var ss SourceSettings
-		if ix.Protocol == store.IndexerSource &&
-			json.Unmarshal(ix.Settings, &ss) == nil && ss.SourceID != "" && ss.PkgName == "" {
-			missing = append(missing, ix)
-		}
-	}
-	if len(missing) == 0 {
-		return
-	}
-	infos, err := mgr.Extensions(ctx)
-	if err != nil {
-		return
-	}
-	pkgBySource := map[string]string{}
-	for _, info := range infos {
-		if info.InstalledVersion == "" {
-			continue
-		}
-		sources, err := mgr.ExtensionSources(ctx, info.PkgName)
-		if err != nil {
-			continue
-		}
-		for _, src := range sources {
-			pkgBySource[src.ID] = info.PkgName
-		}
-	}
-	for _, ix := range missing {
-		var ss SourceSettings
-		_ = json.Unmarshal(ix.Settings, &ss)
-		ss.PkgName = pkgBySource[ss.SourceID]
-		if ss.PkgName == "" {
-			continue
-		}
-		raw, _ := json.Marshal(ss)
-		ix.Settings = raw
-		if err := e.store.UpdateIndexer(ctx, ix); err == nil {
-			slog.Info("backfilled extension package on indexer entry", "entry", ix.ID, "pkg", ss.PkgName)
-		}
-	}
-}
-
 // Reconcile converges the host onto the indexer entries: repos pushed
 // first (installs resolve through them), missing extensions installed,
 // unreferenced ones removed (abandoned Add-Indexer picks, deleted

@@ -14,7 +14,7 @@ import (
 func TestScanSeriesFolder(t *testing.T) {
 	lib, st := setup(t)
 	ctx := context.Background()
-	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, MonitorAll: true})
+	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "all"})
 	if err != nil {
 		t.Fatal(err)
 	}

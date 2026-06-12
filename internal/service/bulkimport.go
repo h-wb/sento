@@ -95,7 +95,7 @@ func cleanFolderName(name string) string {
 // ImportFolder adds a series bound to an existing folder: metadata in,
 // path set, files linked in place (non-destructive).
 func (l *Library) ImportFolder(ctx context.Context, scanner *Scanner, dir string, mangabakaID int64) (int64, *ScanResult, error) {
-	id, err := l.AddSeries(ctx, AddSeriesRequest{MangaBakaID: mangabakaID, MonitorAll: true})
+	id, err := l.AddSeries(ctx, AddSeriesRequest{MangaBakaID: mangabakaID, Monitor: "all"})
 	if err != nil {
 		return 0, nil, err
 	}
