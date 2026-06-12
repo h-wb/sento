@@ -728,7 +728,7 @@ function EditionSection({
   const owned = colSlots.filter((s) => (s.fileIds?.length ?? 0) > 0).length
 
   return (
-    <Card withBorder padding="sm" maw={760}>
+    <Card withBorder padding="sm">
       <Group
         justify="space-between"
         wrap="nowrap"
@@ -1203,7 +1203,7 @@ function ChaptersTab({
       </Group>
 
       {visible.length > 0 && (
-        <Table highlightOnHover verticalSpacing={4} maw={760}>
+        <Table highlightOnHover verticalSpacing={4}>
           <Table.Thead>
             <Table.Tr>
               <Table.Th w={90}>Chapter</Table.Th>
@@ -1319,7 +1319,7 @@ function IndexersTab({
         match — sites often list a series several times); all active entries are searched and the
         best release wins per slot. Disable or remove an entry if it produces garbage.
       </Text>
-      <Table maw={860}>
+      <Table>
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Site</Table.Th>
