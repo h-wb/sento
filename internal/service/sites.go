@@ -50,9 +50,9 @@ type siteState struct {
 
 // reachability asks the providers which entries answer right now (source
 // entries go stale when their extension is uninstalled).
-func (s *SiteService) reachability(ctx context.Context) map[string]bool {
+func reachability(ctx context.Context, registry *provider.Registry) map[string]bool {
 	out := map[string]bool{}
-	for _, p := range s.registry.All() {
+	for _, p := range registry.All() {
 		sites, err := p.Sites(ctx)
 		if err != nil {
 			continue
@@ -64,7 +64,7 @@ func (s *SiteService) reachability(ctx context.Context) map[string]bool {
 	return out
 }
 
-func (s *SiteService) providerFor(protocol string) string {
+func providerIDFor(registry *provider.Registry, protocol string) string {
 	var proto string
 	switch protocol {
 	case store.IndexerTorznab:
@@ -72,30 +72,31 @@ func (s *SiteService) providerFor(protocol string) string {
 	case store.IndexerSource:
 		proto = provider.ProtocolSource
 	}
-	if p := s.registry.ForProtocol(proto); p != nil {
+	if p := registry.ForProtocol(proto); p != nil {
 		return p.ID()
 	}
 	return ""
 }
 
-// liveSites resolves all entries with reachability.
-func (s *SiteService) liveSites(ctx context.Context) ([]siteState, error) {
-	entries, err := s.store.ListIndexers(ctx)
+// liveSiteStates resolves every configured entry against the live
+// providers — the one source of truth for entry state, shared by the
+// Indexers views (SiteService) and the search pipeline (SearchService).
+func liveSiteStates(ctx context.Context, st *store.Store, registry *provider.Registry) ([]siteState, error) {
+	entries, err := st.ListIndexers(ctx)
 	if err != nil {
 		return nil, err
 	}
-	reach := s.reachability(ctx)
+	reach := reachability(ctx, registry)
 	out := make([]siteState, 0, len(entries))
 	for _, ix := range entries {
-		st := siteState{
-			providerID: s.providerFor(ix.Protocol),
+		out = append(out, siteState{
+			providerID: providerIDFor(registry, ix.Protocol),
 			entryID:    entryID(ix.ID),
 			name:       ix.Name,
 			protocol:   protocolOf(ix),
 			reachable:  reach[entryID(ix.ID)],
 			eff:        ix,
-		}
-		out = append(out, st)
+		})
 	}
 	return out, nil
 }
@@ -132,7 +133,7 @@ func (s *SiteService) List(ctx context.Context) ([]IndexerView, error) {
 	if err != nil {
 		return nil, err
 	}
-	reach := s.reachability(ctx)
+	reach := reachability(ctx, s.registry)
 	out := make([]IndexerView, 0, len(entries))
 	for _, ix := range entries {
 		out = append(out, IndexerView{
