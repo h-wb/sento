@@ -150,10 +150,13 @@ export const api = {
   extensionRepos: () => request<ExtensionRepos>('/extensions/repos'),
   setExtensionRepos: (urls: string[]) =>
     request<ExtensionRepos>('/extensions/repos', { method: 'PUT', body: JSON.stringify({ urls }) }),
-  sourcePreferences: (sid: string) =>
-    request<Preference[]>(`/sources/${encodeURIComponent(sid)}/preferences`),
-  setSourcePreference: (sid: string, key: string, value: unknown) =>
-    request<void>(`/sources/${encodeURIComponent(sid)}/preferences`, {
+  // Preferences are addressed by host source id (settings.sourceId of a
+  // source entry), not entry id: the indexer modal edits them before the
+  // entry exists.
+  sourcePreferences: (sourceId: string) =>
+    request<Preference[]>(`/extensions/sources/${encodeURIComponent(sourceId)}/preferences`),
+  setSourcePreference: (sourceId: string, key: string, value: unknown) =>
+    request<void>(`/extensions/sources/${encodeURIComponent(sourceId)}/preferences`, {
       method: 'PUT',
       body: JSON.stringify({ key, value }),
     }),

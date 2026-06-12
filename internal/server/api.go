@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -38,8 +37,8 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/extensions/repos", s.handleGetExtensionRepos)
 	r.Put("/extensions/repos", s.handleSetExtensionRepos)
 	r.Post("/extensions/{pkg}", s.handleInstallExtension)
-	r.Get("/sources/{sid}/preferences", s.handleSourcePreferences)
-	r.Put("/sources/{sid}/preferences", s.handleSetSourcePreference)
+	r.Get("/extensions/sources/{sid}/preferences", s.handleSourcePreferences)
+	r.Put("/extensions/sources/{sid}/preferences", s.handleSetSourcePreference)
 	s.mountSourceAPI(r)
 
 	r.Route("/series", func(r chi.Router) {
@@ -552,30 +551,11 @@ func (s *Server) handleSetExtensionRepos(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, ExtensionRepos{URLs: s.extensions.Repos(r.Context())})
 }
 
-// sourceIDForEntry maps a source indexer entry id to the host source id.
-func (s *Server) sourceIDForEntry(r *http.Request) (string, error) {
-	iid, err := strconv.ParseInt(chi.URLParam(r, "sid"), 10, 64)
-	if err != nil {
-		return "", fmt.Errorf("invalid indexer id")
-	}
-	ix, err := s.store.GetIndexer(r.Context(), iid)
-	if err != nil {
-		return "", err
-	}
-	var ss service.SourceSettings
-	if err := json.Unmarshal(ix.Settings, &ss); err != nil || ss.SourceID == "" {
-		return "", fmt.Errorf("indexer is not an extension source")
-	}
-	return ss.SourceID, nil
-}
-
+// Preference routes address the host source id directly (not the entry
+// id): the indexer modal edits prefs before the entry exists — the
+// extension is already installed by the pick.
 func (s *Server) handleSourcePreferences(w http.ResponseWriter, r *http.Request) {
-	sourceID, err := s.sourceIDForEntry(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	prefs, err := s.extensions.Preferences(r.Context(), sourceID)
+	prefs, err := s.extensions.Preferences(r.Context(), chi.URLParam(r, "sid"))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -592,12 +572,7 @@ func (s *Server) handleSetSourcePreference(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "key is required")
 		return
 	}
-	sourceID, err := s.sourceIDForEntry(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := s.extensions.SetPreference(r.Context(), sourceID, body.Key, body.Value); err != nil {
+	if err := s.extensions.SetPreference(r.Context(), chi.URLParam(r, "sid"), body.Key, body.Value); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}

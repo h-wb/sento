@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   ActionIcon,
   Alert,
   Badge,
   Button,
+  Divider,
   Group,
   Modal,
   NumberInput,
@@ -18,7 +19,7 @@ import {
   Title,
   Tooltip,
 } from '@mantine/core'
-import { IconCopy, IconPencil, IconPlugConnected, IconSettings, IconTrash } from '@tabler/icons-react'
+import { IconCopy, IconPencil, IconPlugConnected, IconTrash } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   api,
@@ -27,7 +28,7 @@ import {
   type ProwlarrIndexer,
   type Source,
 } from '../api'
-import SourcePrefsModal from '../components/SourcePrefsModal'
+import SourcePrefsFields from '../components/SourcePrefsFields'
 import { notify, usePageTitle } from '../ui'
 
 // Indexers are explicit entries (Sonarr's model): every searchable thing
@@ -39,7 +40,6 @@ export default function IndexersPage() {
   const { data: indexers, error } = useQuery({ queryKey: ['indexers'], queryFn: api.indexers })
   const [editing, setEditing] = useState<IndexerView | 'new' | null>(null)
   const [duplicating, setDuplicating] = useState<IndexerView | null>(null)
-  const [prefsFor, setPrefsFor] = useState<IndexerView | null>(null)
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['indexers'] })
 
   const patch = useMutation({
@@ -98,21 +98,7 @@ export default function IndexersPage() {
           {indexers?.map((ix) => (
             <Table.Tr key={ix.id} opacity={ix.reachable ? 1 : 0.55}>
               <Table.Td>
-                <Group gap={4} wrap="nowrap">
-                  <Text size="sm">{ix.name}</Text>
-                  {ix.protocol === 'source' && (
-                    <Tooltip label="Source settings (login, mirrors…)">
-                      <ActionIcon
-                        size="xs"
-                        variant="subtle"
-                        color="gray"
-                        onClick={() => setPrefsFor(ix)}
-                      >
-                        <IconSettings size={12} />
-                      </ActionIcon>
-                    </Tooltip>
-                  )}
-                </Group>
+                <Text size="sm">{ix.name}</Text>
                 <Text size="xs" c="dimmed">
                   {ix.summary}
                   {!ix.reachable && ' — unreachable'}
@@ -225,13 +211,6 @@ export default function IndexersPage() {
           }}
         />
       )}
-      {prefsFor && (
-        <SourcePrefsModal
-          sourceId={String(prefsFor.id)}
-          sourceName={prefsFor.name}
-          onClose={() => setPrefsFor(null)}
-        />
-      )}
     </>
   )
 }
@@ -262,6 +241,10 @@ function IndexerModal({
     sourceId: init?.sourceId ?? '',
     pkgName: init?.pkgName,
   })
+  // The source's own settings (login, mirrors…) edit in the same modal:
+  // an overlay of changed values, pushed after the entry saves. Keyed by
+  // the host source, so entries of the same source share them.
+  const [prefValues, setPrefValues] = useState<Record<string, unknown>>({})
 
   // Extension catalog: the source flow starts from the extension — adding
   // its source as an indexer is what installs it.
@@ -299,8 +282,11 @@ function IndexerModal({
     onError: notify.err,
   })
 
+  // Survives a retry after the entry saved but a pref push failed, so
+  // retrying doesn't create a duplicate entry.
+  const createdId = useRef<number | null>(null)
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const body: IndexerBody = {
         name,
         protocol,
@@ -310,7 +296,14 @@ function IndexerModal({
         priority: initial?.priority ?? 0,
         settings: protocol === 'torznab' ? torznab : source,
       }
-      return isEdit ? api.updateIndexer(initial.id, body) : api.addIndexer(body)
+      if (isEdit) {
+        await api.updateIndexer(initial.id, body)
+      } else if (createdId.current === null) {
+        createdId.current = (await api.addIndexer(body)).id
+      }
+      for (const [key, value] of Object.entries(prefValues)) {
+        await api.setSourcePreference(source.sourceId, key, value)
+      }
     },
     onSuccess: () => {
       notify.ok(isEdit ? 'Indexer updated' : 'Indexer added')
@@ -444,6 +437,7 @@ function IndexerModal({
                 setPkg(v)
                 setExtSources(null)
                 setSource({ sourceId: '' })
+                setPrefValues({})
                 loadSources.mutate(v)
               }}
             />
@@ -465,6 +459,7 @@ function IndexerModal({
                   if (!v) return
                   const src = extSources.find((s) => s.id === v)
                   setSource({ sourceId: v, pkgName: pkg })
+                  setPrefValues({})
                   if (!name && src) setName(`${src.name} (${src.lang})`)
                 }}
               />
@@ -474,6 +469,20 @@ function IndexerModal({
                 Source: {extSources[0].name} ({extSources[0].lang})
               </Text>
             )}
+          </>
+        )}
+        {protocol === 'source' && source.sourceId && (
+          <>
+            <Divider label="Source settings" labelPosition="left" mt="xs" />
+            <Text size="xs" c="dimmed" mt={-6}>
+              The source's own settings (login, mirrors…) — shared by every entry using this
+              source, applied when you save.
+            </Text>
+            <SourcePrefsFields
+              sourceId={source.sourceId}
+              values={prefValues}
+              onChange={(key, value) => setPrefValues((p) => ({ ...p, [key]: value }))}
+            />
           </>
         )}
 
