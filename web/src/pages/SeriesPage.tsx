@@ -31,13 +31,13 @@ import {
 import {
   IconBookmark,
   IconBookmarkFilled,
-  IconChevronDown,
   IconChevronRight,
   IconDotsVertical,
   IconEye,
   IconEyeOff,
   IconListSearch,
   IconRefresh,
+  IconScissors,
   IconSearch,
   IconTrash,
   IconVersions,
@@ -52,13 +52,11 @@ import {
   type ChapterLedger,
   type ChapterSlot,
   type Collection,
-  type SearchResponse,
   type SeriesFile,
   type SeriesIndexerView,
   type Slots,
   type VolumeSlot,
 } from '../api'
-import CandidateList from '../components/CandidateList'
 import SlotModal, { type SlotSelection } from '../components/SlotModal'
 import { fmtWhen, notify, usePageTitle } from '../ui'
 
@@ -72,6 +70,7 @@ export default function SeriesPage() {
   const [fullDesc, setFullDesc] = useState(false)
   const [manageEditions, setManageEditions] = useState(false)
   const [addEdition, setAddEdition] = useState(false)
+  const [tab, setTab] = useState<string | null>('volumes')
 
   const queryClient = useQueryClient()
   const detail = useQuery({
@@ -131,72 +130,100 @@ export default function SeriesPage() {
 
   return (
     <>
-      <Group gap={4} mb="sm">
-        <BarButton
-          icon={<IconRefresh size={18} />}
-          label="Refresh & Scan"
-          loading={busy}
-          onClick={() =>
-            run(async () => {
-              await api.refreshSeries(seriesID)
-              const r = await api.scanSeries(seriesID)
-              notify.ok(`Refreshed — scan: ${r.scanned} new, ${r.linked} linked`)
-            })
-          }
-        />
-        <BarButton
-          icon={<IconSearch size={18} />}
-          label="Search Monitored"
-          loading={busy}
-          onClick={() =>
-            run(async () => {
-              const [v, c] = await Promise.all([
-                api.search(seriesID, { ledger: 'volume' }),
-                api.search(seriesID, { ledger: 'chapter' }),
-              ])
-              const queued = (v.queued?.length ?? 0) + (c.queued?.length ?? 0)
-              notify.ok(
-                queued
-                  ? `Queued ${queued} release${queued > 1 ? 's' : ''}`
-                  : 'Nothing grabbed — no suitable release for the wanted slots',
+      <div
+        style={{
+          position: 'sticky',
+          top: 'var(--app-shell-header-height, 56px)',
+          zIndex: 20,
+          background: 'var(--mantine-color-body)',
+          marginInline: 'calc(var(--mantine-spacing-md) * -1)',
+          paddingInline: 'var(--mantine-spacing-md)',
+          marginBottom: 'var(--mantine-spacing-md)',
+        }}
+      >
+        <Group gap={4} py={4}>
+          <BarButton
+            icon={<IconRefresh size={18} />}
+            label="Refresh & Scan"
+            loading={busy}
+            onClick={() =>
+              run(async () => {
+                await api.refreshSeries(seriesID)
+                const r = await api.scanSeries(seriesID)
+                notify.ok(`Refreshed — scan: ${r.scanned} new, ${r.linked} linked`)
+              })
+            }
+          />
+          <BarButton
+            icon={<IconSearch size={18} />}
+            label="Search Monitored"
+            loading={busy}
+            onClick={() =>
+              run(async () => {
+                const [v, c] = await Promise.all([
+                  api.search(seriesID, { ledger: 'volume' }),
+                  api.search(seriesID, { ledger: 'chapter' }),
+                ])
+                const queued = (v.queued?.length ?? 0) + (c.queued?.length ?? 0)
+                notify.ok(
+                  queued
+                    ? `Queued ${queued} release${queued > 1 ? 's' : ''}`
+                    : 'Nothing grabbed — no suitable release for the wanted slots',
+                )
+              })
+            }
+          />
+          <Divider orientation="vertical" mx={4} />
+          {tab === 'volumes' && (
+            <BarButton
+              icon={<IconVersions size={18} />}
+              label="Editions"
+              onClick={() => setManageEditions(true)}
+            />
+          )}
+          {tab === 'chapters' && ledger && (
+            <>
+              <BarButton
+                icon={ledger.monitored ? <IconEye size={18} /> : <IconEyeOff size={18} />}
+                label={ledger.monitored ? 'Chapters: On' : 'Chapters: Off'}
+                onClick={() =>
+                  run(() =>
+                    api.updateChapterLedger(seriesID, { monitored: !ledger.monitored }),
+                  )
+                }
+              />
+              <CutoffBarButton seriesID={seriesID} ledger={ledger} run={run} />
+            </>
+          )}
+          <BarButton
+            icon={
+              series.monitored ? (
+                <IconBookmarkFilled size={18} />
+              ) : (
+                <IconBookmark size={18} />
               )
-            })
-          }
-        />
-        <Divider orientation="vertical" mx={4} />
-        <BarButton
-          icon={<IconVersions size={18} />}
-          label="Editions"
-          onClick={() => setManageEditions(true)}
-        />
-        <BarButton
-          icon={
-            series.monitored ? (
-              <IconBookmarkFilled size={18} />
-            ) : (
-              <IconBookmark size={18} />
-            )
-          }
-          label={series.monitored ? 'Monitored' : 'Unmonitored'}
-          onClick={() => run(() => api.setSeriesMonitored(seriesID, !series.monitored))}
-        />
-        <Divider orientation="vertical" mx={4} />
-        <BarButton
-          icon={<IconTrash size={18} />}
-          label="Delete"
-          color="red"
-          onClick={() => {
-            if (
-              !window.confirm(
-                `Remove "${series.title}" from Sento?\n\nLibrary files stay on disk; monitoring, history and slot links are deleted.`,
+            }
+            label={series.monitored ? 'Monitored' : 'Unmonitored'}
+            onClick={() => run(() => api.setSeriesMonitored(seriesID, !series.monitored))}
+          />
+          <Divider orientation="vertical" mx={4} />
+          <BarButton
+            icon={<IconTrash size={18} />}
+            label="Delete"
+            color="red"
+            onClick={() => {
+              if (
+                !window.confirm(
+                  `Remove "${series.title}" from Sento?\n\nLibrary files stay on disk; monitoring, history and slot links are deleted.`,
+                )
               )
-            )
-              return
-            run(() => api.deleteSeries(seriesID).then(() => navigate('/')))
-          }}
-        />
-      </Group>
-      <Divider mb="md" />
+                return
+              run(() => api.deleteSeries(seriesID).then(() => navigate('/')))
+            }}
+          />
+        </Group>
+        <Divider />
+      </div>
 
       <Group align="flex-start" wrap="nowrap" mb="md">
         <Image src={series.coverUrl} w={140} radius="sm" alt="" visibleFrom="xs" />
@@ -255,7 +282,7 @@ export default function SeriesPage() {
         onClose={() => setAddEdition(false)}
       />
 
-      <Tabs defaultValue="volumes">
+      <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
           <Tabs.Tab value="volumes">Volumes</Tabs.Tab>
           <Tabs.Tab value="chapters">Chapters</Tabs.Tab>
@@ -447,6 +474,65 @@ function BarButton({
   )
 }
 
+// CutoffBarButton edits the chapter cutoff from the action bar.
+function CutoffBarButton({
+  seriesID,
+  ledger,
+  run,
+}: {
+  seriesID: number
+  ledger: ChapterLedger
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+}) {
+  const [opened, setOpened] = useState(false)
+  const [cutoff, setCutoff] = useState<number | ''>(ledger.cutoffNum / 100)
+  // Adjust-during-render: re-sync when the ledger (re)loads.
+  const [prevCutoff, setPrevCutoff] = useState(ledger.cutoffNum)
+  if (ledger.cutoffNum !== prevCutoff) {
+    setPrevCutoff(ledger.cutoffNum)
+    setCutoff(ledger.cutoffNum / 100)
+  }
+  return (
+    <Popover opened={opened} onChange={setOpened} position="bottom-start" withinPortal trapFocus>
+      <Popover.Target>
+        <div style={{ display: 'inline-block' }}>
+          <BarButton
+            icon={<IconScissors size={18} />}
+            label={`Cutoff: c${fmtNum(ledger.cutoffNum)}`}
+            onClick={() => setOpened((o) => !o)}
+          />
+        </div>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Stack gap="xs" w={220}>
+          <NumberInput
+            label="Monitor from chapter"
+            description="Chapters below the cutoff are ignored"
+            size="xs"
+            value={cutoff}
+            onChange={(v) => setCutoff(typeof v === 'number' ? v : '')}
+          />
+          <Button
+            size="xs"
+            onClick={() => {
+              setOpened(false)
+              run(
+                () =>
+                  api.updateChapterLedger(seriesID, {
+                    cutoffNum: Math.round(Number(cutoff || 0) * 100),
+                  }),
+                'Cutoff updated',
+              )
+            }}
+          >
+            Save
+          </Button>
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
+  )
+}
+
 // StatusBadge renders a slot's state in the ledger tables.
 function StatusBadge({
   slot,
@@ -549,54 +635,6 @@ function SlotActions({
           <IconListSearch size={14} />
         </ActionIcon>
       </Tooltip>
-    </Group>
-  )
-}
-
-// SearchSplit: the primary search-and-grab action with the dry run tucked
-// into a dropdown (both ledger tabs).
-function SearchSplit({
-  seriesID,
-  ledger,
-  busy,
-  run,
-  onResult,
-}: {
-  seriesID: number
-  ledger: 'volume' | 'chapter'
-  busy: boolean
-  run: (fn: () => Promise<unknown>, msg?: string) => void
-  onResult: (r: SearchResponse) => void
-}) {
-  return (
-    <Group gap={1} wrap="nowrap">
-      <Button
-        size="xs"
-        leftSection={<IconSearch size={14} />}
-        loading={busy}
-        style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
-        onClick={() =>
-          run(() => api.search(seriesID, { ledger }).then(onResult), 'Search done')
-        }
-      >
-        Search &amp; grab wanted
-      </Button>
-      <Menu position="bottom-end" withinPortal>
-        <Menu.Target>
-          <Button size="xs" px={6} style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
-            <IconChevronDown size={14} />
-          </Button>
-        </Menu.Target>
-        <Menu.Dropdown>
-          <Menu.Item
-            onClick={() =>
-              run(() => api.search(seriesID, { ledger, dryRun: true }).then(onResult))
-            }
-          >
-            Dry run (find, don't grab)
-          </Menu.Item>
-        </Menu.Dropdown>
-      </Menu>
     </Group>
   )
 }
@@ -1047,64 +1085,6 @@ function CustomEditionActions({
   )
 }
 
-// FunnelCard shows a ledger-wide search result; grabs work directly from
-// here (queued items show in the toast and the Activity page).
-function FunnelCard({
-  funnel,
-  seriesID,
-  ledger,
-  run,
-  busy,
-}: {
-  funnel: SearchResponse
-  seriesID: number
-  ledger: 'volume' | 'chapter'
-  run: (fn: () => Promise<unknown>, msg?: string) => void
-  busy: boolean
-}) {
-  return (
-    <Card withBorder padding="sm">
-      <Group justify="space-between" mb={6}>
-        <Text fw={600}>Search results</Text>
-        <Tooltip label={funnel.searched.join(', ') || 'nothing'}>
-          <Text size="xs" c="dimmed">
-            {funnel.searched.length} sites searched
-            {funnel.queued?.length ? ` · ${funnel.queued.length} grabbed` : ''}
-          </Text>
-        </Tooltip>
-      </Group>
-      {funnel.bindingNotes?.map((n) => (
-        <Text key={n} size="xs" c="dimmed">
-          {n}
-        </Text>
-      ))}
-      {funnel.providerErrors?.map((e) => (
-        <Text key={e} size="xs" c="orange">
-          {e}
-        </Text>
-      ))}
-      {funnel.candidates.length === 0 ? (
-        <Text size="sm" c="dimmed">
-          Nothing found. Sites must be enabled for this ledger (Indexers tab), and extension
-          sources need a confident title match.
-        </Text>
-      ) : (
-        <CandidateList
-          candidates={funnel.candidates}
-          dropped={funnel.dropped}
-          busy={busy}
-          onGrab={(c, force) =>
-            run(
-              () => api.search(seriesID, { ledger, grab: c.guid, force }),
-              `Grabbed via ${c.site}`,
-            )
-          }
-        />
-      )}
-    </Card>
-  )
-}
-
 // ChapterStrip compresses the whole chapter run into one thin bar:
 // contiguous same-state chapters become proportional segments, so 1,100
 // chapters stay readable at a glance.
@@ -1172,14 +1152,6 @@ function ChaptersTab({
   const wanted = chapters.filter((c) => c.wanted)
   const [filter, setFilter] = useState<ChapterFilter>('wanted')
   const [showAll, setShowAll] = useState(false)
-  const [funnel, setFunnel] = useState<SearchResponse | null>(null)
-  const [cutoff, setCutoff] = useState<number | ''>('')
-  // Adjust-during-render: re-sync the input when the ledger (re)loads.
-  const [prevCutoff, setPrevCutoff] = useState<number | null>(null)
-  if (ledger && ledger.cutoffNum !== prevCutoff) {
-    setPrevCutoff(ledger.cutoffNum)
-    setCutoff(ledger.cutoffNum / 100)
-  }
   const fileById = new Map(files.map((f) => [f.id, f]))
 
   if (!ledger) return <Text c="dimmed">No chapter ledger.</Text>
@@ -1203,57 +1175,6 @@ function ChaptersTab({
 
   return (
     <Stack>
-      <Group justify="space-between">
-        <Group>
-          <Switch
-            label="Monitor chapters"
-            checked={ledger.monitored}
-            onChange={(e) =>
-              run(() => api.updateChapterLedger(seriesID, { monitored: e.currentTarget.checked }))
-            }
-          />
-          <Popover position="bottom-start" withinPortal trapFocus>
-            <Popover.Target>
-              <Button size="xs" variant="default">
-                Cutoff: c{fmtNum(ledger.cutoffNum)}
-              </Button>
-            </Popover.Target>
-            <Popover.Dropdown>
-              <Stack gap="xs" w={220}>
-                <NumberInput
-                  label="Monitor from chapter"
-                  description="Chapters below the cutoff are ignored"
-                  size="xs"
-                  value={cutoff}
-                  onChange={(v) => setCutoff(typeof v === 'number' ? v : '')}
-                />
-                <Button
-                  size="xs"
-                  onClick={() =>
-                    run(
-                      () =>
-                        api.updateChapterLedger(seriesID, {
-                          cutoffNum: Math.round(Number(cutoff || 0) * 100),
-                        }),
-                      'Cutoff updated',
-                    )
-                  }
-                >
-                  Save
-                </Button>
-              </Stack>
-            </Popover.Dropdown>
-          </Popover>
-        </Group>
-        <SearchSplit
-          seriesID={seriesID}
-          ledger="chapter"
-          busy={busy}
-          run={run}
-          onResult={setFunnel}
-        />
-      </Group>
-
       <ChapterStrip chapters={chapters} />
       <Group justify="space-between">
         <Text size="sm" c="dimmed">
@@ -1346,10 +1267,6 @@ function ChaptersTab({
             ? 'No wanted chapters — everything monitored is owned. Switch the filter to browse the rest.'
             : 'Nothing matches this filter.'}
         </Text>
-      )}
-
-      {funnel && (
-        <FunnelCard funnel={funnel} seriesID={seriesID} ledger="chapter" run={run} busy={busy} />
       )}
     </Stack>
   )
