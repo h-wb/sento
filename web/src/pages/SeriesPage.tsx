@@ -29,6 +29,7 @@ import {
   IconDotsVertical,
   IconEye,
   IconEyeOff,
+  IconListSearch,
   IconRefresh,
   IconSearch,
   IconTrash,
@@ -390,6 +391,66 @@ function slotFileText(fileIds: number[] | undefined, fileById: Map<number, Serie
   return `${fileIds.length > 1 ? `${fileIds.length} files · ` : ''}${fmtSize(size)}`
 }
 
+// SlotActions: Sonarr's per-row pair — auto search (run the funnel for
+// this slot and grab the best release) and interactive search (pick
+// yourself in the slot modal).
+function SlotActions({
+  seriesID,
+  ledger,
+  target,
+  busy,
+  run,
+  onInteractive,
+}: {
+  seriesID: number
+  ledger: 'volume' | 'chapter'
+  target: { collectionId: number; number: number }
+  busy: boolean
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+  onInteractive: () => void
+}) {
+  // Only the clicked row's button spins (busy is page-wide).
+  const [clicked, setClicked] = useState(false)
+  if (!busy && clicked) setClicked(false)
+  return (
+    <Group gap={2} wrap="nowrap" justify="flex-end">
+      <Tooltip label="Auto search — grab the best release">
+        <ActionIcon
+          size="sm"
+          variant="subtle"
+          loading={busy && clicked}
+          onClick={(e) => {
+            e.stopPropagation()
+            setClicked(true)
+            run(async () => {
+              const r = await api.search(seriesID, { ledger, slot: target })
+              notify.ok(
+                r.queued?.length
+                  ? `Grabbed ${r.queued.length} release${r.queued.length > 1 ? 's' : ''}`
+                  : 'Nothing grabbed — no suitable release found',
+              )
+            })
+          }}
+        >
+          <IconSearch size={14} />
+        </ActionIcon>
+      </Tooltip>
+      <Tooltip label="Interactive search & files">
+        <ActionIcon
+          size="sm"
+          variant="subtle"
+          onClick={(e) => {
+            e.stopPropagation()
+            onInteractive()
+          }}
+        >
+          <IconListSearch size={14} />
+        </ActionIcon>
+      </Tooltip>
+    </Group>
+  )
+}
+
 // SearchSplit: the primary search-and-grab action with the dry run tucked
 // into a dropdown (both ledger tabs).
 function SearchSplit({
@@ -560,7 +621,7 @@ function VolumesTab({
                 <Table.Th w={120}>Released</Table.Th>
                 <Table.Th w={110}>Status</Table.Th>
                 <Table.Th>File</Table.Th>
-                <Table.Th w={40} />
+                <Table.Th w={70} />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -601,11 +662,14 @@ function VolumesTab({
                       </Text>
                     </Table.Td>
                     <Table.Td>
-                      <Tooltip label="Files & interactive search">
-                        <ActionIcon size="sm" variant="subtle" onClick={open}>
-                          <IconSearch size={14} />
-                        </ActionIcon>
-                      </Tooltip>
+                      <SlotActions
+                        seriesID={seriesID}
+                        ledger="volume"
+                        target={{ collectionId: selected.id, number: s.number }}
+                        busy={busy}
+                        run={run}
+                        onInteractive={open}
+                      />
                     </Table.Td>
                   </Table.Tr>
                 )
@@ -1098,7 +1162,7 @@ function ChaptersTab({
               <Table.Th w={90}>Chapter</Table.Th>
               <Table.Th w={110}>Status</Table.Th>
               <Table.Th>File</Table.Th>
-              <Table.Th w={40} />
+              <Table.Th w={70} />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -1127,11 +1191,14 @@ function ChaptersTab({
                     </Text>
                   </Table.Td>
                   <Table.Td>
-                    <Tooltip label="Files & interactive search">
-                      <ActionIcon size="sm" variant="subtle" onClick={open}>
-                        <IconSearch size={14} />
-                      </ActionIcon>
-                    </Tooltip>
+                    <SlotActions
+                      seriesID={seriesID}
+                      ledger="chapter"
+                      target={{ collectionId: 0, number: c.number }}
+                      busy={busy}
+                      run={run}
+                      onInteractive={open}
+                    />
                   </Table.Td>
                 </Table.Tr>
               )
