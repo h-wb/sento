@@ -121,17 +121,18 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, p profile.Profile) e
 	return s.store.UpdateProfile(ctx, p)
 }
 
-// DeleteProfile refuses while series use the profile or it is the default.
+// DeleteProfile refuses while series or collections use the profile or it
+// is the default.
 func (s *ProfileService) DeleteProfile(ctx context.Context, id int64) error {
 	if did, _ := s.DefaultProfileID(ctx); did == id {
 		return fmt.Errorf("cannot delete the default profile")
 	}
-	n, err := s.store.CountSeriesWithProfile(ctx, id)
+	n, err := s.store.CountProfileUses(ctx, id)
 	if err != nil {
 		return err
 	}
 	if n > 0 {
-		return fmt.Errorf("profile is used by %d series", n)
+		return fmt.Errorf("profile is used by %d series/collections", n)
 	}
 	return s.store.DeleteProfile(ctx, id)
 }
@@ -160,32 +161,52 @@ func (s *ProfileService) SetDefaultProfile(ctx context.Context, id int64) error 
 	return s.store.PutSetting(ctx, defaultProfileKey, raw)
 }
 
-// ProfileFor resolves the effective profile of a series (its own, else
-// the instance default) together with all formats. A nil profile means
+// EffectiveProfiles resolves the release profile per collection of a
+// series — collection override > series > instance default — plus the
+// series-level profile under key 0 (the chapter ledger and any routing
+// fallback) and all formats. A nil seriesProfile (and empty map) means
 // none are configured — the funnel falls back to built-in rules.
-func (s *ProfileService) ProfileFor(ctx context.Context, seriesID int64) (*profile.Profile, []profile.Format, error) {
+func (s *ProfileService) EffectiveProfiles(ctx context.Context, seriesID int64) (map[int64]*profile.Profile, []profile.Format, error) {
 	series, err := s.store.GetSeries(ctx, seriesID)
 	if err != nil {
 		return nil, nil, err
 	}
-	id := series.ProfileID
-	if id == 0 {
-		if id, err = s.DefaultProfileID(ctx); err != nil || id == 0 {
+	all, err := s.store.ListProfiles(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(all) == 0 {
+		return nil, nil, nil
+	}
+	byID := map[int64]*profile.Profile{}
+	for i := range all {
+		byID[all[i].ID] = &all[i]
+	}
+	seriesEff := byID[series.ProfileID]
+	if seriesEff == nil { // unset or stale assignment → instance default
+		did, err := s.DefaultProfileID(ctx)
+		if err != nil {
 			return nil, nil, err
 		}
+		seriesEff = byID[did]
 	}
-	p, err := s.store.GetProfile(ctx, id)
+	collections, err := s.store.ListCollections(ctx, seriesID)
 	if err != nil {
-		if err == store.ErrNotFound { // stale assignment; behave like none
-			return nil, nil, nil
-		}
 		return nil, nil, err
+	}
+	out := map[int64]*profile.Profile{0: seriesEff}
+	for _, col := range collections {
+		if p := byID[col.ProfileID]; p != nil {
+			out[col.ID] = p
+		} else {
+			out[col.ID] = seriesEff
+		}
 	}
 	formats, err := s.store.ListFormats(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	return p, formats, nil
+	return out, formats, nil
 }
 
 // --- portable JSON form (recyclarr-style) ---

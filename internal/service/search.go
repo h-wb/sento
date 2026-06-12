@@ -279,9 +279,19 @@ type searchRun struct {
 	wanted      map[int64]map[int64]bool
 	collections []store.Collection
 	chapterLang string
-	blocked     map[string]bool  // "protocol/externalKey" bans
-	profile     *profile.Profile // effective release profile (nil = built-ins)
-	formats     []profile.Format
+	blocked     map[string]bool // "protocol/externalKey" bans
+	// profiles is the effective release profile per collection id, with
+	// the series-level profile under key 0 (nil map = built-ins).
+	profiles map[int64]*profile.Profile
+	formats  []profile.Format
+}
+
+// profileFor resolves the effective profile of a routed candidate.
+func (run *searchRun) profileFor(collectionID int64) *profile.Profile {
+	if p, ok := run.profiles[collectionID]; ok {
+		return p
+	}
+	return run.profiles[0]
 }
 
 func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot) (*searchRun, error) {
@@ -318,7 +328,7 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 	if run.blocked, err = s.store.BlockedKeys(ctx); err != nil {
 		return nil, err
 	}
-	if run.profile, run.formats, err = s.profiles.ProfileFor(ctx, seriesID); err != nil {
+	if run.profiles, run.formats, err = s.profiles.EffectiveProfiles(ctx, seriesID); err != nil {
 		return nil, err
 	}
 	return run, nil

@@ -400,11 +400,19 @@ func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) 
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if err := s.store.SetCollectionMonitored(r.Context(), id, cid, body.Monitored); err != nil {
-		writeStoreError(w, err)
-		return
+	if body.Monitored != nil {
+		if err := s.store.SetCollectionMonitored(r.Context(), id, cid, *body.Monitored); err != nil {
+			writeStoreError(w, err)
+			return
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": cid, "monitored": body.Monitored})
+	if body.ProfileID != nil {
+		if err := s.store.SetCollectionProfile(r.Context(), id, cid, *body.ProfileID); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleUpdateChapterLedger(w http.ResponseWriter, r *http.Request) {

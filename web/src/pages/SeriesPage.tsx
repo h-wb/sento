@@ -1049,6 +1049,7 @@ function CollectionsModal({
                     run={run}
                   />
                 )}
+                <CollectionProfileSelect seriesID={seriesID} collection={c} run={run} />
                 <Switch
                   size="xs"
                   label="Monitored"
@@ -1071,6 +1072,35 @@ function CollectionsModal({
         </Button>
       </Stack>
     </Modal>
+  )
+}
+
+// CollectionProfileSelect overrides one collection's release profile
+// (empty = inherit the series profile).
+function CollectionProfileSelect({
+  seriesID,
+  collection,
+  run,
+}: {
+  seriesID: number
+  collection: Collection
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+}) {
+  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
+  if (!profiles.data?.length) return null
+  return (
+    <Select
+      size="xs"
+      w={150}
+      title="Release profile (overrides the series profile)"
+      placeholder="Series profile"
+      clearable
+      data={profiles.data.map((p) => ({ value: String(p.id), label: p.name }))}
+      value={collection.profileId ? String(collection.profileId) : null}
+      onChange={(v) =>
+        run(() => api.setCollectionProfile(seriesID, collection.id, v ? Number(v) : 0))
+      }
+    />
   )
 }
 

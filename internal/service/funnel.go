@@ -76,7 +76,6 @@ func (s *SearchService) coverageRanges(searchLedger string, rc *ReleaseCandidate
 func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []parse.Range) {
 	searchLedger, target := run.ledger, run.target
 	collections, wanted, chapterLang := run.collections, run.wanted, run.chapterLang
-	rules := run.ledgerRules()
 	reject := func(code string) { c.Rejections = append(c.Rejections, code) }
 
 	// R1 content-type gate.
@@ -113,6 +112,10 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		}
 	}
 	c.CollectionID = colID
+	// The routed collection's profile decides scoring and health rules
+	// (collection override > series > instance default).
+	prof := run.profileFor(colID)
+	rules := ledgerRules(prof, searchLedger)
 
 	// R2 language gate (untagged passes). Soft: record and keep going so
 	// Covered is still computed — a force-grab needs the slot list.
@@ -150,9 +153,9 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 
 	// Custom formats: matched on every routable candidate (rejected ones
 	// keep their chips), floor-gated softly so force-grab can override.
-	c.evalFormats(run)
-	if run.profile != nil && run.profile.MinFormatScore > profile.MinScoreOff &&
-		c.FormatScore < run.profile.MinFormatScore {
+	c.evalFormats(prof, run.formats)
+	if prof != nil && prof.MinFormatScore > profile.MinScoreOff &&
+		c.FormatScore < prof.MinFormatScore {
 		reject("rejected.format_score")
 	}
 
@@ -191,23 +194,23 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	c.Score = score
 }
 
-// ledgerRules resolves the funnel knobs for the run's ledger, falling
+// ledgerRules resolves a profile's funnel knobs for one ledger, falling
 // back to the built-in defaults when no profile is configured.
-func (run *searchRun) ledgerRules() profile.LedgerRules {
+func ledgerRules(prof *profile.Profile, searchLedger string) profile.LedgerRules {
 	vol, ch := profile.DefaultRules()
-	if run.profile != nil {
-		vol, ch = run.profile.Volume, run.profile.Chapter
+	if prof != nil {
+		vol, ch = prof.Volume, prof.Chapter
 	}
-	if run.ledger == LedgerChapter {
+	if searchLedger == LedgerChapter {
 		return ch
 	}
 	return vol
 }
 
-// evalFormats matches the active profile's custom formats against the
-// candidate and sums their scores.
-func (c *ReleaseCandidate) evalFormats(run *searchRun) {
-	if run.profile == nil {
+// evalFormats matches the profile's custom formats against the candidate
+// and sums their scores.
+func (c *ReleaseCandidate) evalFormats(prof *profile.Profile, formats []profile.Format) {
+	if prof == nil {
 		return
 	}
 	group := c.Parse.Group
@@ -226,11 +229,11 @@ func (c *ReleaseCandidate) evalFormats(run *searchRun) {
 			"complete": c.Parse.Complete,
 		},
 	}
-	for _, f := range run.formats {
+	for _, f := range formats {
 		if !f.Matches(in) {
 			continue
 		}
-		score := run.profile.FormatScores[f.ID]
+		score := prof.FormatScores[f.ID]
 		c.Formats = append(c.Formats, FormatHit{Name: f.Name, Score: score})
 		c.FormatScore += score
 	}

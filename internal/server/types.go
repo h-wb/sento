@@ -69,9 +69,11 @@ type SeriesPatch struct {
 	ProfileID *int64 `json:"profileId"`
 }
 
-// CollectionPatch is PUT /series/{id}/collections/{cid}.
+// CollectionPatch is PUT /series/{id}/collections/{cid} (nil = keep);
+// ProfileID 0 = inherit the series profile.
 type CollectionPatch struct {
-	Monitored bool `json:"monitored"`
+	Monitored *bool  `json:"monitored"`
+	ProfileID *int64 `json:"profileId"`
 }
 
 // CreateCollectionBody is POST /series/{id}/collections — a custom

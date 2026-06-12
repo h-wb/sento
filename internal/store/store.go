@@ -59,6 +59,7 @@ type Collection struct {
 	StartDate   string `json:"startDate,omitempty"`
 	EndDate     string `json:"endDate,omitempty"`
 	Custom      bool   `json:"custom"`
+	ProfileID   int64  `json:"profileId,omitempty" db:"profile_id"` // 0 = inherit from series
 }
 
 type Work struct {
@@ -234,7 +235,8 @@ const collectionColumns = `
 	edition_name, language, publisher, medium, ctype, monitored,
 	COALESCE(count_main,0) AS count_main, COALESCE(count_extra,0) AS count_extra,
 	COALESCE(count_other,0) AS count_other,
-	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date, custom`
+	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date, custom,
+	COALESCE(profile_id,0) AS profile_id`
 
 func (s *Store) ListCollections(ctx context.Context, seriesID int64) ([]Collection, error) {
 	return list[Collection](ctx, s, `SELECT `+collectionColumns+`

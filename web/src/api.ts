@@ -139,6 +139,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ monitored }),
     }),
+  setCollectionProfile: (id: number, cid: number, profileId: number) =>
+    request<unknown>(`/series/${id}/collections/${cid}`, {
+      method: 'PUT',
+      body: JSON.stringify({ profileId }),
+    }),
   createCollection: (id: number, body: CreateCollectionBody) =>
     request<Collection>(`/series/${id}/collections`, {
       method: 'POST',

@@ -183,6 +183,7 @@ export interface Collection {
   startDate?: string;
   endDate?: string;
   custom: boolean;
+  profileId?: number /* int64 */; // 0 = inherit from series
 }
 export interface Work {
   id: number /* int64 */;

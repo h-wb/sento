@@ -160,12 +160,24 @@ func (s *Store) DeleteProfile(ctx context.Context, id int64) error {
 	return s.touch(ctx, `DELETE FROM profiles WHERE id = ?`, id)
 }
 
-// CountSeriesWithProfile guards profile deletion.
-func (s *Store) CountSeriesWithProfile(ctx context.Context, id int64) (int, error) {
+// CountProfileUses guards profile deletion (series + collection refs).
+func (s *Store) CountProfileUses(ctx context.Context, id int64) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM series WHERE profile_id = ?`, id).Scan(&n)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT (SELECT COUNT(*) FROM series WHERE profile_id = ?)
+		     + (SELECT COUNT(*) FROM collections WHERE profile_id = ?)`, id, id).Scan(&n)
 	return n, err
+}
+
+// SetCollectionProfile overrides the collection's release profile
+// (0 = inherit from the series, stored NULL).
+func (s *Store) SetCollectionProfile(ctx context.Context, seriesID, collectionID, profileID int64) error {
+	var v any
+	if profileID > 0 {
+		v = profileID
+	}
+	return s.touch(ctx, `UPDATE collections SET profile_id = ? WHERE id = ? AND series_id = ?`,
+		v, collectionID, seriesID)
 }
 
 // SetSeriesProfile assigns the series' release profile (0 = back to the

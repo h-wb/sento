@@ -79,10 +79,12 @@ export interface SeriesPatch {
   profileId?: number /* int64 */;
 }
 /**
- * CollectionPatch is PUT /series/{id}/collections/{cid}.
+ * CollectionPatch is PUT /series/{id}/collections/{cid} (nil = keep);
+ * ProfileID 0 = inherit the series profile.
  */
 export interface CollectionPatch {
-  monitored: boolean;
+  monitored?: boolean;
+  profileId?: number /* int64 */;
 }
 /**
  * CreateCollectionBody is POST /series/{id}/collections — a custom
