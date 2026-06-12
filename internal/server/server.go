@@ -18,6 +18,7 @@ import (
 	"github.com/h-wb/sento/internal/config"
 	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/provider"
+	"github.com/h-wb/sento/internal/scheduler"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 	"github.com/h-wb/sento/internal/version"
@@ -36,7 +37,13 @@ type Server struct {
 	importer   *service.Importer
 	scanner    *service.Scanner
 	extensions *service.ExtensionService
+	sched      *scheduler.Scheduler
 }
+
+// SetScheduler wires the background scheduler in after construction
+// (main builds it from this server's services) so the System → Tasks
+// endpoints can report and trigger its loops.
+func (s *Server) SetScheduler(sched *scheduler.Scheduler) { s.sched = sched }
 
 func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 	st := store.New(db)

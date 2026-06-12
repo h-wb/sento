@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/h-wb/sento/internal/ledger"
+	"github.com/h-wb/sento/internal/scheduler"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -20,6 +21,8 @@ import (
 func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/system/health", s.handleHealth)
 	r.Get("/system/status", s.handleStatus)
+	r.Get("/system/tasks", s.handleListTasks)
+	r.Post("/system/tasks/{slug}/run", s.handleRunTask)
 
 	r.Get("/lookup", s.handleLookup)
 	r.Get("/calendar", s.handleCalendar)
@@ -63,6 +66,28 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Delete("/bindings/{bid}", s.handleDeleteBinding)
 		})
 	})
+}
+
+// --- scheduler tasks (System → Tasks) ---
+
+func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
+	if s.sched == nil {
+		respondList(w, []scheduler.TaskStatus{}, nil)
+		return
+	}
+	respondList(w, s.sched.Tasks(), nil)
+}
+
+func (s *Server) handleRunTask(w http.ResponseWriter, r *http.Request) {
+	if s.sched == nil {
+		writeError(w, http.StatusServiceUnavailable, "no scheduler is running")
+		return
+	}
+	if err := s.sched.Run(chi.URLParam(r, "slug")); err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // --- lookup ---

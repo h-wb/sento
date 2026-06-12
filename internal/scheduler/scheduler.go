@@ -4,7 +4,9 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/h-wb/sento/internal/service"
@@ -33,6 +35,34 @@ func DefaultIntervals() Intervals {
 	}
 }
 
+// task is one background loop plus its observable schedule state (the
+// System → Tasks page reads it; Run triggers it out of cycle).
+type task struct {
+	slug     string
+	name     string
+	interval time.Duration
+	tick     func(context.Context) error
+
+	mu      sync.Mutex
+	running bool
+	lastRun time.Time
+	lastDur time.Duration
+	lastErr string
+	nextRun time.Time
+}
+
+// TaskStatus is the API view of one background loop.
+type TaskStatus struct {
+	Slug         string `json:"slug"`
+	Name         string `json:"name"`
+	IntervalSec  int    `json:"intervalSec"`
+	LastRun      string `json:"lastRun,omitempty"` // RFC3339
+	LastDuration int    `json:"lastDurationMs"`
+	LastError    string `json:"lastError,omitempty"`
+	NextRun      string `json:"nextRun,omitempty"` // RFC3339
+	Running      bool   `json:"running"`
+}
+
 type Scheduler struct {
 	store      *store.Store
 	libraries  *service.Library
@@ -40,51 +70,139 @@ type Scheduler struct {
 	importer   *service.Importer
 	extensions *service.ExtensionService
 	intervals  Intervals
+	tasks      []*task
 }
 
 func New(st *store.Store, lib *service.Library, search *service.SearchService,
 	importer *service.Importer, extensions *service.ExtensionService, intervals Intervals,
 ) *Scheduler {
-	return &Scheduler{
+	s := &Scheduler{
 		store: st, libraries: lib, search: search,
 		importer: importer, extensions: extensions, intervals: intervals,
 	}
+	s.tasks = append(s.tasks, &task{
+		slug: "queue-process", name: "Process Download Queue",
+		interval: intervals.QueueProcess, tick: s.tickQueue,
+	})
+	if extensions != nil {
+		// Converges a replaced/wiped sidecar back to the desired
+		// extension list (no-op for other backends).
+		s.tasks = append(s.tasks, &task{
+			slug: "extension-sync", name: "Sync Extensions & Source Settings",
+			interval: intervals.ExtensionSync, tick: extensions.Reconcile,
+		})
+	}
+	s.tasks = append(s.tasks, &task{
+		slug: "metadata-refresh", name: "Refresh Stale Metadata",
+		interval: intervals.RefreshSweep, tick: s.tickRefresh,
+	})
+	if search.HasProviders() {
+		s.tasks = append(s.tasks,
+			&task{
+				slug: "chapter-check", name: "Search Wanted Chapters",
+				interval: intervals.ChapterCheck, tick: s.tickChapters,
+			},
+			&task{
+				slug: "volume-sweep", name: "Search Wanted Volumes",
+				interval: intervals.VolumeSweep, tick: s.tickVolumes,
+			})
+	}
+	return s
 }
 
 // Start launches all loops; they stop when ctx is cancelled.
 func (s *Scheduler) Start(ctx context.Context) {
-	go s.loop(ctx, "queue-process", s.intervals.QueueProcess, s.tickQueue)
-	if s.extensions != nil {
-		// Converges a replaced/wiped sidecar back to the desired
-		// extension list (no-op for other backends).
-		go s.loop(ctx, "extension-sync", s.intervals.ExtensionSync, s.extensions.Reconcile)
-	}
-	go s.loop(ctx, "metadata-refresh", s.intervals.RefreshSweep, s.tickRefresh)
-	if s.search.HasProviders() {
-		go s.loop(ctx, "chapter-check", s.intervals.ChapterCheck, s.tickChapters)
-		go s.loop(ctx, "volume-sweep", s.intervals.VolumeSweep, s.tickVolumes)
+	for _, t := range s.tasks {
+		go s.loop(ctx, t)
 	}
 }
 
-func (s *Scheduler) loop(ctx context.Context, name string, every time.Duration, tick func(context.Context) error) {
-	if every <= 0 {
+func (s *Scheduler) loop(ctx context.Context, t *task) {
+	if t.interval <= 0 {
 		return
 	}
-	t := time.NewTicker(every)
-	defer t.Stop()
+	t.mu.Lock()
+	t.nextRun = time.Now().Add(t.interval)
+	t.mu.Unlock()
+	ticker := time.NewTicker(t.interval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
-			start := time.Now()
-			if err := tick(ctx); err != nil {
-				slog.Warn("scheduler tick failed", "loop", name, "error", err)
-			} else {
-				slog.Debug("scheduler tick", "loop", name, "took", time.Since(start).Round(time.Millisecond))
-			}
+		case <-ticker.C:
+			s.runTask(ctx, t)
+			t.mu.Lock()
+			t.nextRun = time.Now().Add(t.interval)
+			t.mu.Unlock()
 		}
 	}
+}
+
+// runTask executes one tick, skipping if the task is already running
+// (manual trigger racing the ticker).
+func (s *Scheduler) runTask(ctx context.Context, t *task) {
+	t.mu.Lock()
+	if t.running {
+		t.mu.Unlock()
+		return
+	}
+	t.running = true
+	t.mu.Unlock()
+
+	start := time.Now()
+	err := t.tick(ctx)
+
+	t.mu.Lock()
+	t.running = false
+	t.lastRun = start
+	t.lastDur = time.Since(start)
+	t.lastErr = ""
+	if err != nil {
+		t.lastErr = err.Error()
+	}
+	t.mu.Unlock()
+
+	if err != nil {
+		slog.Warn("scheduler tick failed", "loop", t.slug, "error", err)
+	} else {
+		slog.Debug("scheduler tick", "loop", t.slug, "took", time.Since(start).Round(time.Millisecond))
+	}
+}
+
+// Tasks reports every loop's schedule state (System → Tasks).
+func (s *Scheduler) Tasks() []TaskStatus {
+	out := make([]TaskStatus, 0, len(s.tasks))
+	for _, t := range s.tasks {
+		t.mu.Lock()
+		ts := TaskStatus{
+			Slug: t.slug, Name: t.name,
+			IntervalSec:  int(t.interval / time.Second),
+			LastDuration: int(t.lastDur / time.Millisecond),
+			LastError:    t.lastErr,
+			Running:      t.running,
+		}
+		if !t.lastRun.IsZero() {
+			ts.LastRun = t.lastRun.Format(time.RFC3339)
+		}
+		if !t.nextRun.IsZero() {
+			ts.NextRun = t.nextRun.Format(time.RFC3339)
+		}
+		t.mu.Unlock()
+		out = append(out, ts)
+	}
+	return out
+}
+
+// Run triggers one loop now; the ticker cadence is unchanged.
+func (s *Scheduler) Run(slug string) error {
+	for _, t := range s.tasks {
+		if t.slug == slug {
+			go s.runTask(context.Background(), t)
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown task %q", slug)
 }
 
 func (s *Scheduler) tickQueue(ctx context.Context) error {

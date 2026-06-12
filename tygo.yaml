@@ -6,6 +6,11 @@ packages:
     frontmatter: |
       /* eslint-disable */
 
+  - path: "github.com/h-wb/sento/internal/scheduler"
+    output_path: "web/src/types/scheduler.ts"
+    frontmatter: |
+      /* eslint-disable */
+
   - path: "github.com/h-wb/sento/internal/metadata"
     output_path: "web/src/types/metadata.ts"
     frontmatter: |

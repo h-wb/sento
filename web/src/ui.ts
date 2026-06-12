@@ -31,6 +31,19 @@ export function fmtWhen(ts: string): string {
   return d.toLocaleDateString()
 }
 
+// fmtUntil renders a future timestamp as "in 5m" / "in 2h" / "in 3d"
+// ("now" once due).
+export function fmtUntil(ts: string): string {
+  if (!ts) return ''
+  const d = new Date(ts)
+  if (isNaN(d.getTime())) return ts
+  const secs = Math.round((d.getTime() - Date.now()) / 1000)
+  if (secs <= 0) return 'now'
+  if (secs < 3600) return `in ${Math.max(1, Math.floor(secs / 60))}m`
+  if (secs < 86400) return `in ${Math.floor(secs / 3600)}h`
+  return `in ${Math.floor(secs / 86400)}d`
+}
+
 // fmtDay renders a YYYY-MM-DD date with its weekday ("Mon, Jul 7").
 export function fmtDay(date: string): string {
   const d = new Date(date + 'T00:00:00')

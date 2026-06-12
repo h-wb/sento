@@ -44,6 +44,7 @@ import type {
   QueueItem,
   Series,
 } from './types/store'
+import type { TaskStatus } from './types/scheduler'
 import type { Manga as SourceManga, Preference, Source } from './types/sourcehost'
 
 export type {
@@ -78,6 +79,7 @@ export type {
   Source,
   SourceManga,
   TargetSlot,
+  TaskStatus,
   VolumeSlot,
 }
 export type Slots = SlotsResponse
@@ -109,6 +111,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   status: () => request<SystemStatus>('/system/status'),
+  systemTasks: () => request<TaskStatus[]>('/system/tasks'),
+  runTask: (slug: string) => request<void>(`/system/tasks/${slug}/run`, { method: 'POST' }),
   lookup: (q: string) => request<LookupResult[]>(`/lookup?q=${encodeURIComponent(q)}`),
   calendar: (days = 60) => request<CalendarEntry[]>(`/calendar?days=${days}`),
 
