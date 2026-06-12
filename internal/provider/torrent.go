@@ -79,6 +79,7 @@ func (p *TorrentProvider) Search(ctx context.Context, req SearchRequest) ([]Cand
 					Torrent: &TorrentRef{
 						GUID:        rel.GUID,
 						InfoHash:    rel.InfoHash,
+						InfoURL:     rel.InfoURL,
 						MagnetURL:   rel.MagnetURL,
 						DownloadURL: rel.DownloadURL,
 						Size:        rel.Size,

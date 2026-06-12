@@ -86,6 +86,7 @@ func (r SearchRequest) SiteAllowed(providerID, siteID string) bool {
 type TorrentRef struct {
 	GUID        string `json:"guid"`
 	InfoHash    string `json:"infoHash,omitempty"`
+	InfoURL     string `json:"infoUrl,omitempty"` // release details page
 	MagnetURL   string `json:"-"`
 	DownloadURL string `json:"-"`
 	Size        int64  `json:"size,omitempty"`
@@ -100,6 +101,7 @@ type SourceRef struct {
 	Scanlator     string  `json:"scanlator,omitempty"`
 	SourceID      string  `json:"sourceId"`
 	BindingID     int64   `json:"bindingId,omitempty"`
+	WebURL        string  `json:"webUrl,omitempty"` // chapter page on the site
 }
 
 // Candidate is one release from any site, before the decision funnel.

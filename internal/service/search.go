@@ -57,6 +57,7 @@ type ReleaseCandidate struct {
 	Site         string       `json:"site"`
 	SiteID       string       `json:"siteId"`
 	Title        string       `json:"title"`
+	URL          string       `json:"url,omitempty"` // release page on the indexer/source site
 	Size         int64        `json:"size,omitempty"`
 	Seeders      int          `json:"seeders,omitempty"`
 	Scanlator    string       `json:"scanlator,omitempty"`

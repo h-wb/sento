@@ -41,6 +41,7 @@ data class ChapterDto(
     val name: String,
     val number: Double,
     val scanlator: String? = null,
+    val webUrl: String? = null,
 )
 
 @Serializable
@@ -132,6 +133,8 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
                     name = it.name,
                     number = number,
                     scanlator = it.scanlator,
+                    // No network: the default builds the page-list request URL.
+                    webUrl = (source as? HttpSource)?.let { hs -> runCatching { hs.getChapterUrl(it) }.getOrNull() },
                 )
             },
         )

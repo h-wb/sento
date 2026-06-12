@@ -145,6 +145,7 @@ func (p *SourceProvider) Search(ctx context.Context, req SearchRequest) ([]Candi
 						Scanlator:     c.Scanlator,
 						SourceID:      e.SourceID,
 						BindingID:     b.BindingID,
+						WebURL:        c.WebURL,
 					},
 				})
 			}

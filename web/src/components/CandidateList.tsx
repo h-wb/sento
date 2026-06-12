@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Badge, Button, Group, Stack, Switch, Table, Text, TextInput, Tooltip } from '@mantine/core'
+import { Anchor, Badge, Button, Group, Stack, Switch, Table, Text, TextInput, Tooltip } from '@mantine/core'
 import { IconSearch } from '@tabler/icons-react'
 import { fmtNum, fmtSize, type ReleaseCandidate } from '../api'
 import type { Range } from '../types/parse'
@@ -182,9 +182,24 @@ function CandidateRow({
         </Badge>
       </Table.Td>
       <Table.Td>
-        <Text size="xs" lineClamp={1} title={c.title}>
-          {c.title}
-        </Text>
+        {c.url ? (
+          <Anchor
+            href={c.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            size="xs"
+            c="inherit"
+            underline="hover"
+            lineClamp={1}
+            title={c.title}
+          >
+            {c.title}
+          </Anchor>
+        ) : (
+          <Text size="xs" lineClamp={1} title={c.title}>
+            {c.title}
+          </Text>
+        )}
         <Group gap={4} mt={2} wrap="wrap">
           {coverage && (
             <Badge size="xs" variant="outline" color="gray" style={{ textTransform: 'none' }}>

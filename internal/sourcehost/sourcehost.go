@@ -36,6 +36,9 @@ type Chapter struct {
 	Name      string  `json:"name"`
 	Number    float64 `json:"number,omitempty"`
 	Scanlator string  `json:"scanlator,omitempty"`
+	// WebURL is the chapter's page on the site itself, when the source can
+	// compute one — for the user, not for downloading.
+	WebURL string `json:"webUrl,omitempty"`
 }
 
 // ExtensionInfo describes one extension on a host: available from its

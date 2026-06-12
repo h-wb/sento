@@ -221,6 +221,7 @@ export interface ReleaseCandidate {
   site: string;
   siteId: string;
   title: string;
+  url?: string; // release page on the indexer/source site
   size?: number /* int64 */;
   seeders?: number /* int */;
   scanlator?: string;

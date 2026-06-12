@@ -34,6 +34,7 @@ func New(endpoint, apiKey string) *Client {
 type Release struct {
 	Title       string
 	GUID        string
+	InfoURL     string // release details page (comments link)
 	DownloadURL string // .torrent (item link)
 	MagnetURL   string
 	InfoHash    string
@@ -51,6 +52,7 @@ type item struct {
 	Title     string `xml:"title"`
 	GUID      string `xml:"guid"`
 	Link      string `xml:"link"`
+	Comments  string `xml:"comments"`
 	Size      int64  `xml:"size"`
 	Enclosure struct {
 		URL    string `xml:"url,attr"`
@@ -106,8 +108,14 @@ func (c *Client) Search(ctx context.Context, query string) ([]Release, error) {
 		rel := Release{
 			Title:       it.Title,
 			GUID:        it.GUID,
+			InfoURL:     it.Comments,
 			DownloadURL: it.Link,
 			Size:        it.Size,
+		}
+		// Prowlarr/Jackett usually mint the guid as the details-page URL;
+		// use it when the feed has no comments link.
+		if rel.InfoURL == "" && strings.HasPrefix(it.GUID, "http") {
+			rel.InfoURL = it.GUID
 		}
 		if rel.DownloadURL == "" {
 			rel.DownloadURL = it.Enclosure.URL

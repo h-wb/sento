@@ -27,9 +27,11 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 		if cand.Torrent != nil {
 			rc.Size = cand.Torrent.Size
 			rc.Seeders = cand.Torrent.Seeders
+			rc.URL = cand.Torrent.InfoURL
 		}
 		if cand.Source != nil {
 			rc.Scanlator = cand.Source.Scanlator
+			rc.URL = cand.Source.WebURL
 		}
 		rc.Parse = parse.ParseAnchored(cand.Title, channel, run.titles)
 
