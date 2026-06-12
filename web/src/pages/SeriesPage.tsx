@@ -773,6 +773,7 @@ function EditionSection({
               monitored: c.monitored,
               wanted: false,
               fileIds: [],
+              autoSearch: true,
             })
           }
         />
@@ -793,7 +794,7 @@ function EditionSection({
           </Table.Thead>
           <Table.Tbody>
             {colSlots.map((s) => {
-              const open = () =>
+              const open = (autoSearch = false) =>
                 onSlot({
                   ledger: 'volume',
                   number: s.number,
@@ -803,12 +804,13 @@ function EditionSection({
                   monitored: s.monitored,
                   wanted: s.wanted,
                   fileIds: s.fileIds ?? [],
+                  autoSearch,
                 })
               return (
                 <Table.Tr
                   key={`${s.number}-${s.countType}`}
                   style={{ cursor: 'pointer' }}
-                  onClick={open}
+                  onClick={() => open()}
                 >
                   <Table.Td>
                     <Text size="sm" fw={500}>
@@ -835,7 +837,7 @@ function EditionSection({
                       target={{ collectionId: c.id, number: s.number }}
                       busy={busy}
                       run={run}
-                      onInteractive={open}
+                      onInteractive={() => open(true)}
                     />
                   </Table.Td>
                 </Table.Tr>
@@ -1212,16 +1214,17 @@ function ChaptersTab({
           </Table.Thead>
           <Table.Tbody>
             {visible.map((c) => {
-              const open = () =>
+              const open = (autoSearch = false) =>
                 onSlot({
                   ledger: 'chapter',
                   number: c.number,
                   monitored: c.monitored,
                   wanted: c.wanted,
                   fileIds: c.fileIds ?? [],
+                  autoSearch,
                 })
               return (
-                <Table.Tr key={c.number} style={{ cursor: 'pointer' }} onClick={open}>
+                <Table.Tr key={c.number} style={{ cursor: 'pointer' }} onClick={() => open()}>
                   <Table.Td>
                     <Text size="sm" fw={500}>
                       c{fmtNum(c.number)}
@@ -1242,7 +1245,7 @@ function ChaptersTab({
                       target={{ collectionId: 0, number: c.number }}
                       busy={busy}
                       run={run}
-                      onInteractive={open}
+                      onInteractive={() => open(true)}
                     />
                   </Table.Td>
                 </Table.Tr>

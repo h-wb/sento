@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -26,6 +26,9 @@ export type SlotSelection = {
   monitored: boolean
   wanted: boolean
   fileIds: number[]
+  // Fire the streaming search as soon as the modal opens (the
+  // interactive-search buttons; a plain row click opens quietly).
+  autoSearch?: boolean
 }
 
 // Accumulated state of one streaming search: batches land per provider.
@@ -57,32 +60,11 @@ export default function SlotModal({
   const [result, setResult] = useState<StreamResult | null>(null)
   const small = useMediaQuery('(max-width: 48em)')
 
-  if (!sel) return null
-  // number 0 = the whole edition (every wanted volume): the place to grab
-  // packs and complete releases.
-  const editionWide = sel.ledger === 'volume' && sel.number === 0
-  const linked = files.filter((f) => sel.fileIds.includes(f.id))
-  const label = editionWide
-    ? `${sel.collectionName ?? 'Edition'} — wanted volumes`
-    : `${sel.ledger === 'volume' ? 'Volume' : 'Chapter'} ${fmtNum(sel.number)}`
-
-  const run = async (fn: () => Promise<unknown>, doneMsg?: string) => {
-    setBusy(true)
-    try {
-      await fn()
-      if (doneMsg) notify.ok(doneMsg)
-    } catch (e) {
-      notify.err(e)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const slotRef = { collectionId: sel.collectionId ?? 0, number: sel.number }
-
   // Streaming search: each provider's batch renders as soon as it lands,
   // so fast extension sources show up while torrent indexers still load.
   const interactiveSearch = async () => {
+    if (!sel) return
+    const slotRef = { collectionId: sel.collectionId ?? 0, number: sel.number }
     setSearching(true)
     setResult({
       searched: [],
@@ -136,6 +118,39 @@ export default function SlotModal({
       setResult((prev) => (prev ? { ...prev, pending: [], done: true } : prev))
     }
   }
+
+  // The interactive-search buttons open the modal already searching; a
+  // plain row click opens quietly. Deferred so the modal paints first
+  // (and StrictMode's double-invoke cancels via cleanup).
+  useEffect(() => {
+    if (!sel?.autoSearch) return
+    const id = setTimeout(() => void interactiveSearch(), 0)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel])
+
+  if (!sel) return null
+  // number 0 = the whole edition (every wanted volume): the place to grab
+  // packs and complete releases.
+  const editionWide = sel.ledger === 'volume' && sel.number === 0
+  const linked = files.filter((f) => sel.fileIds.includes(f.id))
+  const label = editionWide
+    ? `${sel.collectionName ?? 'Edition'} — wanted volumes`
+    : `${sel.ledger === 'volume' ? 'Volume' : 'Chapter'} ${fmtNum(sel.number)}`
+
+  const run = async (fn: () => Promise<unknown>, doneMsg?: string) => {
+    setBusy(true)
+    try {
+      await fn()
+      if (doneMsg) notify.ok(doneMsg)
+    } catch (e) {
+      notify.err(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const slotRef = { collectionId: sel.collectionId ?? 0, number: sel.number }
 
   const grab = (c: ReleaseCandidate, force: boolean) =>
     run(
