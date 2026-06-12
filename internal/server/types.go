@@ -24,18 +24,18 @@ type DatabaseStatus struct {
 	OK bool `json:"ok"`
 }
 
-// SeriesDetail is GET /series/{id}.
+// SeriesDetail is GET /series/{id}. The collections list carries both
+// volume editions and chapter collections (ctype distinguishes them).
 type SeriesDetail struct {
-	Series        *store.Series        `json:"series"`
-	Collections   []store.Collection   `json:"collections"`
-	ChapterLedger *store.ChapterLedger `json:"chapterLedger"`
+	Series      *store.Series      `json:"series"`
+	Collections []store.Collection `json:"collections"`
 }
 
-// SlotsResponse is GET /series/{id}/slots: volume slots keyed by
-// collection id, plus the chapter ledger slots.
+// SlotsResponse is GET /series/{id}/slots: volume and chapter slots, each
+// keyed by collection id.
 type SlotsResponse struct {
-	Volumes  map[string][]ledger.VolumeSlot `json:"volumes"`
-	Chapters []ledger.ChapterSlot           `json:"chapters,omitempty"`
+	Volumes  map[string][]ledger.VolumeSlot  `json:"volumes"`
+	Chapters map[string][]ledger.ChapterSlot `json:"chapters"`
 }
 
 // SearchBody is POST /series/{id}/search.
@@ -54,13 +54,6 @@ type SearchResponse struct {
 	Queued               []int64 `json:"queued"`
 }
 
-// ChapterLedgerPatch is PUT /series/{id}/chapter-ledger (nil = keep).
-type ChapterLedgerPatch struct {
-	Monitored *bool   `json:"monitored"`
-	Language  *string `json:"language"`
-	CutoffNum *int64  `json:"cutoffNum"`
-}
-
 // SeriesPatch is PUT /series/{id} (nil = keep): series-level monitoring
 // (gates the scheduler's automatic searches) and the release profile
 // (0 = back to the instance default).
@@ -70,22 +63,28 @@ type SeriesPatch struct {
 }
 
 // CollectionPatch is PUT /series/{id}/collections/{cid} (nil = keep);
-// ProfileID 0 = inherit the series profile.
+// ProfileID 0 = inherit the series profile. CutoffNum applies to chapter
+// collections, Language to custom collections only.
 type CollectionPatch struct {
-	Monitored *bool  `json:"monitored"`
-	ProfileID *int64 `json:"profileId"`
+	Monitored *bool   `json:"monitored"`
+	ProfileID *int64  `json:"profileId"`
+	CutoffNum *int64  `json:"cutoffNum"`
+	Language  *string `json:"language"`
 }
 
 // CreateCollectionBody is POST /series/{id}/collections — a custom
-// edition. Slot structure clones from basedOn (language variants) or
-// generates volumes 1..N (editions MangaBaka doesn't know).
+// collection. Volume editions clone their slot structure from basedOn
+// (language variants) or generate volumes 1..N (editions MangaBaka
+// doesn't know); chapter collections derive slots from total_chapters.
 type CreateCollectionBody struct {
 	EditionName string `json:"editionName"`
 	Language    string `json:"language"`
 	Publisher   string `json:"publisher"`
 	Medium      string `json:"medium"`
-	BasedOn     int64  `json:"basedOn"` // collection id; 0 = from scratch
-	Volumes     int    `json:"volumes"` // only when basedOn is 0
+	Type        string `json:"type" tstype:"'' | 'volume' | 'chapter'"` // default volume
+	BasedOn     int64  `json:"basedOn"`   // collection id; 0 = from scratch
+	Volumes     int    `json:"volumes"`   // only when basedOn is 0
+	CutoffNum   int64  `json:"cutoffNum"` // chapter type: monitor from N onward
 	Monitored   bool   `json:"monitored"`
 }
 

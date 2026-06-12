@@ -230,9 +230,9 @@ export const LedgerChapter = "chapter";
 export interface SearchService {
 }
 /**
- * TargetSlot restricts an interactive search to one slot (collectionID 0 =
- * chapter ledger). Number 0 widens it to every wanted slot of the
- * collection — the per-edition search, where packs shine.
+ * TargetSlot restricts an interactive search to one slot of a collection
+ * (volume or chapter type). Number 0 widens it to every wanted slot of the
+ * collection — the per-collection search, where packs shine.
  */
 export interface TargetSlot {
   collectionId: number /* int64 */;

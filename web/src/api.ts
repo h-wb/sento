@@ -5,7 +5,7 @@ import type { ChapterSlot, VolumeSlot } from './types/ledger'
 import type { SeriesRef } from './types/metadata'
 import type {
   BrowseProwlarrBody,
-  ChapterLedgerPatch,
+  CollectionPatch,
   CreateCollectionBody,
   ExtensionRepos,
   IndexerBody,
@@ -37,7 +37,6 @@ import type {
   Binding,
   BlocklistEntry,
   CalendarEntry,
-  ChapterLedger,
   Collection,
   Decision,
   File as SeriesFile,
@@ -62,9 +61,9 @@ export type {
   ProwlarrIndexer,
   BlocklistEntry,
   CalendarEntry,
-  ChapterLedger,
   ChapterSlot,
   Collection,
+  CollectionPatch,
   Decision,
   ImportProposal,
   MediaSettings,
@@ -134,13 +133,18 @@ export const api = {
     request<void>(`/series/${id}/`, { method: 'PUT', body: JSON.stringify({ profileId }) }),
   refreshSeries: (id: number) => request<unknown>(`/series/${id}/refresh`, { method: 'POST' }),
   slots: (id: number) => request<Slots>(`/series/${id}/slots`),
+  updateCollection: (id: number, cid: number, patch: CollectionPatch) =>
+    request<void>(`/series/${id}/collections/${cid}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
   setCollectionMonitored: (id: number, cid: number, monitored: boolean) =>
-    request<unknown>(`/series/${id}/collections/${cid}`, {
+    request<void>(`/series/${id}/collections/${cid}`, {
       method: 'PUT',
       body: JSON.stringify({ monitored }),
     }),
   setCollectionProfile: (id: number, cid: number, profileId: number) =>
-    request<unknown>(`/series/${id}/collections/${cid}`, {
+    request<void>(`/series/${id}/collections/${cid}`, {
       method: 'PUT',
       body: JSON.stringify({ profileId }),
     }),
@@ -156,11 +160,6 @@ export const api = {
     }),
   deleteCollection: (id: number, cid: number) =>
     request<void>(`/series/${id}/collections/${cid}`, { method: 'DELETE' }),
-  updateChapterLedger: (id: number, body: ChapterLedgerPatch) =>
-    request<ChapterLedger>(`/series/${id}/chapter-ledger`, {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    }),
   files: (id: number) => request<SeriesFile[]>(`/series/${id}/files`),
 
   listProfiles: () => request<Profile[]>('/profiles/'),

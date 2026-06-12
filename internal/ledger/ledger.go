@@ -77,11 +77,12 @@ func BuildVolumeSlots(col store.Collection, works []store.Work, links map[string
 	return slots
 }
 
-// BuildChapterSlots derives integer chapter slots 1..totalChapters, from
-// MangaBaka metadata only (D7-rev/D15: sources never feed the ledger). A
-// slot is monitored iff the ledger is monitored and its number is above the
-// cutoff (D6: "monitor from N onward", cutoff itself excluded).
-func BuildChapterSlots(l store.ChapterLedger, totalChapters int, links map[string][]int64, overrides map[int64]bool) []ChapterSlot {
+// BuildChapterSlots derives integer chapter slots 1..totalChapters for one
+// chapter-type collection, from MangaBaka metadata only (D7-rev/D15:
+// sources never feed the ledger). A slot is monitored iff the collection
+// is monitored and its number is above the cutoff (D6: "monitor from N
+// onward", cutoff itself excluded).
+func BuildChapterSlots(col store.Collection, totalChapters int, links map[string][]int64, overrides map[int64]bool) []ChapterSlot {
 	upper := int64(totalChapters) * 100
 	if upper <= 0 {
 		return nil
@@ -91,11 +92,11 @@ func BuildChapterSlots(l store.ChapterLedger, totalChapters int, links map[strin
 	slots := make([]ChapterSlot, 0, count)
 	for n := int64(1); n <= count; n++ {
 		num := n * 100
-		monitored := l.Monitored && num > l.CutoffNum
+		monitored := col.Monitored && num > col.CutoffNum
 		if ov, ok := overrides[num]; ok {
 			monitored = ov
 		}
-		files := links[store.SlotKey("chapter", 0, num)]
+		files := links[store.SlotKey("chapter", col.ID, num)]
 		slots = append(slots, ChapterSlot{
 			Number:    num,
 			Monitored: monitored,

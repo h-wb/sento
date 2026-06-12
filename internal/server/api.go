@@ -58,7 +58,6 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Put("/collections/{cid}", s.handleUpdateCollection)
 			r.Post("/collections/{cid}/merge", s.handleMergeCollection)
 			r.Delete("/collections/{cid}", s.handleDeleteCollection)
-			r.Put("/chapter-ledger", s.handleUpdateChapterLedger)
 			r.Get("/files", s.handleListFiles)
 			r.Post("/import", s.handleScanSeries)
 			r.Get("/bindings", s.handleListBindings)
@@ -209,15 +208,9 @@ func (s *Server) handleGetSeries(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	chapterLedger, err := s.store.GetChapterLedger(r.Context(), id)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
 	writeJSON(w, http.StatusOK, SeriesDetail{
-		Series:        series,
-		Collections:   collections,
-		ChapterLedger: chapterLedger,
+		Series:      series,
+		Collections: collections,
 	})
 }
 
@@ -292,22 +285,27 @@ func (s *Server) handleSlots(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	out := SlotsResponse{Volumes: map[string][]ledger.VolumeSlot{}}
+	out := SlotsResponse{
+		Volumes:  map[string][]ledger.VolumeSlot{},
+		Chapters: map[string][]ledger.ChapterSlot{},
+	}
 	for _, col := range collections {
+		key := strconv.FormatInt(col.ID, 10)
+		if col.Type == "chapter" {
+			out.Chapters[key] = ledger.BuildChapterSlots(col, series.TotalChapters, links, nil)
+			continue
+		}
 		works, err := s.store.ListWorks(r.Context(), col.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		out.Volumes[strconv.FormatInt(col.ID, 10)] = ledger.BuildVolumeSlots(col, works, links, nil, time.Now())
-	}
-	if cl, err := s.store.GetChapterLedger(r.Context(), id); err == nil {
-		out.Chapters = ledger.BuildChapterSlots(*cl, series.TotalChapters, links, nil)
+		out.Volumes[key] = ledger.BuildVolumeSlots(col, works, links, nil, time.Now())
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// --- collection / chapter ledger updates ---
+// --- collection updates ---
 
 func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
@@ -322,17 +320,26 @@ func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "editionName and language are required")
 		return
 	}
-	if body.BasedOn == 0 && (body.Volumes < 1 || body.Volumes > 500) {
+	ctype := body.Type
+	if ctype == "" {
+		ctype = "volume"
+	}
+	if ctype != "volume" && ctype != "chapter" {
+		writeError(w, http.StatusBadRequest, "type must be volume or chapter")
+		return
+	}
+	if ctype == "volume" && body.BasedOn == 0 && (body.Volumes < 1 || body.Volumes > 500) {
 		writeError(w, http.StatusBadRequest, "volumes must be 1-500 when not based on an existing edition")
 		return
 	}
 	cid, err := s.store.AddCustomCollection(r.Context(), store.Collection{
 		SeriesID: id, EditionName: body.EditionName, Language: body.Language,
-		Publisher: body.Publisher, Medium: body.Medium, Monitored: body.Monitored,
+		Publisher: body.Publisher, Medium: body.Medium, Type: ctype,
+		Monitored: body.Monitored, CutoffNum: body.CutoffNum,
 	}, body.BasedOn, body.Volumes)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
-			writeError(w, http.StatusConflict, "an edition with this name/language/publisher/medium already exists")
+			writeError(w, http.StatusConflict, "a collection with this name/language/publisher/medium already exists")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -412,24 +419,34 @@ func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	if body.CutoffNum != nil || body.Language != nil {
+		col, err := s.store.GetCollection(r.Context(), cid)
+		if err != nil || col.SeriesID != id {
+			writeStoreError(w, store.ErrNotFound)
+			return
+		}
+		if body.CutoffNum != nil {
+			if col.Type != "chapter" {
+				writeError(w, http.StatusBadRequest, "cutoff applies to chapter collections only")
+				return
+			}
+			if err := s.store.SetCollectionCutoff(r.Context(), id, cid, *body.CutoffNum); err != nil {
+				writeStoreError(w, err)
+				return
+			}
+		}
+		if body.Language != nil {
+			if !col.Custom {
+				writeError(w, http.StatusBadRequest, "language can only be changed on custom collections")
+				return
+			}
+			if err := s.store.SetCollectionLanguage(r.Context(), id, cid, *body.Language); err != nil {
+				writeStoreError(w, err)
+				return
+			}
+		}
+	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) handleUpdateChapterLedger(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	var body ChapterLedgerPatch
-	if !decodeBody(w, r, &body) {
-		return
-	}
-	current, err := s.library.PatchChapterLedger(r.Context(), id, body.Monitored, body.Language, body.CutoffNum)
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, current)
 }
 
 // --- files ---

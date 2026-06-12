@@ -68,7 +68,7 @@ packages:
       /* eslint-disable */
       import type { ChapterSlot, VolumeSlot } from "./ledger"
       import type { ScanResult, SearchResult, TargetSlot } from "./service"
-      import type { ChapterLedger, Collection, Series } from "./store"
+      import type { Collection, Series } from "./store"
     type_mappings:
       ledger.VolumeSlot: "VolumeSlot"
       ledger.ChapterSlot: "ChapterSlot"
@@ -77,4 +77,3 @@ packages:
       service.ScanResult: "ScanResult"
       store.Series: "Series"
       store.Collection: "Collection"
-      store.ChapterLedger: "ChapterLedger"

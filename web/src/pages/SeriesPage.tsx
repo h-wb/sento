@@ -52,7 +52,6 @@ import {
   api,
   fmtNum,
   fmtSize,
-  type ChapterLedger,
   type ChapterSlot,
   type Collection,
   type SeriesFile,
@@ -94,7 +93,6 @@ export default function SeriesPage() {
   const series = detail.data?.series ?? null
   usePageTitle(series?.title ?? '')
   const collections = detail.data?.collections ?? []
-  const ledger = detail.data?.chapterLedger ?? null
   const slots = slotsQuery.data ?? null
   const files = filesQuery.data ?? []
 
@@ -183,26 +181,12 @@ export default function SeriesPage() {
             }
           />
           <Divider orientation="vertical" mx={4} />
-          {tab === 'volumes' && (
+          {(tab === 'volumes' || tab === 'chapters') && (
             <BarButton
               icon={<IconVersions size={18} />}
               label="Collections"
               onClick={() => setManageCollections(true)}
             />
-          )}
-          {tab === 'chapters' && ledger && (
-            <>
-              <BarButton
-                icon={ledger.monitored ? <IconEye size={18} /> : <IconEyeOff size={18} />}
-                label={ledger.monitored ? 'Chapters: On' : 'Chapters: Off'}
-                onClick={() =>
-                  run(() =>
-                    api.updateChapterLedger(seriesID, { monitored: !ledger.monitored }),
-                  )
-                }
-              />
-              <CutoffBarButton seriesID={seriesID} ledger={ledger} run={run} />
-            </>
           )}
           <BarButton
             icon={
@@ -284,7 +268,7 @@ export default function SeriesPage() {
 
       <CollectionsModal
         seriesID={seriesID}
-        collections={volumeCollections}
+        collections={collections}
         slots={slots}
         opened={manageCollections}
         run={run}
@@ -326,12 +310,13 @@ export default function SeriesPage() {
         <Tabs.Panel value="chapters" pt="md">
           <ChaptersTab
             seriesID={seriesID}
-            ledger={ledger}
+            collections={collections}
             slots={slots}
             files={files}
             busy={busy}
             run={run}
             onSlot={setSlotSel}
+            onManageCollections={() => setManageCollections(true)}
             view={chaptersView}
           />
         </Tabs.Panel>
@@ -494,36 +479,42 @@ function BarButton({
   )
 }
 
-// CutoffBarButton edits the chapter cutoff from the action bar.
-function CutoffBarButton({
+// CutoffButton edits a chapter collection's cutoff ("monitor from N
+// onward") from the section header.
+function CutoffButton({
   seriesID,
-  ledger,
+  collection: c,
   run,
 }: {
   seriesID: number
-  ledger: ChapterLedger
+  collection: Collection
   run: (fn: () => Promise<unknown>, msg?: string) => void
 }) {
   const [opened, setOpened] = useState(false)
-  const [cutoff, setCutoff] = useState<number | ''>(ledger.cutoffNum / 100)
-  // Adjust-during-render: re-sync when the ledger (re)loads.
-  const [prevCutoff, setPrevCutoff] = useState(ledger.cutoffNum)
-  if (ledger.cutoffNum !== prevCutoff) {
-    setPrevCutoff(ledger.cutoffNum)
-    setCutoff(ledger.cutoffNum / 100)
+  const [cutoff, setCutoff] = useState<number | ''>(c.cutoffNum / 100)
+  // Adjust-during-render: re-sync when the collection (re)loads.
+  const [prevCutoff, setPrevCutoff] = useState(c.cutoffNum)
+  if (c.cutoffNum !== prevCutoff) {
+    setPrevCutoff(c.cutoffNum)
+    setCutoff(c.cutoffNum / 100)
   }
   return (
     <Popover opened={opened} onChange={setOpened} position="bottom-start" withinPortal trapFocus>
       <Popover.Target>
-        <div style={{ display: 'inline-block' }}>
-          <BarButton
-            icon={<IconScissors size={18} />}
-            label={`Cutoff: c${fmtNum(ledger.cutoffNum)}`}
-            onClick={() => setOpened((o) => !o)}
-          />
-        </div>
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          color="gray"
+          leftSection={<IconScissors size={14} />}
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpened((o) => !o)
+          }}
+        >
+          Cutoff: c{fmtNum(c.cutoffNum)}
+        </Button>
       </Popover.Target>
-      <Popover.Dropdown>
+      <Popover.Dropdown onClick={(e) => e.stopPropagation()}>
         <Stack gap="xs" w={220}>
           <NumberInput
             label="Monitor from chapter"
@@ -538,7 +529,7 @@ function CutoffBarButton({
               setOpened(false)
               run(
                 () =>
-                  api.updateChapterLedger(seriesID, {
+                  api.updateCollection(seriesID, c.id, {
                     cutoffNum: Math.round(Number(cutoff || 0) * 100),
                   }),
                 'Cutoff updated',
@@ -1016,11 +1007,13 @@ function CollectionsModal({
     <Modal opened={opened} onClose={onClose} title="Collections" size="lg">
       <Stack gap="sm">
         <Text size="xs" c="dimmed">
-          Monitored collections show on the Volumes tab and are searched; the rest are reference.
-          Most series want exactly one monitored collection — the one you collect.
+          Monitored collections show on the Volumes/Chapters tabs and are searched; the rest are
+          reference. Most series want one monitored volume collection and one chapter collection —
+          add more (another language, colored, a specific team) when you collect several variants.
         </Text>
         {collections.map((c) => {
-          const cs = slots?.volumes?.[String(c.id)] ?? []
+          const isChapter = c.type === 'chapter'
+          const cs = (isChapter ? slots?.chapters : slots?.volumes)?.[String(c.id)] ?? []
           const own = cs.filter((s) => (s.fileIds?.length ?? 0) > 0).length
           return (
             <Group key={c.id} justify="space-between" wrap="nowrap">
@@ -1030,6 +1023,11 @@ function CollectionsModal({
                   <Text span size="xs" c="dimmed">
                     {[c.language, c.medium, c.publisher].filter(Boolean).join(' · ')}
                   </Text>{' '}
+                  {isChapter && (
+                    <Badge size="xs" color="teal" variant="light">
+                      chapters
+                    </Badge>
+                  )}{' '}
                   {c.custom && (
                     <Badge size="xs" color="grape" variant="light">
                       custom
@@ -1045,7 +1043,7 @@ function CollectionsModal({
                   <CustomCollectionActions
                     seriesID={seriesID}
                     collection={c}
-                    others={collections.filter((o) => o.id !== c.id)}
+                    others={collections.filter((o) => o.id !== c.id && o.type === c.type)}
                     run={run}
                   />
                 )}
@@ -1064,7 +1062,7 @@ function CollectionsModal({
         })}
         {collections.length === 0 && (
           <Text size="sm" c="dimmed">
-            No volume collections known for this series.
+            No collections known for this series.
           </Text>
         )}
         <Button size="xs" variant="default" style={{ alignSelf: 'flex-start' }} onClick={onAdd}>
@@ -1124,12 +1122,14 @@ function AddCollectionModal({
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onClose: () => void
 }) {
+  const [ctype, setCtype] = useState<'volume' | 'chapter'>('volume')
   const [name, setName] = useState('Standard Edition')
   const [language, setLanguage] = useState('')
   const [publisher, setPublisher] = useState('')
   const [medium, setMedium] = useState('')
   const [basedOn, setBasedOn] = useState<string | null>(null)
   const [volumes, setVolumes] = useState<number | string>(12)
+  const [cutoff, setCutoff] = useState<number | string>(0)
 
   const create = () =>
     run(
@@ -1140,34 +1140,62 @@ function AddCollectionModal({
             language,
             publisher,
             medium,
-            basedOn: basedOn ? Number(basedOn) : 0,
-            volumes: basedOn ? 0 : Number(volumes) || 0,
+            type: ctype,
+            basedOn: ctype === 'volume' && basedOn ? Number(basedOn) : 0,
+            volumes: ctype === 'volume' && !basedOn ? Number(volumes) || 0 : 0,
+            cutoffNum: ctype === 'chapter' ? Math.round((Number(cutoff) || 0) * 100) : 0,
             monitored: true,
           })
           .then(onClose),
-      'Edition created',
+      'Collection created',
     )
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Add edition" size="md">
+    <Modal opened={opened} onClose={onClose} title="Add collection" size="md">
       <Stack gap="xs">
-        <Select
-          label="Based on"
-          description="Clones the volume numbering (release dates stay unknown); pick nothing to start from scratch"
-          placeholder="From scratch"
-          clearable
-          data={collections.map((c) => ({
-            value: String(c.id),
-            label: `${c.editionName} · ${c.language} · ${c.medium || '?'} (${c.countMain} vols)`,
-          }))}
-          value={basedOn}
-          onChange={setBasedOn}
+        <SegmentedControl
+          size="xs"
+          value={ctype}
+          onChange={(v) => {
+            const t = v as 'volume' | 'chapter'
+            setCtype(t)
+            // Swap the default name when the user hasn't typed their own.
+            if (t === 'chapter' && name === 'Standard Edition') setName('Chapters')
+            if (t === 'volume' && name === 'Chapters') setName('Standard Edition')
+          }}
+          data={[
+            { value: 'volume', label: 'Volumes' },
+            { value: 'chapter', label: 'Chapters' },
+          ]}
         />
-        {!basedOn && (
+        {ctype === 'volume' && (
+          <Select
+            label="Based on"
+            description="Clones the volume numbering (release dates stay unknown); pick nothing to start from scratch"
+            placeholder="From scratch"
+            clearable
+            data={collections.map((c) => ({
+              value: String(c.id),
+              label: `${c.editionName} · ${c.language} · ${c.medium || '?'} (${c.countMain} vols)`,
+            }))}
+            value={basedOn}
+            onChange={setBasedOn}
+          />
+        )}
+        {ctype === 'volume' && !basedOn && (
           <NumberInput label="Volumes" min={1} max={500} value={volumes} onChange={setVolumes} />
         )}
+        {ctype === 'chapter' && (
+          <NumberInput
+            label="Monitor from chapter"
+            description="Chapters below the cutoff are ignored (0 = collect everything)"
+            min={0}
+            value={cutoff}
+            onChange={setCutoff}
+          />
+        )}
         <TextInput
-          label="Edition name"
+          label="Collection name"
           value={name}
           onChange={(e) => setName(e.currentTarget.value)}
         />
@@ -1236,22 +1264,22 @@ function CustomCollectionActions({
                     `Merged, but ${r.unmatched.map((n) => 'v' + n / 100).join(', ')} had no matching slot in "${o.editionName}" — the files stay linked but won't show on its grid.`,
                   )
                 }
-              }, 'Editions merged')
+              }, 'Collections merged')
             }
           >
             {o.editionName} · {o.language} {o.medium ? `· ${o.medium}` : ''}
           </Menu.Item>
         ))}
-        {others.length === 0 && <Menu.Item disabled>No other edition</Menu.Item>}
+        {others.length === 0 && <Menu.Item disabled>No other collection</Menu.Item>}
         <Menu.Divider />
         <Menu.Item
           color="red"
           leftSection={<IconTrash size={14} />}
           onClick={() =>
-            run(() => api.deleteCollection(seriesID, collection.id), 'Edition deleted')
+            run(() => api.deleteCollection(seriesID, collection.id), 'Collection deleted')
           }
         >
-          Delete edition
+          Delete collection
         </Menu.Item>
       </Menu.Dropdown>
     </Menu>
@@ -1302,39 +1330,106 @@ function ChapterStrip({ chapters }: { chapters: ChapterSlot[] }) {
 
 type ChapterFilter = 'wanted' | 'missing' | 'owned' | 'all'
 
+// ChaptersTab mirrors the Volumes tab: one section per monitored chapter
+// collection (language variants, colored runs, a specific team — each with
+// its own profile and cutoff).
 function ChaptersTab({
   seriesID,
-  ledger,
+  collections,
   slots,
   files,
   busy,
   run,
   onSlot,
+  onManageCollections,
   view,
 }: {
   seriesID: number
-  ledger: ChapterLedger | null
+  collections: Collection[]
   slots: Slots | null
   files: SeriesFile[]
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onSlot: (s: SlotSelection) => void
+  onManageCollections: () => void
   view: LedgerView
 }) {
-  const chapters = slots?.chapters ?? []
+  const monitoredCols = collections.filter((c) => c.type === 'chapter' && c.monitored)
+  const fileById = new Map(files.map((f) => [f.id, f]))
+
+  return (
+    <Stack>
+      {monitoredCols.length === 0 && (
+        <Text size="sm" c="dimmed">
+          No monitored chapter collection —{' '}
+          <Text
+            span
+            size="sm"
+            c="indigo"
+            style={{ cursor: 'pointer' }}
+            onClick={onManageCollections}
+          >
+            open Collections
+          </Text>{' '}
+          to enable one.
+        </Text>
+      )}
+      {monitoredCols.map((c) => (
+        <ChapterCollectionSection
+          key={c.id}
+          seriesID={seriesID}
+          collection={c}
+          chapters={slots?.chapters?.[String(c.id)] ?? []}
+          fileById={fileById}
+          defaultOpen={monitoredCols.length === 1}
+          view={view}
+          busy={busy}
+          run={run}
+          onSlot={onSlot}
+        />
+      ))}
+    </Stack>
+  )
+}
+
+// ChapterCollectionSection is one chapter collection as a collapsible card:
+// strip + counters in the header, the filterable chapter list inside.
+function ChapterCollectionSection({
+  seriesID,
+  collection: col,
+  chapters,
+  fileById,
+  defaultOpen,
+  view,
+  busy,
+  run,
+  onSlot,
+}: {
+  seriesID: number
+  collection: Collection
+  chapters: ChapterSlot[]
+  fileById: Map<number, SeriesFile>
+  defaultOpen: boolean
+  view: LedgerView
+  busy: boolean
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+  onSlot: (s: SlotSelection) => void
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  const [filter, setFilter] = useState<ChapterFilter>('wanted')
+  const [showAll, setShowAll] = useState(false)
+
+  const collectionName = [col.editionName, col.language].filter(Boolean).join(' · ')
   const monitored = chapters.filter((c) => c.monitored)
   const owned = monitored.filter((c) => (c.fileIds?.length ?? 0) > 0).length
   const wanted = chapters.filter((c) => c.wanted)
-  const [filter, setFilter] = useState<ChapterFilter>('wanted')
-  const [showAll, setShowAll] = useState(false)
-  const fileById = new Map(files.map((f) => [f.id, f]))
-
-  if (!ledger) return <Text c="dimmed">No chapter ledger.</Text>
 
   const openSlot = (c: ChapterSlot, autoSearch = false) =>
     onSlot({
       ledger: 'chapter',
       number: c.number,
+      collectionId: col.id,
+      collectionName,
       monitored: c.monitored,
       wanted: c.wanted,
       fileIds: c.fileIds ?? [],
@@ -1359,110 +1454,163 @@ function ChaptersTab({
   const chipSlots = showAll ? filtered : filtered.slice(-200)
 
   return (
-    <Stack>
-      <ChapterStrip chapters={chapters} />
-      <Group justify="space-between">
-        <Text size="sm" c="dimmed">
-          {owned}/{monitored.length} monitored chapters owned · {wanted.length} wanted
-        </Text>
-        <SegmentedControl
-          size="xs"
-          value={filter}
-          onChange={(v) => {
-            setFilter(v as ChapterFilter)
-            setShowAll(false)
-          }}
-          data={[
-            { value: 'wanted', label: `Wanted (${wanted.length})` },
-            { value: 'missing', label: 'Missing' },
-            { value: 'owned', label: 'Owned' },
-            { value: 'all', label: `All (${chapters.length})` },
-          ]}
-        />
-      </Group>
-
-      {view === 'chips' && chipSlots.length > 0 && (
-        <Group gap={3}>
-          {chipSlots.map((c) => (
-            <Tooltip
-              key={c.number}
-              label={`c${fmtNum(c.number)}${c.wanted ? ' · wanted' : ''} — click for details`}
-            >
-              <Badge
-                size="xs"
-                style={{ cursor: 'pointer' }}
-                {...chipProps(c)}
-                onClick={() => openSlot(c)}
-              >
-                {fmtNum(c.number)}
-              </Badge>
-            </Tooltip>
-          ))}
+    <Card withBorder padding="sm">
+      <Group
+        justify="space-between"
+        wrap="nowrap"
+        style={{ cursor: 'pointer' }}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Group gap={8} wrap="nowrap">
+          <IconChevronRight
+            size={16}
+            style={{ transform: open ? 'rotate(90deg)' : undefined, transition: 'transform 150ms' }}
+          />
+          <div>
+            <Text fw={600}>
+              {col.editionName}{' '}
+              <Text span c="dimmed" size="sm">
+                {[col.language, col.publisher].filter(Boolean).join(' · ')}
+              </Text>{' '}
+              {col.custom && (
+                <Badge size="xs" color="grape" variant="light">
+                  custom
+                </Badge>
+              )}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {owned}/{monitored.length} monitored owned · {wanted.length} wanted
+            </Text>
+          </div>
         </Group>
-      )}
-      {view === 'table' && visible.length > 0 && (
-        <Table highlightOnHover verticalSpacing={4}>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th w={90}>Chapter</Table.Th>
-              <Table.Th w={110}>Status</Table.Th>
-              <Table.Th>File</Table.Th>
-              <Table.Th w={70} />
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {visible.map((c) => (
-              <Table.Tr key={c.number} style={{ cursor: 'pointer' }} onClick={() => openSlot(c)}>
-                <Table.Td>
-                  <Text size="sm" fw={500}>
-                    {fmtNum(c.number)}
-                  </Text>
-                </Table.Td>
-                <Table.Td>
-                  <StatusBadge slot={c} />
-                </Table.Td>
-                <Table.Td>
-                  <Text size="xs" c="dimmed">
-                    {slotFileText(c.fileIds, fileById)}
-                  </Text>
-                </Table.Td>
-                <Table.Td>
-                  <SlotActions
-                    seriesID={seriesID}
-                    ledger="chapter"
-                    target={{ collectionId: 0, number: c.number }}
-                    busy={busy}
-                    run={run}
-                    onInteractive={() => openSlot(c, true)}
-                  />
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      )}
-      {!showAll && filtered.length > 200 && (
-        <Text size="xs" c="dimmed">
-          Showing {view === 'chips' ? 'the latest' : ''} 200 of {filtered.length} —{' '}
-          <Text
-            span
+        <Group gap={4} wrap="nowrap">
+          <CutoffButton seriesID={seriesID} collection={col} run={run} />
+          <SlotActions
+            seriesID={seriesID}
+            ledger="chapter"
+            target={{ collectionId: col.id, number: 0 }}
+            busy={busy}
+            run={run}
+            autoLabel="Auto search — grab the best for each wanted chapter"
+            onInteractive={() =>
+              onSlot({
+                ledger: 'chapter',
+                number: 0,
+                collectionId: col.id,
+                collectionName,
+                monitored: col.monitored,
+                wanted: false,
+                fileIds: [],
+                autoSearch: true,
+              })
+            }
+          />
+        </Group>
+      </Group>
+      <div style={{ marginTop: 8 }}>
+        <ChapterStrip chapters={chapters} />
+      </div>
+      <Collapse expanded={open}>
+        <Group justify="flex-end" mt="xs">
+          <SegmentedControl
             size="xs"
-            c="indigo"
-            style={{ cursor: 'pointer' }}
-            onClick={() => setShowAll(true)}
-          >
-            show all
+            value={filter}
+            onChange={(v) => {
+              setFilter(v as ChapterFilter)
+              setShowAll(false)
+            }}
+            data={[
+              { value: 'wanted', label: `Wanted (${wanted.length})` },
+              { value: 'missing', label: 'Missing' },
+              { value: 'owned', label: 'Owned' },
+              { value: 'all', label: `All (${chapters.length})` },
+            ]}
+          />
+        </Group>
+
+        {view === 'chips' && chipSlots.length > 0 && (
+          <Group gap={3} mt="xs">
+            {chipSlots.map((c) => (
+              <Tooltip
+                key={c.number}
+                label={`c${fmtNum(c.number)}${c.wanted ? ' · wanted' : ''} — click for details`}
+              >
+                <Badge
+                  size="xs"
+                  style={{ cursor: 'pointer' }}
+                  {...chipProps(c)}
+                  onClick={() => openSlot(c)}
+                >
+                  {fmtNum(c.number)}
+                </Badge>
+              </Tooltip>
+            ))}
+          </Group>
+        )}
+        {view === 'table' && visible.length > 0 && (
+          <Table highlightOnHover verticalSpacing={4} mt="xs">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th w={90}>Chapter</Table.Th>
+                <Table.Th w={110}>Status</Table.Th>
+                <Table.Th>File</Table.Th>
+                <Table.Th w={70} />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {visible.map((c) => (
+                <Table.Tr key={c.number} style={{ cursor: 'pointer' }} onClick={() => openSlot(c)}>
+                  <Table.Td>
+                    <Text size="sm" fw={500}>
+                      {fmtNum(c.number)}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <StatusBadge slot={c} />
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs" c="dimmed">
+                      {slotFileText(c.fileIds, fileById)}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <SlotActions
+                      seriesID={seriesID}
+                      ledger="chapter"
+                      target={{ collectionId: col.id, number: c.number }}
+                      busy={busy}
+                      run={run}
+                      onInteractive={() => openSlot(c, true)}
+                    />
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
+        {!showAll && filtered.length > 200 && (
+          <Text size="xs" c="dimmed" mt="xs">
+            Showing {view === 'chips' ? 'the latest' : ''} 200 of {filtered.length} —{' '}
+            <Text
+              span
+              size="xs"
+              c="indigo"
+              style={{ cursor: 'pointer' }}
+              onClick={() => setShowAll(true)}
+            >
+              show all
+            </Text>
           </Text>
-        </Text>
-      )}
-      {filtered.length === 0 && (
-        <Text size="sm" c="dimmed">
-          {filter === 'wanted'
-            ? 'No wanted chapters — everything monitored is owned. Switch the filter to browse the rest.'
-            : 'Nothing matches this filter.'}
-        </Text>
-      )}
-    </Stack>
+        )}
+        {filtered.length === 0 && (
+          <Text size="sm" c="dimmed" mt="xs">
+            {filter === 'wanted'
+              ? 'No wanted chapters — everything monitored is owned. Switch the filter to browse the rest.'
+              : 'Nothing matches this filter.'}
+          </Text>
+        )}
+      </Collapse>
+    </Card>
   )
 }
 

@@ -184,6 +184,7 @@ export interface Collection {
   endDate?: string;
   custom: boolean;
   profileId?: number /* int64 */; // 0 = inherit from series
+  cutoffNum: number /* int64 */; // chapter ctype: monitor from N onward (D6)
 }
 export interface Work {
   id: number /* int64 */;
@@ -194,12 +195,6 @@ export interface Work {
   releaseDate?: string;
   isbn?: string;
   pages?: number /* int */;
-}
-export interface ChapterLedger {
-  seriesId: number /* int64 */;
-  monitored: boolean;
-  language: string;
-  cutoffNum: number /* int64 */;
 }
 export interface File {
   id: number /* int64 */;
@@ -213,7 +208,7 @@ export interface File {
 export interface SlotLink {
   FileID: number /* int64 */;
   Ledger: string;
-  CollectionID: number /* int64 */; // 0 = chapter ledger
+  CollectionID: number /* int64 */;
   Number: number /* int64 */;
 }
 export interface Binding {

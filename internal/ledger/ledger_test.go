@@ -91,10 +91,10 @@ func TestVolumeSlotsUndatedReleases(t *testing.T) {
 }
 
 func TestChapterSlots(t *testing.T) {
-	l := store.ChapterLedger{Monitored: true, CutoffNum: 300} // monitor from c4 (cutoff excluded)
-	links := map[string][]int64{store.SlotKey("chapter", 0, 500): {9}}
+	col := store.Collection{ID: 7, Monitored: true, CutoffNum: 300} // monitor from c4 (cutoff excluded)
+	links := map[string][]int64{store.SlotKey("chapter", 7, 500): {9}}
 
-	slots := BuildChapterSlots(l, 6, links, nil)
+	slots := BuildChapterSlots(col, 6, links, nil)
 	if len(slots) != 6 {
 		t.Fatalf("want 6 slots, got %d", len(slots))
 	}
@@ -114,17 +114,17 @@ func TestChapterSlots(t *testing.T) {
 }
 
 func TestChapterSlotsOverridesAndEmpty(t *testing.T) {
-	l := store.ChapterLedger{Monitored: true, CutoffNum: 0}
-	slots := BuildChapterSlots(l, 2, nil, map[int64]bool{100: false})
+	col := store.Collection{Monitored: true, CutoffNum: 0}
+	slots := BuildChapterSlots(col, 2, nil, map[int64]bool{100: false})
 	if slots[0].Monitored || !slots[1].Monitored {
 		t.Errorf("override: got %v,%v want false,true", slots[0].Monitored, slots[1].Monitored)
 	}
 
-	if got := BuildChapterSlots(l, 0, nil, nil); got != nil {
+	if got := BuildChapterSlots(col, 0, nil, nil); got != nil {
 		t.Errorf("zero chapters: want nil, got %d slots", len(got))
 	}
 
-	paused := store.ChapterLedger{Monitored: false}
+	paused := store.Collection{Monitored: false}
 	for _, s := range BuildChapterSlots(paused, 3, nil, nil) {
 		if s.Monitored || s.Wanted {
 			t.Errorf("paused ledger must not monitor/want: %+v", s)

@@ -65,12 +65,21 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 	if err != nil {
 		return nil, err
 	}
-	// Volume links route to the sole monitored volume collection, falling
-	// back to edition-hint matching (R6-lite; review UI is post-v1).
-	var monitored []store.Collection
+	// Volume links route to a monitored volume collection via edition-hint
+	// matching (R6-lite; review UI is post-v1). Chapter links route to a
+	// chapter collection even when paused — ownership is still worth
+	// tracking — preferring monitored ones.
+	var monitored, chapterCols []store.Collection
 	for _, c := range collections {
-		if c.Monitored && c.Type == "volume" {
+		switch {
+		case c.Type == "volume" && c.Monitored:
 			monitored = append(monitored, c)
+		case c.Type == "chapter":
+			if c.Monitored {
+				chapterCols = append([]store.Collection{c}, chapterCols...)
+			} else {
+				chapterCols = append(chapterCols, c)
+			}
 		}
 	}
 
@@ -101,7 +110,7 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 		res.Scanned++
 
 		parsed := parse.ParseAnchored(filepath.Base(path), parse.ChannelFile, titles)
-		links := sc.linksFor(parsed, monitored)
+		links := sc.linksFor(parsed, monitored, chapterCols)
 
 		info, ierr := d.Info()
 		size := int64(0)
@@ -132,8 +141,9 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 }
 
 // linksFor maps a parsed file onto slot links: volumes to the routed
-// collection, integer chapters to the chapter ledger.
-func (sc *Scanner) linksFor(parsed parse.Result, monitored []store.Collection) []store.SlotLink {
+// volume collection, integer chapters to the first monitored chapter
+// collection (language-matched when the filename is tagged).
+func (sc *Scanner) linksFor(parsed parse.Result, monitored, chapterCols []store.Collection) []store.SlotLink {
 	var links []store.SlotLink
 
 	if len(parsed.Volumes) > 0 && len(monitored) > 0 {
@@ -165,53 +175,76 @@ func (sc *Scanner) linksFor(parsed parse.Result, monitored []store.Collection) [
 			}
 		}
 	}
-	for _, r := range parsed.Chapters {
-		for n := (int64(r.From) + 99) / 100 * 100; n <= int64(r.To); n += 100 {
-			links = append(links, store.SlotLink{Ledger: "chapter", Number: n})
+	if len(parsed.Chapters) > 0 && len(chapterCols) > 0 {
+		col := chapterCols[0]
+		if parsed.Language != "" && parsed.Language != "multi" {
+			for _, c := range chapterCols {
+				if baseLang(c.Language) == baseLang(parsed.Language) {
+					col = c
+					break
+				}
+			}
+		}
+		for _, r := range parsed.Chapters {
+			for n := (int64(r.From) + 99) / 100 * 100; n <= int64(r.To); n += 100 {
+				links = append(links, store.SlotLink{Ledger: "chapter", CollectionID: col.ID, Number: n})
+			}
 		}
 	}
 	return links
 }
 
-// LowestOwnedChapter returns the lowest linked chapter number of a series,
-// used for the import-time cutoff default (§11.4: lowest owned chapter so
-// owned chapters land in-ledger and the frontier continues).
-func (sc *Scanner) LowestOwnedChapter(ctx context.Context, seriesID int64) (int64, error) {
+// LowestOwnedChapters returns the lowest linked chapter number per chapter
+// collection, used for the import-time cutoff default (§11.4: lowest owned
+// chapter so owned chapters land in-ledger and the frontier continues).
+func (sc *Scanner) LowestOwnedChapters(ctx context.Context, seriesID int64) (map[int64]int64, error) {
 	links, err := sc.store.SlotLinks(ctx, seriesID)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	lowest := int64(0)
+	lowest := map[int64]int64{}
 	for key := range links {
 		parts := strings.Split(key, "/")
 		if len(parts) != 3 || parts[0] != "chapter" {
 			continue
 		}
-		num, err := strconv.ParseInt(parts[2], 10, 64)
+		colID, err := strconv.ParseInt(parts[1], 10, 64)
 		if err != nil {
 			continue
 		}
-		if num > 0 && (lowest == 0 || num < lowest) {
-			lowest = num
+		num, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil || num <= 0 {
+			continue
+		}
+		if cur, ok := lowest[colID]; !ok || num < cur {
+			lowest[colID] = num
 		}
 	}
 	return lowest, nil
 }
 
 // ScanAndAdoptCutoff runs ScanSeriesFolder and, when chapter files were
-// linked, lowers the chapter cutoff to just below the lowest owned
-// chapter so owned chapters land in-ledger (spec.md §11.4).
+// linked, lowers each chapter collection's cutoff to just below its lowest
+// owned chapter so owned chapters land in-ledger (spec.md §11.4).
 func (sc *Scanner) ScanAndAdoptCutoff(ctx context.Context, seriesID int64, dir string) (*ScanResult, error) {
 	result, err := sc.ScanSeriesFolder(ctx, seriesID, dir)
 	if err != nil {
 		return nil, err
 	}
-	if result.Linked > 0 {
-		if lowest, err := sc.LowestOwnedChapter(ctx, seriesID); err == nil && lowest > 0 {
-			if cl, err := sc.store.GetChapterLedger(ctx, seriesID); err == nil && lowest-100 < cl.CutoffNum {
-				cl.CutoffNum = lowest - 100
-				_ = sc.store.UpdateChapterLedger(ctx, *cl)
-			}
+	if result.Linked == 0 {
+		return result, nil
+	}
+	lowest, err := sc.LowestOwnedChapters(ctx, seriesID)
+	if err != nil || len(lowest) == 0 {
+		return result, nil
+	}
+	collections, err := sc.store.ListCollections(ctx, seriesID)
+	if err != nil {
+		return result, nil
+	}
+	for _, col := range collections {
+		if low, ok := lowest[col.ID]; ok && col.Type == "chapter" && low-100 < col.CutoffNum {
+			_ = sc.store.SetCollectionCutoff(ctx, seriesID, col.ID, low-100)
 		}
 	}
 	return result, nil

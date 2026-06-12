@@ -71,9 +71,9 @@ function Inner({
   onClose: () => void
   onChanged: () => void
 }) {
-  // number 0 = the whole edition (every wanted volume): the place to grab
-  // packs and complete releases.
-  const editionWide = sel.ledger === 'volume' && sel.number === 0
+  // number 0 = the whole collection (every wanted volume/chapter): the
+  // place to grab packs and complete releases.
+  const editionWide = sel.number === 0
   const linked = files.filter((f) => sel.fileIds.includes(f.id))
 
   const [busy, setBusy] = useState(false)
@@ -153,7 +153,7 @@ function Inner({
   }, [])
 
   const label = editionWide
-    ? `${sel.collectionName ?? 'Edition'} — wanted volumes`
+    ? `${sel.collectionName ?? 'Collection'} — wanted ${sel.ledger}s`
     : `${sel.ledger === 'volume' ? 'Volume' : 'Chapter'} ${fmtNum(sel.number)}`
 
   const run = async (fn: () => Promise<unknown>, doneMsg?: string) => {
@@ -187,9 +187,9 @@ function Inner({
       <Stack gap="sm">
         {editionWide ? (
           <Text size="sm" c="dimmed">
-            Candidates are matched against every wanted volume of this collection — multi-volume
-            packs cover several slots at once. Packs that are mostly already owned get flagged
-            and need a force grab.
+            Candidates are matched against every wanted {sel.ledger} of this collection —
+            multi-{sel.ledger} packs cover several slots at once. Packs that are mostly already
+            owned get flagged and need a force grab.
           </Text>
         ) : (
           <Group gap={6}>

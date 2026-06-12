@@ -130,9 +130,9 @@ func TestUnifiedVolumeFunnel(t *testing.T) {
 
 	// Chapter ledger search over the same releases: only g7 matches a slot
 	// if wanted. Set cutoff to 1055 so 1056+ is wanted.
-	cl, _ := st.GetChapterLedger(ctx, seriesID)
-	cl.CutoffNum = 105500
-	if err := st.UpdateChapterLedger(ctx, *cl); err != nil {
+	cols, _ := st.ListCollections(ctx, seriesID)
+	chapters := chapterCollection(t, cols)
+	if err := st.SetCollectionCutoff(ctx, seriesID, chapters.ID, 105500); err != nil {
 		t.Fatal(err)
 	}
 	chResult, err := svc.FindCandidates(ctx, seriesID, LedgerChapter, nil)

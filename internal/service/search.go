@@ -42,9 +42,9 @@ func (s *SearchService) HasSourceProvider() bool {
 	return s.registry.ForProtocol(provider.ProtocolSource) != nil
 }
 
-// TargetSlot restricts an interactive search to one slot (collectionID 0 =
-// chapter ledger). Number 0 widens it to every wanted slot of the
-// collection — the per-edition search, where packs shine.
+// TargetSlot restricts an interactive search to one slot of a collection
+// (volume or chapter type). Number 0 widens it to every wanted slot of the
+// collection — the per-collection search, where packs shine.
 type TargetSlot struct {
 	CollectionID int64 `json:"collectionId"`
 	Number       int64 `json:"number"` // hundredths; 0 = whole collection
@@ -278,7 +278,6 @@ type searchRun struct {
 	searched    []string
 	wanted      map[int64]map[int64]bool
 	collections []store.Collection
-	chapterLang string
 	blocked     map[string]bool // "protocol/externalKey" bans
 	// profiles is the effective release profile per collection id, with
 	// the series-level profile under key 0 (nil map = built-ins).
@@ -321,7 +320,7 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 		}
 		run.priorities[[2]string{st.providerID, st.entryID}] = st.eff.Priority
 	}
-	run.wanted, run.collections, run.chapterLang, err = s.wantedSlots(ctx, seriesID, searchLedger, target)
+	run.wanted, run.collections, err = s.wantedSlots(ctx, seriesID, searchLedger, target)
 	if err != nil {
 		return nil, err
 	}
@@ -463,21 +462,17 @@ func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, sear
 }
 
 // wantedSlots computes the wanted slot sets for a ledger:
-// collectionID → slot set (chapter ledger uses collectionID 0).
-func (s *SearchService) wantedSlots(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot) (map[int64]map[int64]bool, []store.Collection, string, error) {
+// collectionID → slot set, over the collections of the ledger's ctype.
+func (s *SearchService) wantedSlots(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot) (map[int64]map[int64]bool, []store.Collection, error) {
 	collections, err := s.store.ListCollections(ctx, seriesID)
 	if err != nil {
-		return nil, nil, "", err
-	}
-	chapterLang := ""
-	if cl, err := s.store.GetChapterLedger(ctx, seriesID); err == nil {
-		chapterLang = cl.Language
+		return nil, nil, err
 	}
 	// A single-slot target forces that slot wanted (re-download works even
 	// when owned). A whole-collection target (Number 0) keeps the real
 	// wanted set, filtered to the collection below.
 	if target != nil && target.Number != 0 {
-		return map[int64]map[int64]bool{target.CollectionID: {target.Number: true}}, collections, chapterLang, nil
+		return map[int64]map[int64]bool{target.CollectionID: {target.Number: true}}, collections, nil
 	}
 	filterTarget := func(w map[int64]map[int64]bool) map[int64]map[int64]bool {
 		if target == nil {
@@ -488,13 +483,19 @@ func (s *SearchService) wantedSlots(ctx context.Context, seriesID int64, searchL
 
 	links, err := s.store.SlotLinks(ctx, seriesID)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, err
 	}
 	pending, err := s.store.PendingSlotKeys(ctx, seriesID)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, err
 	}
 	wanted := map[int64]map[int64]bool{}
+	add := func(colID, number int64) {
+		if wanted[colID] == nil {
+			wanted[colID] = map[int64]bool{}
+		}
+		wanted[colID][number] = true
+	}
 
 	if searchLedger == LedgerVolume {
 		for _, col := range collections {
@@ -503,37 +504,30 @@ func (s *SearchService) wantedSlots(ctx context.Context, seriesID int64, searchL
 			}
 			works, err := s.store.ListWorks(ctx, col.ID)
 			if err != nil {
-				return nil, nil, "", err
+				return nil, nil, err
 			}
 			for _, slot := range ledger.BuildVolumeSlots(col, works, links, nil, time.Now()) {
-				if !slot.Wanted || pending[store.SlotKey("volume", col.ID, slot.Number)] {
-					continue
+				if slot.Wanted && !pending[store.SlotKey("volume", col.ID, slot.Number)] {
+					add(col.ID, slot.Number)
 				}
-				if wanted[col.ID] == nil {
-					wanted[col.ID] = map[int64]bool{}
-				}
-				wanted[col.ID][slot.Number] = true
 			}
 		}
-		return filterTarget(wanted), collections, chapterLang, nil
+		return filterTarget(wanted), collections, nil
 	}
 
 	series, err := s.store.GetSeries(ctx, seriesID)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, err
 	}
-	cl, err := s.store.GetChapterLedger(ctx, seriesID)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	for _, slot := range ledger.BuildChapterSlots(*cl, series.TotalChapters, links, nil) {
-		if !slot.Wanted || pending[store.SlotKey("chapter", 0, slot.Number)] {
+	for _, col := range collections {
+		if !col.Monitored || col.Type != "chapter" {
 			continue
 		}
-		if wanted[0] == nil {
-			wanted[0] = map[int64]bool{}
+		for _, slot := range ledger.BuildChapterSlots(col, series.TotalChapters, links, nil) {
+			if slot.Wanted && !pending[store.SlotKey("chapter", col.ID, slot.Number)] {
+				add(col.ID, slot.Number)
+			}
 		}
-		wanted[0][slot.Number] = true
 	}
-	return filterTarget(wanted), collections, chapterLang, nil
+	return filterTarget(wanted), collections, nil
 }

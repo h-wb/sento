@@ -112,6 +112,14 @@ func (p *SourceProvider) Search(ctx context.Context, req SearchRequest) ([]Candi
 		err   error
 	}
 	ch := make(chan res, len(req.Bindings))
+	// Source language map: a source's language is the release language of
+	// every chapter it lists (chapter names rarely tag it themselves).
+	langs := map[string]string{}
+	if sources, err := p.host.Sources(ctx); err == nil {
+		for _, s := range sources {
+			langs[s.ID] = s.Lang
+		}
+	}
 	active := 0
 	for _, b := range req.Bindings {
 		if !req.SiteAllowed(p.ID(), b.SourceID) || b.SourceMangaKey == "" {
@@ -146,6 +154,7 @@ func (p *SourceProvider) Search(ctx context.Context, req SearchRequest) ([]Candi
 						SourceID:      e.SourceID,
 						BindingID:     b.BindingID,
 						WebURL:        c.WebURL,
+						Lang:          langs[e.SourceID],
 					},
 				})
 			}

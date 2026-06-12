@@ -100,7 +100,9 @@ func TestAddSeriesDefaultMonitor(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range cols {
-		want := c.EditionName == "Standard Edition" && c.Type == "volume"
+		// The chapter collection is always monitored at add (cutoff = latest,
+		// so nothing is wanted until new chapters release).
+		want := c.Type == "chapter" || (c.EditionName == "Standard Edition" && c.Type == "volume")
 		if c.Monitored != want {
 			t.Errorf("%s %s: monitored=%v, want %v", c.EditionName, c.Type, c.Monitored, want)
 		}
@@ -120,7 +122,7 @@ func TestAddSeriesMonitorNone(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range cols {
-		if c.Monitored {
+		if c.Monitored && c.Type != "chapter" {
 			t.Errorf("%s: monitored, want none", c.EditionName)
 		}
 	}
@@ -165,8 +167,8 @@ func TestAddSeriesAndSlots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cols) != 2 {
-		t.Fatalf("want 2 collections, got %d", len(cols))
+	if len(cols) != 3 { // 2 volume editions + the default chapter collection
+		t.Fatalf("want 3 collections, got %d", len(cols))
 	}
 	for _, c := range cols {
 		if !c.Monitored {
@@ -174,13 +176,10 @@ func TestAddSeriesAndSlots(t *testing.T) {
 		}
 	}
 
-	// Chapter ledger: cutoff defaults to latest at add (D6).
-	cl, err := st.GetChapterLedger(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cl.CutoffNum != 1184*100 {
-		t.Fatalf("cutoff: want %d, got %d", 1184*100, cl.CutoffNum)
+	// Chapter collection: cutoff defaults to latest at add (D6).
+	chapters := chapterCollection(t, cols)
+	if chapters.CutoffNum != 1184*100 {
+		t.Fatalf("cutoff: want %d, got %d", 1184*100, chapters.CutoffNum)
 	}
 
 	// Volume slots: vol 1+2 wanted (released, no files); vol 3 future → not wanted.
@@ -231,12 +230,12 @@ func TestChapterSlots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cl, err := st.GetChapterLedger(ctx, id)
+	cols, err := st.ListCollections(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	slots := ledger.BuildChapterSlots(*cl, 1184, nil, nil)
+	slots := ledger.BuildChapterSlots(chapterCollection(t, cols), 1184, nil, nil)
 	if len(slots) != 1184 {
 		t.Fatalf("want 1184 slots, got %d", len(slots))
 	}
@@ -276,7 +275,7 @@ func TestRefreshReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cols) != 2 {
+	if len(cols) != 3 { // 2 volume editions + the chapter collection
 		t.Fatalf("descriptor matching must not duplicate collections: got %d", len(cols))
 	}
 	var standard store.Collection

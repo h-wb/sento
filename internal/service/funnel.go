@@ -35,6 +35,11 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 			rc.URL = cand.Source.WebURL
 		}
 		rc.Parse = parse.ParseAnchored(cand.Title, channel, run.titles)
+		// Chapter names rarely tag a language; the source's own language is
+		// the release language (drives the R2 gate and collection routing).
+		if cand.Source != nil && rc.Parse.Language == "" {
+			rc.Parse.Language = cand.Source.Lang
+		}
 
 		ranges := s.coverageRanges(run.ledger, &rc)
 		// Keep number-less candidates only as potential whole-series packs
@@ -75,7 +80,7 @@ func (s *SearchService) coverageRanges(searchLedger string, rc *ReleaseCandidate
 // parameterized by ledger and the series' release profile.
 func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []parse.Range) {
 	searchLedger, target := run.ledger, run.target
-	collections, wanted, chapterLang := run.collections, run.wanted, run.chapterLang
+	collections, wanted := run.collections, run.wanted
 	reject := func(code string) { c.Rejections = append(c.Rejections, code) }
 
 	// R1 content-type gate.
@@ -91,24 +96,23 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		}
 	}
 
-	// Routing: volumes route to a collection (R6); chapters use ledger 0.
+	// Routing: both ledgers route to a collection of their ctype (R6) —
+	// the wanted map only carries collections of the searched ledger.
 	colID := int64(0)
-	wantLang := chapterLang
-	if searchLedger == LedgerVolume {
-		if target != nil {
-			colID = target.CollectionID
-		} else {
-			var ok bool
-			colID, ok = routeEdition(c.Parse, collections, wanted)
-			if !ok {
-				reject("rejected.edition_routing")
-				return
-			}
+	if target != nil {
+		colID = target.CollectionID
+	} else {
+		var ok bool
+		colID, ok = routeCollection(c.Parse, collections, wanted)
+		if !ok {
+			reject("rejected.edition_routing")
+			return
 		}
-		for _, col := range collections {
-			if col.ID == colID {
-				wantLang = col.Language
-			}
+	}
+	wantLang := ""
+	for _, col := range collections {
+		if col.ID == colID {
+			wantLang = col.Language
 		}
 	}
 	c.CollectionID = colID
@@ -244,11 +248,13 @@ func baseLang(lang string) string {
 	return strings.ToLower(base)
 }
 
-// routeEdition maps edition hints to a monitored collection (R6). A
-// language-tagged release prefers collections of that language (custom
-// fr variants receive FR releases; en/untagged keep the original) —
-// falling back to all monitored when no language matches.
-func routeEdition(p parse.Result, collections []store.Collection,
+// routeCollection maps edition hints to a monitored collection (R6) —
+// volume editions and chapter collections alike (the wanted map scopes
+// the candidates to one ctype). A language-tagged release prefers
+// collections of that language (custom fr variants receive FR releases;
+// en/untagged keep the original) — falling back to all monitored when no
+// language matches.
+func routeCollection(p parse.Result, collections []store.Collection,
 	wanted map[int64]map[int64]bool,
 ) (int64, bool) {
 	monitored := make([]store.Collection, 0, len(collections))
@@ -296,7 +302,15 @@ func routeEdition(p parse.Result, collections []store.Collection,
 	if id, ok := matchName("standard"); ok {
 		return id, true
 	}
-	return monitored[0].ID, true
+	// Untagged release, no name hint: the oldest collection wins — stable,
+	// and the original (pre-customs) collection has the lowest id.
+	best := monitored[0]
+	for _, col := range monitored[1:] {
+		if col.ID < best.ID {
+			best = col
+		}
+	}
+	return best.ID, true
 }
 
 // Rejections that survive a force-grab (decision-engine.md §7).

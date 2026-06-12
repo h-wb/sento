@@ -8,6 +8,17 @@ import (
 	"github.com/h-wb/sento/internal/store"
 )
 
+func chapterCollection(t *testing.T, cols []store.Collection) store.Collection {
+	t.Helper()
+	for _, c := range cols {
+		if c.Type == "chapter" {
+			return c
+		}
+	}
+	t.Fatalf("no chapter collection in %+v", cols)
+	return store.Collection{}
+}
+
 func collectionByName(t *testing.T, cols []store.Collection, name, lang string) store.Collection {
 	t.Helper()
 	for _, c := range cols {
@@ -128,7 +139,7 @@ func TestRouteEditionLanguage(t *testing.T) {
 	wanted := map[int64]map[int64]bool{1: {100: true}, 2: {100: true}}
 
 	route := func(lang string) int64 {
-		id, ok := routeEdition(parse.Result{Language: lang}, cols, wanted)
+		id, ok := routeCollection(parse.Result{Language: lang}, cols, wanted)
 		if !ok {
 			t.Fatalf("routing failed for lang %q", lang)
 		}

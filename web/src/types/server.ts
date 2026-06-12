@@ -2,7 +2,7 @@
 /* eslint-disable */
 import type { ChapterSlot, VolumeSlot } from "./ledger"
 import type { ScanResult, SearchResult, TargetSlot } from "./service"
-import type { ChapterLedger, Collection, Series } from "./store"
+import type { Collection, Series } from "./store"
 
 //////////
 // source: server.go
@@ -29,20 +29,20 @@ export interface DatabaseStatus {
   ok: boolean;
 }
 /**
- * SeriesDetail is GET /series/{id}.
+ * SeriesDetail is GET /series/{id}. The collections list carries both
+ * volume editions and chapter collections (ctype distinguishes them).
  */
 export interface SeriesDetail {
   series?: Series;
   collections: Collection[];
-  chapterLedger?: ChapterLedger;
 }
 /**
- * SlotsResponse is GET /series/{id}/slots: volume slots keyed by
- * collection id, plus the chapter ledger slots.
+ * SlotsResponse is GET /series/{id}/slots: volume and chapter slots, each
+ * keyed by collection id.
  */
 export interface SlotsResponse {
   volumes: { [key: string]: VolumeSlot[]};
-  chapters?: ChapterSlot[];
+  chapters: { [key: string]: ChapterSlot[]};
 }
 /**
  * SearchBody is POST /series/{id}/search.
@@ -62,14 +62,6 @@ export interface SearchResponse extends SearchResult {
   queued: number /* int64 */[];
 }
 /**
- * ChapterLedgerPatch is PUT /series/{id}/chapter-ledger (nil = keep).
- */
-export interface ChapterLedgerPatch {
-  monitored?: boolean;
-  language?: string;
-  cutoffNum?: number /* int64 */;
-}
-/**
  * SeriesPatch is PUT /series/{id} (nil = keep): series-level monitoring
  * (gates the scheduler's automatic searches) and the release profile
  * (0 = back to the instance default).
@@ -80,24 +72,30 @@ export interface SeriesPatch {
 }
 /**
  * CollectionPatch is PUT /series/{id}/collections/{cid} (nil = keep);
- * ProfileID 0 = inherit the series profile.
+ * ProfileID 0 = inherit the series profile. CutoffNum applies to chapter
+ * collections, Language to custom collections only.
  */
 export interface CollectionPatch {
   monitored?: boolean;
   profileId?: number /* int64 */;
+  cutoffNum?: number /* int64 */;
+  language?: string;
 }
 /**
  * CreateCollectionBody is POST /series/{id}/collections — a custom
- * edition. Slot structure clones from basedOn (language variants) or
- * generates volumes 1..N (editions MangaBaka doesn't know).
+ * collection. Volume editions clone their slot structure from basedOn
+ * (language variants) or generate volumes 1..N (editions MangaBaka
+ * doesn't know); chapter collections derive slots from total_chapters.
  */
 export interface CreateCollectionBody {
   editionName: string;
   language: string;
   publisher: string;
   medium: string;
+  type: '' | 'volume' | 'chapter'; // default volume
   basedOn: number /* int64 */; // collection id; 0 = from scratch
   volumes: number /* int */; // only when basedOn is 0
+  cutoffNum: number /* int64 */; // chapter type: monitor from N onward
   monitored: boolean;
 }
 /**

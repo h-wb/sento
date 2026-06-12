@@ -66,8 +66,9 @@ func TestScanSeriesFolder(t *testing.T) {
 		t.Errorf("vols 1-2 should be satisfied after scan: %+v", slots[:2])
 	}
 
-	// Chapter 1180 linked.
-	if len(links[store.SlotKey("chapter", 0, 118000)]) != 1 {
+	// Chapter 1180 linked to the chapter collection.
+	chapters := chapterCollection(t, cols)
+	if len(links[store.SlotKey("chapter", chapters.ID, 118000)]) != 1 {
 		t.Errorf("chapter 1180 should be linked")
 	}
 
@@ -81,8 +82,8 @@ func TestScanSeriesFolder(t *testing.T) {
 	}
 
 	// Lowest owned chapter feeds the import cutoff default (§11.4).
-	lowest, err := sc.LowestOwnedChapter(ctx, seriesID)
-	if err != nil || lowest != 118000 {
-		t.Errorf("lowest owned chapter: want 118000, got %d (%v)", lowest, err)
+	lowest, err := sc.LowestOwnedChapters(ctx, seriesID)
+	if err != nil || lowest[chapters.ID] != 118000 {
+		t.Errorf("lowest owned chapter: want 118000, got %v (%v)", lowest, err)
 	}
 }

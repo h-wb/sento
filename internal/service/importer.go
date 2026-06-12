@@ -168,14 +168,11 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	first := slots[0]
 	isVolume := first.Ledger == "volume"
 
+	// Both ledgers carry a real collection id now; its identity names the file.
 	lang := "en"
 	editionName := ""
-	if isVolume {
-		if col, err := im.store.GetCollection(ctx, first.CollectionID); err == nil {
-			editionName, lang = col.EditionName, col.Language
-		}
-	} else if cl, err := im.store.GetChapterLedger(ctx, item.SeriesID); err == nil {
-		lang = cl.Language
+	if col, err := im.store.GetCollection(ctx, first.CollectionID); err == nil {
+		editionName, lang = col.EditionName, col.Language
 	}
 
 	seriesDir, err := im.seriesDir(ctx, series, naming)
@@ -207,7 +204,7 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	} else {
 		fileName := mediafile.Render(naming.ChapterFile, mediafile.NameTokens{
 			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
-			Volume: -1, Chapter: first.Number, Lang: lang,
+			Volume: -1, Chapter: first.Number, Edition: editionName, Lang: lang,
 		})
 		if !ms.RenameImports {
 			fileName = mediafile.Sanitize(item.Title) + ".cbz"
@@ -273,12 +270,8 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	}
 
 	editionName, lang := "", ""
-	if slotLedger == "volume" {
-		if col, err := im.store.GetCollection(ctx, collectionID); err == nil {
-			editionName, lang = col.EditionName, col.Language
-		}
-	} else if cl, err := im.store.GetChapterLedger(ctx, item.SeriesID); err == nil {
-		lang = cl.Language
+	if col, err := im.store.GetCollection(ctx, collectionID); err == nil {
+		editionName, lang = col.EditionName, col.Language
 	}
 
 	seriesDir, err := im.seriesDir(ctx, series, naming)
@@ -319,7 +312,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 					dest = filepath.Join(seriesDir, naming.ChapterDir,
 						mediafile.Render(naming.ChapterFile, mediafile.NameTokens{
 							SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
-							Volume: -1, Chapter: n, Lang: lang,
+							Volume: -1, Chapter: n, Edition: editionName, Lang: lang,
 						}))
 				}
 				// Hardlinked as-is: keep the source's real format extension

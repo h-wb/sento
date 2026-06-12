@@ -102,6 +102,7 @@ type SourceRef struct {
 	SourceID      string  `json:"sourceId"`
 	BindingID     int64   `json:"bindingId,omitempty"`
 	WebURL        string  `json:"webUrl,omitempty"` // chapter page on the site
+	Lang          string  `json:"lang,omitempty"`   // the source's language
 }
 
 // Candidate is one release from any site, before the decision funnel.
