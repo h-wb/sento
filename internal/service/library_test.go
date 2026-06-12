@@ -86,6 +86,64 @@ func setup(t *testing.T) (*Library, *store.Store) {
 	return NewLibrary(st, testProvider()), st
 }
 
+func TestAddSeriesDefaultMonitor(t *testing.T) {
+	lib, st := setup(t)
+	ctx := context.Background()
+
+	// No mode given: the Standard Edition is monitored, the rest is not.
+	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cols, err := st.ListCollections(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cols {
+		want := c.EditionName == "Standard Edition" && c.Type == "volume"
+		if c.Monitored != want {
+			t.Errorf("%s %s: monitored=%v, want %v", c.EditionName, c.Type, c.Monitored, want)
+		}
+	}
+}
+
+func TestAddSeriesMonitorNone(t *testing.T) {
+	lib, st := setup(t)
+	ctx := context.Background()
+
+	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "none"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cols, err := st.ListCollections(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cols {
+		if c.Monitored {
+			t.Errorf("%s: monitored, want none", c.EditionName)
+		}
+	}
+}
+
+func TestDefaultEditionID(t *testing.T) {
+	cols := []metadata.Collection{
+		{ProviderID: "chap", EditionName: "Standard Edition", Language: "fr", Type: "chapter"},
+		{ProviderID: "omni-en", EditionName: "Omnibus Edition", Language: "en", Type: "volume"},
+		{ProviderID: "std-fr", EditionName: "Standard Edition", Language: "fr", Type: "volume"},
+		{ProviderID: "std-en", EditionName: "Standard Edition", Language: "en", Type: "volume"},
+	}
+	if got := defaultEditionID(cols, ""); got != "std-en" {
+		t.Errorf("default lang: got %s, want std-en", got)
+	}
+	if got := defaultEditionID(cols, "fr"); got != "std-fr" {
+		t.Errorf("fr: got %s, want std-fr", got)
+	}
+	if got := defaultEditionID(nil, ""); got != "" {
+		t.Errorf("empty: got %s, want empty", got)
+	}
+}
+
 func TestAddSeriesAndSlots(t *testing.T) {
 	lib, st := setup(t)
 	ctx := context.Background()

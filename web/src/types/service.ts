@@ -138,6 +138,12 @@ export interface Library {
 }
 export interface AddSeriesRequest {
   mangabakaId: number /* int64 */;
+  /**
+   * Monitor is the edition-monitoring mode: "" or "default" monitors the
+   * default edition (see defaultEditionID), "all" every volume edition,
+   * "none" nothing. MonitorAll/MonitorIDs override it when set.
+   */
+  monitor: string;
   monitorAll: boolean; // monitor all volume-type collections
   monitorIds: string[]; // or explicit provider collection ids
   chapterLang: string; // default "en"

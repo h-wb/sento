@@ -4,9 +4,9 @@ import {
   Badge,
   Button,
   Card,
-  Checkbox,
   Group,
   Image,
+  Select,
   Stack,
   Text,
   TextInput,
@@ -21,7 +21,7 @@ import { notify, usePageTitle } from '../ui'
 export default function AddPage() {
   usePageTitle('Add Series')
   const [query, setQuery] = useState('')
-  const [monitorAll, setMonitorAll] = useState(true)
+  const [monitor, setMonitor] = useState('default')
   const navigate = useNavigate()
 
   // Known MangaBaka ids, so results already in the library link instead
@@ -31,7 +31,7 @@ export default function AddPage() {
 
   const lookup = useMutation({ mutationFn: (q: string) => api.lookup(q), onError: notify.err })
   const add = useMutation({
-    mutationFn: (r: LookupResult) => api.addSeries({ mangabakaId: r.mangabakaId, monitorAll }),
+    mutationFn: (r: LookupResult) => api.addSeries({ mangabakaId: r.mangabakaId, monitor }),
     onSuccess: (s) => {
       notify.ok(`Added "${s.title}"`)
       navigate(`/series/${s.id}`)
@@ -63,11 +63,20 @@ export default function AddPage() {
           Search
         </Button>
       </Group>
-      <Checkbox
+      <Select
         mb="md"
-        label="Monitor all volume editions on add"
-        checked={monitorAll}
-        onChange={(e) => setMonitorAll(e.currentTarget.checked)}
+        w={300}
+        size="xs"
+        label="Monitor editions on add"
+        description="Changeable later per series under Volumes → Editions"
+        allowDeselect={false}
+        value={monitor}
+        onChange={(v) => v && setMonitor(v)}
+        data={[
+          { value: 'default', label: 'Default edition (standard, preferred language)' },
+          { value: 'all', label: 'All volume editions' },
+          { value: 'none', label: 'None' },
+        ]}
       />
       <Stack>
         {results?.map((r) => {

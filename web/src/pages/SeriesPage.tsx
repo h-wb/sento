@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Card,
+  Collapse,
   Group,
   Image,
   Menu,
@@ -26,6 +27,7 @@ import {
 } from '@mantine/core'
 import {
   IconChevronDown,
+  IconChevronRight,
   IconDotsVertical,
   IconEye,
   IconEyeOff,
@@ -48,6 +50,7 @@ import {
   type SeriesFile,
   type SeriesIndexerView,
   type Slots,
+  type VolumeSlot,
 } from '../api'
 import CandidateList from '../components/CandidateList'
 import SlotModal, { type SlotSelection } from '../components/SlotModal'
@@ -519,17 +522,11 @@ function VolumesTab({
   const [funnel, setFunnel] = useState<SearchResponse | null>(null)
   const [manageOpen, setManageOpen] = useState(false)
   const [addEdition, setAddEdition] = useState(false)
-  const [selId, setSelId] = useState<string | null>(null)
   const volumeCollections = collections.filter((c) => c.type === 'volume')
   // Only monitored editions show here — the ones being collected. The
-  // rest (reference data) live in the Editions manager. Fall back to the
-  // first when the selected one disappears (unmonitored/merged).
+  // rest (reference data) live in the Editions manager.
   const monitoredCols = volumeCollections.filter((c) => c.monitored)
-  const selected = monitoredCols.find((c) => String(c.id) === selId) ?? monitoredCols[0]
   const fileById = new Map(files.map((f) => [f.id, f]))
-
-  const colSlots = selected ? (slots?.volumes?.[String(selected.id)] ?? []) : []
-  const owned = colSlots.filter((s) => (s.fileIds?.length ?? 0) > 0).length
 
   return (
     <Stack>
@@ -539,22 +536,6 @@ function VolumesTab({
           Editions ({volumeCollections.length})
         </Button>
       </Group>
-
-      {monitoredCols.length > 1 && (
-        <SegmentedControl
-          size="xs"
-          value={String(selected?.id ?? '')}
-          onChange={setSelId}
-          data={monitoredCols.map((c) => {
-            const cs = slots?.volumes?.[String(c.id)] ?? []
-            const own = cs.filter((s) => (s.fileIds?.length ?? 0) > 0).length
-            return {
-              value: String(c.id),
-              label: `${c.editionName} · ${c.language}${c.medium ? ` · ${c.medium}` : ''} (${own}/${cs.length})`,
-            }
-          })}
-        />
-      )}
 
       <EditionsModal
         seriesID={seriesID}
@@ -574,7 +555,7 @@ function VolumesTab({
         onClose={() => setAddEdition(false)}
       />
 
-      {!selected && (
+      {monitoredCols.length === 0 && (
         <Text size="sm" c="dimmed">
           No monitored edition —{' '}
           <Text
@@ -589,105 +570,156 @@ function VolumesTab({
           to pick the one you collect.
         </Text>
       )}
-      {selected && (
-        <Card withBorder padding="sm" maw={760}>
-          <Group justify="space-between" mb="xs">
-            <div>
-              <Text fw={600}>
-                {selected.editionName}{' '}
-                <Text span c="dimmed" size="sm">
-                  {[selected.language, selected.medium, selected.publisher]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </Text>{' '}
-                {selected.custom && (
-                  <Badge size="xs" color="grape" variant="light">
-                    custom
-                  </Badge>
-                )}
-              </Text>
-              <Text size="xs" c="dimmed">
-                {owned}/{colSlots.length} owned
-              </Text>
-            </div>
-          </Group>
-          {colSlots.length > 0 && (
-            <Progress size="xs" value={(owned / Math.max(colSlots.length, 1)) * 100} mb="xs" />
-          )}
-          <Table highlightOnHover verticalSpacing={4}>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th w={70}>Volume</Table.Th>
-                <Table.Th w={120}>Released</Table.Th>
-                <Table.Th w={110}>Status</Table.Th>
-                <Table.Th>File</Table.Th>
-                <Table.Th w={70} />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {colSlots.map((s) => {
-                const open = () =>
-                  onSlot({
-                    ledger: 'volume',
-                    number: s.number,
-                    collectionId: selected.id,
-                    collectionName: `${selected.editionName} · ${selected.language} · ${selected.medium}`,
-                    releaseDate: s.releaseDate,
-                    monitored: s.monitored,
-                    wanted: s.wanted,
-                    fileIds: s.fileIds ?? [],
-                  })
-                return (
-                  <Table.Tr
-                    key={`${s.number}-${s.countType}`}
-                    style={{ cursor: 'pointer' }}
-                    onClick={open}
-                  >
-                    <Table.Td>
-                      <Text size="sm" fw={500}>
-                        v{fmtNum(s.number)}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="xs" c="dimmed">
-                        {s.releaseDate || '—'}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <StatusBadge slot={s} />
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="xs" c="dimmed">
-                        {slotFileText(s.fileIds, fileById)}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <SlotActions
-                        seriesID={seriesID}
-                        ledger="volume"
-                        target={{ collectionId: selected.id, number: s.number }}
-                        busy={busy}
-                        run={run}
-                        onInteractive={open}
-                      />
-                    </Table.Td>
-                  </Table.Tr>
-                )
-              })}
-            </Table.Tbody>
-          </Table>
-          {colSlots.length === 0 && (
-            <Text size="sm" c="dimmed">
-              No volumes known for this edition.
-            </Text>
-          )}
-        </Card>
-      )}
+      {monitoredCols.map((c) => (
+        <EditionSection
+          key={c.id}
+          seriesID={seriesID}
+          collection={c}
+          colSlots={slots?.volumes?.[String(c.id)] ?? []}
+          fileById={fileById}
+          defaultOpen={monitoredCols.length === 1}
+          busy={busy}
+          run={run}
+          onSlot={onSlot}
+        />
+      ))}
 
       {funnel && (
         <FunnelCard funnel={funnel} seriesID={seriesID} ledger="volume" run={run} busy={busy} />
       )}
     </Stack>
+  )
+}
+
+// EditionSection is one monitored edition as a collapsible card (Sonarr's
+// seasons): header with progress always visible, the volume table behind
+// the chevron — expanded by default only when it's the lone edition.
+function EditionSection({
+  seriesID,
+  collection: c,
+  colSlots,
+  fileById,
+  defaultOpen,
+  busy,
+  run,
+  onSlot,
+}: {
+  seriesID: number
+  collection: Collection
+  colSlots: VolumeSlot[]
+  fileById: Map<number, SeriesFile>
+  defaultOpen: boolean
+  busy: boolean
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+  onSlot: (s: SlotSelection) => void
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  const owned = colSlots.filter((s) => (s.fileIds?.length ?? 0) > 0).length
+
+  return (
+    <Card withBorder padding="sm" maw={760}>
+      <Group
+        justify="space-between"
+        wrap="nowrap"
+        style={{ cursor: 'pointer' }}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Group gap={8} wrap="nowrap">
+          <IconChevronRight
+            size={16}
+            style={{ transform: open ? 'rotate(90deg)' : undefined, transition: 'transform 150ms' }}
+          />
+          <div>
+            <Text fw={600}>
+              {c.editionName}{' '}
+              <Text span c="dimmed" size="sm">
+                {[c.language, c.medium, c.publisher].filter(Boolean).join(' · ')}
+              </Text>{' '}
+              {c.custom && (
+                <Badge size="xs" color="grape" variant="light">
+                  custom
+                </Badge>
+              )}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {owned}/{colSlots.length} owned
+            </Text>
+          </div>
+        </Group>
+      </Group>
+      {colSlots.length > 0 && (
+        <Progress size="xs" value={(owned / Math.max(colSlots.length, 1)) * 100} mt="xs" />
+      )}
+      <Collapse expanded={open}>
+        <Table highlightOnHover verticalSpacing={4} mt="xs">
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th w={70}>Volume</Table.Th>
+              <Table.Th w={120}>Released</Table.Th>
+              <Table.Th w={110}>Status</Table.Th>
+              <Table.Th>File</Table.Th>
+              <Table.Th w={70} />
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {colSlots.map((s) => {
+              const open = () =>
+                onSlot({
+                  ledger: 'volume',
+                  number: s.number,
+                  collectionId: c.id,
+                  collectionName: `${c.editionName} · ${c.language} · ${c.medium}`,
+                  releaseDate: s.releaseDate,
+                  monitored: s.monitored,
+                  wanted: s.wanted,
+                  fileIds: s.fileIds ?? [],
+                })
+              return (
+                <Table.Tr
+                  key={`${s.number}-${s.countType}`}
+                  style={{ cursor: 'pointer' }}
+                  onClick={open}
+                >
+                  <Table.Td>
+                    <Text size="sm" fw={500}>
+                      v{fmtNum(s.number)}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs" c="dimmed">
+                      {s.releaseDate || '—'}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <StatusBadge slot={s} />
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs" c="dimmed">
+                      {slotFileText(s.fileIds, fileById)}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <SlotActions
+                      seriesID={seriesID}
+                      ledger="volume"
+                      target={{ collectionId: c.id, number: s.number }}
+                      busy={busy}
+                      run={run}
+                      onInteractive={open}
+                    />
+                  </Table.Td>
+                </Table.Tr>
+              )
+            })}
+          </Table.Tbody>
+        </Table>
+        {colSlots.length === 0 && (
+          <Text size="sm" c="dimmed" mt="xs">
+            No volumes known for this edition.
+          </Text>
+        )}
+      </Collapse>
+    </Card>
   )
 }
 
