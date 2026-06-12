@@ -10,7 +10,9 @@ import {
   Menu,
   Modal,
   NumberInput,
+  Popover,
   Progress,
+  SegmentedControl,
   Select,
   Skeleton,
   Stack,
@@ -23,6 +25,7 @@ import {
   Tooltip,
 } from '@mantine/core'
 import {
+  IconChevronDown,
   IconDotsVertical,
   IconEye,
   IconEyeOff,
@@ -38,8 +41,10 @@ import {
   fmtNum,
   fmtSize,
   type ChapterLedger,
+  type ChapterSlot,
   type Collection,
   type SearchResponse,
+  type SeriesFile,
   type SeriesIndexerView,
   type Slots,
 } from '../api'
@@ -197,6 +202,7 @@ export default function SeriesPage() {
             seriesID={seriesID}
             collections={collections}
             slots={slots}
+            files={files}
             busy={busy}
             run={run}
             onSlot={setSlotSel}
@@ -208,6 +214,7 @@ export default function SeriesPage() {
             seriesID={seriesID}
             ledger={ledger}
             slots={slots}
+            files={files}
             busy={busy}
             run={run}
             onSlot={setSlotSel}
@@ -339,37 +346,94 @@ function HistoryTab({ seriesID }: { seriesID: number }) {
   )
 }
 
-// SlotLegend decodes the slot badge colors (shared by both ledgers).
-function SlotLegend() {
+// StatusBadge renders a slot's state in the ledger tables.
+function StatusBadge({
+  slot,
+}: {
+  slot: { fileIds?: number[]; wanted: boolean; monitored: boolean; released?: boolean }
+}) {
+  if (slot.fileIds?.length)
+    return (
+      <Badge size="xs" variant="filled" color="green">
+        owned
+      </Badge>
+    )
+  if (slot.wanted)
+    return (
+      <Badge size="xs" variant="outline" color="yellow">
+        wanted
+      </Badge>
+    )
+  if (!slot.monitored)
+    return (
+      <Badge size="xs" variant="light" color="gray">
+        unmonitored
+      </Badge>
+    )
+  if (slot.released === false)
+    return (
+      <Badge size="xs" variant="light" color="gray">
+        unreleased
+      </Badge>
+    )
   return (
-    <Group gap="md">
-      <Group gap={4}>
-        <Badge size="sm" variant="filled" color="green">
-          1
-        </Badge>
-        <Text size="xs" c="dimmed">
-          owned
-        </Text>
-      </Group>
-      <Group gap={4}>
-        <Badge size="sm" variant="outline" color="yellow">
-          2
-        </Badge>
-        <Text size="xs" c="dimmed">
-          wanted
-        </Text>
-      </Group>
-      <Group gap={4}>
-        <Badge size="sm" variant="light" color="gray">
-          3
-        </Badge>
-        <Text size="xs" c="dimmed">
-          not monitored / future
-        </Text>
-      </Group>
-      <Text size="xs" c="dimmed">
-        — click any slot for files &amp; interactive search
-      </Text>
+    <Badge size="xs" variant="light" color="gray">
+      missing
+    </Badge>
+  )
+}
+
+// slotFileText summarizes a slot's linked files ("2 files · 312.4 MiB").
+function slotFileText(fileIds: number[] | undefined, fileById: Map<number, SeriesFile>): string {
+  if (!fileIds?.length) return ''
+  const size = fileIds.reduce((t, id) => t + (fileById.get(id)?.size ?? 0), 0)
+  return `${fileIds.length > 1 ? `${fileIds.length} files · ` : ''}${fmtSize(size)}`
+}
+
+// SearchSplit: the primary search-and-grab action with the dry run tucked
+// into a dropdown (both ledger tabs).
+function SearchSplit({
+  seriesID,
+  ledger,
+  busy,
+  run,
+  onResult,
+}: {
+  seriesID: number
+  ledger: 'volume' | 'chapter'
+  busy: boolean
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+  onResult: (r: SearchResponse) => void
+}) {
+  return (
+    <Group gap={1} wrap="nowrap">
+      <Button
+        size="xs"
+        leftSection={<IconSearch size={14} />}
+        loading={busy}
+        style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
+        onClick={() =>
+          run(() => api.search(seriesID, { ledger }).then(onResult), 'Search done')
+        }
+      >
+        Search &amp; grab wanted
+      </Button>
+      <Menu position="bottom-end" withinPortal>
+        <Menu.Target>
+          <Button size="xs" px={6} style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
+            <IconChevronDown size={14} />
+          </Button>
+        </Menu.Target>
+        <Menu.Dropdown>
+          <Menu.Item
+            onClick={() =>
+              run(() => api.search(seriesID, { ledger, dryRun: true }).then(onResult))
+            }
+          >
+            Dry run (find, don't grab)
+          </Menu.Item>
+        </Menu.Dropdown>
+      </Menu>
     </Group>
   )
 }
@@ -378,6 +442,7 @@ function VolumesTab({
   seriesID,
   collections,
   slots,
+  files,
   busy,
   run,
   onSlot,
@@ -385,45 +450,47 @@ function VolumesTab({
   seriesID: number
   collections: Collection[]
   slots: Slots | null
+  files: SeriesFile[]
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onSlot: (s: SlotSelection) => void
 }) {
   const [funnel, setFunnel] = useState<SearchResponse | null>(null)
   const [addEdition, setAddEdition] = useState(false)
+  const [selId, setSelId] = useState<string | null>(null)
   const volumeCollections = collections.filter((c) => c.type === 'volume')
+  // One edition shows at a time; fall back to the first when the selected
+  // one disappears (deleted/merged).
+  const selected = volumeCollections.find((c) => String(c.id) === selId) ?? volumeCollections[0]
+  const fileById = new Map(files.map((f) => [f.id, f]))
+
+  const colSlots = selected ? (slots?.volumes?.[String(selected.id)] ?? []) : []
+  const owned = colSlots.filter((s) => (s.fileIds?.length ?? 0) > 0).length
 
   return (
     <Stack>
-      <Group>
-        <Button
-          size="xs"
-          leftSection={<IconSearch size={14} />}
-          loading={busy}
-          onClick={() =>
-            run(
-              () => api.search(seriesID, { ledger: 'volume' }).then(setFunnel),
-              'Volume search done',
-            )
-          }
-        >
-          Search &amp; grab wanted
-        </Button>
-        <Button
-          size="xs"
-          variant="default"
-          loading={busy}
-          onClick={() =>
-            run(() => api.search(seriesID, { ledger: 'volume', dryRun: true }).then(setFunnel))
-          }
-        >
-          Search (dry run)
-        </Button>
+      <Group justify="space-between">
+        <SearchSplit seriesID={seriesID} ledger="volume" busy={busy} run={run} onResult={setFunnel} />
         <Button size="xs" variant="default" onClick={() => setAddEdition(true)}>
           Add edition
         </Button>
       </Group>
-      <SlotLegend />
+
+      {volumeCollections.length > 1 && (
+        <SegmentedControl
+          size="xs"
+          value={String(selected?.id ?? '')}
+          onChange={setSelId}
+          data={volumeCollections.map((c) => {
+            const cs = slots?.volumes?.[String(c.id)] ?? []
+            const own = cs.filter((s) => (s.fileIds?.length ?? 0) > 0).length
+            return {
+              value: String(c.id),
+              label: `${c.editionName} · ${c.language}${c.medium ? ` · ${c.medium}` : ''} (${own}/${cs.length})`,
+            }
+          })}
+        />
+      )}
 
       <AddEditionModal
         seriesID={seriesID}
@@ -434,83 +501,116 @@ function VolumesTab({
         onClose={() => setAddEdition(false)}
       />
 
-      {volumeCollections.map((c) => {
-        const colSlots = slots?.volumes?.[String(c.id)] ?? []
-        const owned = colSlots.filter((s) => (s.fileIds?.length ?? 0) > 0).length
-        return (
-          <Card key={c.id} withBorder padding="sm">
-            <Group justify="space-between" mb="xs">
-              <div>
-                <Text fw={600}>
-                  {c.editionName}{' '}
-                  <Text span c="dimmed" size="sm">
-                    {[c.language, c.medium, c.publisher].filter(Boolean).join(' · ')}
-                  </Text>{' '}
-                  {c.custom && (
-                    <Badge size="xs" color="grape" variant="light">
-                      custom
-                    </Badge>
-                  )}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  {owned}/{colSlots.length} owned
-                </Text>
-              </div>
-              <Group gap="xs">
-                {c.custom && (
-                  <CustomEditionActions
-                    seriesID={seriesID}
-                    collection={c}
-                    others={volumeCollections.filter((o) => o.id !== c.id)}
-                    run={run}
-                  />
-                )}
-                <Switch
-                  label="Monitored"
-                  checked={c.monitored}
-                  onChange={(e) =>
-                    run(() => api.setCollectionMonitored(seriesID, c.id, e.currentTarget.checked))
-                  }
-                />
-              </Group>
-            </Group>
-            {colSlots.length > 0 && (
-              <Progress value={(owned / Math.max(colSlots.length, 1)) * 100} mb="xs" />
-            )}
-            <Group gap={4}>
-              {colSlots.map((s) => (
-                <Tooltip
-                  key={`${s.number}-${s.countType}`}
-                  label={`v${fmtNum(s.number)}${s.releaseDate ? ' · ' + s.releaseDate : ''}${
-                    s.wanted ? ' · wanted' : ''
-                  } — click for details`}
-                >
-                  <Badge
-                    size="sm"
-                    style={{ cursor: 'pointer' }}
-                    variant={s.fileIds?.length ? 'filled' : s.wanted ? 'outline' : 'light'}
-                    color={s.fileIds?.length ? 'green' : s.wanted ? 'yellow' : 'gray'}
-                    onClick={() =>
-                      onSlot({
-                        ledger: 'volume',
-                        number: s.number,
-                        collectionId: c.id,
-                        collectionName: `${c.editionName} · ${c.language} · ${c.medium}`,
-                        releaseDate: s.releaseDate,
-                        monitored: s.monitored,
-                        wanted: s.wanted,
-                        fileIds: s.fileIds ?? [],
-                      })
-                    }
-                  >
-                    {fmtNum(s.number)}
+      {selected && (
+        <Card withBorder padding="sm" maw={760}>
+          <Group justify="space-between" mb="xs">
+            <div>
+              <Text fw={600}>
+                {selected.editionName}{' '}
+                <Text span c="dimmed" size="sm">
+                  {[selected.language, selected.medium, selected.publisher]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>{' '}
+                {selected.custom && (
+                  <Badge size="xs" color="grape" variant="light">
+                    custom
                   </Badge>
-                </Tooltip>
-              ))}
+                )}
+              </Text>
+              <Text size="xs" c="dimmed">
+                {owned}/{colSlots.length} owned
+              </Text>
+            </div>
+            <Group gap="xs">
+              {selected.custom && (
+                <CustomEditionActions
+                  seriesID={seriesID}
+                  collection={selected}
+                  others={volumeCollections.filter((o) => o.id !== selected.id)}
+                  run={run}
+                />
+              )}
+              <Switch
+                label="Monitored"
+                checked={selected.monitored}
+                onChange={(e) =>
+                  run(() =>
+                    api.setCollectionMonitored(seriesID, selected.id, e.currentTarget.checked),
+                  )
+                }
+              />
             </Group>
-          </Card>
-        )
-      })}
+          </Group>
+          {colSlots.length > 0 && (
+            <Progress size="xs" value={(owned / Math.max(colSlots.length, 1)) * 100} mb="xs" />
+          )}
+          <Table highlightOnHover verticalSpacing={4}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th w={70}>Volume</Table.Th>
+                <Table.Th w={120}>Released</Table.Th>
+                <Table.Th w={110}>Status</Table.Th>
+                <Table.Th>File</Table.Th>
+                <Table.Th w={40} />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {colSlots.map((s) => {
+                const open = () =>
+                  onSlot({
+                    ledger: 'volume',
+                    number: s.number,
+                    collectionId: selected.id,
+                    collectionName: `${selected.editionName} · ${selected.language} · ${selected.medium}`,
+                    releaseDate: s.releaseDate,
+                    monitored: s.monitored,
+                    wanted: s.wanted,
+                    fileIds: s.fileIds ?? [],
+                  })
+                return (
+                  <Table.Tr
+                    key={`${s.number}-${s.countType}`}
+                    style={{ cursor: 'pointer' }}
+                    onClick={open}
+                  >
+                    <Table.Td>
+                      <Text size="sm" fw={500}>
+                        v{fmtNum(s.number)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">
+                        {s.releaseDate || '—'}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <StatusBadge slot={s} />
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">
+                        {slotFileText(s.fileIds, fileById)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Tooltip label="Files & interactive search">
+                        <ActionIcon size="sm" variant="subtle" onClick={open}>
+                          <IconSearch size={14} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Table.Td>
+                  </Table.Tr>
+                )
+              })}
+            </Table.Tbody>
+          </Table>
+          {colSlots.length === 0 && (
+            <Text size="sm" c="dimmed">
+              No volumes known for this edition.
+            </Text>
+          )}
+        </Card>
+      )}
 
       {funnel && (
         <FunnelCard funnel={funnel} seriesID={seriesID} ledger="volume" run={run} busy={busy} />
@@ -731,10 +831,55 @@ function FunnelCard({
   )
 }
 
+// ChapterStrip compresses the whole chapter run into one thin bar:
+// contiguous same-state chapters become proportional segments, so 1,100
+// chapters stay readable at a glance.
+function ChapterStrip({ chapters }: { chapters: ChapterSlot[] }) {
+  if (chapters.length === 0) return null
+  const state = (c: ChapterSlot) => (c.fileIds?.length ? 'owned' : c.wanted ? 'wanted' : 'rest')
+  type Run = { state: string; from: number; to: number; count: number }
+  const runs: Run[] = []
+  for (const c of chapters) {
+    const s = state(c)
+    const last = runs[runs.length - 1]
+    if (last && last.state === s) {
+      last.to = c.number
+      last.count++
+    } else {
+      runs.push({ state: s, from: c.number, to: c.number, count: 1 })
+    }
+  }
+  const colors: Record<string, string> = {
+    owned: 'var(--mantine-color-green-6)',
+    wanted: 'var(--mantine-color-yellow-5)',
+    rest: 'var(--mantine-color-default-border)',
+  }
+  const labels: Record<string, string> = {
+    owned: 'owned',
+    wanted: 'wanted',
+    rest: 'not monitored / missing',
+  }
+  return (
+    <div style={{ display: 'flex', gap: 1, height: 10, borderRadius: 3, overflow: 'hidden' }}>
+      {runs.map((r, i) => (
+        <Tooltip
+          key={i}
+          label={`c${fmtNum(r.from)}${r.count > 1 ? `–c${fmtNum(r.to)}` : ''} · ${labels[r.state]} (${r.count})`}
+        >
+          <div style={{ flexGrow: r.count, minWidth: 2, background: colors[r.state] }} />
+        </Tooltip>
+      ))}
+    </div>
+  )
+}
+
+type ChapterFilter = 'wanted' | 'missing' | 'owned' | 'all'
+
 function ChaptersTab({
   seriesID,
   ledger,
   slots,
+  files,
   busy,
   run,
   onSlot,
@@ -742,6 +887,7 @@ function ChaptersTab({
   seriesID: number
   ledger: ChapterLedger | null
   slots: Slots | null
+  files: SeriesFile[]
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onSlot: (s: SlotSelection) => void
@@ -750,6 +896,7 @@ function ChaptersTab({
   const monitored = chapters.filter((c) => c.monitored)
   const owned = monitored.filter((c) => (c.fileIds?.length ?? 0) > 0).length
   const wanted = chapters.filter((c) => c.wanted)
+  const [filter, setFilter] = useState<ChapterFilter>('wanted')
   const [showAll, setShowAll] = useState(false)
   const [funnel, setFunnel] = useState<SearchResponse | null>(null)
   const [cutoff, setCutoff] = useState<number | ''>('')
@@ -759,92 +906,114 @@ function ChaptersTab({
     setPrevCutoff(ledger.cutoffNum)
     setCutoff(ledger.cutoffNum / 100)
   }
+  const fileById = new Map(files.map((f) => [f.id, f]))
 
   if (!ledger) return <Text c="dimmed">No chapter ledger.</Text>
 
+  // Newest first: the actionable chapters live at the head of the run.
+  const filtered = chapters
+    .filter((c) => {
+      switch (filter) {
+        case 'wanted':
+          return c.wanted
+        case 'missing':
+          return !c.fileIds?.length
+        case 'owned':
+          return !!c.fileIds?.length
+        default:
+          return true
+      }
+    })
+    .reverse()
+  const visible = showAll ? filtered : filtered.slice(0, 200)
+
   return (
     <Stack>
-      <Group>
-        <Switch
-          label="Monitor chapters"
-          checked={ledger.monitored}
-          onChange={(e) =>
-            run(() => api.updateChapterLedger(seriesID, { monitored: e.currentTarget.checked }))
-          }
+      <Group justify="space-between">
+        <Group>
+          <Switch
+            label="Monitor chapters"
+            checked={ledger.monitored}
+            onChange={(e) =>
+              run(() => api.updateChapterLedger(seriesID, { monitored: e.currentTarget.checked }))
+            }
+          />
+          <Popover position="bottom-start" withinPortal trapFocus>
+            <Popover.Target>
+              <Button size="xs" variant="default">
+                Cutoff: c{fmtNum(ledger.cutoffNum)}
+              </Button>
+            </Popover.Target>
+            <Popover.Dropdown>
+              <Stack gap="xs" w={220}>
+                <NumberInput
+                  label="Monitor from chapter"
+                  description="Chapters below the cutoff are ignored"
+                  size="xs"
+                  value={cutoff}
+                  onChange={(v) => setCutoff(typeof v === 'number' ? v : '')}
+                />
+                <Button
+                  size="xs"
+                  onClick={() =>
+                    run(
+                      () =>
+                        api.updateChapterLedger(seriesID, {
+                          cutoffNum: Math.round(Number(cutoff || 0) * 100),
+                        }),
+                      'Cutoff updated',
+                    )
+                  }
+                >
+                  Save
+                </Button>
+              </Stack>
+            </Popover.Dropdown>
+          </Popover>
+        </Group>
+        <SearchSplit
+          seriesID={seriesID}
+          ledger="chapter"
+          busy={busy}
+          run={run}
+          onResult={setFunnel}
         />
-        <NumberInput
-          label="Cutoff (monitor from chapter)"
-          size="xs"
-          value={cutoff}
-          onChange={(v) => setCutoff(typeof v === 'number' ? v : '')}
-          w={180}
-        />
-        <Button
-          size="xs"
-          variant="default"
-          mt={20}
-          onClick={() =>
-            run(
-              () =>
-                api.updateChapterLedger(seriesID, {
-                  cutoffNum: Math.round(Number(cutoff || 0) * 100),
-                }),
-              'Cutoff updated',
-            )
-          }
-        >
-          Save cutoff
-        </Button>
-        <Button
-          size="xs"
-          mt={20}
-          leftSection={<IconSearch size={14} />}
-          loading={busy}
-          onClick={() =>
-            run(
-              () => api.search(seriesID, { ledger: 'chapter' }).then(setFunnel),
-              'Chapter search done',
-            )
-          }
-        >
-          Search &amp; grab wanted
-        </Button>
-        <Button
-          size="xs"
-          mt={20}
-          variant="default"
-          loading={busy}
-          onClick={() =>
-            run(() => api.search(seriesID, { ledger: 'chapter', dryRun: true }).then(setFunnel))
-          }
-        >
-          Search (dry run)
-        </Button>
       </Group>
-      <Text size="sm" c="dimmed">
-        {owned}/{monitored.length} monitored chapters owned · {wanted.length} wanted
-      </Text>
-      <SlotLegend />
-      {!showAll && chapters.length > 300 && (
-        <Text size="xs" c="dimmed">
-          Showing the last 300 of {chapters.length} chapters —{' '}
-          <Text span size="xs" c="indigo" style={{ cursor: 'pointer' }} onClick={() => setShowAll(true)}>
-            show all
-          </Text>
+
+      <ChapterStrip chapters={chapters} />
+      <Group justify="space-between">
+        <Text size="sm" c="dimmed">
+          {owned}/{monitored.length} monitored chapters owned · {wanted.length} wanted
         </Text>
-      )}
-      <Group gap={3}>
-        {(showAll ? chapters : chapters.slice(-300)).map((c) => (
-          <Tooltip
-            key={c.number}
-            label={`c${fmtNum(c.number)}${c.wanted ? ' · wanted' : ''} — click for details`}
-          >
-            <Badge
-              size="xs"
-              style={{ cursor: 'pointer' }}
-              variant={c.fileIds?.length ? 'filled' : c.wanted ? 'outline' : 'light'}
-              color={c.fileIds?.length ? 'green' : c.wanted ? 'yellow' : 'gray'}
-              onClick={() =>
+        <SegmentedControl
+          size="xs"
+          value={filter}
+          onChange={(v) => {
+            setFilter(v as ChapterFilter)
+            setShowAll(false)
+          }}
+          data={[
+            { value: 'wanted', label: `Wanted (${wanted.length})` },
+            { value: 'missing', label: 'Missing' },
+            { value: 'owned', label: 'Owned' },
+            { value: 'all', label: `All (${chapters.length})` },
+          ]}
+        />
+      </Group>
+
+      {visible.length > 0 && (
+        <Table highlightOnHover verticalSpacing={4} maw={760}>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th w={90}>Chapter</Table.Th>
+              <Table.Th w={110}>Status</Table.Th>
+              <Table.Th>File</Table.Th>
+              <Table.Th w={40} />
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {visible.map((c) => {
+              const open = () =>
                 onSlot({
                   ledger: 'chapter',
                   number: c.number,
@@ -852,13 +1021,55 @@ function ChaptersTab({
                   wanted: c.wanted,
                   fileIds: c.fileIds ?? [],
                 })
-              }
-            >
-              {fmtNum(c.number)}
-            </Badge>
-          </Tooltip>
-        ))}
-      </Group>
+              return (
+                <Table.Tr key={c.number} style={{ cursor: 'pointer' }} onClick={open}>
+                  <Table.Td>
+                    <Text size="sm" fw={500}>
+                      c{fmtNum(c.number)}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <StatusBadge slot={c} />
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="xs" c="dimmed">
+                      {slotFileText(c.fileIds, fileById)}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Tooltip label="Files & interactive search">
+                      <ActionIcon size="sm" variant="subtle" onClick={open}>
+                        <IconSearch size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Table.Td>
+                </Table.Tr>
+              )
+            })}
+          </Table.Tbody>
+        </Table>
+      )}
+      {filtered.length > visible.length && (
+        <Text size="xs" c="dimmed">
+          Showing {visible.length} of {filtered.length} —{' '}
+          <Text
+            span
+            size="xs"
+            c="indigo"
+            style={{ cursor: 'pointer' }}
+            onClick={() => setShowAll(true)}
+          >
+            show all
+          </Text>
+        </Text>
+      )}
+      {filtered.length === 0 && (
+        <Text size="sm" c="dimmed">
+          {filter === 'wanted'
+            ? 'No wanted chapters — everything monitored is owned. Switch the filter to browse the rest.'
+            : 'Nothing matches this filter.'}
+        </Text>
+      )}
 
       {funnel && (
         <FunnelCard funnel={funnel} seriesID={seriesID} ledger="chapter" run={run} busy={busy} />
