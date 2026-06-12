@@ -73,6 +73,8 @@ export default function SeriesPage() {
   const [manageEditions, setManageEditions] = useState(false)
   const [addEdition, setAddEdition] = useState(false)
   const [tab, setTab] = useState<string | null>('volumes')
+  const [volumesView, setVolumesView] = useLedgerView('sento.volumesView')
+  const [chaptersView, setChaptersView] = useLedgerView('sento.chaptersView')
 
   const queryClient = useQueryClient()
   const detail = useQuery({
@@ -227,6 +229,14 @@ export default function SeriesPage() {
               run(() => api.deleteSeries(seriesID).then(() => navigate('/')))
             }}
           />
+          {(tab === 'volumes' || tab === 'chapters') && (
+            <div style={{ marginLeft: 'auto' }}>
+              <ViewToggle
+                value={tab === 'volumes' ? volumesView : chaptersView}
+                onChange={tab === 'volumes' ? setVolumesView : setChaptersView}
+              />
+            </div>
+          )}
         </Group>
         <Divider />
       </div>
@@ -307,6 +317,7 @@ export default function SeriesPage() {
             run={run}
             onSlot={setSlotSel}
             onManageEditions={() => setManageEditions(true)}
+            view={volumesView}
           />
         </Tabs.Panel>
 
@@ -319,6 +330,7 @@ export default function SeriesPage() {
             busy={busy}
             run={run}
             onSlot={setSlotSel}
+            view={chaptersView}
           />
         </Tabs.Panel>
 
@@ -707,6 +719,7 @@ function VolumesTab({
   run,
   onSlot,
   onManageEditions,
+  view,
 }: {
   seriesID: number
   collections: Collection[]
@@ -716,13 +729,13 @@ function VolumesTab({
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onSlot: (s: SlotSelection) => void
   onManageEditions: () => void
+  view: LedgerView
 }) {
   const volumeCollections = collections.filter((c) => c.type === 'volume')
   // Only monitored editions show here — the ones being collected. The
   // rest (reference data) live in the Editions manager on the action bar.
   const monitoredCols = volumeCollections.filter((c) => c.monitored)
   const fileById = new Map(files.map((f) => [f.id, f]))
-  const [view, setView] = useLedgerView('sento.volumesView')
 
   return (
     <Stack>
@@ -740,11 +753,6 @@ function VolumesTab({
           </Text>{' '}
           to pick the one you collect.
         </Text>
-      )}
-      {monitoredCols.length > 0 && (
-        <Group justify="flex-end">
-          <ViewToggle value={view} onChange={setView} />
-        </Group>
       )}
       {monitoredCols.map((c) => (
         <EditionSection
@@ -1227,6 +1235,7 @@ function ChaptersTab({
   busy,
   run,
   onSlot,
+  view,
 }: {
   seriesID: number
   ledger: ChapterLedger | null
@@ -1235,6 +1244,7 @@ function ChaptersTab({
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onSlot: (s: SlotSelection) => void
+  view: LedgerView
 }) {
   const chapters = slots?.chapters ?? []
   const monitored = chapters.filter((c) => c.monitored)
@@ -1242,7 +1252,6 @@ function ChaptersTab({
   const wanted = chapters.filter((c) => c.wanted)
   const [filter, setFilter] = useState<ChapterFilter>('wanted')
   const [showAll, setShowAll] = useState(false)
-  const [view, setView] = useLedgerView('sento.chaptersView')
   const fileById = new Map(files.map((f) => [f.id, f]))
 
   if (!ledger) return <Text c="dimmed">No chapter ledger.</Text>
@@ -1281,23 +1290,20 @@ function ChaptersTab({
         <Text size="sm" c="dimmed">
           {owned}/{monitored.length} monitored chapters owned · {wanted.length} wanted
         </Text>
-        <Group gap="xs">
-          <SegmentedControl
-            size="xs"
-            value={filter}
-            onChange={(v) => {
-              setFilter(v as ChapterFilter)
-              setShowAll(false)
-            }}
-            data={[
-              { value: 'wanted', label: `Wanted (${wanted.length})` },
-              { value: 'missing', label: 'Missing' },
-              { value: 'owned', label: 'Owned' },
-              { value: 'all', label: `All (${chapters.length})` },
-            ]}
-          />
-          <ViewToggle value={view} onChange={setView} />
-        </Group>
+        <SegmentedControl
+          size="xs"
+          value={filter}
+          onChange={(v) => {
+            setFilter(v as ChapterFilter)
+            setShowAll(false)
+          }}
+          data={[
+            { value: 'wanted', label: `Wanted (${wanted.length})` },
+            { value: 'missing', label: 'Missing' },
+            { value: 'owned', label: 'Owned' },
+            { value: 'all', label: `All (${chapters.length})` },
+          ]}
+        />
       </Group>
 
       {view === 'chips' && chipSlots.length > 0 && (
