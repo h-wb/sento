@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/config"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/qbittorrent"
@@ -65,7 +66,7 @@ func ValidateConnections(cs ConnectionSettings) error {
 		"sourceHost": cs.SourceHost.URL,
 	} {
 		if u != "" && !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
-			return fmt.Errorf("%s url must start with http:// or https://", name)
+			return apperr.Invalidf("%s url must start with http:// or https://", name)
 		}
 	}
 	return nil

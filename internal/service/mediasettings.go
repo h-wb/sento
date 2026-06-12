@@ -3,10 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"strings"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -78,17 +78,17 @@ func SaveMediaSettings(ctx context.Context, st *store.Store, m MediaSettings) er
 // something non-empty.
 func ValidateMediaSettings(m MediaSettings) error {
 	if strings.TrimSpace(m.SeriesFolder) == "" {
-		return fmt.Errorf("series folder template is empty")
+		return apperr.Invalidf("series folder template is empty")
 	}
 	if !strings.Contains(strings.ToLower(m.VolumeFile), "{volume") {
-		return fmt.Errorf("volume file template needs a {volume} token (files would overwrite each other)")
+		return apperr.Invalidf("volume file template needs a {volume} token (files would overwrite each other)")
 	}
 	if !strings.Contains(strings.ToLower(m.ChapterFile), "{chapter") {
-		return fmt.Errorf("chapter file template needs a {chapter} token (files would overwrite each other)")
+		return apperr.Invalidf("chapter file template needs a {chapter} token (files would overwrite each other)")
 	}
 	for name, rendered := range PreviewMediaSettings(m) {
 		if strings.TrimSpace(strings.TrimSuffix(rendered, ".cbz")) == "" {
-			return fmt.Errorf("%s template renders empty", name)
+			return apperr.Invalidf("%s template renders empty", name)
 		}
 	}
 	return nil

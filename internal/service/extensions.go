@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -104,7 +105,7 @@ func (e *ExtensionService) Repos(ctx context.Context) []string {
 func (e *ExtensionService) SetRepos(ctx context.Context, urls []string) error {
 	mgr := e.manager()
 	if mgr == nil {
-		return fmt.Errorf("the configured source backend does not manage extensions")
+		return apperr.Unavailablef("the configured source backend does not manage extensions")
 	}
 	cleaned := make([]string, 0, len(urls))
 	for _, u := range urls {
@@ -113,14 +114,14 @@ func (e *ExtensionService) SetRepos(ctx context.Context, urls []string) error {
 			continue
 		}
 		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
-			return fmt.Errorf("repo url must start with http:// or https://: %s", u)
+			return apperr.Invalidf("repo url must start with http:// or https://: %s", u)
 		}
 		if !slices.Contains(cleaned, u) {
 			cleaned = append(cleaned, u)
 		}
 	}
 	if err := mgr.SetRepos(ctx, cleaned); err != nil {
-		return err
+		return apperr.Upstreamf("pushing repos to host: %w", err)
 	}
 	raw, err := json.Marshal(struct {
 		URLs []string `json:"urls"`
@@ -160,11 +161,11 @@ func (e *ExtensionService) reconcileRepos(ctx context.Context, mgr sourcehost.Ex
 func (e *ExtensionService) List(ctx context.Context) ([]ExtensionView, error) {
 	mgr := e.manager()
 	if mgr == nil {
-		return nil, fmt.Errorf("the configured source backend does not manage extensions")
+		return nil, apperr.Unavailablef("the configured source backend does not manage extensions")
 	}
 	infos, err := mgr.Extensions(ctx)
 	if err != nil {
-		return nil, err
+		return nil, apperr.Upstreamf("listing host extensions: %w", err)
 	}
 	want := map[string]bool{}
 	for _, p := range e.desired(ctx) {
@@ -182,9 +183,12 @@ func (e *ExtensionService) List(ctx context.Context) ([]ExtensionView, error) {
 func (e *ExtensionService) Install(ctx context.Context, pkgName string) error {
 	mgr := e.manager()
 	if mgr == nil {
-		return fmt.Errorf("the configured source backend does not manage extensions")
+		return apperr.Unavailablef("the configured source backend does not manage extensions")
 	}
-	return mgr.InstallExtension(ctx, pkgName)
+	if err := mgr.InstallExtension(ctx, pkgName); err != nil {
+		return apperr.Upstreamf("installing %s: %w", pkgName, err)
+	}
+	return nil
 }
 
 // Sources lists the sources one installed extension provides (the Add
@@ -192,9 +196,30 @@ func (e *ExtensionService) Install(ctx context.Context, pkgName string) error {
 func (e *ExtensionService) Sources(ctx context.Context, pkgName string) ([]sourcehost.Source, error) {
 	mgr := e.manager()
 	if mgr == nil {
-		return nil, fmt.Errorf("the configured source backend does not manage extensions")
+		return nil, apperr.Unavailablef("the configured source backend does not manage extensions")
 	}
-	return mgr.ExtensionSources(ctx, pkgName)
+	sources, err := mgr.ExtensionSources(ctx, pkgName)
+	if err != nil {
+		return nil, apperr.Upstreamf("listing %s sources: %w", pkgName, err)
+	}
+	return sources, nil
+}
+
+// DeleteIndexerEntry deletes the entry and garbage-collects its extension
+// when it was the last reference (source entries drive the lifecycle).
+func (e *ExtensionService) DeleteIndexerEntry(ctx context.Context, id int64) error {
+	var pkg string
+	if ix, err := e.store.GetIndexer(ctx, id); err == nil && ix.Protocol == store.IndexerSource {
+		var ss SourceSettings
+		if json.Unmarshal(ix.Settings, &ss) == nil {
+			pkg = ss.PkgName
+		}
+	}
+	if err := e.store.DeleteIndexer(ctx, id); err != nil {
+		return err
+	}
+	e.CleanupExtension(ctx, pkg)
+	return nil
 }
 
 // CleanupExtension uninstalls the package when no indexer entry
@@ -308,9 +333,13 @@ func (e *ExtensionService) storedSourcePrefs(ctx context.Context) storedPrefs {
 func (e *ExtensionService) Preferences(ctx context.Context, sourceID string) ([]sourcehost.Preference, error) {
 	mgr := e.prefManager()
 	if mgr == nil {
-		return nil, fmt.Errorf("the configured source backend does not manage source preferences")
+		return nil, apperr.Unavailablef("the configured source backend does not manage source preferences")
 	}
-	return mgr.SourcePreferences(ctx, sourceID)
+	prefs, err := mgr.SourcePreferences(ctx, sourceID)
+	if err != nil {
+		return nil, apperr.Upstreamf("source %s preferences: %w", sourceID, err)
+	}
+	return prefs, nil
 }
 
 // SetPreference pushes one value to the host and records it so
@@ -318,10 +347,10 @@ func (e *ExtensionService) Preferences(ctx context.Context, sourceID string) ([]
 func (e *ExtensionService) SetPreference(ctx context.Context, sourceID, key string, value json.RawMessage) error {
 	mgr := e.prefManager()
 	if mgr == nil {
-		return fmt.Errorf("the configured source backend does not manage source preferences")
+		return apperr.Unavailablef("the configured source backend does not manage source preferences")
 	}
 	if err := mgr.SetSourcePreference(ctx, sourceID, key, value); err != nil {
-		return err
+		return apperr.Upstreamf("setting %s on source %s: %w", key, sourceID, err)
 	}
 	prefs := e.storedSourcePrefs(ctx)
 	if prefs[sourceID] == nil {

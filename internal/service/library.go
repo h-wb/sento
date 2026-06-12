@@ -4,9 +4,11 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"strings"
+	"time"
 
+	"github.com/h-wb/sento/internal/apperr"
+	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -33,17 +35,20 @@ type AddSeriesRequest struct {
 }
 
 func (l *Library) AddSeries(ctx context.Context, req AddSeriesRequest) (int64, error) {
+	if req.MangaBakaID == 0 {
+		return 0, apperr.Invalidf("mangabakaId is required")
+	}
 	series, err := l.provider.GetSeries(ctx, req.MangaBakaID)
 	if err != nil {
-		return 0, fmt.Errorf("fetching series %d: %w", req.MangaBakaID, err)
+		return 0, apperr.Upstreamf("fetching series %d: %w", req.MangaBakaID, err)
 	}
 	collections, err := l.provider.GetCollections(ctx, series.MangaBakaID)
 	if err != nil {
-		return 0, fmt.Errorf("fetching collections: %w", err)
+		return 0, apperr.Upstreamf("fetching collections: %w", err)
 	}
 	works, err := l.provider.GetWorks(ctx, series.MangaBakaID)
 	if err != nil {
-		return 0, fmt.Errorf("fetching works: %w", err)
+		return 0, apperr.Upstreamf("fetching works: %w", err)
 	}
 
 	monitorAll := req.Monitor == "all"
@@ -113,4 +118,127 @@ func (l *Library) Refresh(ctx context.Context, seriesID int64) error {
 		return err
 	}
 	return l.store.ReconcileMetadata(ctx, seriesID, series, collections, works)
+}
+
+// CreateCollectionParams describes a user-defined collection: volume
+// editions clone numbering from BasedOn or generate 1..Volumes; chapter
+// collections derive slots from total_chapters and take a cutoff.
+type CreateCollectionParams struct {
+	EditionName string
+	Language    string
+	Publisher   string
+	Medium      string
+	Type        string // "" = volume
+	BasedOn     int64
+	Volumes     int
+	CutoffNum   int64
+	Monitored   bool
+}
+
+// CreateCollection validates and creates a custom collection.
+func (l *Library) CreateCollection(ctx context.Context, seriesID int64, p CreateCollectionParams) (*store.Collection, error) {
+	if strings.TrimSpace(p.EditionName) == "" || strings.TrimSpace(p.Language) == "" {
+		return nil, apperr.Invalidf("editionName and language are required")
+	}
+	ctype := p.Type
+	if ctype == "" {
+		ctype = "volume"
+	}
+	if ctype != "volume" && ctype != "chapter" {
+		return nil, apperr.Invalidf("type must be volume or chapter")
+	}
+	if ctype == "volume" && p.BasedOn == 0 && (p.Volumes < 1 || p.Volumes > 500) {
+		return nil, apperr.Invalidf("volumes must be 1-500 when not based on an existing edition")
+	}
+	cid, err := l.store.AddCustomCollection(ctx, store.Collection{
+		SeriesID: seriesID, EditionName: p.EditionName, Language: p.Language,
+		Publisher: p.Publisher, Medium: p.Medium, Type: ctype,
+		Monitored: p.Monitored, CutoffNum: p.CutoffNum,
+	}, p.BasedOn, p.Volumes)
+	if err != nil {
+		return nil, err
+	}
+	return l.store.GetCollection(ctx, cid)
+}
+
+// CollectionUpdate is a partial collection patch (nil = keep).
+type CollectionUpdate struct {
+	Monitored *bool
+	ProfileID *int64
+	CutoffNum *int64
+	Language  *string
+}
+
+// UpdateCollection applies a partial update under the field rules: the
+// cutoff exists on chapter collections only, language identity is only
+// editable on custom collections (MangaBaka rows are reference data).
+func (l *Library) UpdateCollection(ctx context.Context, seriesID, collectionID int64, u CollectionUpdate) error {
+	if u.Monitored != nil {
+		if err := l.store.SetCollectionMonitored(ctx, seriesID, collectionID, *u.Monitored); err != nil {
+			return err
+		}
+	}
+	if u.ProfileID != nil {
+		if err := l.store.SetCollectionProfile(ctx, seriesID, collectionID, *u.ProfileID); err != nil {
+			return err
+		}
+	}
+	if u.CutoffNum == nil && u.Language == nil {
+		return nil
+	}
+	col, err := l.store.GetCollection(ctx, collectionID)
+	if err != nil {
+		return err
+	}
+	if col.SeriesID != seriesID {
+		return store.ErrNotFound
+	}
+	if u.CutoffNum != nil {
+		if col.Type != "chapter" {
+			return apperr.Invalidf("cutoff applies to chapter collections only")
+		}
+		if err := l.store.SetCollectionCutoff(ctx, seriesID, collectionID, *u.CutoffNum); err != nil {
+			return err
+		}
+	}
+	if u.Language != nil {
+		if !col.Custom {
+			return apperr.Invalidf("language can only be changed on custom collections")
+		}
+		if err := l.store.SetCollectionLanguage(ctx, seriesID, collectionID, *u.Language); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Slots derives every collection's slot view (spec.md §4.2: computed,
+// never stored), keyed by collection id per ledger.
+func (l *Library) Slots(ctx context.Context, seriesID int64) (map[int64][]ledger.VolumeSlot, map[int64][]ledger.ChapterSlot, error) {
+	series, err := l.store.GetSeries(ctx, seriesID)
+	if err != nil {
+		return nil, nil, err
+	}
+	links, err := l.store.SlotLinks(ctx, seriesID)
+	if err != nil {
+		return nil, nil, err
+	}
+	collections, err := l.store.ListCollections(ctx, seriesID)
+	if err != nil {
+		return nil, nil, err
+	}
+	volumes := map[int64][]ledger.VolumeSlot{}
+	chapters := map[int64][]ledger.ChapterSlot{}
+	for _, col := range collections {
+		if col.Type == "chapter" {
+			chapters[col.ID] = ledger.BuildChapterSlots(col, series.TotalChapters, links, nil)
+			continue
+		}
+		works, err := l.store.ListWorks(ctx, col.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		volumes[col.ID] = ledger.BuildVolumeSlots(col, works, links, nil, time.Now())
+	}
+	return volumes, chapters, nil
 }

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/match"
 	"github.com/h-wb/sento/internal/metadata"
 )
@@ -33,7 +34,7 @@ var (
 func (l *Library) ProposeImports(ctx context.Context, root string) ([]ImportProposal, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return nil, err
+		return nil, apperr.Invalidf("reading import root: %w", err)
 	}
 	known := map[string]int64{} // series path → id
 	if series, err := l.store.ListSeries(ctx); err == nil {

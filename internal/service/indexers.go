@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/prowlarr"
 	"github.com/h-wb/sento/internal/sourcehost"
@@ -77,27 +78,27 @@ func IndexerEntries(st *store.Store, protocol string) func(ctx context.Context) 
 // ValidateIndexer checks an entry before save.
 func ValidateIndexer(ix store.Indexer) error {
 	if strings.TrimSpace(ix.Name) == "" {
-		return fmt.Errorf("name is required")
+		return apperr.Invalidf("name is required")
 	}
 	switch ix.Protocol {
 	case store.IndexerTorznab:
 		var ts TorznabSettings
 		if err := json.Unmarshal(ix.Settings, &ts); err != nil {
-			return fmt.Errorf("settings: %w", err)
+			return apperr.Invalidf("settings: %w", err)
 		}
 		if !strings.HasPrefix(ts.URL, "http://") && !strings.HasPrefix(ts.URL, "https://") {
-			return fmt.Errorf("torznab url must start with http:// or https://")
+			return apperr.Invalidf("torznab url must start with http:// or https://")
 		}
 	case store.IndexerSource:
 		var ss SourceSettings
 		if err := json.Unmarshal(ix.Settings, &ss); err != nil {
-			return fmt.Errorf("settings: %w", err)
+			return apperr.Invalidf("settings: %w", err)
 		}
 		if ss.SourceID == "" {
-			return fmt.Errorf("a source must be selected")
+			return apperr.Invalidf("a source must be selected")
 		}
 	default:
-		return fmt.Errorf("protocol must be torznab or source")
+		return apperr.Invalidf("protocol must be torznab or source")
 	}
 	return nil
 }
@@ -111,21 +112,24 @@ func TestIndexer(ctx context.Context, ix store.Indexer, host sourcehost.Host) er
 	}
 	switch ix.Protocol {
 	case store.IndexerTorznab:
-		return torznab.New(e.URL, e.APIKey).Ping(ctx)
+		if err := torznab.New(e.URL, e.APIKey).Ping(ctx); err != nil {
+			return apperr.Upstreamf("%w", err)
+		}
+		return nil
 	case store.IndexerSource:
 		if host == nil {
-			return fmt.Errorf("no source host is configured")
+			return apperr.Unavailablef("no source host is configured")
 		}
 		sources, err := host.Sources(ctx)
 		if err != nil {
-			return err
+			return apperr.Upstreamf("%w", err)
 		}
 		for _, s := range sources {
 			if s.ID == e.SourceID {
 				return nil
 			}
 		}
-		return fmt.Errorf("source %s is not present on the host (extension uninstalled?)", e.SourceID)
+		return apperr.Upstreamf("source %s is not present on the host (extension uninstalled?)", e.SourceID)
 	}
 	return nil
 }
@@ -143,7 +147,7 @@ type ProwlarrIndexer struct {
 func BrowseProwlarr(ctx context.Context, baseURL, apiKey string) ([]ProwlarrIndexer, error) {
 	indexers, err := prowlarr.New(baseURL, apiKey).ListIndexers(ctx)
 	if err != nil {
-		return nil, err
+		return nil, apperr.Upstreamf("%w", err)
 	}
 	base := strings.TrimRight(baseURL, "/")
 	out := make([]ProwlarrIndexer, 0, len(indexers))

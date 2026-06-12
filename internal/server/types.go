@@ -82,9 +82,9 @@ type CreateCollectionBody struct {
 	Publisher   string `json:"publisher"`
 	Medium      string `json:"medium"`
 	Type        string `json:"type" tstype:"'' | 'volume' | 'chapter'"` // default volume
-	BasedOn     int64  `json:"basedOn"`   // collection id; 0 = from scratch
-	Volumes     int    `json:"volumes"`   // only when basedOn is 0
-	CutoffNum   int64  `json:"cutoffNum"` // chapter type: monitor from N onward
+	BasedOn     int64  `json:"basedOn"`                                 // collection id; 0 = from scratch
+	Volumes     int    `json:"volumes"`                                 // only when basedOn is 0
+	CutoffNum   int64  `json:"cutoffNum"`                               // chapter type: monitor from N onward
 	Monitored   bool   `json:"monitored"`
 }
 

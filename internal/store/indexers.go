@@ -16,12 +16,12 @@ const (
 // the protocol-specific document (TorznabSettings / SourceSettings in
 // the service layer).
 type Indexer struct {
-	ID          int64           `json:"id"`
-	Name        string          `json:"name"`
-	Protocol    string          `json:"protocol" tstype:"'torznab' | 'source'"`
-	Enabled     bool            `json:"enabled"`
-	UseVolumes  bool            `json:"useVolumes"`
-	UseChapters bool            `json:"useChapters"`
+	ID          int64    `json:"id"`
+	Name        string   `json:"name"`
+	Protocol    string   `json:"protocol" tstype:"'torznab' | 'source'"`
+	Enabled     bool     `json:"enabled"`
+	UseVolumes  bool     `json:"useVolumes"`
+	UseChapters bool     `json:"useChapters"`
 	Priority    int      `json:"priority"`
 	Settings    JSONText `json:"settings" tstype:"any"`
 }

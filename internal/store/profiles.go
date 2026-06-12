@@ -49,7 +49,7 @@ func (s *Store) AddFormat(ctx context.Context, f profile.Format) (int64, error) 
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO custom_formats (name, conditions_json) VALUES (?,?)`, f.Name, string(conds))
 	if err != nil {
-		return 0, err
+		return 0, conflict(err, "a custom format with this name already exists")
 	}
 	return res.LastInsertId()
 }
@@ -59,9 +59,9 @@ func (s *Store) UpdateFormat(ctx context.Context, f profile.Format) error {
 	if err != nil {
 		return err
 	}
-	return s.touch(ctx,
+	return conflict(s.touch(ctx,
 		`UPDATE custom_formats SET name = ?, conditions_json = ? WHERE id = ?`,
-		f.Name, string(conds), f.ID)
+		f.Name, string(conds), f.ID), "a custom format with this name already exists")
 }
 
 func (s *Store) DeleteFormat(ctx context.Context, id int64) error {
@@ -143,7 +143,7 @@ func (s *Store) AddProfile(ctx context.Context, p profile.Profile) (int64, error
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO profiles (name, body_json) VALUES (?,?)`, p.Name, body)
 	if err != nil {
-		return 0, err
+		return 0, conflict(err, "a profile with this name already exists")
 	}
 	return res.LastInsertId()
 }
@@ -153,7 +153,9 @@ func (s *Store) UpdateProfile(ctx context.Context, p profile.Profile) error {
 	if err != nil {
 		return err
 	}
-	return s.touch(ctx, `UPDATE profiles SET name = ?, body_json = ? WHERE id = ?`, p.Name, body, p.ID)
+	return conflict(
+		s.touch(ctx, `UPDATE profiles SET name = ?, body_json = ? WHERE id = ?`, p.Name, body, p.ID),
+		"a profile with this name already exists")
 }
 
 func (s *Store) DeleteProfile(ctx context.Context, id int64) error {

@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -45,15 +45,15 @@ func (s *SearchService) GrabBest(ctx context.Context, seriesID int64, searchLedg
 func (s *SearchService) Grab(ctx context.Context, seriesID int64, searchLedger string, c ReleaseCandidate, force bool) (int64, error) {
 	for _, r := range c.Rejections {
 		if hardRejections[r] {
-			return 0, fmt.Errorf("candidate is rejected: %s", r)
+			return 0, apperr.Invalidf("candidate is rejected: %s", r)
 		}
 		if !force {
-			return 0, fmt.Errorf("candidate is rejected: %s (use force to override)", r)
+			return 0, apperr.Invalidf("candidate is rejected: %s (use force to override)", r)
 		}
 	}
 	prov := s.registry.Get(c.Provider)
 	if prov == nil {
-		return 0, fmt.Errorf("provider %q is not configured", c.Provider)
+		return 0, apperr.Unavailablef("provider %q is not configured", c.Provider)
 	}
 
 	slots := make([]store.ExpectedSlot, 0, len(c.Covered))

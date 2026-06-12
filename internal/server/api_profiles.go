@@ -43,7 +43,7 @@ func (s *Server) handleCreateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	created, err := s.profiles.CreateProfile(r.Context(), p)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)
@@ -60,7 +60,7 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	p.ID = id
 	if err := s.profiles.UpdateProfile(r.Context(), p); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -72,7 +72,7 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.profiles.DeleteProfile(r.Context(), id); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -81,7 +81,7 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetDefaultProfile(w http.ResponseWriter, r *http.Request) {
 	id, err := s.profiles.DefaultProfileID(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]int64{"profileId": id})
@@ -95,7 +95,7 @@ func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := s.profiles.SetDefaultProfile(r.Context(), body.ProfileID); err != nil {
-		writeStoreError(w, err)
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -108,7 +108,7 @@ func (s *Server) handleExportProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	doc, err := s.profiles.ExportProfile(r.Context(), id)
 	if err != nil {
-		writeStoreError(w, err)
+		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, doc)
@@ -121,7 +121,7 @@ func (s *Server) handleImportProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := s.profiles.ImportProfile(r.Context(), doc)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
@@ -139,7 +139,7 @@ func (s *Server) handleCreateFormat(w http.ResponseWriter, r *http.Request) {
 	}
 	created, err := s.profiles.CreateFormat(r.Context(), f)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)
@@ -156,7 +156,7 @@ func (s *Server) handleUpdateFormat(w http.ResponseWriter, r *http.Request) {
 	}
 	f.ID = id
 	if err := s.profiles.UpdateFormat(r.Context(), f); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -168,7 +168,7 @@ func (s *Server) handleDeleteFormat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.profiles.DeleteFormat(r.Context(), id); err != nil {
-		writeStoreError(w, err)
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

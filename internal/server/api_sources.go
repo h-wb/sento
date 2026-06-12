@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -63,7 +64,7 @@ func (s *Server) handleDeleteBlocklist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.DeleteBlocklist(r.Context(), id); err != nil {
-		writeStoreError(w, err)
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -77,7 +78,7 @@ func (s *Server) handleQueueBlocklist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.importer.BlocklistQueueItem(r.Context(), qid); err != nil {
-		writeStoreError(w, err)
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -88,7 +89,7 @@ func (s *Server) handleQueueBlocklist(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListIndexers(w http.ResponseWriter, r *http.Request) {
 	views, err := s.sites.List(r.Context())
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeErr(w, err)
 		return
 	}
 	respondList(w, views, nil)
@@ -109,12 +110,12 @@ func (s *Server) handleAddIndexer(w http.ResponseWriter, r *http.Request) {
 	}
 	ix := indexerFromBody(body)
 	if err := service.ValidateIndexer(ix); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErr(w, err)
 		return
 	}
 	id, err := s.store.AddIndexer(r.Context(), ix)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, err)
 		return
 	}
 	ix.ID = id
@@ -128,7 +129,7 @@ func (s *Server) handleUpdateIndexer(w http.ResponseWriter, r *http.Request) {
 	}
 	existing, err := s.store.GetIndexer(r.Context(), iid)
 	if err != nil {
-		writeStoreError(w, err)
+		writeErr(w, err)
 		return
 	}
 	var body IndexerBody
@@ -139,11 +140,11 @@ func (s *Server) handleUpdateIndexer(w http.ResponseWriter, r *http.Request) {
 	ix.ID = iid
 	ix.Protocol = existing.Protocol // protocol is immutable
 	if err := service.ValidateIndexer(ix); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErr(w, err)
 		return
 	}
 	if err := s.store.UpdateIndexer(r.Context(), ix); err != nil {
-		writeStoreError(w, err)
+		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ix)
@@ -157,7 +158,7 @@ func (s *Server) handlePatchIndexer(w http.ResponseWriter, r *http.Request) {
 	}
 	ix, err := s.store.GetIndexer(r.Context(), iid)
 	if err != nil {
-		writeStoreError(w, err)
+		writeErr(w, err)
 		return
 	}
 	var body IndexerPatch
@@ -177,7 +178,7 @@ func (s *Server) handlePatchIndexer(w http.ResponseWriter, r *http.Request) {
 		ix.Priority = *body.Priority
 	}
 	if err := s.store.UpdateIndexer(r.Context(), *ix); err != nil {
-		writeStoreError(w, err)
+		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ix)
@@ -190,18 +191,10 @@ func (s *Server) handleDeleteIndexer(w http.ResponseWriter, r *http.Request) {
 	}
 	// Source entries drive the extension lifecycle: deleting the last
 	// entry of an extension uninstalls it from the host.
-	var pkg string
-	if ix, err := s.store.GetIndexer(r.Context(), iid); err == nil && ix.Protocol == store.IndexerSource {
-		var ss service.SourceSettings
-		if json.Unmarshal(ix.Settings, &ss) == nil {
-			pkg = ss.PkgName
-		}
-	}
-	if err := s.store.DeleteIndexer(r.Context(), iid); err != nil {
-		writeStoreError(w, err)
+	if err := s.extensions.DeleteIndexerEntry(r.Context(), iid); err != nil {
+		writeErr(w, err)
 		return
 	}
-	s.extensions.CleanupExtension(r.Context(), pkg)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -212,11 +205,11 @@ func (s *Server) handleTestIndexer(w http.ResponseWriter, r *http.Request) {
 	}
 	ix, err := s.store.GetIndexer(r.Context(), iid)
 	if err != nil {
-		writeStoreError(w, err)
+		writeErr(w, err)
 		return
 	}
 	if err := service.TestIndexer(r.Context(), *ix, s.conns.Host()); err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -231,7 +224,7 @@ func (s *Server) handleBrowseProwlarr(w http.ResponseWriter, r *http.Request) {
 	}
 	indexers, err := service.BrowseProwlarr(r.Context(), body.URL, body.APIKey)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeErr(w, err)
 		return
 	}
 	cs := s.conns.Load(r.Context())
@@ -249,7 +242,7 @@ func (s *Server) handleSeriesIndexers(w http.ResponseWriter, r *http.Request) {
 	}
 	sites, err := s.sites.Effective(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeErr(w, err)
 		return
 	}
 	respondList(w, sites, nil)
@@ -275,7 +268,7 @@ func (s *Server) handleSeriesIndexerOverride(w http.ResponseWriter, r *http.Requ
 	ov.UseVolumes = body.UseVolumes
 	ov.UseChapters = body.UseChapters
 	if err := s.store.UpsertSiteOverride(r.Context(), ov); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ov)
@@ -308,7 +301,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.search.FindCandidates(r.Context(), id, body.Ledger, body.Slot)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeErr(w, err)
 		return
 	}
 
@@ -322,7 +315,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			}
 			qid, err := s.search.Grab(r.Context(), id, body.Ledger, c, body.Force)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
+				writeErr(w, err)
 				return
 			}
 			queued = append(queued, qid)
@@ -360,12 +353,12 @@ func (s *Server) streamSearch(w http.ResponseWriter, r *http.Request, id int64, 
 func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 	host := s.conns.Host()
 	if host == nil {
-		writeError(w, http.StatusServiceUnavailable, "no source host is configured")
+		writeErr(w, apperr.Unavailablef("no source host is configured"))
 		return
 	}
 	sources, err := host.Sources(r.Context())
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeErr(w, apperr.Upstreamf("%w", err))
 		return
 	}
 	writeJSON(w, http.StatusOK, sources)
@@ -376,7 +369,7 @@ func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 	host := s.conns.Host()
 	if host == nil {
-		writeError(w, http.StatusServiceUnavailable, "no source host is configured")
+		writeErr(w, apperr.Unavailablef("no source host is configured"))
 		return
 	}
 	q := r.URL.Query().Get("q")
@@ -390,7 +383,7 @@ func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	ix, err := s.store.GetIndexer(r.Context(), iid)
 	if err != nil {
-		writeStoreError(w, err)
+		writeErr(w, err)
 		return
 	}
 	var ss service.SourceSettings
@@ -400,7 +393,7 @@ func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	mangas, err := host.Search(r.Context(), ss.SourceID, q)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeErr(w, apperr.Upstreamf("%w", err))
 		return
 	}
 	respondList(w, mangas, nil)
@@ -417,7 +410,7 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleQueueProcess(w http.ResponseWriter, r *http.Request) {
 	n, err := s.importer.ProcessQueue(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"processed": n})

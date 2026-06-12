@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/match"
 	"github.com/h-wb/sento/internal/parse"
@@ -295,7 +296,7 @@ func (run *searchRun) profileFor(collectionID int64) *profile.Profile {
 
 func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot) (*searchRun, error) {
 	if s.registry.Empty() {
-		return nil, fmt.Errorf("no search providers configured")
+		return nil, apperr.Unavailablef("no search providers configured")
 	}
 	titles, err := s.store.SeriesTitles(ctx, seriesID)
 	if err != nil {

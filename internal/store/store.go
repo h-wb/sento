@@ -6,14 +6,25 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/metadata"
 )
 
-var ErrNotFound = errors.New("not found")
+// ErrNotFound is the apperr sentinel: services and handlers match it with
+// errors.Is and the HTTP layer maps it to 404.
+var ErrNotFound = apperr.ErrNotFound
+
+// conflict maps a SQLite uniqueness violation to apperr.ErrConflict with a
+// caller-supplied message; other errors pass through.
+func conflict(err error, msg string) error {
+	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint") {
+		return apperr.Conflictf("%s", msg)
+	}
+	return err
+}
 
 type Store struct {
 	db *sql.DB
@@ -164,6 +175,9 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 		md.Year, md.TotalChapters, md.FinalVolume, md.Description, md.CoverURL, profileID,
 		string(md.RawJSON), 1)
 	if err != nil {
+		if c := conflict(err, "series is already in the library"); c != err {
+			return 0, c
+		}
 		return 0, fmt.Errorf("inserting series: %w", err)
 	}
 	seriesID, err := res.LastInsertId()
@@ -282,6 +296,9 @@ func (s *Store) AddCustomCollection(ctx context.Context, c Collection, basedOn i
 		c.SeriesID, c.EditionName, c.Language, c.Publisher, c.Medium, ctype,
 		c.Monitored, c.CutoffNum)
 	if err != nil {
+		if c := conflict(err, "a collection with this name/language/publisher/medium already exists"); c != err {
+			return 0, c
+		}
 		return 0, fmt.Errorf("inserting custom collection: %w", err)
 	}
 	colID, err := res.LastInsertId()
@@ -328,13 +345,13 @@ func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID in
 		return nil, err
 	}
 	if from.SeriesID != seriesID || into.SeriesID != seriesID {
-		return nil, fmt.Errorf("collections belong to another series")
+		return nil, ErrNotFound
 	}
 	if !from.Custom {
-		return nil, fmt.Errorf("only custom collections can be merged away")
+		return nil, apperr.Invalidf("only custom collections can be merged away")
 	}
 	if from.Type != into.Type {
-		return nil, fmt.Errorf("collections are of different types")
+		return nil, apperr.Invalidf("collections are of different types")
 	}
 
 	// Chapter slots derive from total_chapters (no works), so every link
@@ -392,7 +409,7 @@ func (s *Store) DeleteCustomCollection(ctx context.Context, seriesID, collection
 		return ErrNotFound
 	}
 	if !col.Custom {
-		return fmt.Errorf("only custom collections can be deleted")
+		return apperr.Invalidf("only custom collections can be deleted")
 	}
 	for _, table := range []string{"file_slot_links", "slot_overrides"} {
 		if _, err := s.db.ExecContext(ctx, `DELETE FROM `+table+`

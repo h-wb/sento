@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -24,10 +24,10 @@ const defaultProfileKey = "default_profile_id"
 
 func validateFormat(f profile.Format) error {
 	if strings.TrimSpace(f.Name) == "" {
-		return fmt.Errorf("format needs a name")
+		return apperr.Invalidf("format needs a name")
 	}
 	if len(f.Conditions) == 0 {
-		return fmt.Errorf("format needs at least one condition")
+		return apperr.Invalidf("format needs at least one condition")
 	}
 	for _, c := range f.Conditions {
 		if err := c.Validate(); err != nil {
@@ -80,7 +80,7 @@ func (s *ProfileService) DeleteFormat(ctx context.Context, id int64) error {
 
 func (s *ProfileService) validateProfile(ctx context.Context, p profile.Profile) error {
 	if strings.TrimSpace(p.Name) == "" {
-		return fmt.Errorf("profile needs a name")
+		return apperr.Invalidf("profile needs a name")
 	}
 	formats, err := s.store.ListFormats(ctx)
 	if err != nil {
@@ -92,7 +92,7 @@ func (s *ProfileService) validateProfile(ctx context.Context, p profile.Profile)
 	}
 	for id := range p.FormatScores {
 		if !known[id] {
-			return fmt.Errorf("profile scores unknown format %d", id)
+			return apperr.Invalidf("profile scores unknown format %d", id)
 		}
 	}
 	return nil
@@ -125,14 +125,14 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, p profile.Profile) e
 // is the default.
 func (s *ProfileService) DeleteProfile(ctx context.Context, id int64) error {
 	if did, _ := s.DefaultProfileID(ctx); did == id {
-		return fmt.Errorf("cannot delete the default profile")
+		return apperr.Conflictf("cannot delete the default profile")
 	}
 	n, err := s.store.CountProfileUses(ctx, id)
 	if err != nil {
 		return err
 	}
 	if n > 0 {
-		return fmt.Errorf("profile is used by %d series/collections", n)
+		return apperr.Conflictf("profile is used by %d series/collections", n)
 	}
 	return s.store.DeleteProfile(ctx, id)
 }
@@ -254,11 +254,11 @@ func (s *ProfileService) ExportProfile(ctx context.Context, id int64) (*ProfileD
 // replaces the profile by name.
 func (s *ProfileService) ImportProfile(ctx context.Context, doc ProfileDoc) (*profile.Profile, error) {
 	if strings.TrimSpace(doc.Name) == "" {
-		return nil, fmt.Errorf("profile doc needs a name")
+		return nil, apperr.Invalidf("profile doc needs a name")
 	}
 	for _, fd := range doc.Formats {
 		if err := validateFormat(profile.Format{Name: fd.Name, Conditions: fd.Conditions}); err != nil {
-			return nil, fmt.Errorf("format %q: %w", fd.Name, err)
+			return nil, apperr.Invalidf("format %q: %w", fd.Name, err)
 		}
 	}
 	existing, err := s.store.ListFormats(ctx)

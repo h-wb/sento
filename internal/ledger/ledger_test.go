@@ -16,9 +16,9 @@ func work(seq int64, countType, date string) store.Work {
 func TestVolumeSlots(t *testing.T) {
 	col := store.Collection{ID: 7, Monitored: true}
 	works := []store.Work{
-		work(100, "main", "2020-01-01"), // released, owned
-		work(200, "main", "2020-02-01"), // released, missing → wanted
-		work(300, "main", "2099-01-01"), // future → not wanted
+		work(100, "main", "2020-01-01"),  // released, owned
+		work(200, "main", "2020-02-01"),  // released, missing → wanted
+		work(300, "main", "2099-01-01"),  // future → not wanted
 		work(400, "extra", "2020-01-01"), // extras unmonitored by default (D11)
 	}
 	links := map[string][]int64{store.SlotKey("volume", 7, 100): {42}}
