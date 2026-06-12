@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/h-wb/sento/internal/library"
+	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -49,7 +49,7 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 	}
 	if dir == "" {
 		naming := LoadMediaSettings(ctx, sc.store).Naming()
-		dir = filepath.Join(sc.libraryRoot, library.Render(naming.SeriesFolder, library.NameTokens{
+		dir = filepath.Join(sc.libraryRoot, mediafile.Render(naming.SeriesFolder, mediafile.NameTokens{
 			SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1,
 		}))
 	}

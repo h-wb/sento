@@ -1,6 +1,6 @@
-// Package library handles file organization: naming templates, ComicInfo,
+// Package mediafile handles file organization: naming templates, ComicInfo,
 // and the import pipeline (spec.md §11).
-package library
+package mediafile
 
 import (
 	"fmt"

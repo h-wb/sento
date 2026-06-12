@@ -1,4 +1,4 @@
-package library
+package mediafile
 
 import (
 	"encoding/xml"

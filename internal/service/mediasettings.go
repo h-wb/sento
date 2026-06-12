@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/h-wb/sento/internal/library"
+	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -27,7 +27,7 @@ type MediaSettings struct {
 const mediaSettingsKey = "media"
 
 func DefaultMediaSettings() MediaSettings {
-	n := library.DefaultNaming()
+	n := mediafile.DefaultNaming()
 	return MediaSettings{
 		SeriesFolder: n.SeriesFolder, VolumeFile: n.VolumeFile,
 		ChapterFile: n.ChapterFile, ChapterDir: n.ChapterDir,
@@ -36,8 +36,8 @@ func DefaultMediaSettings() MediaSettings {
 }
 
 // Naming adapts the settings to the template renderer's config.
-func (m MediaSettings) Naming() library.NamingConfig {
-	return library.NamingConfig{
+func (m MediaSettings) Naming() mediafile.NamingConfig {
+	return mediafile.NamingConfig{
 		SeriesFolder: m.SeriesFolder, VolumeFile: m.VolumeFile,
 		ChapterFile: m.ChapterFile, ChapterDir: m.ChapterDir,
 	}
@@ -97,7 +97,7 @@ func ValidateMediaSettings(m MediaSettings) error {
 // PreviewMediaSettings renders the templates against a fixed sample so the
 // UI can show live results (and validation can probe them).
 func PreviewMediaSettings(m MediaSettings) map[string]string {
-	sample := library.NameTokens{
+	sample := mediafile.NameTokens{
 		SeriesTitle: "ONE PIECE", SeriesID: 377, Edition: "Standard Edition",
 		Lang: "en", Group: "TCB Scans", Year: 1997,
 	}
@@ -108,8 +108,8 @@ func PreviewMediaSettings(m MediaSettings) map[string]string {
 	chapter := sample
 	chapter.Volume, chapter.Chapter = -1, 110250 // ch 1102.5
 	return map[string]string{
-		"seriesFolder": library.Render(m.SeriesFolder, folder),
-		"volumeFile":   library.Render(m.VolumeFile, volume),
-		"chapterFile":  library.Render(m.ChapterFile, chapter),
+		"seriesFolder": mediafile.Render(m.SeriesFolder, folder),
+		"volumeFile":   mediafile.Render(m.VolumeFile, volume),
+		"chapterFile":  mediafile.Render(m.ChapterFile, chapter),
 	}
 }

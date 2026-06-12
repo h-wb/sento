@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/h-wb/sento/internal/library"
+	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
@@ -184,7 +184,7 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	}
 
 	var destPath string
-	info := library.ComicInfo{
+	info := mediafile.ComicInfo{
 		Series:      series.Title,
 		Summary:     series.Description,
 		Web:         fmt.Sprintf("https://mangabaka.org/%d", series.MangaBakaID),
@@ -192,39 +192,39 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 		Notes:       fmt.Sprintf("mangabaka:%d sento:v1", series.MangaBakaID),
 	}
 	if isVolume {
-		fileName := library.Render(naming.VolumeFile, library.NameTokens{
+		fileName := mediafile.Render(naming.VolumeFile, mediafile.NameTokens{
 			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
 			Volume: first.Number, Chapter: -1, Edition: editionName, Lang: lang,
 		})
 		if !ms.RenameImports {
-			fileName = library.Sanitize(item.Title) + ".cbz"
+			fileName = mediafile.Sanitize(item.Title) + ".cbz"
 		}
 		destPath = filepath.Join(seriesDir, fileName)
-		info.Volume = library.RenderPlainNum(first.Number)
+		info.Volume = mediafile.RenderPlainNum(first.Number)
 		// Also set Number: the merge would otherwise preserve whatever the
 		// source's ComicInfo guessed (often a year mis-parse).
 		info.Number = info.Volume
 	} else {
-		fileName := library.Render(naming.ChapterFile, library.NameTokens{
+		fileName := mediafile.Render(naming.ChapterFile, mediafile.NameTokens{
 			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
 			Volume: -1, Chapter: first.Number, Lang: lang,
 		})
 		if !ms.RenameImports {
-			fileName = library.Sanitize(item.Title) + ".cbz"
+			fileName = mediafile.Sanitize(item.Title) + ".cbz"
 		}
 		destPath = seriesDir
 		if naming.ChapterDir != "" {
 			destPath = filepath.Join(destPath, naming.ChapterDir)
 		}
 		destPath = filepath.Join(destPath, fileName)
-		info.Number = library.RenderPlainNum(first.Number)
+		info.Number = mediafile.RenderPlainNum(first.Number)
 	}
 
 	writeInfo := &info
 	if !ms.WriteComicInfo {
 		writeInfo = nil
 	}
-	size, err := library.ImportCBZ(stream, destPath, writeInfo)
+	size, err := mediafile.ImportCBZ(stream, destPath, writeInfo)
 	if err != nil {
 		return err
 	}
@@ -311,13 +311,13 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 						dest = filepath.Join(seriesDir, naming.ChapterDir, filepath.Base(rel))
 					}
 				case slotLedger == "volume":
-					dest = filepath.Join(seriesDir, library.Render(naming.VolumeFile, library.NameTokens{
+					dest = filepath.Join(seriesDir, mediafile.Render(naming.VolumeFile, mediafile.NameTokens{
 						SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
 						Volume: n, Chapter: -1, Edition: editionName, Lang: lang,
 					}))
 				default:
 					dest = filepath.Join(seriesDir, naming.ChapterDir,
-						library.Render(naming.ChapterFile, library.NameTokens{
+						mediafile.Render(naming.ChapterFile, mediafile.NameTokens{
 							SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
 							Volume: -1, Chapter: n, Lang: lang,
 						}))
@@ -326,9 +326,9 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 				// (a CBR renamed .cbz would lie about its contents).
 				dest = strings.TrimSuffix(dest, filepath.Ext(dest)) + ext
 				src := filepath.Join(dir, rel)
-				transfer := library.HardlinkOrCopy
+				transfer := mediafile.HardlinkOrCopy
 				if ms.AlwaysCopy {
-					transfer = library.CopyFile
+					transfer = mediafile.CopyFile
 				}
 				if err := transfer(src, dest); err != nil {
 					return fmt.Errorf("linking %s: %w", rel, err)
@@ -355,11 +355,11 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	return nil
 }
 
-func (im *Importer) seriesDir(ctx context.Context, series *store.Series, naming library.NamingConfig) (string, error) {
+func (im *Importer) seriesDir(ctx context.Context, series *store.Series, naming mediafile.NamingConfig) (string, error) {
 	if series.Path != "" {
 		return series.Path, nil
 	}
-	dir := filepath.Join(im.libraryRoot, library.Render(naming.SeriesFolder, library.NameTokens{
+	dir := filepath.Join(im.libraryRoot, mediafile.Render(naming.SeriesFolder, mediafile.NameTokens{
 		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1,
 	}))
 	if err := im.store.SetSeriesPath(ctx, series.ID, dir); err != nil {
