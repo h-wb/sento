@@ -257,6 +257,16 @@ function IndexerModal({
   const [extSources, setExtSources] = useState<Source[] | null>(null)
   const pickedExt = (extensions.data ?? []).find((e) => e.pkgName === pkg)
 
+  // Auto-name follows the picked source as long as the user hasn't typed
+  // a name themselves: re-picking overwrites our suggestion, never theirs.
+  const autoName = useRef('')
+  const suggestName = (n: string) => {
+    if (!name || name === autoName.current) {
+      setName(n)
+      autoName.current = n
+    }
+  }
+
   const loadSources = useMutation({
     mutationFn: async (p: string) => {
       const ext = (extensions.data ?? []).find((e) => e.pkgName === p)
@@ -267,7 +277,7 @@ function IndexerModal({
       setExtSources(srcs)
       if (srcs.length === 1) {
         setSource({ sourceId: srcs[0].id, pkgName: p })
-        if (!name) setName(`${srcs[0].name} (${srcs[0].lang})`)
+        suggestName(`${srcs[0].name} (${srcs[0].lang})`)
       }
     },
     onError: notify.err,
@@ -399,7 +409,7 @@ function IndexerModal({
                       const pick = found.find((f) => f.url === url)
                       if (!pick) return
                       setTorznab({ url: pick.url, apiKey: browse.apiKey })
-                      if (!name) setName(pick.name)
+                      suggestName(pick.name)
                     }}
                   />
                 )}
@@ -460,7 +470,7 @@ function IndexerModal({
                   const src = extSources.find((s) => s.id === v)
                   setSource({ sourceId: v, pkgName: pkg })
                   setPrefValues({})
-                  if (!name && src) setName(`${src.name} (${src.lang})`)
+                  if (src) suggestName(`${src.name} (${src.lang})`)
                 }}
               />
             )}
