@@ -456,12 +456,15 @@ function VolumesTab({
   onSlot: (s: SlotSelection) => void
 }) {
   const [funnel, setFunnel] = useState<SearchResponse | null>(null)
+  const [manageOpen, setManageOpen] = useState(false)
   const [addEdition, setAddEdition] = useState(false)
   const [selId, setSelId] = useState<string | null>(null)
   const volumeCollections = collections.filter((c) => c.type === 'volume')
-  // One edition shows at a time; fall back to the first when the selected
-  // one disappears (deleted/merged).
-  const selected = volumeCollections.find((c) => String(c.id) === selId) ?? volumeCollections[0]
+  // Only monitored editions show here — the ones being collected. The
+  // rest (reference data) live in the Editions manager. Fall back to the
+  // first when the selected one disappears (unmonitored/merged).
+  const monitoredCols = volumeCollections.filter((c) => c.monitored)
+  const selected = monitoredCols.find((c) => String(c.id) === selId) ?? monitoredCols[0]
   const fileById = new Map(files.map((f) => [f.id, f]))
 
   const colSlots = selected ? (slots?.volumes?.[String(selected.id)] ?? []) : []
@@ -471,17 +474,17 @@ function VolumesTab({
     <Stack>
       <Group justify="space-between">
         <SearchSplit seriesID={seriesID} ledger="volume" busy={busy} run={run} onResult={setFunnel} />
-        <Button size="xs" variant="default" onClick={() => setAddEdition(true)}>
-          Add edition
+        <Button size="xs" variant="default" onClick={() => setManageOpen(true)}>
+          Editions ({volumeCollections.length})
         </Button>
       </Group>
 
-      {volumeCollections.length > 1 && (
+      {monitoredCols.length > 1 && (
         <SegmentedControl
           size="xs"
           value={String(selected?.id ?? '')}
           onChange={setSelId}
-          data={volumeCollections.map((c) => {
+          data={monitoredCols.map((c) => {
             const cs = slots?.volumes?.[String(c.id)] ?? []
             const own = cs.filter((s) => (s.fileIds?.length ?? 0) > 0).length
             return {
@@ -492,6 +495,15 @@ function VolumesTab({
         />
       )}
 
+      <EditionsModal
+        seriesID={seriesID}
+        collections={volumeCollections}
+        slots={slots}
+        opened={manageOpen}
+        run={run}
+        onAdd={() => setAddEdition(true)}
+        onClose={() => setManageOpen(false)}
+      />
       <AddEditionModal
         seriesID={seriesID}
         collections={volumeCollections}
@@ -501,6 +513,21 @@ function VolumesTab({
         onClose={() => setAddEdition(false)}
       />
 
+      {!selected && (
+        <Text size="sm" c="dimmed">
+          No monitored edition —{' '}
+          <Text
+            span
+            size="sm"
+            c="indigo"
+            style={{ cursor: 'pointer' }}
+            onClick={() => setManageOpen(true)}
+          >
+            open Editions
+          </Text>{' '}
+          to pick the one you collect.
+        </Text>
+      )}
       {selected && (
         <Card withBorder padding="sm" maw={760}>
           <Group justify="space-between" mb="xs">
@@ -522,25 +549,6 @@ function VolumesTab({
                 {owned}/{colSlots.length} owned
               </Text>
             </div>
-            <Group gap="xs">
-              {selected.custom && (
-                <CustomEditionActions
-                  seriesID={seriesID}
-                  collection={selected}
-                  others={volumeCollections.filter((o) => o.id !== selected.id)}
-                  run={run}
-                />
-              )}
-              <Switch
-                label="Monitored"
-                checked={selected.monitored}
-                onChange={(e) =>
-                  run(() =>
-                    api.setCollectionMonitored(seriesID, selected.id, e.currentTarget.checked),
-                  )
-                }
-              />
-            </Group>
           </Group>
           {colSlots.length > 0 && (
             <Progress size="xs" value={(owned / Math.max(colSlots.length, 1)) * 100} mb="xs" />
@@ -616,6 +624,88 @@ function VolumesTab({
         <FunnelCard funnel={funnel} seriesID={seriesID} ledger="volume" run={run} busy={busy} />
       )}
     </Stack>
+  )
+}
+
+// EditionsModal manages every edition MangaBaka knows (plus customs):
+// monitored ones are collected — they show on the Volumes tab and are
+// searched; the rest are reference data kept out of the way.
+function EditionsModal({
+  seriesID,
+  collections,
+  slots,
+  opened,
+  run,
+  onAdd,
+  onClose,
+}: {
+  seriesID: number
+  collections: Collection[]
+  slots: Slots | null
+  opened: boolean
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+  onAdd: () => void
+  onClose: () => void
+}) {
+  return (
+    <Modal opened={opened} onClose={onClose} title="Editions" size="lg">
+      <Stack gap="sm">
+        <Text size="xs" c="dimmed">
+          Monitored editions show on the Volumes tab and are searched; the rest are reference.
+          Most series want exactly one monitored edition — the one you collect.
+        </Text>
+        {collections.map((c) => {
+          const cs = slots?.volumes?.[String(c.id)] ?? []
+          const own = cs.filter((s) => (s.fileIds?.length ?? 0) > 0).length
+          return (
+            <Group key={c.id} justify="space-between" wrap="nowrap">
+              <div>
+                <Text size="sm" fw={500}>
+                  {c.editionName}{' '}
+                  <Text span size="xs" c="dimmed">
+                    {[c.language, c.medium, c.publisher].filter(Boolean).join(' · ')}
+                  </Text>{' '}
+                  {c.custom && (
+                    <Badge size="xs" color="grape" variant="light">
+                      custom
+                    </Badge>
+                  )}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {own}/{cs.length} owned
+                </Text>
+              </div>
+              <Group gap="xs" wrap="nowrap">
+                {c.custom && (
+                  <CustomEditionActions
+                    seriesID={seriesID}
+                    collection={c}
+                    others={collections.filter((o) => o.id !== c.id)}
+                    run={run}
+                  />
+                )}
+                <Switch
+                  size="xs"
+                  label="Monitored"
+                  checked={c.monitored}
+                  onChange={(e) =>
+                    run(() => api.setCollectionMonitored(seriesID, c.id, e.currentTarget.checked))
+                  }
+                />
+              </Group>
+            </Group>
+          )
+        })}
+        {collections.length === 0 && (
+          <Text size="sm" c="dimmed">
+            No volume editions known for this series.
+          </Text>
+        )}
+        <Button size="xs" variant="default" style={{ alignSelf: 'flex-start' }} onClick={onAdd}>
+          Add custom edition
+        </Button>
+      </Stack>
+    </Modal>
   )
 }
 
