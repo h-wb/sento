@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Badge, Button, Group, Stack, Switch, Text, TextInput, Tooltip } from '@mantine/core'
+import { Badge, Button, Group, Stack, Switch, Table, Text, TextInput, Tooltip } from '@mantine/core'
 import { IconSearch } from '@tabler/icons-react'
 import { fmtNum, fmtSize, type ReleaseCandidate } from '../api'
 import type { Range } from '../types/parse'
@@ -36,10 +36,14 @@ function fmtRanges(prefix: string, ranges?: Range[]): string | null {
   return prefix + parts.join(',') + (ranges.length > 3 ? ',…' : '')
 }
 
-// CandidateList renders funnel results: grabbable releases up front with
-// the parse facts as chips, rejected ones behind a toggle with their
-// reasons in plain words. Shared by the slot modal and the ledger-wide
-// dry-run views.
+type SortKey = 'score' | 'size' | 'seeders'
+
+const sortVal = (c: ReleaseCandidate, k: SortKey) =>
+  k === 'score' ? c.score : k === 'size' ? (c.size ?? 0) : (c.seeders ?? 0)
+
+// CandidateList renders funnel results as a sortable table: grabbable
+// releases up front with the parse facts as chips, rejected ones behind
+// a toggle with their reasons in plain words.
 export default function CandidateList({
   candidates,
   dropped = 0,
@@ -53,6 +57,8 @@ export default function CandidateList({
 }) {
   const [showRejected, setShowRejected] = useState(false)
   const [filter, setFilter] = useState('')
+  const [sort, setSort] = useState<SortKey>('score')
+  const [asc, setAsc] = useState(false)
 
   const ok = candidates.filter((c) => !c.rejections?.length)
   const rejected = candidates.filter((c) => c.rejections?.length)
@@ -61,7 +67,19 @@ export default function CandidateList({
 
   const match = (c: ReleaseCandidate) =>
     !filter.trim() || c.title.toLowerCase().includes(filter.trim().toLowerCase())
-  const shown = [...ok, ...(revealRejected ? rejected : [])].filter(match)
+  const shown = [...ok, ...(revealRejected ? rejected : [])]
+    .filter(match)
+    .sort((a, b) => (asc ? sortVal(a, sort) - sortVal(b, sort) : sortVal(b, sort) - sortVal(a, sort)))
+
+  const sortBy = (k: SortKey) => {
+    if (sort === k) setAsc(!asc)
+    else {
+      setSort(k)
+      setAsc(false)
+    }
+  }
+  const arrow = (k: SortKey) => (sort === k ? (asc ? ' ↑' : ' ↓') : '')
+  const sortableTh = { cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' } as const
 
   return (
     <Stack gap={6}>
@@ -95,9 +113,31 @@ export default function CandidateList({
         )}
       </Group>
 
-      {shown.map((c) => (
-        <CandidateRow key={c.guid} c={c} onGrab={onGrab} busy={busy} />
-      ))}
+      <Table.ScrollContainer minWidth={640}>
+        <Table highlightOnHover verticalSpacing={6}>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th w={130}>Site</Table.Th>
+              <Table.Th>Release</Table.Th>
+              <Table.Th w={90} style={sortableTh} onClick={() => sortBy('size')}>
+                Size{arrow('size')}
+              </Table.Th>
+              <Table.Th w={80} style={sortableTh} onClick={() => sortBy('seeders')}>
+                Seeders{arrow('seeders')}
+              </Table.Th>
+              <Table.Th w={90} style={sortableTh} onClick={() => sortBy('score')}>
+                Score{arrow('score')}
+              </Table.Th>
+              {onGrab && <Table.Th w={70} />}
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {shown.map((c) => (
+              <CandidateRow key={c.guid} c={c} onGrab={onGrab} busy={busy} />
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
       {shown.length === 0 && filter && (
         <Text size="xs" c="dimmed">
           Nothing matches “{filter}”.
@@ -130,50 +170,8 @@ function CandidateRow({
   ].filter(Boolean) as string[]
 
   return (
-    <div style={{ opacity: rejected ? 0.65 : 1 }}>
-      <Group justify="space-between" wrap="nowrap" gap="xs">
-        <Text size="xs" lineClamp={1} style={{ flex: 1 }} title={c.title}>
-          {c.title}
-        </Text>
-        <Group gap={6} wrap="nowrap">
-          {rejected ? (
-            <Tooltip label={rejections.map(friendly).join(' · ')}>
-              <Badge size="xs" color={hard ? 'red' : 'orange'} variant="light">
-                {friendly(rejections[0])}
-                {rejections.length > 1 && ` +${rejections.length - 1}`}
-              </Badge>
-            </Tooltip>
-          ) : (
-            <Tooltip label="Decision score — the highest eligible release wins auto-grab">
-              <Badge size="xs" color="green" variant="light">
-                {c.score}
-              </Badge>
-            </Tooltip>
-          )}
-          {onGrab && (
-            <Tooltip
-              label={
-                hard
-                  ? 'Hard rejection — cannot grab'
-                  : rejected
-                    ? 'Force grab (overrides the soft rejection)'
-                    : 'Grab'
-              }
-            >
-              <Button
-                size="compact-xs"
-                color={rejected ? 'orange' : 'indigo'}
-                variant={rejected ? 'light' : 'filled'}
-                disabled={hard || busy}
-                onClick={() => onGrab(c, rejected)}
-              >
-                {rejected ? 'Force' : 'Grab'}
-              </Button>
-            </Tooltip>
-          )}
-        </Group>
-      </Group>
-      <Group gap={4} mt={2} wrap="wrap">
+    <Table.Tr opacity={rejected ? 0.65 : 1}>
+      <Table.Td>
         <Badge
           size="xs"
           variant="dot"
@@ -182,44 +180,95 @@ function CandidateRow({
         >
           {c.site}
         </Badge>
-        {coverage && (
-          <Badge size="xs" variant="outline" color="gray" style={{ textTransform: 'none' }}>
-            {coverage}
-          </Badge>
-        )}
-        {c.parse.complete && (
-          <Badge size="xs" variant="outline" color="cyan">
-            complete
-          </Badge>
-        )}
-        {c.parse.language && (
-          <Badge size="xs" variant="outline" color="grape">
-            {c.parse.language}
-          </Badge>
-        )}
-        {editions.map((e) => (
-          <Badge key={e} size="xs" variant="outline" color="gray">
-            {e}
-          </Badge>
-        ))}
-        {c.scanlator && (
-          <Badge size="xs" variant="outline" color="gray" style={{ textTransform: 'none' }}>
-            {c.scanlator}
-          </Badge>
-        )}
-        {(c.covered?.length ?? 0) > 1 && (
-          <Tooltip label={`Fills ${c.covered!.length} wanted slots`}>
-            <Badge size="xs" variant="light" color="cyan">
-              fills {c.covered!.length}
+      </Table.Td>
+      <Table.Td>
+        <Text size="xs" lineClamp={1} title={c.title}>
+          {c.title}
+        </Text>
+        <Group gap={4} mt={2} wrap="wrap">
+          {coverage && (
+            <Badge size="xs" variant="outline" color="gray" style={{ textTransform: 'none' }}>
+              {coverage}
+            </Badge>
+          )}
+          {c.parse.complete && (
+            <Badge size="xs" variant="outline" color="cyan">
+              complete
+            </Badge>
+          )}
+          {c.parse.language && (
+            <Badge size="xs" variant="outline" color="grape">
+              {c.parse.language}
+            </Badge>
+          )}
+          {editions.map((e) => (
+            <Badge key={e} size="xs" variant="outline" color="gray">
+              {e}
+            </Badge>
+          ))}
+          {c.scanlator && (
+            <Badge size="xs" variant="outline" color="gray" style={{ textTransform: 'none' }}>
+              {c.scanlator}
+            </Badge>
+          )}
+          {(c.covered?.length ?? 0) > 1 && (
+            <Tooltip label={`Fills ${c.covered!.length} wanted slots`}>
+              <Badge size="xs" variant="light" color="cyan">
+                fills {c.covered!.length}
+              </Badge>
+            </Tooltip>
+          )}
+        </Group>
+      </Table.Td>
+      <Table.Td>
+        <Text size="xs" c="dimmed">
+          {c.protocol === 'torrent' ? fmtSize(c.size ?? 0) : '—'}
+        </Text>
+      </Table.Td>
+      <Table.Td>
+        <Text size="xs" c="dimmed">
+          {c.protocol === 'torrent' ? (c.seeders ?? 0) : '—'}
+        </Text>
+      </Table.Td>
+      <Table.Td>
+        {rejected ? (
+          <Tooltip label={rejections.map(friendly).join(' · ')}>
+            <Badge size="xs" color={hard ? 'red' : 'orange'} variant="light">
+              {friendly(rejections[0])}
+              {rejections.length > 1 && ` +${rejections.length - 1}`}
+            </Badge>
+          </Tooltip>
+        ) : (
+          <Tooltip label="Decision score — the highest eligible release wins auto-grab">
+            <Badge size="xs" color="green" variant="light">
+              {c.score}
             </Badge>
           </Tooltip>
         )}
-        {c.protocol === 'torrent' && (
-          <Text size="xs" c="dimmed">
-            {fmtSize(c.size ?? 0)} · {c.seeders ?? 0} seeders
-          </Text>
-        )}
-      </Group>
-    </div>
+      </Table.Td>
+      {onGrab && (
+        <Table.Td>
+          <Tooltip
+            label={
+              hard
+                ? 'Hard rejection — cannot grab'
+                : rejected
+                  ? 'Force grab (overrides the soft rejection)'
+                  : 'Grab'
+            }
+          >
+            <Button
+              size="compact-xs"
+              color={rejected ? 'orange' : 'indigo'}
+              variant={rejected ? 'light' : 'filled'}
+              disabled={hard || busy}
+              onClick={() => onGrab(c, rejected)}
+            >
+              {rejected ? 'Force' : 'Grab'}
+            </Button>
+          </Tooltip>
+        </Table.Td>
+      )}
+    </Table.Tr>
   )
 }
