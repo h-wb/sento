@@ -6,8 +6,10 @@ import {
   Button,
   Card,
   Collapse,
+  Divider,
   Group,
   Image,
+  Loader,
   Menu,
   Modal,
   NumberInput,
@@ -24,8 +26,11 @@ import {
   TextInput,
   Title,
   Tooltip,
+  UnstyledButton,
 } from '@mantine/core'
 import {
+  IconBookmark,
+  IconBookmarkFilled,
   IconChevronDown,
   IconChevronRight,
   IconDotsVertical,
@@ -35,6 +40,7 @@ import {
   IconRefresh,
   IconSearch,
   IconTrash,
+  IconVersions,
   IconX,
 } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -64,6 +70,8 @@ export default function SeriesPage() {
   const [busy, setBusy] = useState(false)
   const [slotSel, setSlotSel] = useState<SlotSelection | null>(null)
   const [fullDesc, setFullDesc] = useState(false)
+  const [manageEditions, setManageEditions] = useState(false)
+  const [addEdition, setAddEdition] = useState(false)
 
   const queryClient = useQueryClient()
   const detail = useQuery({
@@ -119,8 +127,77 @@ export default function SeriesPage() {
     )
   }
 
+  const volumeCollections = collections.filter((c) => c.type === 'volume')
+
   return (
     <>
+      <Group gap={4} mb="sm">
+        <BarButton
+          icon={<IconRefresh size={18} />}
+          label="Refresh & Scan"
+          loading={busy}
+          onClick={() =>
+            run(async () => {
+              await api.refreshSeries(seriesID)
+              const r = await api.scanSeries(seriesID)
+              notify.ok(`Refreshed — scan: ${r.scanned} new, ${r.linked} linked`)
+            })
+          }
+        />
+        <BarButton
+          icon={<IconSearch size={18} />}
+          label="Search Monitored"
+          loading={busy}
+          onClick={() =>
+            run(async () => {
+              const [v, c] = await Promise.all([
+                api.search(seriesID, { ledger: 'volume' }),
+                api.search(seriesID, { ledger: 'chapter' }),
+              ])
+              const queued = (v.queued?.length ?? 0) + (c.queued?.length ?? 0)
+              notify.ok(
+                queued
+                  ? `Queued ${queued} release${queued > 1 ? 's' : ''}`
+                  : 'Nothing grabbed — no suitable release for the wanted slots',
+              )
+            })
+          }
+        />
+        <Divider orientation="vertical" mx={4} />
+        <BarButton
+          icon={<IconVersions size={18} />}
+          label="Editions"
+          onClick={() => setManageEditions(true)}
+        />
+        <BarButton
+          icon={
+            series.monitored ? (
+              <IconBookmarkFilled size={18} />
+            ) : (
+              <IconBookmark size={18} />
+            )
+          }
+          label={series.monitored ? 'Monitored' : 'Unmonitored'}
+          onClick={() => run(() => api.setSeriesMonitored(seriesID, !series.monitored))}
+        />
+        <Divider orientation="vertical" mx={4} />
+        <BarButton
+          icon={<IconTrash size={18} />}
+          label="Delete"
+          color="red"
+          onClick={() => {
+            if (
+              !window.confirm(
+                `Remove "${series.title}" from Sento?\n\nLibrary files stay on disk; monitoring, history and slot links are deleted.`,
+              )
+            )
+              return
+            run(() => api.deleteSeries(seriesID).then(() => navigate('/')))
+          }}
+        />
+      </Group>
+      <Divider mb="md" />
+
       <Group align="flex-start" wrap="nowrap" mb="md">
         <Image src={series.coverUrl} w={140} radius="sm" alt="" visibleFrom="xs" />
         <div style={{ flex: 1 }}>
@@ -138,6 +215,11 @@ export default function SeriesPage() {
                 {series.contentRating}
               </Badge>
             )}
+            {!series.monitored && (
+              <Badge variant="outline" color="gray">
+                unmonitored
+              </Badge>
+            )}
           </Group>
           {series.description && (
             <Text
@@ -152,45 +234,26 @@ export default function SeriesPage() {
               {series.description}
             </Text>
           )}
-          <Group mt="sm">
-            <Switch
-              size="sm"
-              label="Monitored"
-              description="Off pauses all automatic searches"
-              checked={series.monitored}
-              onChange={(e) =>
-                run(() => api.setSeriesMonitored(seriesID, e.currentTarget.checked))
-              }
-            />
-            <Button
-              size="xs"
-              variant="default"
-              leftSection={<IconRefresh size={14} />}
-              onClick={() => run(() => api.refreshSeries(seriesID), 'Metadata refreshed')}
-              loading={busy}
-            >
-              Refresh
-            </Button>
-            <Button
-              size="xs"
-              color="red"
-              variant="outline"
-              leftSection={<IconTrash size={14} />}
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    `Remove "${series.title}" from Sento?\n\nLibrary files stay on disk; monitoring, history and slot links are deleted.`,
-                  )
-                )
-                  return
-                run(() => api.deleteSeries(seriesID).then(() => navigate('/')))
-              }}
-            >
-              Remove
-            </Button>
-          </Group>
         </div>
       </Group>
+
+      <EditionsModal
+        seriesID={seriesID}
+        collections={volumeCollections}
+        slots={slots}
+        opened={manageEditions}
+        run={run}
+        onAdd={() => setAddEdition(true)}
+        onClose={() => setManageEditions(false)}
+      />
+      <AddEditionModal
+        seriesID={seriesID}
+        collections={volumeCollections}
+        opened={addEdition}
+        busy={busy}
+        run={run}
+        onClose={() => setAddEdition(false)}
+      />
 
       <Tabs defaultValue="volumes">
         <Tabs.List>
@@ -210,6 +273,7 @@ export default function SeriesPage() {
             busy={busy}
             run={run}
             onSlot={setSlotSel}
+            onManageEditions={() => setManageEditions(true)}
           />
         </Tabs.Panel>
 
@@ -347,6 +411,39 @@ function HistoryTab({ seriesID }: { seriesID: number }) {
         ))}
       </Table.Tbody>
     </Table>
+  )
+}
+
+// BarButton is one entry of the Sonarr-style action bar: icon above a
+// small label.
+function BarButton({
+  icon,
+  label,
+  color,
+  loading,
+  onClick,
+}: {
+  icon: React.ReactNode
+  label: string
+  color?: string
+  loading?: boolean
+  onClick: () => void
+}) {
+  return (
+    <UnstyledButton
+      onClick={onClick}
+      disabled={loading}
+      px="sm"
+      py={4}
+      style={{ borderRadius: 6, opacity: loading ? 0.5 : 1 }}
+    >
+      <Stack gap={2} align="center" c={color}>
+        {loading ? <Loader size={18} color={color} /> : icon}
+        <Text size="xs" c={color ?? 'dimmed'}>
+          {label}
+        </Text>
+      </Stack>
+    </UnstyledButton>
   )
 }
 
@@ -512,6 +609,7 @@ function VolumesTab({
   busy,
   run,
   onSlot,
+  onManageEditions,
 }: {
   seriesID: number
   collections: Collection[]
@@ -520,43 +618,16 @@ function VolumesTab({
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onSlot: (s: SlotSelection) => void
+  onManageEditions: () => void
 }) {
-  const [funnel, setFunnel] = useState<SearchResponse | null>(null)
-  const [manageOpen, setManageOpen] = useState(false)
-  const [addEdition, setAddEdition] = useState(false)
   const volumeCollections = collections.filter((c) => c.type === 'volume')
   // Only monitored editions show here — the ones being collected. The
-  // rest (reference data) live in the Editions manager.
+  // rest (reference data) live in the Editions manager on the action bar.
   const monitoredCols = volumeCollections.filter((c) => c.monitored)
   const fileById = new Map(files.map((f) => [f.id, f]))
 
   return (
     <Stack>
-      <Group justify="space-between">
-        <SearchSplit seriesID={seriesID} ledger="volume" busy={busy} run={run} onResult={setFunnel} />
-        <Button size="xs" variant="default" onClick={() => setManageOpen(true)}>
-          Editions ({volumeCollections.length})
-        </Button>
-      </Group>
-
-      <EditionsModal
-        seriesID={seriesID}
-        collections={volumeCollections}
-        slots={slots}
-        opened={manageOpen}
-        run={run}
-        onAdd={() => setAddEdition(true)}
-        onClose={() => setManageOpen(false)}
-      />
-      <AddEditionModal
-        seriesID={seriesID}
-        collections={volumeCollections}
-        opened={addEdition}
-        busy={busy}
-        run={run}
-        onClose={() => setAddEdition(false)}
-      />
-
       {monitoredCols.length === 0 && (
         <Text size="sm" c="dimmed">
           No monitored edition —{' '}
@@ -565,7 +636,7 @@ function VolumesTab({
             size="sm"
             c="indigo"
             style={{ cursor: 'pointer' }}
-            onClick={() => setManageOpen(true)}
+            onClick={onManageEditions}
           >
             open Editions
           </Text>{' '}
@@ -585,10 +656,6 @@ function VolumesTab({
           onSlot={onSlot}
         />
       ))}
-
-      {funnel && (
-        <FunnelCard funnel={funnel} seriesID={seriesID} ledger="volume" run={run} busy={busy} />
-      )}
     </Stack>
   )
 }
