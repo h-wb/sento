@@ -29,6 +29,7 @@ import {
   UnstyledButton,
 } from '@mantine/core'
 import {
+  IconAdjustmentsHorizontal,
   IconBookmark,
   IconBookmarkFilled,
   IconChevronRight,
@@ -70,8 +71,8 @@ export default function SeriesPage() {
   const [busy, setBusy] = useState(false)
   const [slotSel, setSlotSel] = useState<SlotSelection | null>(null)
   const [fullDesc, setFullDesc] = useState(false)
-  const [manageEditions, setManageEditions] = useState(false)
-  const [addEdition, setAddEdition] = useState(false)
+  const [manageCollections, setManageCollections] = useState(false)
+  const [addCollection, setAddCollection] = useState(false)
   const [tab, setTab] = useState<string | null>('volumes')
   const [volumesView, setVolumesView] = useLedgerView('sento.volumesView')
   const [chaptersView, setChaptersView] = useLedgerView('sento.chaptersView')
@@ -185,8 +186,8 @@ export default function SeriesPage() {
           {tab === 'volumes' && (
             <BarButton
               icon={<IconVersions size={18} />}
-              label="Editions"
-              onClick={() => setManageEditions(true)}
+              label="Collections"
+              onClick={() => setManageCollections(true)}
             />
           )}
           {tab === 'chapters' && ledger && (
@@ -214,6 +215,7 @@ export default function SeriesPage() {
             label={series.monitored ? 'Monitored' : 'Unmonitored'}
             onClick={() => run(() => api.setSeriesMonitored(seriesID, !series.monitored))}
           />
+          <ProfileBarButton seriesID={seriesID} profileId={series.profileId ?? 0} />
           <Divider orientation="vertical" mx={4} />
           <BarButton
             icon={<IconTrash size={18} />}
@@ -258,7 +260,6 @@ export default function SeriesPage() {
                 {series.contentRating}
               </Badge>
             )}
-            <ProfileBadge seriesID={seriesID} profileId={series.profileId ?? 0} />
             {!series.monitored && (
               <Badge variant="outline" color="gray">
                 unmonitored
@@ -281,22 +282,22 @@ export default function SeriesPage() {
         </div>
       </Group>
 
-      <EditionsModal
+      <CollectionsModal
         seriesID={seriesID}
         collections={volumeCollections}
         slots={slots}
-        opened={manageEditions}
+        opened={manageCollections}
         run={run}
-        onAdd={() => setAddEdition(true)}
-        onClose={() => setManageEditions(false)}
+        onAdd={() => setAddCollection(true)}
+        onClose={() => setManageCollections(false)}
       />
-      <AddEditionModal
+      <AddCollectionModal
         seriesID={seriesID}
         collections={volumeCollections}
-        opened={addEdition}
+        opened={addCollection}
         busy={busy}
         run={run}
-        onClose={() => setAddEdition(false)}
+        onClose={() => setAddCollection(false)}
       />
 
       <Tabs value={tab} onChange={setTab}>
@@ -317,7 +318,7 @@ export default function SeriesPage() {
             busy={busy}
             run={run}
             onSlot={setSlotSel}
-            onManageEditions={() => setManageEditions(true)}
+            onManageCollections={() => setManageCollections(true)}
             view={volumesView}
           />
         </Tabs.Panel>
@@ -597,9 +598,9 @@ function ViewToggle({ value, onChange }: { value: LedgerView; onChange: (v: Ledg
   )
 }
 
-// ProfileBadge shows the series' release profile in the header badges and
-// switches it from a dropdown. profileId 0 = the instance default.
-function ProfileBadge({ seriesID, profileId }: { seriesID: number; profileId: number }) {
+// ProfileBarButton shows the series' release profile in the action bar
+// and switches it from a dropdown. profileId 0 = the instance default.
+function ProfileBarButton({ seriesID, profileId }: { seriesID: number; profileId: number }) {
   const qc = useQueryClient()
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
   const def = useQuery({ queryKey: ['default-profile'], queryFn: api.defaultProfile })
@@ -614,15 +615,15 @@ function ProfileBadge({ seriesID, profileId }: { seriesID: number; profileId: nu
   return (
     <Menu position="bottom-start" withinPortal>
       <Menu.Target>
-        <Badge
-          variant="outline"
-          color="indigo"
-          style={{ cursor: 'pointer', textTransform: 'none' }}
-          title="Release profile"
-        >
-          {current?.name ?? `profile ${effective}`}
-          {profileId === 0 && ' (default)'}
-        </Badge>
+        <UnstyledButton px="sm" py={4} style={{ borderRadius: 6 }} title="Release profile">
+          <Stack gap={2} align="center">
+            <IconAdjustmentsHorizontal size={18} color="var(--mantine-color-dimmed)" />
+            <Text size="xs" c="dimmed">
+              {current?.name ?? 'Profile'}
+              {profileId === 0 && ' (default)'}
+            </Text>
+          </Stack>
+        </UnstyledButton>
       </Menu.Target>
       <Menu.Dropdown>
         <Menu.Label>Release profile</Menu.Label>
@@ -762,7 +763,7 @@ function VolumesTab({
   busy,
   run,
   onSlot,
-  onManageEditions,
+  onManageCollections,
   view,
 }: {
   seriesID: number
@@ -772,12 +773,12 @@ function VolumesTab({
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onSlot: (s: SlotSelection) => void
-  onManageEditions: () => void
+  onManageCollections: () => void
   view: LedgerView
 }) {
   const volumeCollections = collections.filter((c) => c.type === 'volume')
-  // Only monitored editions show here — the ones being collected. The
-  // rest (reference data) live in the Editions manager on the action bar.
+  // Only monitored collections show here — the ones being collected. The
+  // rest (reference data) live in the Collections manager on the action bar.
   const monitoredCols = volumeCollections.filter((c) => c.monitored)
   const fileById = new Map(files.map((f) => [f.id, f]))
 
@@ -785,21 +786,21 @@ function VolumesTab({
     <Stack>
       {monitoredCols.length === 0 && (
         <Text size="sm" c="dimmed">
-          No monitored edition —{' '}
+          No monitored collection —{' '}
           <Text
             span
             size="sm"
             c="indigo"
             style={{ cursor: 'pointer' }}
-            onClick={onManageEditions}
+            onClick={onManageCollections}
           >
-            open Editions
+            open Collections
           </Text>{' '}
           to pick the one you collect.
         </Text>
       )}
       {monitoredCols.map((c) => (
-        <EditionSection
+        <CollectionSection
           key={c.id}
           seriesID={seriesID}
           collection={c}
@@ -816,10 +817,10 @@ function VolumesTab({
   )
 }
 
-// EditionSection is one monitored edition as a collapsible card (Sonarr's
+// CollectionSection is one monitored collection as a collapsible card (Sonarr's
 // seasons): header with progress always visible, the volume table behind
-// the chevron — expanded by default only when it's the lone edition.
-function EditionSection({
+// the chevron — expanded by default only when it's the lone collection.
+function CollectionSection({
   seriesID,
   collection: c,
   colSlots,
@@ -983,7 +984,7 @@ function EditionSection({
         )}
         {colSlots.length === 0 && (
           <Text size="sm" c="dimmed" mt="xs">
-            No volumes known for this edition.
+            No volumes known for this collection.
           </Text>
         )}
       </Collapse>
@@ -991,10 +992,10 @@ function EditionSection({
   )
 }
 
-// EditionsModal manages every edition MangaBaka knows (plus customs):
+// CollectionsModal manages every collection MangaBaka knows (plus customs):
 // monitored ones are collected — they show on the Volumes tab and are
 // searched; the rest are reference data kept out of the way.
-function EditionsModal({
+function CollectionsModal({
   seriesID,
   collections,
   slots,
@@ -1012,11 +1013,11 @@ function EditionsModal({
   onClose: () => void
 }) {
   return (
-    <Modal opened={opened} onClose={onClose} title="Editions" size="lg">
+    <Modal opened={opened} onClose={onClose} title="Collections" size="lg">
       <Stack gap="sm">
         <Text size="xs" c="dimmed">
-          Monitored editions show on the Volumes tab and are searched; the rest are reference.
-          Most series want exactly one monitored edition — the one you collect.
+          Monitored collections show on the Volumes tab and are searched; the rest are reference.
+          Most series want exactly one monitored collection — the one you collect.
         </Text>
         {collections.map((c) => {
           const cs = slots?.volumes?.[String(c.id)] ?? []
@@ -1041,7 +1042,7 @@ function EditionsModal({
               </div>
               <Group gap="xs" wrap="nowrap">
                 {c.custom && (
-                  <CustomEditionActions
+                  <CustomCollectionActions
                     seriesID={seriesID}
                     collection={c}
                     others={collections.filter((o) => o.id !== c.id)}
@@ -1062,23 +1063,23 @@ function EditionsModal({
         })}
         {collections.length === 0 && (
           <Text size="sm" c="dimmed">
-            No volume editions known for this series.
+            No volume collections known for this series.
           </Text>
         )}
         <Button size="xs" variant="default" style={{ alignSelf: 'flex-start' }} onClick={onAdd}>
-          Add custom edition
+          Add custom collection
         </Button>
       </Stack>
     </Modal>
   )
 }
 
-// AddEditionModal creates a custom edition: based on an existing one
+// AddCollectionModal creates a custom collection: based on an existing one
 // (clones the volume numbering — language variants) or from scratch with
-// a volume count (editions MangaBaka doesn't know yet). Metadata refresh
-// adopts a custom edition automatically if MangaBaka later lists the same
+// a volume count (collections MangaBaka doesn't know yet). Metadata refresh
+// adopts a custom collection automatically if MangaBaka later lists the same
 // name/language/publisher/medium.
-function AddEditionModal({
+function AddCollectionModal({
   seriesID,
   collections,
   opened,
@@ -1172,9 +1173,9 @@ function AddEditionModal({
   )
 }
 
-// CustomEditionActions: merge a custom edition into another one (links
+// CustomCollectionActions: merge a custom edition into another one (links
 // re-point by volume number) or delete it (files stay in the library).
-function CustomEditionActions({
+function CustomCollectionActions({
   seriesID,
   collection,
   others,

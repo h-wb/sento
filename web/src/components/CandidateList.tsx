@@ -17,7 +17,7 @@ const hardRejections = new Set([
 const rejectionLabel: Record<string, string> = {
   'rejected.content_type': 'not manga',
   'rejected.series_match': 'different series',
-  'rejected.edition_routing': 'no matching edition',
+  'rejected.edition_routing': 'no matching collection',
   'rejected.no_coverage': 'covers nothing wanted',
   'rejected.blocklisted': 'blocklisted',
   'rejected.language': 'wrong language',

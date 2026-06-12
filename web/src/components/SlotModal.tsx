@@ -187,7 +187,7 @@ function Inner({
       <Stack gap="sm">
         {editionWide ? (
           <Text size="sm" c="dimmed">
-            Candidates are matched against every wanted volume of this edition — multi-volume
+            Candidates are matched against every wanted volume of this collection — multi-volume
             packs cover several slots at once. Packs that are mostly already owned get flagged
             and need a force grab.
           </Text>
@@ -231,7 +231,7 @@ function Inner({
                   style={{ alignSelf: 'flex-start' }}
                   onClick={interactiveSearch}
                 >
-                  Search releases for this {editionWide ? 'edition' : sel.ledger}
+                  Search releases for this {editionWide ? 'collection' : sel.ledger}
                 </Button>
               )}
               {(searching || (result?.pending.length ?? 0) > 0 || result?.done) && (

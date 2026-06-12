@@ -69,14 +69,14 @@ export default function AddPage() {
         mb="md"
         w={300}
         size="xs"
-        label="Monitor editions on add"
-        description="Changeable later per series under Volumes → Editions"
+        label="Monitor collections on add"
+        description="Changeable later per series under Volumes → Collections"
         allowDeselect={false}
         value={monitor}
         onChange={(v) => v && setMonitor(v)}
         data={[
-          { value: 'default', label: 'Default edition (standard, preferred language)' },
-          { value: 'all', label: 'All volume editions' },
+          { value: 'default', label: 'Default collection (standard, preferred language)' },
+          { value: 'all', label: 'All volume collections' },
           { value: 'none', label: 'None' },
         ]}
       />
