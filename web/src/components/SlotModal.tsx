@@ -58,8 +58,13 @@ export default function SlotModal({
   const small = useMediaQuery('(max-width: 48em)')
 
   if (!sel) return null
+  // number 0 = the whole edition (every wanted volume): the place to grab
+  // packs and complete releases.
+  const editionWide = sel.ledger === 'volume' && sel.number === 0
   const linked = files.filter((f) => sel.fileIds.includes(f.id))
-  const label = `${sel.ledger === 'volume' ? 'Volume' : 'Chapter'} ${fmtNum(sel.number)}`
+  const label = editionWide
+    ? `${sel.collectionName ?? 'Edition'} — wanted volumes`
+    : `${sel.ledger === 'volume' ? 'Volume' : 'Chapter'} ${fmtNum(sel.number)}`
 
   const run = async (fn: () => Promise<unknown>, doneMsg?: string) => {
     setBusy(true)
@@ -149,25 +154,33 @@ export default function SlotModal({
   return (
     <Modal opened onClose={close} title={label} size="xl" fullScreen={small}>
       <Stack gap="sm">
-        <Group gap={6}>
-          {sel.collectionName && <Badge variant="light">{sel.collectionName}</Badge>}
-          {sel.releaseDate && (
-            <Text size="sm" c="dimmed">
-              released {sel.releaseDate}
-            </Text>
-          )}
-          <Badge size="sm" color={sel.monitored ? 'indigo' : 'gray'} variant="outline">
-            {sel.monitored ? 'monitored' : 'unmonitored'}
-          </Badge>
-          {sel.wanted && (
-            <Badge size="sm" color="yellow">
-              wanted
+        {editionWide ? (
+          <Text size="sm" c="dimmed">
+            Candidates are matched against every wanted volume of this edition — multi-volume
+            packs cover several slots at once. Packs that are mostly already owned get flagged
+            and need a force grab.
+          </Text>
+        ) : (
+          <Group gap={6}>
+            {sel.collectionName && <Badge variant="light">{sel.collectionName}</Badge>}
+            {sel.releaseDate && (
+              <Text size="sm" c="dimmed">
+                released {sel.releaseDate}
+              </Text>
+            )}
+            <Badge size="sm" color={sel.monitored ? 'indigo' : 'gray'} variant="outline">
+              {sel.monitored ? 'monitored' : 'unmonitored'}
             </Badge>
-          )}
-        </Group>
+            {sel.wanted && (
+              <Badge size="sm" color="yellow">
+                wanted
+              </Badge>
+            )}
+          </Group>
+        )}
 
-        <Divider label="Files" labelPosition="left" />
-        {linked.length === 0 && (
+        {!editionWide && <Divider label="Files" labelPosition="left" />}
+        {!editionWide && linked.length === 0 && (
           <Text size="sm" c="dimmed">
             No file for this slot.
           </Text>
@@ -217,7 +230,7 @@ export default function SlotModal({
             loading={searching}
             onClick={interactiveSearch}
           >
-            Search releases for this {sel.ledger}
+            Search releases for this {editionWide ? 'edition' : sel.ledger}
           </Button>
           {result?.pending.map((p) => (
             <Badge key={p} size="sm" variant="light" color="gray" leftSection={<Loader size={10} />}>

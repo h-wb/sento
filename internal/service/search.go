@@ -42,10 +42,11 @@ func (s *SearchService) HasSourceProvider() bool {
 }
 
 // TargetSlot restricts an interactive search to one slot (collectionID 0 =
-// chapter ledger).
+// chapter ledger). Number 0 widens it to every wanted slot of the
+// collection — the per-edition search, where packs shine.
 type TargetSlot struct {
 	CollectionID int64 `json:"collectionId"`
-	Number       int64 `json:"number"` // hundredths
+	Number       int64 `json:"number"` // hundredths; 0 = whole collection
 }
 
 // ReleaseCandidate is one candidate run through the funnel, for either
@@ -501,8 +502,17 @@ func (s *SearchService) wantedSlots(ctx context.Context, seriesID int64, searchL
 	if cl, err := s.store.GetChapterLedger(ctx, seriesID); err == nil {
 		chapterLang = cl.Language
 	}
-	if target != nil {
+	// A single-slot target forces that slot wanted (re-download works even
+	// when owned). A whole-collection target (Number 0) keeps the real
+	// wanted set, filtered to the collection below.
+	if target != nil && target.Number != 0 {
 		return map[int64]map[int64]bool{target.CollectionID: {target.Number: true}}, collections, chapterLang, nil
+	}
+	filterTarget := func(w map[int64]map[int64]bool) map[int64]map[int64]bool {
+		if target == nil {
+			return w
+		}
+		return map[int64]map[int64]bool{target.CollectionID: w[target.CollectionID]}
 	}
 
 	links, err := s.store.SlotLinks(ctx, seriesID)
@@ -534,7 +544,7 @@ func (s *SearchService) wantedSlots(ctx context.Context, seriesID int64, searchL
 				wanted[col.ID][slot.Number] = true
 			}
 		}
-		return wanted, collections, chapterLang, nil
+		return filterTarget(wanted), collections, chapterLang, nil
 	}
 
 	series, err := s.store.GetSeries(ctx, seriesID)
@@ -554,7 +564,7 @@ func (s *SearchService) wantedSlots(ctx context.Context, seriesID int64, searchL
 		}
 		wanted[0][slot.Number] = true
 	}
-	return wanted, collections, chapterLang, nil
+	return filterTarget(wanted), collections, chapterLang, nil
 }
 
 // funnel applies hard rejections then scoring (decision-engine.md §3–4),

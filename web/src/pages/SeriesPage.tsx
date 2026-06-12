@@ -404,6 +404,7 @@ function SlotActions({
   busy,
   run,
   onInteractive,
+  autoLabel = 'Auto search — grab the best release',
 }: {
   seriesID: number
   ledger: 'volume' | 'chapter'
@@ -411,13 +412,14 @@ function SlotActions({
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onInteractive: () => void
+  autoLabel?: string
 }) {
   // Only the clicked row's button spins (busy is page-wide).
   const [clicked, setClicked] = useState(false)
   if (!busy && clicked) setClicked(false)
   return (
     <Group gap={2} wrap="nowrap" justify="flex-end">
-      <Tooltip label="Auto search — grab the best release">
+      <Tooltip label={autoLabel}>
         <ActionIcon
           size="sm"
           variant="subtle"
@@ -646,6 +648,25 @@ function EditionSection({
             </Text>
           </div>
         </Group>
+        <SlotActions
+          seriesID={seriesID}
+          ledger="volume"
+          target={{ collectionId: c.id, number: 0 }}
+          busy={busy}
+          run={run}
+          autoLabel="Auto search — grab the best for each wanted volume"
+          onInteractive={() =>
+            onSlot({
+              ledger: 'volume',
+              number: 0,
+              collectionId: c.id,
+              collectionName: `${c.editionName} · ${c.language}${c.medium ? ` · ${c.medium}` : ''}`,
+              monitored: c.monitored,
+              wanted: false,
+              fileIds: [],
+            })
+          }
+        />
       </Group>
       {colSlots.length > 0 && (
         <Progress size="xs" value={(owned / Math.max(colSlots.length, 1)) * 100} mt="xs" />
