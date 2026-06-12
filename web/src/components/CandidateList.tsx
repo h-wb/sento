@@ -21,6 +21,7 @@ const rejectionLabel: Record<string, string> = {
   'rejected.no_coverage': 'covers nothing wanted',
   'rejected.blocklisted': 'blocklisted',
   'rejected.language': 'wrong language',
+  'rejected.format_score': 'below format score floor',
   'rejected.pack_threshold': 'pack mostly unwanted',
   'rejected.size': 'implausible size',
   'rejected.seeders': 'no seeders',
@@ -226,6 +227,18 @@ function CandidateRow({
               {c.scanlator}
             </Badge>
           )}
+          {(c.formats ?? []).map((f) => (
+            <Tooltip key={f.name} label={`Custom format · ${f.score >= 0 ? '+' : ''}${f.score}`}>
+              <Badge
+                size="xs"
+                variant="light"
+                color={f.score > 0 ? 'indigo' : f.score < 0 ? 'red' : 'gray'}
+                style={{ textTransform: 'none' }}
+              >
+                {f.name}
+              </Badge>
+            </Tooltip>
+          ))}
           {(c.covered?.length ?? 0) > 1 && (
             <Tooltip label={`Fills ${c.covered!.length} wanted slots`}>
               <Badge size="xs" variant="light" color="cyan">

@@ -2,6 +2,7 @@
 /* eslint-disable */
 import type { SeriesRef } from "./metadata"
 import type { Result } from "./parse"
+import type { Condition, LedgerRules } from "./profile"
 import type { ExtensionInfo } from "./sourcehost"
 import type { Binding, Indexer, SiteOverride } from "./store"
 
@@ -147,6 +148,7 @@ export interface AddSeriesRequest {
   monitorIds: string[]; // explicit provider collection ids
   chapterLang: string; // default "en"
   chapterCutoff: number /* int64 */; // hundredths; 0 = latest at add (D6)
+  profileId: number /* int64 */; // 0 = instance default
 }
 
 //////////
@@ -165,6 +167,32 @@ export interface MediaSettings {
   renameImports: boolean;
   alwaysCopy: boolean; // copy even when a hardlink would work
   writeComicInfo: boolean;
+}
+
+//////////
+// source: profiles.go
+
+/**
+ * ProfileService owns release profiles and custom formats: validation,
+ * the instance default, seeding and the portable JSON form.
+ */
+export interface ProfileService {
+}
+/**
+ * ProfileDoc is the self-contained export of one profile: format
+ * definitions travel with their scores, so a doc imports anywhere.
+ */
+export interface ProfileDoc {
+  name: string;
+  minFormatScore: number /* int */;
+  volume: LedgerRules;
+  chapter: LedgerRules;
+  formats: FormatDoc[];
+}
+export interface FormatDoc {
+  name: string;
+  score: number /* int */;
+  conditions: Condition[];
 }
 
 //////////
@@ -228,8 +256,18 @@ export interface ReleaseCandidate {
   collectionId?: number /* int64 */;
   covered?: number /* int64 */[];
   score: number /* int */;
+  formats?: FormatHit[]; // matched custom formats
+  formatScore?: number /* int */; // their summed score
   rejections?: string[];
   parse: Result;
+}
+/**
+ * FormatHit is one custom format the candidate matched, with the score
+ * the active profile gives it.
+ */
+export interface FormatHit {
+  name: string;
+  score: number /* int */;
 }
 /**
  * SearchResult carries candidates plus diagnostics so empty results can

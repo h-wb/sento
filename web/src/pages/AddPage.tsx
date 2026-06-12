@@ -22,7 +22,9 @@ export default function AddPage() {
   usePageTitle('Add Series')
   const [query, setQuery] = useState('')
   const [monitor, setMonitor] = useState('default')
+  const [profileId, setProfileId] = useState(0) // 0 = instance default
   const navigate = useNavigate()
+  const { data: profiles } = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
 
   // Known MangaBaka ids, so results already in the library link instead
   // of offering a duplicate add.
@@ -31,7 +33,7 @@ export default function AddPage() {
 
   const lookup = useMutation({ mutationFn: (q: string) => api.lookup(q), onError: notify.err })
   const add = useMutation({
-    mutationFn: (r: LookupResult) => api.addSeries({ mangabakaId: r.mangabakaId, monitor }),
+    mutationFn: (r: LookupResult) => api.addSeries({ mangabakaId: r.mangabakaId, monitor, profileId }),
     onSuccess: (s) => {
       notify.ok(`Added "${s.title}"`)
       navigate(`/series/${s.id}`)
@@ -78,6 +80,21 @@ export default function AddPage() {
           { value: 'none', label: 'None' },
         ]}
       />
+      {(profiles?.length ?? 0) > 1 && (
+        <Select
+          mb="md"
+          w={300}
+          size="xs"
+          label="Release profile"
+          allowDeselect={false}
+          value={String(profileId)}
+          onChange={(v) => v && setProfileId(Number(v))}
+          data={[
+            { value: '0', label: 'Instance default' },
+            ...(profiles ?? []).map((p) => ({ value: String(p.id), label: p.name })),
+          ]}
+        />
+      )}
       <Stack>
         {results?.map((r) => {
           const existingID = inLibrary.get(r.mangabakaId)

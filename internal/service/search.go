@@ -12,6 +12,7 @@ import (
 	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/match"
 	"github.com/h-wb/sento/internal/parse"
+	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
@@ -29,10 +30,11 @@ const (
 type SearchService struct {
 	store    *store.Store
 	registry *provider.Registry
+	profiles *ProfileService
 }
 
 func NewSearchService(st *store.Store, registry *provider.Registry) *SearchService {
-	return &SearchService{store: st, registry: registry}
+	return &SearchService{store: st, registry: registry, profiles: NewProfiles(st)}
 }
 
 func (s *SearchService) HasProviders() bool { return !s.registry.Empty() }
@@ -64,9 +66,18 @@ type ReleaseCandidate struct {
 	CollectionID int64        `json:"collectionId,omitempty"`
 	Covered      []int64      `json:"covered,omitempty"`
 	Score        int          `json:"score"`
+	Formats      []FormatHit  `json:"formats,omitempty"`     // matched custom formats
+	FormatScore  int          `json:"formatScore,omitempty"` // their summed score
 	Rejections   []string     `json:"rejections,omitempty"`
 	Parse        parse.Result `json:"parse"`
 	cand         provider.Candidate
+}
+
+// FormatHit is one custom format the candidate matched, with the score
+// the active profile gives it.
+type FormatHit struct {
+	Name  string `json:"name"`
+	Score int    `json:"score"`
 }
 
 // SearchResult carries candidates plus diagnostics so empty results can
@@ -268,7 +279,9 @@ type searchRun struct {
 	wanted      map[int64]map[int64]bool
 	collections []store.Collection
 	chapterLang string
-	blocked     map[string]bool // "protocol/externalKey" bans
+	blocked     map[string]bool  // "protocol/externalKey" bans
+	profile     *profile.Profile // effective release profile (nil = built-ins)
+	formats     []profile.Format
 }
 
 func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot) (*searchRun, error) {
@@ -303,6 +316,9 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 		return nil, err
 	}
 	if run.blocked, err = s.store.BlockedKeys(ctx); err != nil {
+		return nil, err
+	}
+	if run.profile, run.formats, err = s.profiles.ProfileFor(ctx, seriesID); err != nil {
 		return nil, err
 	}
 	return run, nil

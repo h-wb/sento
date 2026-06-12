@@ -87,6 +87,10 @@ export interface Indexer {
 }
 
 //////////
+// source: profiles.go
+
+
+//////////
 // source: queue.go
 
 /**
@@ -160,6 +164,7 @@ export interface Series {
   coverUrl?: string;
   monitored: boolean;
   path?: string;
+  profileId?: number /* int64 */; // 0 = instance default
   addedAt: string;
   refreshedAt?: string;
 }
@@ -232,4 +237,5 @@ export interface AddSeriesParams {
   MonitorIDs: string[]; // or: provider ids to monitor
   ChapterLang: string;
   ChapterCutoff: number /* int64 */; // hundredths; default: total_chapters*100 (latest at add)
+  ProfileID: number /* int64 */; // 0 = instance default (stored NULL)
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/h-wb/sento/internal/parse"
+	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -46,7 +47,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 		if run.blocked[cand.Protocol+"/"+cand.ExternalKey()] {
 			rc.Rejections = append(rc.Rejections, "rejected.blocklisted") // hard
 		} else {
-			s.funnel(run.ledger, &rc, ranges, run.collections, run.wanted, run.chapterLang, run.target)
+			s.funnel(run, &rc, ranges)
 		}
 		rc.Score -= run.priorities[[2]string{rc.Provider, rc.SiteID}]
 		out = append(out, rc)
@@ -71,10 +72,11 @@ func (s *SearchService) coverageRanges(searchLedger string, rc *ReleaseCandidate
 }
 
 // funnel applies hard rejections then scoring (decision-engine.md §3–4),
-// parameterized by ledger.
-func (s *SearchService) funnel(searchLedger string, c *ReleaseCandidate, ranges []parse.Range,
-	collections []store.Collection, wanted map[int64]map[int64]bool, chapterLang string, target *TargetSlot,
-) {
+// parameterized by ledger and the series' release profile.
+func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []parse.Range) {
+	searchLedger, target := run.ledger, run.target
+	collections, wanted, chapterLang := run.collections, run.wanted, run.chapterLang
+	rules := run.ledgerRules()
 	reject := func(code string) { c.Rejections = append(c.Rejections, code) }
 
 	// R1 content-type gate.
@@ -146,19 +148,23 @@ func (s *SearchService) funnel(searchLedger string, c *ReleaseCandidate, ranges 
 	}
 	sort.Slice(c.Covered, func(i, j int) bool { return c.Covered[i] < c.Covered[j] })
 
-	// Torrent-only health checks.
+	// Custom formats: matched on every routable candidate (rejected ones
+	// keep their chips), floor-gated softly so force-grab can override.
+	c.evalFormats(run)
+	if run.profile != nil && run.profile.MinFormatScore > profile.MinScoreOff &&
+		c.FormatScore < run.profile.MinFormatScore {
+		reject("rejected.format_score")
+	}
+
+	// Torrent-only health checks (profile rules).
 	if c.Protocol == provider.ProtocolTorrent {
-		if c.Size > 0 {
+		if c.Size > 0 && rules.SizeMaxMB > 0 {
 			perUnit := c.Size / int64(len(c.Covered))
-			minSize, maxSize := int64(20<<20), int64(1500<<20)
-			if searchLedger == LedgerChapter {
-				minSize, maxSize = 2<<20, 200<<20
-			}
-			if perUnit < minSize || perUnit > maxSize {
+			if perUnit < int64(rules.SizeMinMB)<<20 || perUnit > int64(rules.SizeMaxMB)<<20 {
 				reject("rejected.size")
 			}
 		}
-		if c.Seeders < 1 {
+		if c.Seeders < rules.MinSeeders {
 			reject("rejected.seeders")
 		}
 	}
@@ -166,17 +172,13 @@ func (s *SearchService) funnel(searchLedger string, c *ReleaseCandidate, ranges 
 		return
 	}
 
-	// Scoring (decision-engine.md §4): protocol preference flips per ledger.
+	// Scoring (decision-engine.md §4): the protocol preference comes from
+	// the profile's ledger rules; term scores from the custom formats.
 	score := len(c.Covered) * 1000
-	switch {
-	case searchLedger == LedgerVolume && c.Protocol == provider.ProtocolTorrent:
-		score += 200
-	case searchLedger == LedgerChapter && c.Protocol == provider.ProtocolSource:
+	if c.Protocol == rules.PreferredProtocol {
 		score += 200
 	}
-	if c.Parse.Quality.Digital {
-		score += 100
-	}
+	score += c.FormatScore
 	switch {
 	case c.Seeders > 20:
 		score += 50
@@ -187,6 +189,51 @@ func (s *SearchService) funnel(searchLedger string, c *ReleaseCandidate, ranges 
 		score -= 100
 	}
 	c.Score = score
+}
+
+// ledgerRules resolves the funnel knobs for the run's ledger, falling
+// back to the built-in defaults when no profile is configured.
+func (run *searchRun) ledgerRules() profile.LedgerRules {
+	vol, ch := profile.DefaultRules()
+	if run.profile != nil {
+		vol, ch = run.profile.Volume, run.profile.Chapter
+	}
+	if run.ledger == LedgerChapter {
+		return ch
+	}
+	return vol
+}
+
+// evalFormats matches the active profile's custom formats against the
+// candidate and sums their scores.
+func (c *ReleaseCandidate) evalFormats(run *searchRun) {
+	if run.profile == nil {
+		return
+	}
+	group := c.Parse.Group
+	if group == "" {
+		group = c.Scanlator
+	}
+	in := profile.Input{
+		Title: c.Title, Group: group, Language: c.Parse.Language,
+		Protocol: c.Protocol, Site: c.Site, Resolution: c.Parse.Quality.Resolution,
+		Flags: map[string]bool{
+			"digital": c.Parse.Quality.Digital, "scan": c.Parse.Quality.Scan,
+			"web": c.Parse.Quality.Web, "premium": c.Parse.Quality.Premium,
+			"colored": c.Parse.Edition.Colored, "omnibus": c.Parse.Edition.Omnibus,
+			"deluxe": c.Parse.Edition.Deluxe, "boxset": c.Parse.Edition.BoxSet,
+			"official": c.Parse.Edition.Official, "raw": c.Parse.Edition.Raw,
+			"complete": c.Parse.Complete,
+		},
+	}
+	for _, f := range run.formats {
+		if !f.Matches(in) {
+			continue
+		}
+		score := run.profile.FormatScores[f.ID]
+		c.Formats = append(c.Formats, FormatHit{Name: f.Name, Score: score})
+		c.FormatScore += score
+	}
 }
 
 func baseLang(lang string) string {

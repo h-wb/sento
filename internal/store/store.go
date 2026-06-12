@@ -38,6 +38,7 @@ type Series struct {
 	CoverURL      string `json:"coverUrl,omitempty"`
 	Monitored     bool   `json:"monitored"`
 	Path          string `json:"path,omitempty"`
+	ProfileID     int64  `json:"profileId,omitempty" db:"profile_id"` // 0 = instance default
 	AddedAt       string `json:"addedAt"`
 	RefreshedAt   string `json:"refreshedAt,omitempty"`
 }
@@ -114,7 +115,7 @@ const seriesColumns = `
 	COALESCE(total_chapters,0) AS total_chapters,
 	COALESCE(final_volume,0) AS final_volume,
 	COALESCE(description,'') AS description, COALESCE(cover_url,'') AS cover_url,
-	monitored, COALESCE(path,'') AS path, added_at,
+	monitored, COALESCE(path,'') AS path, COALESCE(profile_id,0) AS profile_id, added_at,
 	COALESCE(refreshed_at,'') AS refreshed_at`
 
 func (s *Store) ListSeries(ctx context.Context) ([]Series, error) {
@@ -144,6 +145,7 @@ type AddSeriesParams struct {
 	MonitorIDs    []string                   // or: provider ids to monitor
 	ChapterLang   string
 	ChapterCutoff int64 // hundredths; default: total_chapters*100 (latest at add)
+	ProfileID     int64 // 0 = instance default (stored NULL)
 }
 
 func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error) {
@@ -154,13 +156,17 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 	defer func() { _ = tx.Rollback() }()
 
 	md := p.Series
+	var profileID any // NULL = instance default
+	if p.ProfileID > 0 {
+		profileID = p.ProfileID
+	}
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO series (mangabaka_id, title, sort_title, type, status, content_rating,
-			year, total_chapters, final_volume, description, cover_url, raw_json,
+			year, total_chapters, final_volume, description, cover_url, profile_id, raw_json,
 			raw_schema_version, refreshed_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`,
 		md.MangaBakaID, md.Title, sortTitle(md.Title), md.Type, md.Status, md.ContentRating,
-		md.Year, md.TotalChapters, md.FinalVolume, md.Description, md.CoverURL,
+		md.Year, md.TotalChapters, md.FinalVolume, md.Description, md.CoverURL, profileID,
 		string(md.RawJSON), 1)
 	if err != nil {
 		return 0, fmt.Errorf("inserting series: %w", err)

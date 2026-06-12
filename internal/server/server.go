@@ -37,6 +37,7 @@ type Server struct {
 	importer   *service.Importer
 	scanner    *service.Scanner
 	extensions *service.ExtensionService
+	profiles   *service.ProfileService
 	sched      *scheduler.Scheduler
 }
 
@@ -67,6 +68,10 @@ func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
 	s.sites = service.NewSiteService(st, s.registry)
 	s.importer = service.NewImporter(st, s.registry, cfg.Library.Path, cfg.Library.PathMappings)
 	s.extensions = service.NewExtensionService(st, s.conns.Host)
+	s.profiles = service.NewProfiles(st)
+	if err := s.profiles.EnsureDefaults(context.Background()); err != nil {
+		slog.Warn("seeding default profile failed", "error", err)
+	}
 	s.reconcileExtensions()
 	return s
 }

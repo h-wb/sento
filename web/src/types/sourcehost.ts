@@ -50,6 +50,11 @@ export interface Chapter {
   name: string;
   number?: number /* float64 */;
   scanlator?: string;
+  /**
+   * WebURL is the chapter's page on the site itself, when the source can
+   * compute one — for the user, not for downloading.
+   */
+  webUrl?: string;
 }
 /**
  * ExtensionInfo describes one extension on a host: available from its

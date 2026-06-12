@@ -38,15 +38,23 @@ packages:
     frontmatter: |
       /* eslint-disable */
 
+  - path: "github.com/h-wb/sento/internal/profile"
+    output_path: "web/src/types/profile.ts"
+    frontmatter: |
+      /* eslint-disable */
+
   - path: "github.com/h-wb/sento/internal/service"
     output_path: "web/src/types/service.ts"
     frontmatter: |
       /* eslint-disable */
       import type { SeriesRef } from "./metadata"
       import type { Result } from "./parse"
+      import type { Condition, LedgerRules } from "./profile"
       import type { ExtensionInfo } from "./sourcehost"
       import type { Binding, Indexer, SiteOverride } from "./store"
     type_mappings:
+      profile.Condition: "Condition"
+      profile.LedgerRules: "LedgerRules"
       parse.Result: "Result"
       store.Binding: "Binding"
       store.Indexer: "Indexer"

@@ -46,6 +46,8 @@ import type {
 } from './types/store'
 import type { TaskStatus } from './types/scheduler'
 import type { Manga as SourceManga, Preference, Source } from './types/sourcehost'
+import type { Condition, Format, Profile } from './types/profile'
+import type { ProfileDoc } from './types/service'
 
 export type {
   Binding,
@@ -81,6 +83,10 @@ export type {
   TargetSlot,
   TaskStatus,
   VolumeSlot,
+  Condition,
+  Format,
+  Profile,
+  ProfileDoc,
 }
 export type Slots = SlotsResponse
 export type SystemStatus = StatusResponse
@@ -124,6 +130,8 @@ export const api = {
   deleteSeries: (id: number) => request<void>(`/series/${id}/`, { method: 'DELETE' }),
   setSeriesMonitored: (id: number, monitored: boolean) =>
     request<void>(`/series/${id}/`, { method: 'PUT', body: JSON.stringify({ monitored }) }),
+  setSeriesProfile: (id: number, profileId: number) =>
+    request<void>(`/series/${id}/`, { method: 'PUT', body: JSON.stringify({ profileId }) }),
   refreshSeries: (id: number) => request<unknown>(`/series/${id}/refresh`, { method: 'POST' }),
   slots: (id: number) => request<Slots>(`/series/${id}/slots`),
   setCollectionMonitored: (id: number, cid: number, monitored: boolean) =>
@@ -149,6 +157,25 @@ export const api = {
       body: JSON.stringify(body),
     }),
   files: (id: number) => request<SeriesFile[]>(`/series/${id}/files`),
+
+  listProfiles: () => request<Profile[]>('/profiles/'),
+  createProfile: (p: Omit<Profile, 'id'>) =>
+    request<Profile>('/profiles/', { method: 'POST', body: JSON.stringify(p) }),
+  updateProfile: (id: number, p: Omit<Profile, 'id'>) =>
+    request<void>(`/profiles/${id}/`, { method: 'PUT', body: JSON.stringify(p) }),
+  deleteProfile: (id: number) => request<void>(`/profiles/${id}/`, { method: 'DELETE' }),
+  exportProfile: (id: number) => request<ProfileDoc>(`/profiles/${id}/export`),
+  importProfile: (doc: ProfileDoc) =>
+    request<Profile>('/profiles/import', { method: 'POST', body: JSON.stringify(doc) }),
+  defaultProfile: () => request<{ profileId: number }>('/profiles/default'),
+  setDefaultProfile: (profileId: number) =>
+    request<void>('/profiles/default', { method: 'PUT', body: JSON.stringify({ profileId }) }),
+  listFormats: () => request<Format[]>('/formats/'),
+  createFormat: (f: Omit<Format, 'id'>) =>
+    request<Format>('/formats/', { method: 'POST', body: JSON.stringify(f) }),
+  updateFormat: (id: number, f: Omit<Format, 'id'>) =>
+    request<void>(`/formats/${id}`, { method: 'PUT', body: JSON.stringify(f) }),
+  deleteFormat: (id: number) => request<void>(`/formats/${id}`, { method: 'DELETE' }),
 
   connections: () => request<ConnectionSettings>('/settings/connections'),
   extensions: () => request<ExtensionView[]>('/extensions'),

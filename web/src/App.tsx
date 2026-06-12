@@ -1,6 +1,7 @@
 import { AppShell, Badge, Burger, Group, Indicator, NavLink, Text, Title } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import {
+  IconAdjustmentsHorizontal,
   IconBooks,
   IconCalendar,
   IconDownload,
@@ -21,6 +22,7 @@ import QueuePage from './pages/QueuePage'
 import IndexersPage from './pages/IndexersPage'
 import SourcesPage from './pages/SourcesPage'
 import MediaPage from './pages/MediaPage'
+import ProfilesPage from './pages/ProfilesPage'
 import SystemPage from './pages/SystemPage'
 
 const links = [
@@ -30,6 +32,7 @@ const links = [
   { to: '/queue', label: 'Activity', icon: IconDownload },
   { to: '/sources', label: 'Sources', icon: IconPlug },
   { to: '/indexers', label: 'Indexers', icon: IconWorldSearch },
+  { to: '/profiles', label: 'Profiles', icon: IconAdjustmentsHorizontal },
   { to: '/media', label: 'Media', icon: IconFiles },
   { to: '/system', label: 'System', icon: IconServerBolt },
 ]
@@ -104,6 +107,7 @@ export default function App() {
           <Route path="/queue" element={<QueuePage />} />
           <Route path="/sources" element={<SourcesPage />} />
           <Route path="/indexers" element={<IndexersPage />} />
+          <Route path="/profiles" element={<ProfilesPage />} />
           <Route path="/media" element={<MediaPage />} />
           <Route path="/system" element={<SystemPage />} />
         </Routes>

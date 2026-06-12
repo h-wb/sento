@@ -258,6 +258,7 @@ export default function SeriesPage() {
                 {series.contentRating}
               </Badge>
             )}
+            <ProfileBadge seriesID={seriesID} profileId={series.profileId ?? 0} />
             {!series.monitored && (
               <Badge variant="outline" color="gray">
                 unmonitored
@@ -593,6 +594,49 @@ function ViewToggle({ value, onChange }: { value: LedgerView; onChange: (v: Ledg
         },
       ]}
     />
+  )
+}
+
+// ProfileBadge shows the series' release profile in the header badges and
+// switches it from a dropdown. profileId 0 = the instance default.
+function ProfileBadge({ seriesID, profileId }: { seriesID: number; profileId: number }) {
+  const qc = useQueryClient()
+  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
+  const def = useQuery({ queryKey: ['default-profile'], queryFn: api.defaultProfile })
+  if (!profiles.data?.length) return null
+  const effective = profileId || def.data?.profileId || 0
+  const current = profiles.data.find((p) => p.id === effective)
+  const assign = (id: number) =>
+    api
+      .setSeriesProfile(seriesID, id)
+      .then(() => qc.invalidateQueries({ queryKey: ['series', seriesID] }))
+      .catch(notify.err)
+  return (
+    <Menu position="bottom-start" withinPortal>
+      <Menu.Target>
+        <Badge
+          variant="outline"
+          color="indigo"
+          style={{ cursor: 'pointer', textTransform: 'none' }}
+          title="Release profile"
+        >
+          {current?.name ?? `profile ${effective}`}
+          {profileId === 0 && ' (default)'}
+        </Badge>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Label>Release profile</Menu.Label>
+        {profiles.data.map((p) => (
+          <Menu.Item key={p.id} onClick={() => void assign(p.id)}>
+            {p.name}
+            {p.id === effective ? ' ✓' : ''}
+          </Menu.Item>
+        ))}
+        {profileId !== 0 && (
+          <Menu.Item onClick={() => void assign(0)}>Use instance default</Menu.Item>
+        )}
+      </Menu.Dropdown>
+    </Menu>
   )
 }
 

@@ -43,6 +43,7 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/extensions/sources/{sid}/preferences", s.handleSourcePreferences)
 	r.Put("/extensions/sources/{sid}/preferences", s.handleSetSourcePreference)
 	s.mountSourceAPI(r)
+	s.mountProfileAPI(r)
 
 	r.Route("/series", func(r chi.Router) {
 		r.Get("/", s.handleListSeries)
@@ -229,9 +230,17 @@ func (s *Server) handleUpdateSeries(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &patch) {
 		return
 	}
-	if err := s.store.SetSeriesMonitored(r.Context(), id, patch.Monitored); err != nil {
-		writeStoreError(w, err)
-		return
+	if patch.Monitored != nil {
+		if err := s.store.SetSeriesMonitored(r.Context(), id, *patch.Monitored); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+	}
+	if patch.ProfileID != nil {
+		if err := s.store.SetSeriesProfile(r.Context(), id, *patch.ProfileID); err != nil {
+			writeStoreError(w, err)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

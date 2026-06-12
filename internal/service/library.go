@@ -29,6 +29,7 @@ type AddSeriesRequest struct {
 	MonitorIDs    []string `json:"monitorIds"`    // explicit provider collection ids
 	ChapterLang   string   `json:"chapterLang"`   // default "en"
 	ChapterCutoff int64    `json:"chapterCutoff"` // hundredths; 0 = latest at add (D6)
+	ProfileID     int64    `json:"profileId"`     // 0 = instance default
 }
 
 func (l *Library) AddSeries(ctx context.Context, req AddSeriesRequest) (int64, error) {
@@ -61,6 +62,7 @@ func (l *Library) AddSeries(ctx context.Context, req AddSeriesRequest) (int64, e
 		MonitorIDs:    monitorIDs,
 		ChapterLang:   req.ChapterLang,
 		ChapterCutoff: req.ChapterCutoff,
+		ProfileID:     req.ProfileID,
 	})
 }
 
