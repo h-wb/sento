@@ -30,7 +30,7 @@ func (s *Store) Calendar(ctx context.Context, from, to string) ([]CalendarEntry,
 		FROM works w
 		JOIN collections c ON c.id = w.collection_id
 		JOIN series s ON s.id = c.series_id
-		WHERE c.monitored = 1 AND c.ctype = 'volume'
+		WHERE c.monitored = TRUE AND c.ctype = 'volume'
 		  AND w.release_date >= ? AND w.release_date <= ?
 		ORDER BY w.release_date, s.sort_title, w.sequence_num`, from, to)
 }

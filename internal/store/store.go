@@ -6,8 +6,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/metadata"
@@ -17,20 +21,67 @@ import (
 // errors.Is and the HTTP layer maps it to 404.
 var ErrNotFound = apperr.ErrNotFound
 
-// conflict maps a SQLite uniqueness violation to apperr.ErrConflict with a
+// conflict maps a uniqueness violation to apperr.ErrConflict with a
 // caller-supplied message; other errors pass through.
 func conflict(err error, msg string) error {
-	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint") {
+	if err == nil {
+		return nil
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
+		return apperr.Conflictf("%s", msg)
+	}
+	if strings.Contains(err.Error(), "UNIQUE constraint") { // modernc/sqlite
 		return apperr.Conflictf("%s", msg)
 	}
 	return err
 }
 
+// Store speaks the portable subset of SQL shared by SQLite and PostgreSQL;
+// queries are written with ? placeholders and rebound per dialect (q).
 type Store struct {
 	db *sql.DB
+	pg bool
 }
 
-func New(db *sql.DB) *Store { return &Store{db: db} }
+// New wraps a connection opened by internal/db; dialect is one of its
+// Dialect constants.
+func New(db *sql.DB, dialect string) *Store {
+	return &Store{db: db, pg: dialect == "postgres"}
+}
+
+// q rebinds ? placeholders to PostgreSQL's $N form. Queries never contain
+// a literal '?' (no SQL string literal here uses one), so the rewrite is a
+// plain scan.
+func (s *Store) q(query string) string {
+	if !s.pg || !strings.ContainsRune(query, '?') {
+		return query
+	}
+	var b strings.Builder
+	b.Grow(len(query) + 8)
+	n := 0
+	for _, r := range query {
+		if r == '?' {
+			n++
+			fmt.Fprintf(&b, "$%d", n)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// utcNow renders the canonical stored timestamp: UTC, second precision,
+// the same format both dialects' column defaults produce.
+func utcNow() string { return time.Now().UTC().Format("2006-01-02 15:04:05") }
+
+// insert runs an INSERT ... RETURNING id and scans the new row id (the
+// portable replacement for LastInsertId, which pgx does not implement).
+func (s *Store) insert(ctx context.Context, query string, args ...any) (int64, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, s.q(query), args...).Scan(&id)
+	return id, err
+}
 
 // --- rows ---
 
@@ -166,23 +217,20 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 	if p.ProfileID > 0 {
 		profileID = p.ProfileID
 	}
-	res, err := tx.ExecContext(ctx, `
+	var seriesID int64
+	err = tx.QueryRowContext(ctx, s.q(`
 		INSERT INTO series (mangabaka_id, title, sort_title, type, status, content_rating,
 			year, total_chapters, final_volume, description, cover_url, profile_id, raw_json,
 			raw_schema_version, refreshed_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`),
 		md.MangaBakaID, md.Title, sortTitle(md.Title), md.Type, md.Status, md.ContentRating,
 		md.Year, md.TotalChapters, md.FinalVolume, md.Description, md.CoverURL, profileID,
-		string(md.RawJSON), 1)
+		string(md.RawJSON), 1, utcNow()).Scan(&seriesID)
 	if err != nil {
 		if c := conflict(err, "series is already in the library"); c != err {
 			return 0, c
 		}
 		return 0, fmt.Errorf("inserting series: %w", err)
-	}
-	seriesID, err := res.LastInsertId()
-	if err != nil {
-		return 0, err
 	}
 
 	monitor := map[string]bool{}
@@ -198,29 +246,33 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 	var chapterColID int64 // first MB chapter collection of the wanted language
 	for _, col := range p.Collections {
 		monitored := p.MonitorAll && col.Type == "volume" || monitor[col.ProviderID]
-		colRes, err := tx.ExecContext(ctx, `
+		var colID int64
+		if err := tx.QueryRowContext(ctx, s.q(`
 			INSERT INTO collections (series_id, mb_collection_id, edition_name, language,
 				publisher, medium, ctype, monitored, count_main, count_extra, count_other,
 				start_date, end_date, raw_json, updated_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`,
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`),
 			seriesID, col.ProviderID, col.EditionName, col.Language, col.Publisher,
 			col.Medium, col.Type, monitored, col.CountMain, col.CountExtra, col.CountOther,
-			col.StartDate, col.EndDate, string(col.RawJSON))
-		if err != nil {
+			col.StartDate, col.EndDate, string(col.RawJSON), utcNow()).Scan(&colID); err != nil {
 			return 0, fmt.Errorf("inserting collection %q: %w", col.EditionName, err)
-		}
-		colID, err := colRes.LastInsertId()
-		if err != nil {
-			return 0, err
 		}
 		if chapterColID == 0 && col.Type == "chapter" && strings.EqualFold(col.Language, lang) {
 			chapterColID = colID
 		}
 		for _, w := range p.Works[col.ProviderID] {
-			if _, err := tx.ExecContext(ctx, `
+			// Upsert (same as refresh): MangaBaka sometimes lists two works
+			// with the same sequence/count_type in one collection.
+			if _, err := tx.ExecContext(ctx, s.q(`
 				INSERT INTO works (collection_id, mb_work_id, sequence_num, sequence_string,
 					count_type, release_date, isbn, pages, raw_json)
-				VALUES (?,?,?,?,?,?,?,?,?)`,
+				VALUES (?,?,?,?,?,?,?,?,?)
+				ON CONFLICT(collection_id, sequence_num, count_type) DO UPDATE SET
+					mb_work_id = excluded.mb_work_id,
+					release_date = excluded.release_date,
+					isbn = excluded.isbn,
+					pages = excluded.pages,
+					raw_json = excluded.raw_json`),
 				colID, w.ProviderID, int64(w.SequenceNum), w.SequenceStr, w.CountType,
 				w.ReleaseDate, w.ISBN, w.Pages, string(w.RawJSON)); err != nil {
 				return 0, fmt.Errorf("inserting work: %w", err)
@@ -235,16 +287,16 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 		cutoff = int64(md.TotalChapters) * 100
 	}
 	if chapterColID != 0 {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE collections SET monitored = 1, cutoff_num = ? WHERE id = ?`,
+		if _, err := tx.ExecContext(ctx, s.q(`
+			UPDATE collections SET monitored = TRUE, cutoff_num = ? WHERE id = ?`),
 			cutoff, chapterColID); err != nil {
 			return 0, fmt.Errorf("adopting chapter collection: %w", err)
 		}
-	} else if _, err := tx.ExecContext(ctx, `
+	} else if _, err := tx.ExecContext(ctx, s.q(`
 		INSERT INTO collections (series_id, edition_name, language, ctype, monitored,
 			custom, cutoff_num, updated_at)
-		VALUES (?,'Chapters',?,'chapter',1,1,?,datetime('now'))`,
-		seriesID, lang, cutoff); err != nil {
+		VALUES (?,'Chapters',?,'chapter',TRUE,TRUE,?,?)`),
+		seriesID, lang, cutoff, utcNow()); err != nil {
 		return 0, fmt.Errorf("inserting chapter collection: %w", err)
 	}
 
@@ -289,40 +341,37 @@ func (s *Store) AddCustomCollection(ctx context.Context, c Collection, basedOn i
 	defer func() { _ = tx.Rollback() }()
 
 	ctype := orDefault(c.Type, "volume")
-	res, err := tx.ExecContext(ctx, `
+	var colID int64
+	err = tx.QueryRowContext(ctx, s.q(`
 		INSERT INTO collections (series_id, edition_name, language, publisher, medium,
 			ctype, monitored, custom, cutoff_num, updated_at)
-		VALUES (?,?,?,?,?,?,?,1,?,datetime('now'))`,
+		VALUES (?,?,?,?,?,?,?,TRUE,?,?) RETURNING id`),
 		c.SeriesID, c.EditionName, c.Language, c.Publisher, c.Medium, ctype,
-		c.Monitored, c.CutoffNum)
+		c.Monitored, c.CutoffNum, utcNow()).Scan(&colID)
 	if err != nil {
 		if c := conflict(err, "a collection with this name/language/publisher/medium already exists"); c != err {
 			return 0, c
 		}
 		return 0, fmt.Errorf("inserting custom collection: %w", err)
 	}
-	colID, err := res.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
 	if ctype == "chapter" {
 		return colID, tx.Commit()
 	}
 
 	if basedOn > 0 {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, s.q(`
 			INSERT INTO works (collection_id, sequence_num, sequence_string, count_type)
 			SELECT ?, sequence_num, sequence_string, count_type
 			FROM works WHERE collection_id = ?
-			  AND collection_id IN (SELECT id FROM collections WHERE series_id = ?)`,
+			  AND collection_id IN (SELECT id FROM collections WHERE series_id = ?)`),
 			colID, basedOn, c.SeriesID); err != nil {
 			return 0, fmt.Errorf("cloning works: %w", err)
 		}
 	} else {
 		for i := 1; i <= volumes; i++ {
-			if _, err := tx.ExecContext(ctx, `
+			if _, err := tx.ExecContext(ctx, s.q(`
 				INSERT INTO works (collection_id, sequence_num, sequence_string, count_type)
-				VALUES (?,?,?,'main')`, colID, int64(i)*100, fmt.Sprintf("%d", i)); err != nil {
+				VALUES (?,?,?,'main')`), colID, int64(i)*100, fmt.Sprintf("%d", i)); err != nil {
 				return 0, fmt.Errorf("generating work %d: %w", i, err)
 			}
 		}
@@ -374,25 +423,40 @@ func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID in
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	for _, table := range []string{"file_slot_links", "slot_overrides"} {
-		// UPDATE OR IGNORE skips rows that would collide with an existing
-		// link in the target; the DELETE clears those leftovers.
-		if _, err := tx.ExecContext(ctx, `UPDATE OR IGNORE `+table+`
-			SET collection_id = ? WHERE ledger = ? AND collection_id = ?`,
-			intoID, from.Type, fromID); err != nil {
+	// Re-point links/overrides unless the same slot already exists in the
+	// target; the trailing DELETE clears those collided leftovers.
+	moves := []string{
+		`UPDATE file_slot_links SET collection_id = ?
+		 WHERE ledger = ? AND collection_id = ?
+		   AND NOT EXISTS (SELECT 1 FROM file_slot_links t
+		                   WHERE t.file_id = file_slot_links.file_id
+		                     AND t.ledger = file_slot_links.ledger
+		                     AND t.collection_id = ?
+		                     AND t.number = file_slot_links.number)`,
+		`UPDATE slot_overrides SET collection_id = ?
+		 WHERE ledger = ? AND collection_id = ?
+		   AND NOT EXISTS (SELECT 1 FROM slot_overrides t
+		                   WHERE t.series_id = slot_overrides.series_id
+		                     AND t.ledger = slot_overrides.ledger
+		                     AND t.collection_id = ?
+		                     AND t.number = slot_overrides.number)`,
+	}
+	for i, table := range []string{"file_slot_links", "slot_overrides"} {
+		if _, err := tx.ExecContext(ctx, s.q(moves[i]),
+			intoID, from.Type, fromID, intoID); err != nil {
 			return nil, err
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+`
-			WHERE ledger = ? AND collection_id = ?`, from.Type, fromID); err != nil {
+		if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM `+table+`
+			WHERE ledger = ? AND collection_id = ?`), from.Type, fromID); err != nil {
 			return nil, err
 		}
 	}
 	if from.Monitored && !into.Monitored {
-		if _, err := tx.ExecContext(ctx, `UPDATE collections SET monitored = 1 WHERE id = ?`, intoID); err != nil {
+		if _, err := tx.ExecContext(ctx, s.q(`UPDATE collections SET monitored = TRUE WHERE id = ?`), intoID); err != nil {
 			return nil, err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM collections WHERE id = ?`, fromID); err != nil {
+	if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM collections WHERE id = ?`), fromID); err != nil {
 		return nil, err
 	}
 	return unmatched, tx.Commit()
@@ -412,8 +476,8 @@ func (s *Store) DeleteCustomCollection(ctx context.Context, seriesID, collection
 		return apperr.Invalidf("only custom collections can be deleted")
 	}
 	for _, table := range []string{"file_slot_links", "slot_overrides"} {
-		if _, err := s.db.ExecContext(ctx, `DELETE FROM `+table+`
-			WHERE ledger = ? AND collection_id = ?`, col.Type, collectionID); err != nil {
+		if _, err := s.db.ExecContext(ctx, s.q(`DELETE FROM `+table+`
+			WHERE ledger = ? AND collection_id = ?`), col.Type, collectionID); err != nil {
 			return err
 		}
 	}
@@ -451,21 +515,17 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []SlotLink
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	res, err := tx.ExecContext(ctx, `
+	var fileID int64
+	if err := tx.QueryRowContext(ctx, s.q(`
 		INSERT INTO files (series_id, path, size, parse_json, provenance, unrequested)
-		VALUES (?,?,?,?,?,?)`,
-		f.SeriesID, f.Path, f.Size, string(parseJSON), f.Provenance, f.Unrequested)
-	if err != nil {
-		return 0, err
-	}
-	fileID, err := res.LastInsertId()
-	if err != nil {
+		VALUES (?,?,?,?,?,?) RETURNING id`),
+		f.SeriesID, f.Path, f.Size, string(parseJSON), f.Provenance, f.Unrequested).Scan(&fileID); err != nil {
 		return 0, err
 	}
 	for _, l := range links {
-		if _, err := tx.ExecContext(ctx, `
-			INSERT OR IGNORE INTO file_slot_links (file_id, ledger, collection_id, number)
-			VALUES (?,?,?,?)`, fileID, l.Ledger, l.CollectionID, l.Number); err != nil {
+		if _, err := tx.ExecContext(ctx, s.q(`
+			INSERT INTO file_slot_links (file_id, ledger, collection_id, number)
+			VALUES (?,?,?,?) ON CONFLICT DO NOTHING`), fileID, l.Ledger, l.CollectionID, l.Number); err != nil {
 			return 0, err
 		}
 	}
@@ -485,7 +545,7 @@ func (s *Store) DeleteFile(ctx context.Context, id int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM files WHERE id = ?`, id); err != nil {
+	if _, err := s.db.ExecContext(ctx, s.q(`DELETE FROM files WHERE id = ?`), id); err != nil {
 		return "", err
 	}
 	return *path, nil
@@ -527,22 +587,22 @@ func (s *Store) ListBindings(ctx context.Context, seriesID int64) ([]Binding, er
 func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
 	state := orDefault(b.State, "active")
 	var id int64
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, s.q(`
 		INSERT INTO source_bindings (series_id, source_id, source_manga_key, source_name, manga_title, state, priority)
 		VALUES (?,?,?,?,?,?,?)
 		ON CONFLICT(series_id, source_id, source_manga_key) DO UPDATE SET
 			source_name = excluded.source_name,
 			manga_title = excluded.manga_title,
 			state = excluded.state
-		RETURNING id`,
+		RETURNING id`),
 		b.SeriesID, b.SourceID, b.SourceMangaKey, b.SourceName, b.MangaTitle, state, b.Priority).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
 	if state == "active" {
-		_, _ = s.db.ExecContext(ctx, `
+		_, _ = s.db.ExecContext(ctx, s.q(`
 			DELETE FROM source_bindings
-			WHERE series_id = ? AND source_id = ? AND state = 'unmatched'`,
+			WHERE series_id = ? AND source_id = ? AND state = 'unmatched'`),
 			b.SeriesID, b.SourceID)
 	}
 	return id, nil

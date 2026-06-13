@@ -61,21 +61,17 @@ type ExpectedSlot struct {
 }
 
 func (s *Store) AddQueueItem(ctx context.Context, q QueueItem) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `
+	return s.insert(ctx, `
 		INSERT INTO queue_items (series_id, protocol, external_id, title, status, expected_slots_json)
-		VALUES (?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?) RETURNING id`,
 		q.SeriesID, q.Protocol, q.ExternalID, q.Title, orDefault(q.Status, QueueQueued),
 		string(q.ExpectedSlots))
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *Store) UpdateQueueItem(ctx context.Context, id int64, status, errMsg string) error {
 	return s.touch(ctx, `
-		UPDATE queue_items SET status = ?, error = ?, updated_at = datetime('now') WHERE id = ?`,
-		status, errMsg, id)
+		UPDATE queue_items SET status = ?, error = ?, updated_at = ? WHERE id = ?`,
+		status, errMsg, utcNow(), id)
 }
 
 func (s *Store) ListQueueItems(ctx context.Context, activeOnly bool) ([]QueueItem, error) {
@@ -113,7 +109,7 @@ func (s *Store) PendingSlotKeys(ctx context.Context, seriesID int64) (map[string
 }
 
 func (s *Store) SetSeriesPath(ctx context.Context, seriesID int64, path string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE series SET path = ? WHERE id = ?`, path, seriesID)
+	_, err := s.db.ExecContext(ctx, s.q(`UPDATE series SET path = ? WHERE id = ?`), path, seriesID)
 	return err
 }
 

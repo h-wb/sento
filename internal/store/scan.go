@@ -10,7 +10,7 @@ import (
 // field names or `db` tags (scany); an empty result is a nil slice.
 func list[T any](ctx context.Context, s *Store, query string, args ...any) ([]T, error) {
 	var out []T
-	if err := sqlscan.Select(ctx, s.db, &out, query, args...); err != nil {
+	if err := sqlscan.Select(ctx, s.db, &out, s.q(query), args...); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -19,7 +19,7 @@ func list[T any](ctx context.Context, s *Store, query string, args ...any) ([]T,
 // get scans exactly one row into T; no row maps to ErrNotFound.
 func get[T any](ctx context.Context, s *Store, query string, args ...any) (*T, error) {
 	var v T
-	err := sqlscan.Get(ctx, s.db, &v, query, args...)
+	err := sqlscan.Get(ctx, s.db, &v, s.q(query), args...)
 	if sqlscan.NotFound(err) {
 		return nil, ErrNotFound
 	}
@@ -32,7 +32,7 @@ func get[T any](ctx context.Context, s *Store, query string, args ...any) (*T, e
 // touch runs an update/delete that must affect at least one row; affecting
 // none maps to ErrNotFound.
 func (s *Store) touch(ctx context.Context, query string, args ...any) error {
-	res, err := s.db.ExecContext(ctx, query, args...)
+	res, err := s.db.ExecContext(ctx, s.q(query), args...)
 	if err != nil {
 		return err
 	}

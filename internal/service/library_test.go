@@ -2,11 +2,10 @@ package service
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/h-wb/sento/internal/db"
+	"github.com/h-wb/sento/internal/db/dbtest"
 	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/store"
@@ -77,12 +76,8 @@ func testProvider() *fakeProvider {
 
 func setup(t *testing.T) (*Library, *store.Store) {
 	t.Helper()
-	conn, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	st := store.New(conn)
+	conn, dialect := dbtest.Open(t)
+	st := store.New(conn, dialect)
 	return NewLibrary(st, testProvider()), st
 }
 

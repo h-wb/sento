@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strconv"
 )
 
 // Indexer protocols.
@@ -38,14 +39,10 @@ func (s *Store) GetIndexer(ctx context.Context, id int64) (*Indexer, error) {
 }
 
 func (s *Store) AddIndexer(ctx context.Context, ix Indexer) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `
+	return s.insert(ctx, `
 		INSERT INTO indexers (name, protocol, enabled, use_volumes, use_chapters, priority, settings_json)
-		VALUES (?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?) RETURNING id`,
 		ix.Name, ix.Protocol, ix.Enabled, ix.UseVolumes, ix.UseChapters, ix.Priority, string(ix.Settings))
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
 }
 
 func (s *Store) UpdateIndexer(ctx context.Context, ix Indexer) error {
@@ -57,8 +54,9 @@ func (s *Store) UpdateIndexer(ctx context.Context, ix Indexer) error {
 }
 
 func (s *Store) DeleteIndexer(ctx context.Context, id int64) error {
-	// Per-series overrides of the entry go with it.
+	// Per-series overrides of the entry go with it (site_id is TEXT).
 	_, _ = s.db.ExecContext(ctx,
-		`DELETE FROM series_site_settings WHERE provider = 'indexer' AND site_id = ?`, id)
+		s.q(`DELETE FROM series_site_settings WHERE provider = 'indexer' AND site_id = ?`),
+		strconv.FormatInt(id, 10))
 	return s.touch(ctx, `DELETE FROM indexers WHERE id = ?`, id)
 }

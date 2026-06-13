@@ -1,4 +1,5 @@
-// Package db opens the SQLite database and applies embedded migrations.
+// Package db opens the database (SQLite or PostgreSQL) and applies the
+// embedded migrations of the matching dialect.
 package db
 
 import (
@@ -8,16 +9,38 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 )
 
-//go:embed migrations/*.sql
+// Dialect names the SQL flavor a connection speaks. The store needs it for
+// the few things the portable subset can't express (placeholder style,
+// constraint-violation codes).
+const (
+	DialectSQLite   = "sqlite"
+	DialectPostgres = "postgres"
+)
+
+//go:embed migrations/sqlite/*.sql migrations/postgres/*.sql
 var migrationsFS embed.FS
 
-// Open creates the parent directory if needed, opens the database with WAL
-// and foreign keys enabled, and migrates it to the latest schema version.
-func Open(path string) (*sql.DB, error) {
+// Open connects to PostgreSQL when url is set, otherwise to SQLite at
+// path, and migrates to the latest schema version. The returned dialect
+// feeds store.New.
+func Open(url, path string) (*sql.DB, string, error) {
+	if url != "" {
+		conn, err := openPostgres(url)
+		return conn, DialectPostgres, err
+	}
+	conn, err := openSQLite(path)
+	return conn, DialectSQLite, err
+}
+
+// openSQLite creates the parent directory if needed and opens the file
+// with WAL and foreign keys enabled.
+func openSQLite(path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("creating database directory: %w", err)
 	}
@@ -31,18 +54,38 @@ func Open(path string) (*sql.DB, error) {
 	// SQLITE_BUSY surprises until we need finer tuning.
 	conn.SetMaxOpenConns(1)
 
-	if err := migrate(conn); err != nil {
+	if err := migrate(conn, DialectSQLite); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("migrating database: %w", err)
 	}
 	return conn, nil
 }
 
-func migrate(conn *sql.DB) error {
+func openPostgres(url string) (*sql.DB, error) {
+	conn, err := sql.Open("pgx", url)
+	if err != nil {
+		return nil, err
+	}
+	if err := conn.Ping(); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("connecting to postgres: %w", err)
+	}
+	if err := migrate(conn, DialectPostgres); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("migrating database: %w", err)
+	}
+	return conn, nil
+}
+
+// migrate applies the dialect's pending migration files in version order.
+// Version numbers mean the same schema state in both dialects: postgres
+// starts at a consolidated baseline carrying the version current at its
+// introduction, and later migrations exist in both directories.
+func migrate(conn *sql.DB, dialect string) error {
 	if _, err := conn.Exec(
 		`CREATE TABLE IF NOT EXISTS schema_migrations (
 			version INTEGER PRIMARY KEY,
-			applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+			applied_at TEXT NOT NULL DEFAULT ''
 		)`,
 	); err != nil {
 		return err
@@ -53,11 +96,17 @@ func migrate(conn *sql.DB) error {
 		return err
 	}
 
-	entries, err := migrationsFS.ReadDir("migrations")
+	dir := "migrations/" + dialect
+	entries, err := migrationsFS.ReadDir(dir)
 	if err != nil {
 		return err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+
+	record := `INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`
+	if dialect == DialectPostgres {
+		record = `INSERT INTO schema_migrations (version, applied_at) VALUES ($1, $2)`
+	}
 
 	for _, entry := range entries {
 		var version int
@@ -68,7 +117,7 @@ func migrate(conn *sql.DB) error {
 			continue
 		}
 
-		body, err := migrationsFS.ReadFile("migrations/" + entry.Name())
+		body, err := migrationsFS.ReadFile(dir + "/" + entry.Name())
 		if err != nil {
 			return err
 		}
@@ -81,7 +130,7 @@ func migrate(conn *sql.DB) error {
 			_ = tx.Rollback()
 			return fmt.Errorf("applying %s: %w", entry.Name(), err)
 		}
-		if _, err := tx.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, version); err != nil {
+		if _, err := tx.Exec(record, version, time.Now().UTC().Format("2006-01-02 15:04:05")); err != nil {
 			_ = tx.Rollback()
 			return err
 		}

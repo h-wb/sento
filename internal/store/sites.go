@@ -47,21 +47,22 @@ func (s *Store) ListSiteOverrides(ctx context.Context, seriesID int64) (map[int6
 
 // UpsertSiteOverride stores an override; all-nil fields delete it (inherit).
 func (s *Store) UpsertSiteOverride(ctx context.Context, ov SiteOverride) error {
+	siteID := strconv.FormatInt(ov.IndexerID, 10) // site_id is TEXT
 	if ov.Enabled == nil && ov.UseVolumes == nil && ov.UseChapters == nil {
-		_, err := s.db.ExecContext(ctx, `
+		_, err := s.db.ExecContext(ctx, s.q(`
 			DELETE FROM series_site_settings
-			WHERE series_id = ? AND provider = 'indexer' AND site_id = ?`,
-			ov.SeriesID, ov.IndexerID)
+			WHERE series_id = ? AND provider = 'indexer' AND site_id = ?`),
+			ov.SeriesID, siteID)
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.db.ExecContext(ctx, s.q(`
 		INSERT INTO series_site_settings (series_id, provider, site_id, enabled, use_volumes, use_chapters)
 		VALUES (?,'indexer',?,?,?,?)
 		ON CONFLICT(series_id, provider, site_id) DO UPDATE SET
 			enabled = excluded.enabled,
 			use_volumes = excluded.use_volumes,
-			use_chapters = excluded.use_chapters`,
-		ov.SeriesID, ov.IndexerID,
+			use_chapters = excluded.use_chapters`),
+		ov.SeriesID, siteID,
 		nullableBool(ov.Enabled), nullableBool(ov.UseVolumes), nullableBool(ov.UseChapters))
 	return err
 }

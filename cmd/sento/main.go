@@ -40,14 +40,14 @@ func run(configPath string) error {
 		return err
 	}
 
-	database, err := db.Open(cfg.Database.Path)
+	database, dialect, err := db.Open(cfg.Database.URL, cfg.Database.Path)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = database.Close() }()
 
 	provider := mangabaka.New(cfg.MangaBaka.BaseURL)
-	app := server.New(cfg, database, provider)
+	app := server.New(cfg, database, dialect, provider)
 
 	schedCtx, stopSched := context.WithCancel(context.Background())
 	defer stopSched()

@@ -44,8 +44,11 @@ type Server struct {
 	StaticDir string `yaml:"static_dir"`
 }
 
+// Database selects the backend: a postgres:// URL when set, otherwise
+// SQLite at Path.
 type Database struct {
 	Path string `yaml:"path"`
+	URL  string `yaml:"url"`
 }
 
 // SourceHost points at a sento-host sidecar (host/), the extension
@@ -110,6 +113,7 @@ func applyEnv(c *Config) {
 	str("SENTO_API_KEY", &c.Server.APIKey)
 	str("SENTO_STATIC_DIR", &c.Server.StaticDir)
 	str("SENTO_DB_PATH", &c.Database.Path)
+	str("SENTO_DB_URL", &c.Database.URL)
 	str("SENTO_LIBRARY_PATH", &c.Library.Path)
 	str("SENTO_DOWNLOADS_DIR", &c.Downloads.Dir)
 	str("SENTO_SOURCE_HOST_URL", &c.SourceHost.URL)

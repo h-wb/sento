@@ -46,12 +46,10 @@ func (s *Store) AddFormat(ctx context.Context, f profile.Format) (int64, error) 
 	if err != nil {
 		return 0, err
 	}
-	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO custom_formats (name, conditions_json) VALUES (?,?)`, f.Name, string(conds))
-	if err != nil {
-		return 0, conflict(err, "a custom format with this name already exists")
-	}
-	return res.LastInsertId()
+	id, err := s.insert(ctx,
+		`INSERT INTO custom_formats (name, conditions_json) VALUES (?,?) RETURNING id`,
+		f.Name, string(conds))
+	return id, conflict(err, "a custom format with this name already exists")
 }
 
 func (s *Store) UpdateFormat(ctx context.Context, f profile.Format) error {
@@ -140,12 +138,9 @@ func (s *Store) AddProfile(ctx context.Context, p profile.Profile) (int64, error
 	if err != nil {
 		return 0, err
 	}
-	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO profiles (name, body_json) VALUES (?,?)`, p.Name, body)
-	if err != nil {
-		return 0, conflict(err, "a profile with this name already exists")
-	}
-	return res.LastInsertId()
+	id, err := s.insert(ctx,
+		`INSERT INTO profiles (name, body_json) VALUES (?,?) RETURNING id`, p.Name, body)
+	return id, conflict(err, "a profile with this name already exists")
 }
 
 func (s *Store) UpdateProfile(ctx context.Context, p profile.Profile) error {
@@ -165,9 +160,9 @@ func (s *Store) DeleteProfile(ctx context.Context, id int64) error {
 // CountProfileUses guards profile deletion (series + collection refs).
 func (s *Store) CountProfileUses(ctx context.Context, id int64) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, s.q(`
 		SELECT (SELECT COUNT(*) FROM series WHERE profile_id = ?)
-		     + (SELECT COUNT(*) FROM collections WHERE profile_id = ?)`, id, id).Scan(&n)
+		     + (SELECT COUNT(*) FROM collections WHERE profile_id = ?)`), id, id).Scan(&n)
 	return n, err
 }
 

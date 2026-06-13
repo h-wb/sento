@@ -33,7 +33,7 @@ func (s *Store) AddDecision(ctx context.Context, seriesID int64, body DecisionBo
 		return err
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO decisions (series_id, body_json) VALUES (?,?)`, seriesID, string(raw))
+		s.q(`INSERT INTO decisions (series_id, body_json) VALUES (?,?)`), seriesID, string(raw))
 	return err
 }
 
@@ -64,9 +64,9 @@ type BlocklistEntry struct {
 }
 
 func (s *Store) AddBlocklist(ctx context.Context, protocol, key, reason string) error {
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.db.ExecContext(ctx, s.q(`
 		INSERT INTO blocklist (protocol, key, reason) VALUES (?,?,?)
-		ON CONFLICT(protocol, key) DO UPDATE SET reason = excluded.reason`,
+		ON CONFLICT(protocol, key) DO UPDATE SET reason = excluded.reason`),
 		protocol, key, reason)
 	return err
 }

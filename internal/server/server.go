@@ -46,8 +46,8 @@ type Server struct {
 // endpoints can report and trigger its loops.
 func (s *Server) SetScheduler(sched *scheduler.Scheduler) { s.sched = sched }
 
-func New(cfg config.Config, db *sql.DB, mdProvider metadata.Provider) *Server {
-	st := store.New(db)
+func New(cfg config.Config, db *sql.DB, dialect string, mdProvider metadata.Provider) *Server {
+	st := store.New(db, dialect)
 	s := &Server{
 		cfg:      cfg,
 		db:       db,
