@@ -109,6 +109,12 @@ export interface QueueItem {
   error?: string;
   createdAt: string;
   updatedAt?: string;
+  /**
+   * Progress is the live download fraction (0–1) for in-flight items,
+   * filled in by the queue handler from the provider. Runtime-only: it is
+   * neither stored nor scanned from the database.
+   */
+  progress?: number /* float64 */;
 }
 export const QueueQueued = "queued";
 export const QueueDownloading = "downloading";
@@ -147,6 +153,10 @@ Package store is the SQLite persistence layer: hand-written SQL, scany
 for row mapping (columns match snake-cased field names or `db` tags).
 */
 
+/**
+ * Store speaks the portable subset of SQL shared by SQLite and PostgreSQL;
+ * queries are written with ? placeholders and rebound per dialect (q).
+ */
 export interface Store {
 }
 export interface Series {

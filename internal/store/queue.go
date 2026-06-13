@@ -43,6 +43,10 @@ type QueueItem struct {
 	Error         string   `json:"error,omitempty"`
 	CreatedAt     string   `json:"createdAt"`
 	UpdatedAt     string   `json:"updatedAt,omitempty"`
+	// Progress is the live download fraction (0–1) for in-flight items,
+	// filled in by the queue handler from the provider. Runtime-only: it is
+	// neither stored nor scanned from the database.
+	Progress *float64 `json:"progress,omitempty" db:"-"`
 }
 
 const (

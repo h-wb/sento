@@ -486,6 +486,20 @@ func (p *SourceProvider) State(ctx context.Context, externalID string) (Download
 	return DownloadState{InFlight: true, Detail: "restarted"}, nil
 }
 
+// Progress reports the live page-fetch fraction of a running download. It
+// only reads in-memory job state — no file stat, no job restart — so it is
+// safe to call per HTTP request. ok is false unless the job is running with
+// a known page total.
+func (p *SourceProvider) Progress(externalID string) (float64, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	job, ok := p.jobs[externalID]
+	if !ok || !job.running || job.total == 0 {
+		return 0, false
+	}
+	return float64(job.done) / float64(job.total), true
+}
+
 func (p *SourceProvider) Fetch(ctx context.Context, externalID string) (*Payload, error) {
 	f, err := os.Open(p.stagedPath(externalID))
 	if err != nil {

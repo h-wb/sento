@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/h-wb/sento/internal/apperr"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -404,7 +405,24 @@ func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 	active := r.URL.Query().Get("all") == ""
 	items, err := s.store.ListQueueItems(r.Context(), active)
-	respondList(w, items, err)
+	if err != nil {
+		respondList(w, items, err)
+		return
+	}
+	// Enrich in-flight items with live progress. Progress() is an in-memory
+	// read with no side effects, so it's safe per request (unlike State).
+	for i := range items {
+		if items[i].Status != store.QueueDownloading {
+			continue
+		}
+		prov := s.registry.ForProtocol(items[i].Protocol)
+		if pr, ok := prov.(provider.Progresser); ok {
+			if frac, ok := pr.Progress(items[i].ExternalID); ok {
+				items[i].Progress = &frac
+			}
+		}
+	}
+	respondList(w, items, nil)
 }
 
 func (s *Server) handleQueueProcess(w http.ResponseWriter, r *http.Request) {

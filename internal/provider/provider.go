@@ -181,6 +181,16 @@ type Recoverer interface {
 	Recover(ctx context.Context) error
 }
 
+// Progresser is an optional capability: report the live download fraction
+// (0–1) of an in-flight item without side effects — no restart, no network.
+// Providers that can't cheaply report progress simply don't implement it,
+// and ok is false when the item isn't actively downloading. Distinct from
+// State, which may restart jobs or hit the download client, so it's unsafe
+// to call per HTTP request.
+type Progresser interface {
+	Progress(externalID string) (fraction float64, ok bool)
+}
+
 // MangaResolver is an optional capability: providers whose sites need a
 // series→manga identity mapping before they can be searched (extension
 // sources). Used by the auto-binding resolver.

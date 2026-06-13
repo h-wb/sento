@@ -6,6 +6,7 @@ import {
   Center,
   Group,
   Loader,
+  Progress,
   Stack,
   Switch,
   Table,
@@ -136,17 +137,34 @@ export default function QueuePage() {
                   </Badge>
                 </Table.Td>
                 <Table.Td>
-                  <Badge
-                    size="xs"
-                    color={statusColor[i.status] ?? 'gray'}
-                    leftSection={
-                      i.status === 'downloading' || i.status === 'importing' ? (
-                        <Loader size={8} color="white" />
-                      ) : undefined
-                    }
-                  >
-                    {i.status}
-                  </Badge>
+                  <Stack gap={4}>
+                    <Badge
+                      size="xs"
+                      color={statusColor[i.status] ?? 'gray'}
+                      leftSection={
+                        i.status === 'downloading' || i.status === 'importing' ? (
+                          <Loader size={8} color="white" />
+                        ) : undefined
+                      }
+                    >
+                      {i.status}
+                    </Badge>
+                    {i.status === 'downloading' && i.progress != null && (
+                      <Group gap={6} wrap="nowrap" w={120}>
+                        <Progress
+                          value={i.progress * 100}
+                          size="sm"
+                          radius="xl"
+                          style={{ flex: 1 }}
+                          striped
+                          animated
+                        />
+                        <Text size="xs" c="dimmed" w={32} ta="right">
+                          {Math.round(i.progress * 100)}%
+                        </Text>
+                      </Group>
+                    )}
+                  </Stack>
                 </Table.Td>
                 <Table.Td>
                   <Text size="xs" c="dimmed" title={i.createdAt}>
