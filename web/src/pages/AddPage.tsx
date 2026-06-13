@@ -1,141 +1,24 @@
 import { useState } from 'react'
-import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Group,
-  Image,
-  Select,
-  Stack,
-  Text,
-  TextInput,
-  Title,
-} from '@mantine/core'
-import { IconFolderSearch, IconSearch } from '@tabler/icons-react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { Alert, Badge, Button, Card, Group, Stack, Text, TextInput, Title } from '@mantine/core'
+import { IconFolderSearch } from '@tabler/icons-react'
+import { useMutation } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, type ImportProposal, type LookupResult } from '../api'
-import { notify, usePageTitle } from '../ui'
+import { api, type ImportProposal } from '../api'
+import { usePageTitle } from '../ui'
+import { PageHeader } from '../components/PageHeader'
+import { AddSeriesForm } from '../components/AddSeriesForm'
 
 export default function AddPage() {
   usePageTitle('Add Series')
-  const [query, setQuery] = useState('')
-  const [monitor, setMonitor] = useState('default')
-  const [profileId, setProfileId] = useState(0) // 0 = instance default
   const navigate = useNavigate()
-  const { data: profiles } = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
-
-  // Known MangaBaka ids, so results already in the library link instead
-  // of offering a duplicate add.
-  const { data: existing } = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
-  const inLibrary = new Map((existing ?? []).map((s) => [s.mangabakaId, s.id]))
-
-  const lookup = useMutation({ mutationFn: (q: string) => api.lookup(q), onError: notify.err })
-  const add = useMutation({
-    mutationFn: (r: LookupResult) => api.addSeries({ mangabakaId: r.mangabakaId, monitor, profileId }),
-    onSuccess: (s) => {
-      notify.ok(`Added "${s.title}"`)
-      navigate(`/series/${s.id}`)
-    },
-    onError: notify.err,
-  })
-
-  const search = () => query.trim() && lookup.mutate(query)
-  const results = lookup.data
-  const busy = lookup.isPending || add.isPending
 
   return (
     <>
-      <Title order={2} mb="md">
-        Add Series
-      </Title>
-      <Group mb="xs">
-        <TextInput
-          placeholder="Search MangaBaka…"
-          leftSection={<IconSearch size={16} />}
-          value={query}
-          onChange={(e) => setQuery(e.currentTarget.value)}
-          onKeyDown={(e) => e.key === 'Enter' && search()}
-          style={{ flex: 1, maxWidth: 480 }}
-          data-autofocus
-          autoFocus
-        />
-        <Button onClick={search} loading={busy}>
-          Search
-        </Button>
-      </Group>
-      <Select
-        mb="md"
-        w={300}
-        size="xs"
-        label="Monitor collections on add"
-        description="Changeable later per series under Volumes → Collections"
-        allowDeselect={false}
-        value={monitor}
-        onChange={(v) => v && setMonitor(v)}
-        data={[
-          { value: 'default', label: 'Default collection (standard, preferred language)' },
-          { value: 'all', label: 'All volume collections' },
-          { value: 'none', label: 'None' },
-        ]}
+      <PageHeader
+        title="Add Series"
+        description="Search MangaBaka and add a series to your library."
       />
-      {(profiles?.length ?? 0) > 1 && (
-        <Select
-          mb="md"
-          w={300}
-          size="xs"
-          label="Release profile"
-          allowDeselect={false}
-          value={String(profileId)}
-          onChange={(v) => v && setProfileId(Number(v))}
-          data={[
-            { value: '0', label: 'Instance default' },
-            ...(profiles ?? []).map((p) => ({ value: String(p.id), label: p.name })),
-          ]}
-        />
-      )}
-      <Stack>
-        {results?.map((r) => {
-          const existingID = inLibrary.get(r.mangabakaId)
-          return (
-            <Card key={r.mangabakaId} withBorder padding="sm">
-              <Group wrap="nowrap" align="flex-start">
-                <Image src={r.coverUrl} w={60} h={90} radius="sm" alt="" />
-                <div style={{ flex: 1 }}>
-                  <Text fw={600}>{r.title}</Text>
-                  <Group gap={4} mt={4}>
-                    <Badge size="xs">{r.type}</Badge>
-                    <Badge size="xs" variant="light">
-                      {r.status}
-                    </Badge>
-                    {r.year ? (
-                      <Text size="xs" c="dimmed">
-                        {r.year}
-                      </Text>
-                    ) : null}
-                    {existingID && (
-                      <Badge size="xs" color="green" variant="light">
-                        in library
-                      </Badge>
-                    )}
-                  </Group>
-                </div>
-                {existingID ? (
-                  <Button size="xs" variant="default" component={Link} to={`/series/${existingID}`}>
-                    Open
-                  </Button>
-                ) : (
-                  <Button size="xs" onClick={() => add.mutate(r)} disabled={busy}>
-                    Add
-                  </Button>
-                )}
-              </Group>
-            </Card>
-          )
-        })}
-        {results?.length === 0 && <Text c="dimmed">No results.</Text>}
-      </Stack>
+      <AddSeriesForm onDone={(id) => navigate(`/series/${id}`)} />
 
       <ImportSection />
     </>

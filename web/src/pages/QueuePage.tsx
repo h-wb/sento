@@ -3,6 +3,7 @@ import {
   Anchor,
   Badge,
   Button,
+  Card,
   Center,
   Group,
   Loader,
@@ -14,11 +15,13 @@ import {
   Title,
   Tooltip,
 } from '@mantine/core'
+import { DonutChart } from '@mantine/charts'
 import { IconDownload } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { fmtWhen, notify, usePageTitle } from '../ui'
+import { PageHeader } from '../components/PageHeader'
 
 const statusColor: Record<string, string> = {
   queued: 'gray',
@@ -38,6 +41,14 @@ export default function QueuePage() {
     queryFn: () => api.queue(showAll),
     refetchInterval: 5000,
   })
+  // Status breakdown for the donut, in a sensible visual order.
+  const breakdown = ['downloading', 'queued', 'importing', 'imported', 'failed']
+    .map((s) => ({
+      name: s,
+      value: items?.filter((i) => i.status === s).length ?? 0,
+      color: `${statusColor[s] ?? 'gray'}.5`,
+    }))
+    .filter((d) => d.value > 0)
   const process = useMutation({
     mutationFn: api.processQueue,
     onSuccess: (r) => notify.ok(`Queue processed — ${r.processed} item(s) imported`),
@@ -63,23 +74,42 @@ export default function QueuePage() {
 
   return (
     <>
-      <Group justify="space-between" mb="md">
-        <Title order={2}>Activity</Title>
-        <Group>
-          <Switch
-            label="Include finished"
-            checked={showAll}
-            onChange={(e) => setShowAll(e.currentTarget.checked)}
-          />
-          <Button size="xs" onClick={() => process.mutate()} loading={process.isPending}>
-            Process now
-          </Button>
-        </Group>
-      </Group>
+      <PageHeader
+        title="Activity"
+        description="Grabs and imports, live as they happen."
+        action={
+          <Group>
+            <Switch
+              label="Include finished"
+              checked={showAll}
+              onChange={(e) => setShowAll(e.currentTarget.checked)}
+            />
+            <Button size="xs" onClick={() => process.mutate()} loading={process.isPending}>
+              Process now
+            </Button>
+          </Group>
+        }
+      />
       {error && (
         <Text size="sm" c="red" mb="sm">
           {String(error)}
         </Text>
+      )}
+
+      {breakdown.length > 1 && (
+        <Card withBorder maw={260} mb="md">
+          <Text size="sm" fw={600} mb="xs">
+            Queue breakdown
+          </Text>
+          <DonutChart
+            data={breakdown}
+            size={140}
+            thickness={18}
+            chartLabel={`${items?.length ?? 0}`}
+            withTooltip
+            mx="auto"
+          />
+        </Card>
       )}
 
       {items && items.length === 0 ? (

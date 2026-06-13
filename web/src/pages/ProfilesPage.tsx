@@ -30,6 +30,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Condition, type Format, type Profile, type ProfileDoc } from '../api'
 import { notify } from '../ui'
+import { PageHeader } from '../components/PageHeader'
 import { MinScoreOff } from '../types/profile'
 
 const conditionTypes = [
@@ -112,27 +113,29 @@ export default function ProfilesPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between">
-        <div>
-          <Title order={2}>Profiles</Title>
-          <Text c="dimmed" size="sm">
-            Custom formats score releases; profiles decide how much each format is worth per series.
-          </Text>
-        </div>
-        <Group gap="xs">
-          <Button
-            variant="default"
-            size="xs"
-            leftSection={<IconUpload size={14} />}
-            onClick={() => setImportOpen(true)}
-          >
-            Import
-          </Button>
-          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setEditProfile('new')}>
-            Add profile
-          </Button>
-        </Group>
-      </Group>
+      <PageHeader
+        title="Profiles"
+        description="Custom formats score releases; profiles decide how much each format is worth per series."
+        action={
+          <Group gap="xs">
+            <Button
+              variant="default"
+              size="xs"
+              leftSection={<IconUpload size={14} />}
+              onClick={() => setImportOpen(true)}
+            >
+              Import
+            </Button>
+            <Button
+              size="xs"
+              leftSection={<IconPlus size={14} />}
+              onClick={() => setEditProfile('new')}
+            >
+              Add profile
+            </Button>
+          </Group>
+        }
+      />
 
       <Table verticalSpacing={6} highlightOnHover>
         <Table.Thead>

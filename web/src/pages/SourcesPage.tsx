@@ -15,6 +15,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type ConnectionSettings, type ConnectionTest } from '../api'
 import { notify, usePageTitle } from '../ui'
+import { PageHeader } from '../components/PageHeader'
 
 // Connection settings for the services Sento orchestrates. Stored
 // server-side; the yaml/env config only seeds the very first run.
@@ -82,13 +83,10 @@ function SourcesForm({
 
   return (
     <>
-      <Title order={2} mb="xs">
-        Sources
-      </Title>
-      <Text size="sm" c="dimmed" mb="md">
-        The source host serves extension sources, qBittorrent downloads torrent grabs. Individual
-        indexers (Torznab endpoints and extension sources) are managed on the Indexers page.
-      </Text>
+      <PageHeader
+        title="Sources"
+        description="The source host serves extension sources, qBittorrent downloads torrent grabs. Individual indexers (Torznab endpoints and extension sources) are managed on the Indexers page."
+      />
 
       <Stack maw={640}>
         <Card withBorder padding="md">

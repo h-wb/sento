@@ -16,7 +16,6 @@ import {
   Table,
   Text,
   TextInput,
-  Title,
   Tooltip,
 } from '@mantine/core'
 import { IconCopy, IconPencil, IconPlugConnected, IconTrash } from '@tabler/icons-react'
@@ -30,6 +29,7 @@ import {
 } from '../api'
 import SourcePrefsFields from '../components/SourcePrefsFields'
 import { notify, usePageTitle } from '../ui'
+import { PageHeader } from '../components/PageHeader'
 
 // Indexers are explicit entries (Sonarr's model): every searchable thing
 // with its protocol — a Torznab endpoint or an extension source on the
@@ -62,17 +62,15 @@ export default function IndexersPage() {
 
   return (
     <>
-      <Group justify="space-between" mb="xs">
-        <Title order={2}>Indexers</Title>
-        <Button size="xs" onClick={() => setEditing('new')}>
-          Add indexer
-        </Button>
-      </Group>
-      <Text size="sm" c="dimmed" mb="md">
-        Everything Sento searches, with its protocol: Torznab endpoints (torrents) and extension
-        sources from the host. The name you give an entry is how it appears in results, history
-        and the queue. Series can override the toggles individually.
-      </Text>
+      <PageHeader
+        title="Indexers"
+        description="Everything Sento searches, with its protocol: Torznab endpoints (torrents) and extension sources from the host. The name you give an entry is how it appears in results, history and the queue. Series can override the toggles individually."
+        action={
+          <Button size="xs" onClick={() => setEditing('new')}>
+            Add indexer
+          </Button>
+        }
+      />
       {error && (
         <Alert color="red" mb="md">
           {String(error)}

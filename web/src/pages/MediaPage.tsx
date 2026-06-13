@@ -16,6 +16,7 @@ import { useDebouncedValue } from '@mantine/hooks'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type MediaSettings } from '../api'
 import { notify, usePageTitle } from '../ui'
+import { PageHeader } from '../components/PageHeader'
 
 // Token reference shown next to the templates ({token:000} pads numbers).
 const tokens: [string, string][] = [
@@ -72,13 +73,10 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
 
   return (
     <>
-      <Title order={2} mb="xs">
-        Media Management
-      </Title>
-      <Text size="sm" c="dimmed" mb="md">
-        How finished downloads are post-processed into the library. Changes apply to future
-        imports — existing files are never renamed.
-      </Text>
+      <PageHeader
+        title="Media Management"
+        description="How finished downloads are post-processed into the library. Changes apply to future imports — existing files are never renamed."
+      />
 
       <Group align="flex-start" gap="xl" wrap="wrap">
         <Stack style={{ flex: 1, minWidth: 380, maxWidth: 560 }}>

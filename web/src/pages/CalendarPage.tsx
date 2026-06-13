@@ -1,8 +1,9 @@
-import { Alert, Badge, Card, Group, Stack, Text, Title } from '@mantine/core'
+import { Alert, Badge, Card, Group, Stack, Text } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, fmtNum } from '../api'
 import { fmtDay, usePageTitle } from '../ui'
+import { PageHeader } from '../components/PageHeader'
 
 // Upcoming (and recent) dated volume releases of monitored collections,
 // grouped by date — Sonarr's calendar, list-shaped.
@@ -23,9 +24,10 @@ export default function CalendarPage() {
 
   return (
     <>
-      <Title order={2} mb="md">
-        Calendar
-      </Title>
+      <PageHeader
+        title="Calendar"
+        description="Upcoming and recent release dates for monitored editions."
+      />
       {error && <Alert color="red">{String(error)}</Alert>}
       {entries && entries.length === 0 && (
         <Text c="dimmed">

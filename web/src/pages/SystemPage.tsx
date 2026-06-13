@@ -1,8 +1,10 @@
 import { ActionIcon, Alert, Badge, Card, Group, Table, Text, Title, Tooltip } from '@mantine/core'
+import { BarChart } from '@mantine/charts'
 import { IconRefresh } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type TaskStatus } from '../api'
 import { fmtUntil, fmtWhen, notify, usePageTitle } from '../ui'
+import { PageHeader } from '../components/PageHeader'
 
 function fmtInterval(secs: number): string {
   if (secs >= 86400) return `${Math.round(secs / 86400)} day${secs >= 2 * 86400 ? 's' : ''}`
@@ -37,11 +39,15 @@ export default function SystemPage() {
     onError: notify.err,
   })
 
+  // Last-run durations, longest first — a quick read on which loops are heavy.
+  const durations = (tasks ?? [])
+    .filter((t) => t.lastDurationMs > 0)
+    .sort((a, b) => b.lastDurationMs - a.lastDurationMs)
+    .map((t) => ({ task: t.name, ms: t.lastDurationMs }))
+
   return (
     <>
-      <Title order={2} mb="md">
-        System
-      </Title>
+      <PageHeader title="System" description="Service status and background tasks." />
       {error && <Alert color="red">{String(error)}</Alert>}
       {status && (
         <Card withBorder maw={420} mb="lg">
@@ -55,6 +61,23 @@ export default function SystemPage() {
               {status.database.ok ? 'ok' : 'down'}
             </Badge>
           </Group>
+        </Card>
+      )}
+
+      {durations.length > 0 && (
+        <Card withBorder maw={900} mb="lg">
+          <Text size="sm" fw={600} mb="md">
+            Last run duration (ms)
+          </Text>
+          <BarChart
+            h={Math.max(160, durations.length * 38)}
+            data={durations}
+            dataKey="task"
+            orientation="vertical"
+            series={[{ name: 'ms', color: 'brand.5' }]}
+            withTooltip
+            gridAxis="none"
+          />
         </Card>
       )}
 

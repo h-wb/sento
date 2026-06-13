@@ -1,0 +1,63 @@
+/* Frosted-glass header that floats over the gradient background. */
+.header {
+  background-color: light-dark(rgba(255, 255, 255, 0.72), rgba(26, 27, 30, 0.7));
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  border-bottom: 1px solid light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+}
+
+.navbar {
+  background-color: light-dark(rgba(255, 255, 255, 0.5), rgba(26, 27, 30, 0.45));
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* Wordmark: tight tracking + gradient already applied via Mantine variant. */
+.wordmark {
+  letter-spacing: 0.22em;
+  font-weight: 700;
+}
+
+/* Quiet uppercase group header in the navbar. */
+.sectionLabel {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+  padding: 0 var(--mantine-spacing-sm);
+  margin-top: var(--mantine-spacing-lg);
+  margin-bottom: 4px;
+}
+
+/* NavLink active state: accent bar instead of a flat fill. */
+.navlink {
+  border-radius: var(--mantine-radius-md);
+  transition: background-color 120ms ease;
+}
+.navlink[data-active] {
+  background: linear-gradient(
+    90deg,
+    var(--mantine-color-brand-light) 0%,
+    transparent 100%
+  );
+  box-shadow: inset 3px 0 0 var(--mantine-color-brand-5);
+}
+.navlink[data-active] :global(.mantine-NavLink-label) {
+  font-weight: 600;
+}
+
+/* Search trigger button in the header. */
+.searchTrigger {
+  border: 1px solid light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+  background-color: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-6));
+  color: var(--mantine-color-dimmed);
+  border-radius: var(--mantine-radius-md);
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
+}
+.searchTrigger:hover {
+  border-color: var(--mantine-color-brand-6);
+  color: var(--mantine-color-text);
+}
