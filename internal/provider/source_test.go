@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,8 +14,9 @@ import (
 )
 
 // fakeHost serves two single-pixel "pages" per chapter and counts fetches.
+// pageFetches is atomic: pages are now fetched concurrently.
 type fakeHost struct {
-	pageFetches int
+	pageFetches atomic.Int64
 	failPages   bool
 }
 
@@ -40,7 +42,7 @@ func (f *fakeHost) Pages(_ context.Context, _, chapterKey string) ([]string, err
 	return []string{chapterKey + "/p0", chapterKey + "/p1"}, nil
 }
 func (f *fakeHost) Page(_ context.Context, _, _ string) (io.ReadCloser, error) {
-	f.pageFetches++
+	f.pageFetches.Add(1)
 	return io.NopCloser(strings.NewReader(string(pngHeader))), nil
 }
 
@@ -71,7 +73,7 @@ func waitDone(t *testing.T, p Provider, externalID string) DownloadState {
 // external id.
 func TestSourceDownloadLifecycle(t *testing.T) {
 	host := &fakeHost{}
-	p := NewSource(host, t.TempDir(), testEntries)
+	p := NewSource(host, t.TempDir(), DownloadConfig{}, testEntries)
 	ctx := context.Background()
 
 	cands, err := p.Search(ctx, SearchRequest{
@@ -125,7 +127,7 @@ func TestSourceDownloadResume(t *testing.T) {
 	host := &fakeHost{}
 	// Fresh provider simulates a process restart: queue knows the id, the
 	// provider doesn't.
-	p := NewSource(host, dir, testEntries)
+	p := NewSource(host, dir, DownloadConfig{}, testEntries)
 	externalID := "src1|/manga/op/ch-1100"
 
 	st, err := p.State(context.Background(), externalID)
@@ -143,7 +145,7 @@ func TestSourceDownloadResume(t *testing.T) {
 // Failed jobs report their error; Recover clears them for a retry.
 func TestSourceDownloadFailureAndRecover(t *testing.T) {
 	host := &fakeHost{failPages: true}
-	p := NewSource(host, t.TempDir(), testEntries)
+	p := NewSource(host, t.TempDir(), DownloadConfig{}, testEntries)
 	externalID := "src1|/manga/op/ch-1100"
 
 	st, _ := p.State(context.Background(), externalID) // kicks the job
@@ -161,5 +163,90 @@ func TestSourceDownloadFailureAndRecover(t *testing.T) {
 	}
 	if st = waitDone(t, p, externalID); !st.Done {
 		t.Fatalf("want done after recover, got %+v", st)
+	}
+}
+
+// orderHost serves n pages whose bytes encode their index, and makes later
+// pages return sooner so they complete out of order. The assembled CBZ must
+// still be in page order — the byte-identical guarantee of concurrent fetch.
+type orderHost struct{ n int }
+
+func (h *orderHost) Name() string { return "fake" }
+func (h *orderHost) Sources(context.Context) ([]sourcehost.Source, error) {
+	return []sourcehost.Source{{ID: "src1", Name: "Fake Source", Lang: "en"}}, nil
+}
+func (h *orderHost) Search(_ context.Context, _, _ string) ([]sourcehost.Manga, error) {
+	return []sourcehost.Manga{{Key: "/manga/op", Title: "One Piece"}}, nil
+}
+func (h *orderHost) Chapters(_ context.Context, _, mangaKey string) ([]sourcehost.Chapter, error) {
+	return []sourcehost.Chapter{{Key: mangaKey + "/ch-1", Name: "Chapter 1", Number: 1}}, nil
+}
+func (h *orderHost) Pages(_ context.Context, _, chapterKey string) ([]string, error) {
+	refs := make([]string, h.n)
+	for i := range refs {
+		refs[i] = fmt.Sprintf("%s/p%d", chapterKey, i)
+	}
+	return refs, nil
+}
+func (h *orderHost) Page(_ context.Context, _, ref string) (io.ReadCloser, error) {
+	var idx int
+	_, _ = fmt.Sscanf(ref[strings.LastIndex(ref, "/p")+2:], "%d", &idx)
+	// Later pages return sooner: forces out-of-order completion.
+	time.Sleep(time.Duration(h.n-idx) * 2 * time.Millisecond)
+	body := string(pngHeader) + fmt.Sprintf("PAGE-%d", idx)
+	return io.NopCloser(strings.NewReader(body)), nil
+}
+
+// Concurrent page fetches that complete out of order must still assemble
+// into a page-ordered CBZ with each page's own bytes.
+func TestSourceDownloadOrdering(t *testing.T) {
+	const n = 8
+	host := &orderHost{n: n}
+	p := NewSource(host, t.TempDir(), DownloadConfig{PageConcurrency: 4}, testEntries)
+	ctx := context.Background()
+
+	cands, err := p.Search(ctx, SearchRequest{
+		Bindings: []Binding{{BindingID: 1, SourceID: "1", SourceMangaKey: "/manga/op", SourceName: "Fake"}},
+	})
+	if err != nil || len(cands) != 1 {
+		t.Fatalf("search: %v %v", cands, err)
+	}
+	externalID, err := p.Grab(ctx, cands[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := waitDone(t, p, externalID); !st.Done {
+		t.Fatalf("want done, got %+v", st)
+	}
+
+	payload, err := p.Fetch(ctx, externalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(payload.Stream)
+	_ = payload.Stream.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(strings.NewReader(string(data)), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(zr.File) != n {
+		t.Fatalf("got %d entries, want %d", len(zr.File), n)
+	}
+	for i, zf := range zr.File {
+		if want := fmt.Sprintf("%04d.png", i+1); zf.Name != want {
+			t.Fatalf("entry %d name = %q, want %q", i, zf.Name, want)
+		}
+		rc, err := zf.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(rc)
+		_ = rc.Close()
+		if want := fmt.Sprintf("PAGE-%d", i); !strings.HasSuffix(string(b), want) {
+			t.Fatalf("entry %d (%s) missing %q", i, zf.Name, want)
+		}
 	}
 }

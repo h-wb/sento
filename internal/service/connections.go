@@ -136,7 +136,10 @@ func (c *Connections) Apply(cs ConnectionSettings) {
 	}
 
 	c.registry.Replace(
-		provider.NewSource(host, c.cfg.Downloads.Dir, IndexerEntries(c.store, store.IndexerSource)),
+		provider.NewSource(host, c.cfg.Downloads.Dir, provider.DownloadConfig{
+			PageConcurrency:   c.cfg.Downloads.PageConcurrency,
+			PageRatePerSecond: c.cfg.Downloads.PageRatePerSecond,
+		}, IndexerEntries(c.store, store.IndexerSource)),
 		provider.NewTorrent(IndexerEntries(c.store, store.IndexerTorznab), qb, cs.QBittorrent.Category),
 	)
 	c.mu.Lock()

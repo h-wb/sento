@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/h-wb/sento/internal/sourcehost"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/time/rate"
 )
 
 // SourceProvider adapts any sourcehost.Host: binding-scoped search over
@@ -25,27 +27,61 @@ type SourceProvider struct {
 	host       sourcehost.Host
 	stagingDir string
 	entries    func(ctx context.Context) ([]IndexerEntry, error)
+	pageConc   int     // max pages fetched in parallel per chapter
+	pageRate   float64 // page requests/sec per source; 0 disables
 
-	mu   sync.Mutex
-	jobs map[string]*sourceJob // externalID → live or failed job
-	sem  chan struct{}         // bounds concurrent chapter downloads
+	mu       sync.Mutex
+	jobs     map[string]*sourceJob    // externalID → live or failed job
+	limiters map[string]*rate.Limiter // sourceID → page-fetch limiter
+	sem      chan struct{}            // bounds concurrent chapter downloads
+}
+
+// DownloadConfig tunes per-chapter page fetching. Zero values fall back
+// to conservative defaults.
+type DownloadConfig struct {
+	PageConcurrency   int     // max pages in flight per chapter
+	PageRatePerSecond float64 // page requests/sec per source; 0 disables
 }
 
 // NewSource returns nil (interface) when no host is configured, so it can
 // feed NewRegistry directly.
-func NewSource(host sourcehost.Host, stagingDir string,
+func NewSource(host sourcehost.Host, stagingDir string, dl DownloadConfig,
 	entries func(ctx context.Context) ([]IndexerEntry, error),
 ) Provider {
 	if host == nil {
 		return nil
 	}
+	if dl.PageConcurrency <= 0 {
+		dl.PageConcurrency = 3
+	}
 	return &SourceProvider{
 		host:       host,
 		stagingDir: stagingDir,
 		entries:    entries,
+		pageConc:   dl.PageConcurrency,
+		pageRate:   dl.PageRatePerSecond,
 		jobs:       map[string]*sourceJob{},
+		limiters:   map[string]*rate.Limiter{},
 		sem:        make(chan struct{}, 2),
 	}
+}
+
+// limiterFor returns the per-source page-fetch limiter, lazily created.
+// Returns nil when rate limiting is disabled.
+func (p *SourceProvider) limiterFor(sourceID string) *rate.Limiter {
+	if p.pageRate <= 0 {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	l := p.limiters[sourceID]
+	if l == nil {
+		// Burst of 1: pace strictly at the configured rate rather than
+		// letting a backlog of tokens release a thundering herd.
+		l = rate.NewLimiter(rate.Limit(p.pageRate), 1)
+		p.limiters[sourceID] = l
+	}
+	return l
 }
 
 // entry resolves one indexer entry by its site id.
@@ -259,6 +295,22 @@ func (p *SourceProvider) fetchChapter(ctx context.Context, externalID string, jo
 	if err := os.MkdirAll(p.stagingDir, 0o755); err != nil {
 		return err
 	}
+
+	// Fetch pages concurrently into temp files, bounded by pageConc and
+	// paced by a per-source rate limiter. The CBZ is then assembled in
+	// page order, so the archive is byte-identical to a sequential fetch.
+	fetched, err := p.fetchPages(ctx, sourceID, pages, job)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		for _, f := range fetched {
+			if f.path != "" {
+				_ = os.Remove(f.path)
+			}
+		}
+	}()
+
 	dest := p.stagedPath(externalID)
 	tmp, err := os.CreateTemp(p.stagingDir, ".part-*.cbz")
 	if err != nil {
@@ -270,21 +322,9 @@ func (p *SourceProvider) fetchChapter(ctx context.Context, externalID string, jo
 	}()
 
 	zw := zip.NewWriter(tmp)
-	for i, ref := range pages {
-		if err := p.writePage(ctx, zw, sourceID, ref, i); err != nil {
+	for i, f := range fetched {
+		if err := writePageFile(zw, f, i); err != nil {
 			return fmt.Errorf("page %d/%d: %w", i+1, len(pages), err)
-		}
-		p.mu.Lock()
-		job.done = i + 1
-		p.mu.Unlock()
-		// Politeness pause between page fetches; the host may add its own
-		// per-source rate limits on top.
-		if i < len(pages)-1 {
-			select {
-			case <-time.After(250 * time.Millisecond):
-			case <-ctx.Done():
-				return ctx.Err()
-			}
 		}
 	}
 	if err := zw.Close(); err != nil {
@@ -296,31 +336,110 @@ func (p *SourceProvider) fetchChapter(ctx context.Context, externalID string, jo
 	return os.Rename(tmp.Name(), dest)
 }
 
-// writePage streams one page image into the archive, naming it by index
-// with an extension sniffed from the bytes.
-func (p *SourceProvider) writePage(ctx context.Context, zw *zip.Writer, sourceID, ref string, index int) error {
+// fetchedPage is one downloaded page staged to a temp file, with the image
+// extension already sniffed from its leading bytes.
+type fetchedPage struct {
+	path string
+	ext  string
+}
+
+// fetchPages downloads every page concurrently (up to pageConc in flight)
+// into temp files, pacing requests through the per-source limiter. It
+// returns results in page order; on any error every temp file written so
+// far is removed before returning.
+func (p *SourceProvider) fetchPages(ctx context.Context, sourceID string, pages []string, job *sourceJob) ([]fetchedPage, error) {
+	out := make([]fetchedPage, len(pages))
+	limiter := p.limiterFor(sourceID)
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(p.pageConc)
+
+	var done int
+	for i, ref := range pages {
+		i, ref := i, ref
+		g.Go(func() error {
+			if limiter != nil {
+				if err := limiter.Wait(ctx); err != nil {
+					return err
+				}
+			}
+			f, err := p.fetchPage(ctx, ref, sourceID)
+			if err != nil {
+				return fmt.Errorf("page %d: %w", i+1, err)
+			}
+			out[i] = f
+			p.mu.Lock()
+			done++
+			job.done = done
+			p.mu.Unlock()
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		for _, f := range out {
+			if f.path != "" {
+				_ = os.Remove(f.path)
+			}
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+// fetchPage streams one page image to a temp file, sniffing its extension
+// from the leading bytes.
+func (p *SourceProvider) fetchPage(ctx context.Context, ref, sourceID string) (fetchedPage, error) {
 	body, err := p.host.Page(ctx, sourceID, ref)
 	if err != nil {
-		return err
+		return fetchedPage{}, err
 	}
 	defer func() { _ = body.Close() }()
+
+	tmp, err := os.CreateTemp(p.stagingDir, ".page-*")
+	if err != nil {
+		return fetchedPage{}, err
+	}
+	defer func() { _ = tmp.Close() }()
 
 	head := make([]byte, 512)
 	n, err := io.ReadFull(body, head)
 	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-		return err
+		_ = os.Remove(tmp.Name())
+		return fetchedPage{}, err
 	}
 	head = head[:n]
+	ext := imageExt(head)
 
-	name := fmt.Sprintf("%04d%s", index+1, imageExt(head))
+	if _, err := tmp.Write(head); err != nil {
+		_ = os.Remove(tmp.Name())
+		return fetchedPage{}, err
+	}
+	if _, err := io.Copy(tmp, body); err != nil {
+		_ = os.Remove(tmp.Name())
+		return fetchedPage{}, err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return fetchedPage{}, err
+	}
+	return fetchedPage{path: tmp.Name(), ext: ext}, nil
+}
+
+// writePageFile copies a staged page into the archive, naming it by index
+// with the sniffed extension.
+func writePageFile(zw *zip.Writer, f fetchedPage, index int) error {
+	src, err := os.Open(f.path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = src.Close() }()
+
+	name := fmt.Sprintf("%04d%s", index+1, f.ext)
 	w, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Store})
 	if err != nil {
 		return err
 	}
-	if _, err := w.Write(head); err != nil {
-		return err
-	}
-	_, err = io.Copy(w, body)
+	_, err = io.Copy(w, src)
 	return err
 }
 

@@ -18,13 +18,18 @@ import (
 type Client struct {
 	baseURL string
 	http    *http.Client
+	// stream serves page-image bodies: no overall timeout (the read can
+	// be long), but shared so concurrent page fetches pool connections to
+	// the sidecar instead of handshaking anew each call.
+	stream *http.Client
 }
 
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		// Extension sources can be slow (Cloudflare, rate limits).
-		http: &http.Client{Timeout: 60 * time.Second},
+		http:   &http.Client{Timeout: 60 * time.Second},
+		stream: &http.Client{},
 	}
 }
 
@@ -95,7 +100,7 @@ func (c *Client) Page(ctx context.Context, sourceID, pageRef string) (io.ReadClo
 		return nil, err
 	}
 	// No client timeout on the streaming body: rely on ctx.
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := c.stream.Do(req)
 	if err != nil {
 		return nil, err
 	}

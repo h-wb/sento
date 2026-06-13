@@ -35,6 +35,14 @@ type Downloads struct {
 	// Dir stages in-progress source downloads (page fetches assembled
 	// into CBZs) before import.
 	Dir string `yaml:"dir"`
+	// PageConcurrency caps how many pages of one chapter are fetched in
+	// parallel. Keep at or below 4: the sidecar's OkHttp client allows 5
+	// concurrent requests per host, and extensions self-throttle on top.
+	PageConcurrency int `yaml:"page_concurrency"`
+	// PageRatePerSecond caps page requests per second per source (token
+	// bucket), pacing in-flight fetches more gently than a fixed sleep.
+	// 0 disables the limiter.
+	PageRatePerSecond float64 `yaml:"page_rate_per_second"`
 }
 
 type Server struct {
@@ -81,6 +89,8 @@ func Default() Config {
 	c.Database.Path = "data/sento.db"
 	c.Library.Path = "library"
 	c.Downloads.Dir = "data/downloads"
+	c.Downloads.PageConcurrency = 3
+	c.Downloads.PageRatePerSecond = 4
 	c.QBittorrent.Category = "sento"
 	c.MangaBaka.BaseURL = "https://api.mangabaka.org/v1"
 	return c
@@ -116,6 +126,16 @@ func applyEnv(c *Config) {
 	str("SENTO_DB_URL", &c.Database.URL)
 	str("SENTO_LIBRARY_PATH", &c.Library.Path)
 	str("SENTO_DOWNLOADS_DIR", &c.Downloads.Dir)
+	if v, ok := os.LookupEnv("SENTO_DOWNLOADS_PAGE_CONCURRENCY"); ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.Downloads.PageConcurrency = n
+		}
+	}
+	if v, ok := os.LookupEnv("SENTO_DOWNLOADS_PAGE_RATE"); ok {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			c.Downloads.PageRatePerSecond = f
+		}
+	}
 	str("SENTO_SOURCE_HOST_URL", &c.SourceHost.URL)
 	str("SENTO_PROWLARR_URL", &c.Prowlarr.URL)
 	str("SENTO_PROWLARR_API_KEY", &c.Prowlarr.APIKey)
