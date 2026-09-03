@@ -2,6 +2,11 @@ version: "2"
 
 run:
   timeout: 5m
+  # Lint the build-tagged files too — the e2e stub and the contract tests
+  # are excluded from `go test ./...`, so nothing else would ever see them.
+  build-tags:
+    - e2e
+    - contract
 
 linters:
   exclusions:

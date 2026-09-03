@@ -1,4 +1,4 @@
-// Sento — Sonarr-style automation for manga. See specs/spec.md.
+// Sento — Sonarr-style automation for manga. See docs/spec/spec.md.
 package main
 
 import (

@@ -11,26 +11,55 @@ qBittorrent volume path with a scored decision funnel, regression-tested
 release parser, background automation loops, existing-library import, and a
 Mantine web UI.
 
-The design lives in [`specs/`](specs/):
-
-- [`specs/spec.md`](specs/spec.md) — architecture, domain model, decisions log
-- [`specs/parser.md`](specs/parser.md) — release-name parser & matcher
-- [`specs/suwayomi-adapter.md`](specs/suwayomi-adapter.md) — extension-engine adapter (live-validated)
-- [`specs/decision-engine.md`](specs/decision-engine.md) — grab decisions & release profiles
-- [`specs/data-api.md`](specs/data-api.md) — DB schema & API surface
+Documentation lives in [`docs/`](docs/) — code map and data-flow
+walkthroughs in [`docs/architecture.md`](docs/architecture.md) and
+[`docs/flows/`](docs/flows/), product spec and decision log in
+[`docs/spec/`](docs/spec/).
 
 ## Development
 
 Tooling is pinned with [mise](https://mise.jdx.dev):
 
 ```sh
-mise install        # Go, Node, sqlc, golangci-lint
+mise install        # Go, Node, Java, sqlc, golangci-lint, vendir
 mise run build      # build bin/sento
 mise run run        # run the backend (http://localhost:8484)
 mise run web:dev    # web UI dev server (proxies /api to :8484)
 mise run web:build  # build web UI into web/dist (served by the binary)
 mise run test       # go test ./...
 ```
+
+### Checks
+
+CI is a thin runner over these tasks, so anything it does reproduces
+locally with one command:
+
+```sh
+mise run ci         # everything a pull request runs: lint, types, tests, e2e
+mise run e2e        # Playwright, driving a real sento against stubbed upstreams
+mise run test:pg    # the Go suite against PostgreSQL (dialect conformance)
+mise run gen:check  # fail if web/src/types is stale (fix: mise run gen)
+```
+
+`mise run e2e` boots `cmd/e2estub` — deterministic stand-ins for MangaBaka,
+the source host, Prowlarr and qBittorrent — alongside a real `sento`, so the
+browser exercises the whole Go stack without touching the network.
+
+Two suites deliberately sit outside `go test ./...` because they depend on
+services this repo does not control. They run nightly, and on a Suwayomi
+bump:
+
+```sh
+mise run test:contract   # the live MangaBaka API still matches our decoding
+mise run host:contract   # the sidecar builds and serves its contract
+```
+
+Renovate bumps the vendored Suwayomi pin in `host/vendir.yml`. Because that
+tree is what the extension sidecar is built on, any change under `host/`
+triggers [`.github/workflows/sidecar.yml`](.github/workflows/sidecar.yml),
+which builds the sidecar and runs `host:contract` against it — so a bump PR
+arrives already knowing whether it works. Re-sync the vendored tree after a
+pin change with `mise run host:vendor`.
 
 ## Deployment
 

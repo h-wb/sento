@@ -6,9 +6,19 @@ data/
 *.db-shm
 config.yml
 
+# manual tools (cmd/harvest, cmd/matchcheck — build-tagged, built ad hoc)
+/harvest
+/matchcheck
+
 # web
 web/node_modules/
 web/dist/
+
+# e2e
+web/test-results/
+web/playwright-report/
+web/blob-report/
+web/.playwright/
 
 # tooling
 .DS_Store

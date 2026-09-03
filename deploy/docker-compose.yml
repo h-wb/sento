@@ -18,7 +18,7 @@ services:
       - suwayomi
     restart: unless-stopped
 
-  # Extension engine + chapter downloader (specs/suwayomi-adapter.md).
+  # Extension engine + chapter downloader (docs/archive/suwayomi-adapter.md).
   # Pinned to the version the adapter spec was validated against; bump
   # deliberately, alongside adapter contract tests.
   suwayomi:

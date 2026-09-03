@@ -68,6 +68,11 @@ type segmentHints struct {
 }
 
 var (
+	// reYear matches a whole bracketed segment that is just a 4-digit year.
+	// Known limit (parser.md §9): a bare bracketed chapter number in this
+	// range (e.g. "[1960]") reads as a year, not a chapter. Harmless in
+	// practice — no series has reached chapter 1800+, and marked chapters
+	// ("Chapter 1960") never hit this path.
 	reYear      = regexp.MustCompile(`^(1[89]\d\d|20\d\d|2100)$`)
 	reYearRange = regexp.MustCompile(`^(1[89]\d\d|20\d\d)\s*[-–~]\s*(1[89]\d\d|20\d\d|2100)$`)
 	reVersion   = regexp.MustCompile(`^v(\d)$`)
@@ -115,13 +120,25 @@ func classifySegment(text string) segmentHints {
 		return h
 	}
 
-	// Token scan for compound segments ("FULL COLOR Digital Colored Comics").
+	// Compound segment ("FULL COLOR Digital Colored Comics"): the shared
+	// vocabulary scanner, same one the free-text pass uses.
+	return scanTags(lower)
+}
+
+// scanTags detects edition / quality / completeness / content vocabulary in
+// already-lowercased text. Matching is word-boundary aware (so "raw" never
+// fires inside "drawback", "color" not inside "discolored"). It is the one
+// place this vocabulary lives: classifySegment runs it on a delimited
+// segment, and parseInto runs it on free text, so a tag means the same
+// thing whether or not it sits in brackets.
+func scanTags(lower string) segmentHints {
+	var h segmentHints
 	tokens := strings.FieldsFunc(lower, func(r rune) bool {
 		return r == ' ' || r == ',' || r == '/' || r == ';'
 	})
 	scanned := strings.Join(tokens, " ")
 
-	phrase := func(p string) bool { return strings.Contains(scanned, p) }
+	phrase := func(p string) bool { return indexWord(scanned, p) >= 0 }
 
 	if phrase("digital colored comics") || phrase("full color") || phrase("colored") || phrase("coloured") {
 		h.edition.Colored = true
@@ -170,8 +187,15 @@ func classifySegment(text string) segmentHints {
 			h.recognized = true
 		case "compressed", "jpeg", "jpg", "png", "hq", "lq", "batch":
 			h.recognized = true // noise tags: recognized, no hint
-		case "complete", "full", "end", "completed":
+		case "complete", "end", "completed":
 			h.complete = true
+			h.recognized = true
+		case "full":
+			// "full" means a complete pack only on its own — inside
+			// "full color" it qualifies the edition, not completeness.
+			if !phrase("full color") && !phrase("full colour") {
+				h.complete = true
+			}
 			h.recognized = true
 		case "ongoing":
 			h.ongoing = true

@@ -2,14 +2,7 @@
 /* eslint-disable */
 
 //////////
-// source: profile.go
-/*
-Package profile is the pure domain of release profiles and custom
-formats (decision-engine.md §5, Sonarr's model): a custom format is a
-named list of conditions matched against a release candidate; a profile
-assigns scores to formats and owns the tunable funnel knobs. No I/O —
-the store persists, the service validates, the funnel applies.
-*/
+// source: format.go
 
 /**
  * Condition types.
@@ -71,6 +64,21 @@ export interface Input {
   Resolution: number /* int */;
   Flags: { [key: string]: boolean};
 }
+
+//////////
+// source: profile.go
+/*
+Package profile is the pure domain of release profiles and custom
+formats (decision-engine.md §5, Sonarr's model): a custom format is a
+named list of conditions matched against a release candidate; a profile
+assigns scores to formats and owns the tunable funnel knobs. No I/O —
+the store persists, the service validates, the funnel applies.
+
+Two entities, two files: format.go is the custom-format matcher
+(Condition/Format/Matches); profile.go (here) is the profile that scores
+formats and parameterizes the funnel.
+*/
+
 /**
  * MinScoreOff disables the profile's format-score floor.
  */

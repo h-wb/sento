@@ -150,6 +150,31 @@ export interface AddSeriesRequest {
   chapterCutoff: number /* int64 */; // hundredths; 0 = latest at add (D6)
   profileId: number /* int64 */; // 0 = instance default
 }
+/**
+ * CreateCollectionParams describes a user-defined collection: volume
+ * editions clone numbering from BasedOn or generate 1..Volumes; chapter
+ * collections derive slots from total_chapters and take a cutoff.
+ */
+export interface CreateCollectionParams {
+  EditionName: string;
+  Language: string;
+  Publisher: string;
+  Medium: string;
+  Type: string; // "" = volume
+  BasedOn: number /* int64 */;
+  Volumes: number /* int */;
+  CutoffNum: number /* int64 */;
+  Monitored: boolean;
+}
+/**
+ * CollectionUpdate is a partial collection patch (nil = keep).
+ */
+export interface CollectionUpdate {
+  Monitored?: boolean;
+  ProfileID?: number /* int64 */;
+  CutoffNum?: number /* int64 */;
+  Language?: string;
+}
 
 //////////
 // source: mediasettings.go

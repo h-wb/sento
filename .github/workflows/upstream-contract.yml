@@ -1,0 +1,104 @@
+# Upstream drift detection. These checks depend on services Sento does not
+# control (the MangaBaka API, extension repos, the sites extensions scrape),
+# so they run nightly rather than on pull requests: a MangaBaka outage
+# should never red a PR about the parser.
+name: Upstream contract
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: upstream-contract
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  mangabaka:
+    name: MangaBaka API
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: jdx/mise-action@v3
+        with:
+          cache: true
+      - name: Contract tests against the live API
+        run: mise run test:contract
+
+  sidecar:
+    name: sento-host sidecar
+    runs-on: ubuntu-latest
+    # The gradle build compiles the vendored Suwayomi tree from scratch.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: jdx/mise-action@v3
+        with:
+          cache: true
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build the sidecar and run the contract tests
+        run: mise run host:contract
+        env:
+          # Set these as repository variables to unlock the tier that
+          # installs a real extension and drives a live source; without
+          # them only the boot/repo contract is checked.
+          SENTO_TEST_EXTENSION_REPO: ${{ vars.SENTO_TEST_EXTENSION_REPO }}
+          SENTO_TEST_EXTENSION_PKG: ${{ vars.SENTO_TEST_EXTENSION_PKG }}
+          SENTO_TEST_SEARCH_QUERY: ${{ vars.SENTO_TEST_SEARCH_QUERY }}
+
+  report:
+    name: Report failures
+    runs-on: ubuntu-latest
+    needs: [mangabaka, sidecar]
+    if: failure() && github.event_name == 'schedule'
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the drift issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'Upstream contract tests are failing'
+            const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const body = [
+              'The nightly upstream contract run failed.',
+              '',
+              `Run: ${url}`,
+              '',
+              'A failure here means an upstream changed, not that this repo regressed:',
+              '- **MangaBaka** — a response shape moved; fix `internal/metadata/mangabaka`.',
+              '- **sento-host** — the vendored Suwayomi tree or an extension broke; see `host/`.',
+              '',
+              'Reproduce locally with `mise run test:contract` / `mise run host:contract`.',
+            ].join('\n')
+
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'upstream-drift',
+            })
+            const existing = open.find((i) => i.title === title)
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `Still failing — ${url}`,
+              })
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['upstream-drift'],
+              })
+            }
