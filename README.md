@@ -11,13 +11,10 @@ qBittorrent volume path with a scored decision funnel, regression-tested
 release parser, background automation loops, existing-library import, and a
 Mantine web UI.
 
-The design lives in [`specs/`](specs/):
-
-- [`specs/spec.md`](specs/spec.md) — architecture, domain model, decisions log
-- [`specs/parser.md`](specs/parser.md) — release-name parser & matcher
-- [`specs/suwayomi-adapter.md`](specs/suwayomi-adapter.md) — extension-engine adapter (live-validated)
-- [`specs/decision-engine.md`](specs/decision-engine.md) — grab decisions & release profiles
-- [`specs/data-api.md`](specs/data-api.md) — DB schema & API surface
+Documentation lives in [`docs/`](docs/) — code map and data-flow
+walkthroughs in [`docs/architecture.md`](docs/architecture.md) and
+[`docs/flows/`](docs/flows/), product spec and decision log in
+[`docs/spec/`](docs/spec/).
 
 ## Development
 

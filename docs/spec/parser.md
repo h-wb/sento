@@ -42,6 +42,13 @@ or **blind** (manual import, RSS later).
 
 ## 2. Output schema
 
+> **Correction (2026-06):** this sketch predates the implementation and has
+> drifted. The source of truth is `internal/parse/result.go`. Known
+> renames: `TitleGuess` → `Title`, `IsComplete` → `Complete`, `IsExtra` →
+> `Extra`; `Channel` is a `string` (not `uint8`); `ParseAnchored` takes
+> `[]string`, not `[]NormTitle`. The field *meanings* below are still
+> accurate.
+
 ```go
 package parse
 
@@ -334,3 +341,10 @@ recognition behavior, our corpus documents *our* behavior independently.
   via MangaBaka native titles; corpus file exists (`raws.jsonl`) but
   coverage is thin until real use.
 - OCR-grade garbage (`0n3 P13c3`) — out of scope, manual import exists.
+- Bare bracketed number in the year range (`[1960]`) reads as a year, not
+  a chapter (`reYear` in `tags.go`). Accepted: no series has reached
+  chapter 1800+, and marked chapters (`Chapter 1960`) never take this
+  path; revisit only if a real collision appears.
+- Unresolved bare numbers (axis undecidable from the string) are kept in
+  `Result.Bare` but feed nothing downstream except confidence — an
+  ambiguous number conservatively covers no slot (`resolveBare`).
