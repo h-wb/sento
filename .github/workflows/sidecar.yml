@@ -1,0 +1,54 @@
+# The sento-host sidecar is built from a vendored Suwayomi tree pinned in
+# host/vendir.yml, which Renovate bumps. Building it is a long JVM job, so
+# it runs only when something that could break it changes — which includes
+# Renovate's own vendir pull requests.
+name: Sidecar
+
+on:
+  push:
+    branches: [main]
+    # Repeated verbatim below: GitHub Actions does not support YAML anchors.
+    paths:
+      - 'host/**'
+      - 'internal/sourcehost/**'
+      - '.github/workflows/sidecar.yml'
+      - 'mise.toml'
+  pull_request:
+    paths:
+      - 'host/**'
+      - 'internal/sourcehost/**'
+      - '.github/workflows/sidecar.yml'
+      - 'mise.toml'
+  workflow_dispatch:
+
+concurrency:
+  group: sidecar-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Build and contract-test the sidecar
+    runs-on: ubuntu-latest
+    # Gradle compiles the whole vendored Suwayomi tree from scratch.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v3
+        with:
+          cache: true
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build the sidecar and run the contract tests
+        run: mise run host:contract
+        env:
+          # Set these as repository variables to unlock the tier that
+          # installs a real extension and drives a live source; without
+          # them only the boot/repo contract is checked.
+          SENTO_TEST_EXTENSION_REPO: ${{ vars.SENTO_TEST_EXTENSION_REPO }}
+          SENTO_TEST_EXTENSION_PKG: ${{ vars.SENTO_TEST_EXTENSION_PKG }}
+          SENTO_TEST_SEARCH_QUERY: ${{ vars.SENTO_TEST_SEARCH_QUERY }}

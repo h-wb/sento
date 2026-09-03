@@ -1,0 +1,158 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommitsDisabled",
+    "helpers:pinGitHubActionDigestsToSemver"
+  ],
+  "timezone": "Europe/Paris",
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 0,
+  "labels": [
+    "dependencies"
+  ],
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on the first day of the month"
+    ]
+  },
+  "packageRules": [
+    {
+      "description": "Group the Go toolchain and stdlib-adjacent bumps into one PR.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "Go dependencies"
+    },
+    {
+      "description": "Mantine ships its packages in lockstep; splitting them breaks the build.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "@mantine/**"
+      ],
+      "groupName": "Mantine"
+    },
+    {
+      "description": "React and its types move together.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "react",
+        "react-dom",
+        "@types/react",
+        "@types/react-dom"
+      ],
+      "groupName": "React"
+    },
+    {
+      "description": "typescript-eslint, eslint and its plugins.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "eslint",
+        "eslint-**",
+        "@eslint/**",
+        "typescript-eslint"
+      ],
+      "groupName": "ESLint"
+    },
+    {
+      "description": "Playwright's npm package and its browser bundle are versioned together.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "@playwright/**",
+        "playwright"
+      ],
+      "groupName": "Playwright"
+    },
+    {
+      "description": "One PR for all GitHub Actions bumps; they are low-risk and noisy apart.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Non-major npm updates in one weekly PR; majors stay separate.",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "npm (non-major)"
+    },
+    {
+      "description": "Keep mise's own tool pins current (go, node, java, gradle, sqlc\u2026).",
+      "matchManagers": [
+        "mise"
+      ],
+      "groupName": "mise tools"
+    },
+    {
+      "description": "The Go version in mise.toml, go.mod and the Dockerfile must move together.",
+      "matchPackageNames": [
+        "go",
+        "golang"
+      ],
+      "groupName": "Go toolchain"
+    },
+    {
+      "description": "The vendored Suwayomi source tree (host/vendir.yml). A bump here changes the fake-Android runtime the extension sidecar is built on, so it is reviewed on its own and gated by the sidecar contract tests in CI.",
+      "matchManagers": [
+        "vendir"
+      ],
+      "groupName": "vendored Suwayomi",
+      "addLabels": [
+        "suwayomi"
+      ]
+    },
+    {
+      "description": "Majors are reviewed one at a time \u2014 they are the ones that break the build.",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "The Suwayomi preview image pinned in the compose file. Upstream publishes per-build image tags that have no matching git tag, so this is a separate dependency from the vendored source tree.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^deploy/docker-compose\\.yml$/"
+      ],
+      "matchStrings": [
+        "image:\\s*ghcr\\.io/suwayomi/suwayomi-server:(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "ghcr.io/suwayomi/suwayomi-server",
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "labels": [
+      "security"
+    ],
+    "schedule": [
+      "at any time"
+    ]
+  }
+}

@@ -62,3 +62,93 @@ run = "./app/build/install/app/bin/app"
 [tasks.gen]
 description = "Generate TypeScript API types from Go structs"
 run = "go tool tygo generate"
+
+# --- checks (CI runs these tasks; GitHub Actions is only the runner) ---
+
+[tasks.ci]
+description = "Everything CI runs on a pull request"
+# Sequential on purpose: `depends` would run these in parallel, and the
+# npm install has to land before anything touches web/.
+run = [
+  "mise run web:install",
+  "mise run lint",
+  "mise run lint:web",
+  "mise run gen:check",
+  "mise run test",
+  "mise run e2e",
+]
+
+[tasks."web:install"]
+description = "Install web dependencies from the lockfile"
+dir = "web"
+run = "npm ci"
+
+[tasks."lint:web"]
+description = "Lint the web UI"
+dir = "web"
+run = "npm run lint"
+
+[tasks."gen:check"]
+description = "Fail if the generated TypeScript types are stale (run: mise run gen)"
+run = """
+go tool tygo generate
+git diff --exit-code HEAD -- web/src/types || {
+  echo 'web/src/types is out of date — run `mise run gen` and commit the result.' >&2
+  exit 1
+}
+"""
+
+[tasks."test:pg"]
+description = "Run the Go suite against PostgreSQL (dialect conformance)"
+run = "go test ./..."
+env = { SENTO_TEST_DB_URL = "postgres://sento:sento@localhost:5432/sento?sslmode=disable" }
+
+[tasks."test:contract"]
+description = "Contract tests against the live MangaBaka API (network)"
+run = "go test -tags contract -count=1 -v ./internal/metadata/mangabaka"
+
+# --- end-to-end (browser, real Go stack, stubbed upstreams) ---
+
+[tasks."e2e:build"]
+description = "Build the binaries the Playwright suite drives"
+depends = ["web:build"]
+run = [
+  "go build -o bin/sento ./cmd/sento",
+  "go build -tags e2e -o bin/e2estub ./cmd/e2estub",
+]
+
+[tasks."e2e:install"]
+description = "Install the Playwright browser (once per machine/CI image)"
+dir = "web"
+run = "npm run e2e:install"
+
+[tasks.e2e]
+description = "Run the Playwright end-to-end suite"
+depends = ["e2e:build"]
+dir = "web"
+run = "npm run e2e"
+
+[tasks."e2e:ui"]
+description = "Run the end-to-end suite in Playwright's interactive UI"
+depends = ["e2e:build"]
+dir = "web"
+run = "npm run e2e:ui"
+
+# --- sidecar (JVM; vendored Suwayomi pieces) ---
+
+[tasks."host:contract"]
+description = "Build the sidecar, start it, and run internal/sourcehost contract tests"
+depends = ["host:build"]
+run = """
+set -e
+DATA=$(mktemp -d)
+trap 'kill ${HOST_PID:-} 2>/dev/null || true; rm -rf "$DATA"' EXIT
+SENTO_HOST_PORT=8902 SENTO_HOST_DATA="$DATA" host/app/build/install/app/bin/app &
+HOST_PID=$!
+# `if` keeps a failing probe from tripping `set -e` while the JVM boots.
+for _ in $(seq 1 60); do
+  if curl -fsS http://127.0.0.1:8902/health >/dev/null 2>&1; then break; fi
+  sleep 2
+done
+SENTO_SOURCE_HOST_URL=http://127.0.0.1:8902 go test -tags contract -count=1 -v ./internal/sourcehost
+"""
