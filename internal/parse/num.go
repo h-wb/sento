@@ -2,6 +2,7 @@ package parse
 
 import (
 	"encoding/json"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -67,6 +68,8 @@ func alphaSuffixNum(c byte) Num {
 	return Num(int64(c-'a'+1) * 10)
 }
 
+// Range is an inclusive span of Nums; a single number is From == To.
+// JSON form is the pair [from,to] (corpus readability).
 type Range struct{ From, To Num }
 
 func (r Range) MarshalJSON() ([]byte, error) {
@@ -84,27 +87,32 @@ func (r *Range) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// mergeRanges sorts and coalesces overlapping/adjacent ranges.
+// mergeRanges returns rs sorted by start, with overlapping or near-adjacent
+// ranges coalesced — "near" meaning within one whole unit, so [1,2], [3,3]
+// and [4,5] all fuse into [1,5]. Coalescing is transitive: because the input
+// is sorted first, a range that bridges two others merges all three (the old
+// unsorted single-pass version left them split).
 func mergeRanges(rs []Range) []Range {
 	if len(rs) < 2 {
 		return rs
 	}
-	out := make([]Range, 0, len(rs))
-	for _, r := range rs {
-		placed := false
-		for i := range out {
-			if r.From <= out[i].To+100 && r.To >= out[i].From-100 {
-				if r.From < out[i].From {
-					out[i].From = r.From
-				}
-				if r.To > out[i].To {
-					out[i].To = r.To
-				}
-				placed = true
-				break
-			}
+	sorted := make([]Range, len(rs))
+	copy(sorted, rs)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].From != sorted[j].From {
+			return sorted[i].From < sorted[j].From
 		}
-		if !placed {
+		return sorted[i].To < sorted[j].To
+	})
+	out := make([]Range, 0, len(sorted))
+	out = append(out, sorted[0])
+	for _, r := range sorted[1:] {
+		last := &out[len(out)-1]
+		if r.From <= last.To+100 { // overlap or within one unit
+			if r.To > last.To {
+				last.To = r.To
+			}
+		} else {
 			out = append(out, r)
 		}
 	}

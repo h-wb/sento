@@ -9,17 +9,29 @@
  * Alpha sub-chapters map a→+10, b→+20 (Mihon convention: 4a ≈ 4.1).
  */
 export type Num = number /* int64 */;
+/**
+ * Range is an inclusive span of Nums; a single number is From == To.
+ * JSON form is the pair [from,to] (corpus readability).
+ */
 export interface Range {
   From: Num;
   To: Num;
 }
 
 //////////
+// source: numbers.go
+
+
+//////////
 // source: parse.go
 /*
 Package parse turns release/file/chapter names into structured facts
-(specs/parser.md). Parse is pure: no I/O, no context — that is what makes
+(docs/spec/parser.md). Parse is pure: no I/O, no context — that is what makes
 the regression corpus possible.
+
+Files follow the pipeline: preclean.go → segment.go → tags.go (segment
+classification) → numbers.go (extraction) → parse.go (orchestration);
+anchor.go is the title-aware entry point, num.go the number domain.
 */
 
 
@@ -89,6 +101,10 @@ export interface Result {
   version?: number /* int */;
   confidence: number /* float64 */;
 }
+
+//////////
+// source: segment.go
+
 
 //////////
 // source: tags.go
