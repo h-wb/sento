@@ -246,20 +246,20 @@ export default function App() {
             position="top-end"
             processing={!healthy}
           >
-            {preset.effects.gradient ? (
-              <Title
-                order={3}
-                className={classes.wordmark}
-                variant="gradient"
-                gradient={{ from: 'brand.4', to: `${preset.accentTo}.4`, deg: 45 }}
-              >
-                sento
-              </Title>
-            ) : (
-              <Title order={3} className={classes.wordmark}>
-                sento
-              </Title>
-            )}
+            <Title order={3} className={classes.wordmark}>
+              {preset.effects.gradient ? (
+                <Text
+                  span
+                  inherit
+                  variant="gradient"
+                  gradient={{ from: 'brand.4', to: `${preset.accentTo}.4`, deg: 45 }}
+                >
+                  sento
+                </Text>
+              ) : (
+                'sento'
+              )}
+            </Title>
           </Indicator>
           <Text c="dimmed" size="sm" visibleFrom="xs">
             manga automation
