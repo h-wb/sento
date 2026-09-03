@@ -4,6 +4,8 @@ directories:
   - git:
       commitTitle: Fix automatic chapter downloads (#2098)...
       sha: 8fbc8fd3d4405b3f8f5be442eda1d5b746ccfac1
+      tags:
+      - v2.2.2100-96-g8fbc8fd3
     path: .
   path: vendor/suwayomi
 kind: LockConfig

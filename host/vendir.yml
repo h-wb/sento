@@ -21,8 +21,10 @@ directories:
       - path: .
         git:
           url: https://github.com/Suwayomi/Suwayomi-Server
+          # No `depth`: a shallow fetch only brings the default-branch tip,
+          # so checking out a pinned historical sha fails with "unable to
+          # read tree" as soon as upstream moves past it.
           ref: 8fbc8fd3d4405b3f8f5be442eda1d5b746ccfac1
-          depth: 1
         includePaths:
           - AndroidCompat/**
           - gradle/libs.versions.toml
