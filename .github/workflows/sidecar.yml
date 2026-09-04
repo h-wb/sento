@@ -28,6 +28,12 @@ concurrency:
 permissions:
   contents: read
 
+# gopls is an editor language server: no task here uses it, and resolving
+# its "latest" on every run is a network round-trip that has already timed
+# out and failed a build. Developers keep it via mise.toml.
+env:
+  MISE_DISABLE_TOOLS: go:golang.org/x/tools/gopls
+
 jobs:
   contract:
     name: Build and contract-test the sidecar
