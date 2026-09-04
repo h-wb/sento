@@ -152,3 +152,28 @@ for _ in $(seq 1 60); do
 done
 SENTO_SOURCE_HOST_URL=http://127.0.0.1:8902 go test -tags contract -count=1 -v ./internal/sourcehost
 """
+
+# --- container image ---
+
+[tasks."image:build"]
+description = "Build the container image locally (single-arch, for the host)"
+# CI builds the same Dockerfile multi-arch via buildx; the registry cache
+# and provenance wiring there are Actions-specific and stay in the workflow.
+run = """
+docker build \
+  --build-arg VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+  --build-arg COMMIT="$(git rev-parse HEAD)" \
+  -t sento:dev .
+"""
+
+[tasks."image:run"]
+description = "Run the locally built image against ./data"
+depends = ["image:build"]
+run = """
+mkdir -p data/config data/library data/downloads
+docker run --rm -p 8484:8484 \
+  -v "$PWD/data/config:/config" \
+  -v "$PWD/data/library:/library" \
+  -v "$PWD/data/downloads:/downloads" \
+  sento:dev
+"""

@@ -63,6 +63,33 @@ pin change with `mise run host:vendor`.
 
 ## Deployment
 
+### Container image
+
+Published to the GitHub Container Registry on every push to `main` and on
+`v*` tags, for `linux/amd64` and `linux/arm64`:
+
+```sh
+docker pull ghcr.io/h-wb/sento:latest
+```
+
+Tags: `latest` (main), `<major>.<minor>.<patch>` and `<major>.<minor>` for
+releases, plus the full commit sha. Build it locally with
+`mise run image:build`.
+
+A package published from a private repository is private, and GHCR only
+accepts a **classic** personal access token (with `read:packages`) for
+pulling one — fine-grained tokens do not work there. In Kubernetes:
+
+```sh
+kubectl create secret docker-registry ghcr \
+  --docker-server=ghcr.io --docker-username=<user> --docker-password=<classic PAT>
+```
+
+Making the package public instead (package settings, independent of the
+repository's visibility) drops the secret entirely: public images pull
+anonymously.
+
+
 ```sh
 cd deploy && docker compose up -d
 ```

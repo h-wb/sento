@@ -1,0 +1,33 @@
+# Keep the build context to sources. Without this the local node_modules is
+# copied over the one `npm ci` installs in the image — macOS binaries into a
+# Linux build — and the vendored Suwayomi tree, gradle output and local
+# library data are all uploaded to the daemon for nothing.
+.git
+.github
+
+# local state and build output
+bin/
+data/
+*.db
+*.db-wal
+*.db-shm
+config.yml
+harvest
+matchcheck
+
+# web
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+web/blob-report/
+web/.playwright/
+
+# sidecar (not part of the sento image)
+host/
+
+# docs and tooling
+docs/
+specs/
+mise.local.toml
+.DS_Store
