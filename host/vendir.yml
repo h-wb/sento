@@ -7,7 +7,7 @@
 # - The eu.kanade.tachiyomi API surface + APK loading machinery: not a
 #   module upstream (entangled with their server tree); compiled into
 #   app/ against the suwayomi.tachidesk.server stand-ins. Files that we
-#   replace (GetCatalogueSource, StubSource) or that drag in Suwayomi's
+#   replace (GetSource, StubSource) or that drag in Suwayomi's
 #   database/local-source are excluded — extend the stand-ins instead of
 #   patching vendored files.
 #
@@ -21,10 +21,12 @@ directories:
       - path: .
         git:
           url: https://github.com/Suwayomi/Suwayomi-Server
-          # No `depth`: a shallow fetch only brings the default-branch tip,
-          # so checking out a pinned historical sha fails with "unable to
-          # read tree" as soon as upstream moves past it.
-          ref: 8fbc8fd3d4405b3f8f5be442eda1d5b746ccfac1
+          # A release tag, not a sha: Renovate's vendir manager compares
+          # the ref against tags and branches, so a bare sha gives it
+          # nothing to bump. No `depth` — a shallow fetch only brings the
+          # default-branch tip, which cannot resolve a pinned historical
+          # ref once upstream moves past it.
+          ref: v2.3.2243
         includePaths:
           - AndroidCompat/**
           - gradle/libs.versions.toml
@@ -37,6 +39,12 @@ directories:
           - server/src/main/kotlin/suwayomi/tachidesk/manga/impl/util/network/**
           - server/src/main/kotlin/suwayomi/tachidesk/manga/impl/util/storage/**
           - server/src/main/kotlin/suwayomi/tachidesk/manga/impl/extension/github/**
+          # v2.3 moved the repo-index shapes the github/ package returns
+          # into model.dataclass. Both are import-free data classes, so
+          # they come in by name rather than pulling the whole package
+          # (the rest of it drags in Exposed).
+          - server/src/main/kotlin/suwayomi/tachidesk/manga/model/dataclass/ExtensionInfo.kt
+          - server/src/main/kotlin/suwayomi/tachidesk/manga/model/dataclass/ExtensionStore.kt
         excludePaths:
           # Suwayomi's filesystem-manga source and app bootstrap (ours
           # lives in app/src/main/kotlin/sento/host).

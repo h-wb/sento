@@ -18,6 +18,7 @@ import io.javalin.http.HttpStatus
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import suwayomi.tachidesk.manga.model.dataclass.ContentWarning
 
 private val json = Json { ignoreUnknownKeys = true }
 
@@ -76,7 +77,7 @@ private inline fun <reified T> Context.respond(value: T) {
 
 private fun Context.sourceOrNull(): CatalogueSource? {
     val id = pathParam("sid").toLongOrNull() ?: return null
-    return suwayomi.tachidesk.manga.impl.util.source.GetCatalogueSource.getCatalogueSourceOrNull(id)
+    return suwayomi.tachidesk.manga.impl.util.source.GetSource.getSourceOrNull(id)
 }
 
 fun buildApi(): Javalin =
@@ -95,7 +96,7 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
 
     get("/api/v1/sources") { ctx ->
         ctx.respond(
-            suwayomi.tachidesk.manga.impl.util.source.GetCatalogueSource
+            suwayomi.tachidesk.manga.impl.util.source.GetSource
                 .all()
                 .map { SourceDto(it.id.toString(), it.name, it.lang, isNsfw(it)) },
         )
@@ -121,7 +122,12 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
                 url = key.url
                 title = key.title
             }
-        val chapters = runBlocking { source.getChapterList(manga) }
+        val chapters =
+            runBlocking {
+                source
+                    .getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true)
+                    .chapters
+            }
         ctx.respond(
             chapters.map {
                 // Same corroboration Suwayomi applies: sources often leave
@@ -211,7 +217,7 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
                     pkgName = ext.pkgName,
                     name = ext.name,
                     lang = ext.lang,
-                    nsfw = ext.isNsfw,
+                    nsfw = ext.contentWarning != ContentWarning.SAFE,
                     installedVersion = inst?.versionName,
                     availableVersion = ext.versionName,
                     hasUpdate = inst != null && ext.versionCode > inst.versionCode,
