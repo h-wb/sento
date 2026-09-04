@@ -6,9 +6,6 @@
     "helpers:pinGitHubActionDigestsToSemver"
   ],
   "timezone": "Europe/Paris",
-  "schedule": [
-    "before 6am on monday"
-  ],
   "prConcurrentLimit": 5,
   "prHourlyLimit": 0,
   "labels": [
