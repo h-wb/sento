@@ -132,7 +132,12 @@ func TestContractExtensionLifecycle(t *testing.T) {
 		pkg = exts[0].PkgName
 	}
 	if err := c.InstallExtension(ctx, pkg); err != nil {
-		t.Fatalf("InstallExtension(%s): %v — APK conversion or class loading broke", pkg, err)
+		// Distinguish the two failure modes: a transport error means the
+		// repo moved its APKs (the index's apkUrl convention changed),
+		// while anything else points at dex2jar or the classloader.
+		t.Fatalf("InstallExtension(%s): %v\n"+
+			"  HTTP 404 → the repo no longer serves APKs where the index implies;\n"+
+			"  otherwise → APK conversion or class loading broke", pkg, err)
 	}
 	t.Cleanup(func() { _ = c.UninstallExtension(context.Background(), pkg) })
 

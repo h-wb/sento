@@ -2,10 +2,10 @@ apiVersion: vendir.k14s.io/v1alpha1
 directories:
 - contents:
   - git:
-      commitTitle: Fix automatic chapter downloads (#2098)...
-      sha: 8fbc8fd3d4405b3f8f5be442eda1d5b746ccfac1
+      commitTitle: Release v2.3.2243
+      sha: 1d583ca4a718646e17a4c62d23fe8e5edccaf774
       tags:
-      - v2.2.2100-96-g8fbc8fd3
+      - v2.3.2243
     path: .
   path: vendor/suwayomi
 kind: LockConfig

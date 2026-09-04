@@ -1,13 +1,14 @@
 // Slim replacement for Suwayomi's DB-backed source registry, keeping the
-// upstream object name so vendored files (NetworkHelper) compile
-// unchanged. Sources are registered by the ExtensionManager at startup
+// upstream object and method names so vendored files (NetworkHelper)
+// compile unchanged. Upstream renamed this from GetCatalogueSource to
+// GetSource in v2.3. Sources are registered by the ExtensionManager at startup
 // and after installs; there is no database.
 package suwayomi.tachidesk.manga.impl.util.source
 
 import eu.kanade.tachiyomi.source.CatalogueSource
 import java.util.concurrent.ConcurrentHashMap
 
-object GetCatalogueSource {
+object GetSource {
     private val sourceCache = ConcurrentHashMap<Long, CatalogueSource>()
 
     // reloader is installed by the ExtensionManager: re-instantiates all
@@ -16,7 +17,7 @@ object GetCatalogueSource {
     @Volatile
     var reloader: (() -> Unit)? = null
 
-    fun getCatalogueSourceOrNull(sourceId: Long): CatalogueSource? {
+    fun getSourceOrNull(sourceId: Long): CatalogueSource? {
         sourceCache[sourceId]?.let { return it }
         // Miss: a preference change bounced the instance (or nothing is
         // loaded yet) — re-instantiate from the installed jars.
@@ -29,15 +30,15 @@ object GetCatalogueSource {
         return sourceCache.values.sortedBy { it.name }
     }
 
-    fun registerCatalogueSource(sourcePair: Pair<Long, CatalogueSource>) {
+    fun registerSource(sourcePair: Pair<Long, CatalogueSource>) {
         sourceCache += sourcePair
     }
 
-    fun unregisterCatalogueSource(sourceId: Long) {
+    fun unregisterSource(sourceId: Long) {
         sourceCache.remove(sourceId)
     }
 
-    fun unregisterAllCatalogueSources() {
+    fun unregisterAllSources() {
         sourceCache.clear()
     }
 }

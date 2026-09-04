@@ -23,7 +23,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
-import suwayomi.tachidesk.manga.impl.util.source.GetCatalogueSource
+import suwayomi.tachidesk.manga.impl.util.source.GetSource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -87,7 +87,7 @@ object SourcePrefs {
         val value = fromJson(pref, body.value)
         pref.saveNewValue(value)
         pref.callChangeListener(value)
-        GetCatalogueSource.unregisterCatalogueSource(source.id)
+        GetSource.unregisterSource(source.id)
     }
 
     private fun Any?.toJson(): JsonElement =
