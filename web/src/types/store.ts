@@ -43,8 +43,9 @@ export interface WorkRelation {
 // source: catalog_edit.go
 
 export interface CollectionMetadataPatch {
+  makeLocal?: boolean;
   numberingSource?: string;
-  editionLayout?: string;
+  editionTraits?: string[];
   contentVariant?: string;
   discoverChapters?: boolean;
   editionName?: string;
@@ -65,6 +66,10 @@ export interface CatalogLinkPreview {
   mapping: { [key: number /* int64 */]: number /* int64 */};
   unmatched: number /* int64 */[];
 }
+/**
+ * EditionTraitList stores known traits; [] explicitly means unspecified.
+ */
+export type EditionTraitList = string[];
 
 //////////
 // source: history.go
@@ -135,6 +140,21 @@ export interface Indexer {
 }
 
 //////////
+// source: presence.go
+
+export interface AssetContent {
+  fileId: number /* int64 */;
+  workId: number /* int64 */;
+  verified: boolean;
+  evidence: string;
+}
+export interface UnitOverride {
+  TargetID: number /* int64 */;
+  WorkID: number /* int64 */;
+  Monitored: boolean;
+}
+
+//////////
 // source: profiles.go
 
 
@@ -147,6 +167,8 @@ export interface Indexer {
  */
 export type JSONText = string /* []byte */;
 export interface QueueItem {
+  retryCount: number /* int */;
+  retryAt: string;
   providerId?: string;
   releaseKey?: string;
   snapshot: any;
@@ -172,8 +194,12 @@ export const QueueDownloading = "downloading";
 export const QueueImporting = "importing";
 export const QueueImported = "imported";
 export const QueueFailed = "failed";
+export const QueueNeedsReview = "needs_review";
+export const QueueRetryWait = "retry_wait";
+export const QueueDispatchUnknown = "dispatch_unknown";
+export const QueueCancelled = "cancelled";
 /**
- * ExpectedSlot mirrors file_slot_links coordinates for pending grabs.
+ * ExpectedSlot records explicit version and unit coverage for a pending grab.
  */
 export interface ExpectedSlot {
   targetId?: number /* int64 */;
@@ -181,6 +207,20 @@ export interface ExpectedSlot {
   ledger: string;
   collectionId: number /* int64 */;
   number: number /* int64 */;
+}
+
+//////////
+// source: review.go
+
+export interface ReviewItem {
+  status: string;
+  id: string;
+  kind: string;
+  seriesId: number /* int64 */;
+  seriesTitle: string;
+  itemId: number /* int64 */;
+  title: string;
+  detail: string;
 }
 
 //////////
@@ -233,7 +273,7 @@ export interface Series {
 }
 export interface Collection {
   numberingSource: string;
-  editionLayout: string;
+  editionTraits: EditionTraitList;
   contentVariant: string;
   discoverChapters: boolean;
   syncState: string;
@@ -252,7 +292,7 @@ export interface Collection {
   endDate?: string;
   custom: boolean;
   profileId?: number /* int64 */; // 0 = inherit from series
-  cutoffNum: number /* int64 */; // chapter ctype: monitor from N onward (D6)
+  cutoffNum: number /* int64 */; // chapter ctype: skip through this number (exclusive cutoff)
 }
 export interface Work {
   providerId?: string;
@@ -269,6 +309,10 @@ export interface Work {
   pages?: number /* int */;
 }
 export interface File {
+  claims: AssetFacts;
+  presence: string;
+  presenceError: string;
+  checkedAt: string;
   facts: AssetFacts;
   needsReview: boolean;
   hash?: string;
@@ -289,6 +333,7 @@ export interface SlotLink {
   Number: number /* int64 */;
 }
 export interface Binding {
+  trustChapters: boolean;
   collectionId: number /* int64 */;
   id: number /* int64 */;
   seriesId: number /* int64 */;
@@ -319,6 +364,7 @@ export interface AddSeriesParams {
 // source: targets.go
 
 export interface DownloadTarget {
+  includeExtras: boolean;
   id: number /* int64 */;
   collectionId: number /* int64 */;
   name: string;
@@ -331,6 +377,7 @@ export interface DownloadTarget {
   acquireUnknown: boolean;
 }
 export interface AssetFacts {
+  sources?: { [key: string]: string};
   title?: string;
   site?: string;
   protocol?: string;
@@ -353,4 +400,8 @@ export interface AssetCoverage {
   workId: number /* int64 */;
   verified: boolean;
   pinned: boolean;
+}
+export interface AssetFactPatch {
+  language?: string;
+  group?: string;
 }

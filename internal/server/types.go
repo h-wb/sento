@@ -145,8 +145,9 @@ type NamingPreview struct {
 
 // BindingPatch is PUT /series/{id}/bindings/{bid}.
 type BindingPatch struct {
-	CollectionID *int64 `json:"collectionId"`
-	State        string `json:"state" tstype:"'active' | 'disabled'"`
+	TrustChapters *bool  `json:"trustChapters,omitempty"`
+	CollectionID  *int64 `json:"collectionId"`
+	State         string `json:"state" tstype:"'active' | 'disabled'"`
 }
 
 // ScanBody is POST /series/{id}/import.

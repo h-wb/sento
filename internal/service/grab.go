@@ -84,7 +84,7 @@ func (s *SearchService) Grab(ctx context.Context, seriesID int64, searchLedger s
 	}
 	externalID, err := prov.Grab(ctx, c.cand)
 	if err != nil {
-		_ = s.store.UpdateQueueItem(ctx, qid, store.QueueFailed, err.Error())
+		_ = s.store.DeferQueue(ctx, store.QueueItem{ID: qid}, "Submission result is uncertain: "+err.Error())
 		return 0, err
 	}
 	err = s.store.SetQueueExternalID(ctx, qid, externalID)

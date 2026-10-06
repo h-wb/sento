@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/h-wb/sento/internal/metadata"
@@ -299,7 +300,7 @@ func TestModelObservationReviewIsBoundedAndIdempotent(t *testing.T) {
 	}
 }
 
-func TestModelSameOfferDifferentTargetOwnership(t *testing.T) {
+func TestModelQualifyingAssetReusedAcrossVersions(t *testing.T) {
 	_, st, id, c, ws, target := modelFixture(t)
 	ctx := context.Background()
 	other := target
@@ -315,8 +316,8 @@ func TestModelSameOfferDifferentTargetOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if slots[target.ID][0].State != "owned" || slots[other.ID][0].State != "missing" {
-		t.Fatal("first version satisfied second", slots)
+	if slots[target.ID][0].State != "owned" || slots[other.ID][0].State != "owned" {
+		t.Fatal("qualifying asset was not reused")
 	}
 	target.Name = "Renamed default"
 	if _, err = st.SaveTarget(ctx, id, target); err != nil {
@@ -434,7 +435,7 @@ func TestModelPackStaysOneAssetAcrossUnitsAndVersions(t *testing.T) {
 		t.Fatalf("pack became multiple assets: %+v %v", fs, err)
 	}
 	cv, err := st.Coverage(ctx, id)
-	if err != nil || len(cv) != 3 {
+	if err != nil || len(cv) != 4 {
 		t.Fatalf("pack coverage lost: %+v %v", cv, err)
 	}
 	got, err := os.ReadFile(fs[0].Path)
@@ -478,7 +479,13 @@ func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
 		t.Fatalf("merge lost version policy: %+v %v", retained, err)
 	}
 	cv, err := st.Coverage(ctx, id)
-	if err != nil || len(cv) != 1 || cv[0].FileID != fid || !cv[0].Pinned {
+	pinned := false
+	for _, a := range cv {
+		if a.FileID == fid && a.TargetID == target.ID && a.Pinned {
+			pinned = true
+		}
+	}
+	if err != nil || len(cv) != 2 || !pinned {
 		t.Fatalf("merge lost coverage or pin: %+v %v", cv, err)
 	}
 	w, _ := st.GetWork(ctx, cv[0].WorkID)
@@ -497,7 +504,7 @@ func TestModelLayoutSurvivesDisplayRenameAndRequiresEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	renamed, _ := st.GetCollection(ctx, omni.ID)
-	if renamed.EditionLayout != "omnibus" {
+	if !slices.Contains(renamed.EditionTraits, "omnibus") {
 		t.Fatal("layout lost when display name changed")
 	}
 	plain := parse.ParseAnchored("ONE PIECE v01 (Digital)", parse.ChannelTorrent, []string{"ONE PIECE"})
@@ -654,13 +661,13 @@ func TestCatalogGenericRenameKeepsEditionLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := st.GetCollection(ctx, c.ID)
-	if err != nil || got.EditionLayout != "omnibus" {
+	if err != nil || !slices.Contains(got.EditionTraits, "omnibus") {
 		t.Fatalf("generic rename erased layout: %+v %v", got, err)
 	}
 }
 
 func TestCalendarSeparatesVersionsAndDuplicateNumbers(t *testing.T) {
-	_, st, id, c, ws, target := modelFixture(t)
+	lib, st, id, c, ws, target := modelFixture(t)
 	ctx := context.Background()
 	ownedModelFile(t, st, id, c, ws[0], target)
 	other := store.DownloadTarget{CollectionID: c.ID, Name: "Another group", Monitored: true, AcquireUnknown: true}
@@ -669,7 +676,7 @@ func TestCalendarSeparatesVersionsAndDuplicateNumbers(t *testing.T) {
 	} else {
 		other.ID = tid
 	}
-	entries, err := st.Calendar(ctx, "1900-01-01", "2100-01-01")
+	entries, err := lib.Calendar(ctx, "1900-01-01", "2100-01-01")
 	if err != nil {
 		t.Fatal(err)
 	}

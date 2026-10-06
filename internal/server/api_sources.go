@@ -30,6 +30,8 @@ func (s *Server) mountSourceAPI(r chi.Router) {
 	r.Post("/series/{id}/search", s.handleSearch)
 	r.Get("/queue", s.handleQueue)
 	r.Post("/queue/process", s.handleQueueProcess)
+	r.Post("/queue/{qid}/retry", s.handleQueueRetry)
+	r.Post("/queue/{qid}/cancel", s.handleQueueCancel)
 	r.Post("/queue/{qid}/blocklist", s.handleQueueBlocklist)
 
 	r.Get("/history", s.handleHistory)
@@ -424,7 +426,7 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		if items[i].Status != store.QueueDownloading {
 			continue
 		}
-		prov := s.registry.ForProtocol(items[i].Protocol)
+		prov := s.registry.Get(items[i].ProviderID)
 		if pr, ok := prov.(provider.Progresser); ok {
 			if frac, ok := pr.Progress(items[i].ExternalID); ok {
 				items[i].Progress = &frac
@@ -441,4 +443,33 @@ func (s *Server) handleQueueProcess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"processed": n})
+}
+
+func (s *Server) handleQueueRetry(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "qid")
+	if !ok {
+		return
+	}
+	var body struct {
+		RemoteID string `json:"remoteId"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if err := s.store.ResumeQueue(r.Context(), id, body.RemoteID); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+func (s *Server) handleQueueCancel(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "qid")
+	if !ok {
+		return
+	}
+	if err := s.store.CancelQueue(r.Context(), id); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

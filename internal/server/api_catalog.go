@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/h-wb/sento/internal/store"
 	"net/http"
+	"strconv"
 )
 
 func (s *Server) handleListTargets(w http.ResponseWriter, r *http.Request) {
@@ -323,6 +324,95 @@ func (s *Server) handleResetUnit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.library.Refresh(r.Context(), id); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleEditionOverview(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	data, err := s.library.EditionOverview(r.Context(), id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, data)
+}
+func (s *Server) handleUnitPage(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	tid, ok := pathID(w, r, "tid")
+	if !ok {
+		return
+	}
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	data, err := s.library.TargetPage(r.Context(), id, tid, page, r.URL.Query().Get("filter"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, data)
+}
+func (s *Server) handleBulkMonitor(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	tid, ok := pathID(w, r, "tid")
+	if !ok {
+		return
+	}
+	var body struct {
+		WorkIDs   []int64 `json:"workIds"`
+		Monitored bool    `json:"monitored"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if err := s.store.BulkMonitor(r.Context(), id, tid, body.WorkIDs, body.Monitored); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
+	sid, _ := strconv.ParseInt(r.URL.Query().Get("seriesId"), 10, 64)
+	data, err := s.store.ReviewItems(r.Context(), sid)
+	respondList(w, data, err)
+}
+
+func (s *Server) handleFileFacts(w http.ResponseWriter, r *http.Request) {
+	sid, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	fid, ok := pathID(w, r, "fid")
+	if !ok {
+		return
+	}
+	var p store.AssetFactPatch
+	if !decodeBody(w, r, &p) {
+		return
+	}
+	if err := s.store.CorrectFileFacts(r.Context(), sid, fid, p); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+func (s *Server) handleCheckFiles(w http.ResponseWriter, r *http.Request) {
+	sid, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	if err := s.store.CheckFilePresence(r.Context(), sid); err != nil {
 		writeErr(w, err)
 		return
 	}

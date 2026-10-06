@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/h-wb/sento/internal/apperr"
-	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/match"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
@@ -338,10 +337,6 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 		}
 		run.priorities[[2]string{st.providerID, st.entryID}] = st.eff.Priority
 	}
-	run.wanted, run.collections, err = s.wantedSlots(ctx, seriesID, searchLedger, target)
-	if err != nil {
-		return nil, err
-	}
 	if run.blocked, err = s.store.BlockedKeys(ctx); err != nil {
 		return nil, err
 	}
@@ -481,75 +476,4 @@ func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, sear
 		return result.Candidates[i].Score > result.Candidates[j].Score
 	})
 	return result, nil
-}
-
-// wantedSlots computes the wanted slot sets for a ledger:
-// collectionID → slot set, over the collections of the ledger's ctype.
-func (s *SearchService) wantedSlots(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot) (map[int64]map[int64]bool, []store.Collection, error) {
-	collections, err := s.store.ListCollections(ctx, seriesID)
-	if err != nil {
-		return nil, nil, err
-	}
-	// A single-slot target forces that slot wanted (re-download works even
-	// when owned). A whole-collection target (Number 0) keeps the real
-	// wanted set, filtered to the collection below.
-	if target != nil && target.Number != 0 {
-		return map[int64]map[int64]bool{target.CollectionID: {target.Number: true}}, collections, nil
-	}
-	filterTarget := func(w map[int64]map[int64]bool) map[int64]map[int64]bool {
-		if target == nil {
-			return w
-		}
-		return map[int64]map[int64]bool{target.CollectionID: w[target.CollectionID]}
-	}
-
-	links, err := s.store.SlotLinks(ctx, seriesID)
-	if err != nil {
-		return nil, nil, err
-	}
-	pending, err := s.store.PendingSlotKeys(ctx, seriesID)
-	if err != nil {
-		return nil, nil, err
-	}
-	wanted := map[int64]map[int64]bool{}
-	add := func(colID, number int64) {
-		if wanted[colID] == nil {
-			wanted[colID] = map[int64]bool{}
-		}
-		wanted[colID][number] = true
-	}
-
-	if searchLedger == LedgerVolume {
-		for _, col := range collections {
-			if !col.Monitored || col.Type != "volume" {
-				continue
-			}
-			works, err := s.store.ListWorks(ctx, col.ID)
-			if err != nil {
-				return nil, nil, err
-			}
-			for _, slot := range ledger.BuildVolumeSlots(col, works, links, nil, time.Now()) {
-				if slot.Wanted && !pending[store.SlotKey("volume", col.ID, slot.Number)] {
-					add(col.ID, slot.Number)
-				}
-			}
-		}
-		return filterTarget(wanted), collections, nil
-	}
-
-	series, err := s.store.GetSeries(ctx, seriesID)
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, col := range collections {
-		if !col.Monitored || col.Type != "chapter" {
-			continue
-		}
-		for _, slot := range ledger.BuildChapterSlots(col, series.TotalChapters, links, nil) {
-			if slot.Wanted && !pending[store.SlotKey("chapter", col.ID, slot.Number)] {
-				add(col.ID, slot.Number)
-			}
-		}
-	}
-	return filterTarget(wanted), collections, nil
 }

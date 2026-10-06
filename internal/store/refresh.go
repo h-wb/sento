@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/h-wb/sento/internal/metadata"
-	"strings"
 )
 
 // ReconcileMetadata matches known external identity first. Local editions are
@@ -33,25 +32,25 @@ func (s *Store) ReconcileMetadata(ctx context.Context, seriesID int64, md *metad
 			err = tx.QueryRowContext(ctx, s.q(`SELECT id FROM collections WHERE series_id=? AND custom=FALSE AND edition_name=? AND language=? AND publisher=? AND medium=? AND ctype=? AND (SELECT COUNT(*) FROM collections x WHERE x.series_id=collections.series_id AND x.custom=FALSE AND x.edition_name=collections.edition_name AND x.language=collections.language AND x.publisher=collections.publisher AND x.medium=collections.medium AND x.ctype=collections.ctype AND x.sync_state<>'superseded')=1 AND sync_state<>'superseded' ORDER BY id LIMIT 1`), seriesID, c.EditionName, c.Language, c.Publisher, c.Medium, c.Type).Scan(&cid)
 		}
 		if errors.Is(err, sql.ErrNoRows) {
-			err = tx.QueryRowContext(ctx, s.q(`INSERT INTO collections(series_id,mb_collection_id,edition_name,language,publisher,medium,ctype,monitored,sync_state,raw_json,numbering_source,edition_layout,content_variant) VALUES(?,?,?,?,?,?,?,FALSE,'linked',?,'catalog',?,?) RETURNING id`), seriesID, c.ProviderID, c.EditionName, c.Language, c.Publisher, c.Medium, c.Type, string(c.RawJSON), metadata.EditionLayout(c.EditionName), metadata.ContentVariant(c.EditionName)).Scan(&cid)
+			err = tx.QueryRowContext(ctx, s.q(`INSERT INTO collections(series_id,mb_collection_id,edition_name,language,publisher,medium,ctype,sync_state,raw_json,numbering_source,edition_traits,content_variant) VALUES(?,?,?,?,?,?,?,'linked',?,'catalog',?,?) RETURNING id`), seriesID, c.ProviderID, c.EditionName, c.Language, c.Publisher, c.Medium, c.Type, string(c.RawJSON), metadata.TraitsJSON(metadata.EditionTraits(c.EditionName)), metadata.ContentVariant(c.EditionName)).Scan(&cid)
 		} else if err == nil {
 			var raw, oldLanguage, oldMedium, oldLayout, oldVariant string
-			if err = tx.QueryRowContext(ctx, s.q(`SELECT overrides_json,language,medium,edition_layout,content_variant FROM collections WHERE id=?`), cid).Scan(&raw, &oldLanguage, &oldMedium, &oldLayout, &oldVariant); err != nil {
+			if err = tx.QueryRowContext(ctx, s.q(`SELECT overrides_json,language,medium,edition_traits,content_variant FROM collections WHERE id=?`), cid).Scan(&raw, &oldLanguage, &oldMedium, &oldLayout, &oldVariant); err != nil {
 				return err
 			}
 			overrides := map[string]json.RawMessage{}
 			_ = json.Unmarshal([]byte(raw), &overrides)
-			layout, variant := metadata.EditionLayout(c.EditionName), metadata.ContentVariant(c.EditionName)
-			if layout == "standard" && !strings.Contains(strings.ToLower(c.EditionName), "standard") {
+			layout, variant := metadata.TraitsJSON(metadata.EditionTraits(c.EditionName)), metadata.ContentVariant(c.EditionName)
+			if layout == "[]" {
 				layout = oldLayout
 			}
-			if variant == "original" && !strings.Contains(strings.ToLower(c.EditionName), "original") {
+			if variant == "unknown" {
 				variant = oldVariant
 			}
 			identityChanged := false
-			for k, v := range map[string]any{"edition_name": c.EditionName, "language": c.Language, "publisher": c.Publisher, "medium": c.Medium, "ctype": c.Type, "edition_layout": layout, "content_variant": variant} {
+			for k, v := range map[string]any{"edition_name": c.EditionName, "language": c.Language, "publisher": c.Publisher, "medium": c.Medium, "ctype": c.Type, "edition_traits": layout, "content_variant": variant} {
 				if _, ok := overrides[k]; !ok {
-					old := map[string]string{"language": oldLanguage, "medium": oldMedium, "edition_layout": oldLayout, "content_variant": oldVariant}
+					old := map[string]string{"language": oldLanguage, "medium": oldMedium, "edition_traits": oldLayout, "content_variant": oldVariant}
 					if before, strong := old[k]; strong && before != v {
 						identityChanged = true
 					}

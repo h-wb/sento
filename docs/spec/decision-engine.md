@@ -23,7 +23,7 @@ Triggered by:
 |---|---|
 | Interactive search (UI, per slot / per series) | chosen slots; returns *all* candidates incl. rejected, with reasons |
 | Automatic wanted sweep (§10 spec.md, with backoff) | all wanted slots of a series, batched |
-| New-chapter event (source check raised upperBound) | the new chapter slots |
+| Accepted individual source chapter observation | the new chapter slots |
 | Volume release-date trigger | the released volume slot |
 | Manual force-grab | bypasses soft rules (see §7) |
 
@@ -96,51 +96,14 @@ when it covers more wanted slots than any single.
 
 ## 5. Release profiles
 
-One entity, assignable per series; an instance **default profile** applies
-otherwise. No quality *ladder* in v1 (no upgrades, D5); the profile is
-filters + scores:
-
-```yaml
-name: default
-volume:
-  protocols: [torrent, source]        # both eligible; order = preference bonus
-  size_mb: {min: 20, max: 1500}       # per volume
-  min_seeders: 1
-  delay_minutes: 0                    # wait before auto-grab of newly seen release
-chapter:
-  protocols: [source, torrent]
-  size_mb: {min: 2, max: 200}
-  min_seeders: 1
-  delay_minutes: 0
-terms:
-  block: []                           # hard reject
-  require: []                         # hard require (empty = off)
-  scored: [{pattern: "(Digital)", score: 100}, …]
-scanlators:
-  preferred: []                       # ranked
-  blocked: []                         # hard reject
-sources:
-  priority: []                        # ranked source ids; unlisted = 0
-weights: {…}                          # the §4 table, overridable
-```
-
-Forward-compat note: post-v1 upgrades (roadmap #1) add ranked *quality
-groups* + cutoff to this same entity; nothing in v1 storage precludes it.
+Profiles inherit version → edition → series → instance default. They contain custom-format scores, hard required conditions, soft score/size/seed gates, protocol preferences, and optional upgrade thresholds. Upgrades compare current per-file facts under the current profile, respect pins, and retain earlier copies. See [profiles and acquisition state](../domain/profiles-ledger.md) for matching semantics.
 
 ## 6. Queue interaction & failure handling
 
-- A grabbed candidate creates a `QueueItem` holding its expected slot set;
-  those slots become **pending** (excluded from sweeps and other grabs).
-- **Torrent failures**: stalled beyond `stalled_timeout` (default 60 min)
-  or failed import → blocklist (infohash, reason; permanent until user
-  clears, Sonarr-style) → slots return to wanted → immediate re-search
-  excluding blocklisted.
-- **Source failures**: Suwayomi retries internally (`tries`); on terminal
-  error → blocklist (source, chapterId) for 24 h `[default]` → next
-  candidate (other scanlator/source) considered immediately.
-- **Import failures** (unparseable archive, verification fail): manual
-  import queue + blocklist entry with reason.
-- Per-slot search backoff per spec.md §10 (immediate → decaying to weekly).
+- Reserve target/work pairs transactionally before dispatch. Duplicate active offers attach to the existing job while its plan is mutable.
+- Transient client errors use retry backoff without releasing claims. Uncertain dispatch reconciles a stable provider key; unresolved jobs require attaching a client ID or cancellation, never blind redispatch.
+- Partial or ambiguous imports enter `needs_review`, retain their payload and reservations, and preserve successfully imported files. Explicit retry uses the existing download.
+- Terminal download failures may be blocklisted and release claims. Import ambiguity alone is not a blocklist reason. Cancellation releases claims without deleting remote or local files.
 
 ## 7. Interactive search & force-grab
 
@@ -161,8 +124,7 @@ future scoring tuning.
 
 ## 9. Deferred (post-v1)
 
-- Upgrade engine: quality groups + cutoff + supersede policies
-  (roadmap #1; needs vol↔chapter mapping for cross-ledger upgrades).
+- Cross-edition replacement and destructive retention policies. Score-based upgrades within an edition are implemented.
 - RSS-driven passive decisions (roadmap #4) — same funnel, push-fed.
 - Learned group/source reliability scores from import history.
 - Delay-profile sophistication (per-protocol delays, "prefer official

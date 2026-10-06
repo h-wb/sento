@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Alert, Button, Group, Menu, Modal, Stack, Text } from '@mantine/core'
 import { IconDotsVertical, IconTrash } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
@@ -11,7 +11,9 @@ export default function EditionActions({
   collection,
   others,
   run,
+  children,
 }: {
+  children?: ReactNode
   seriesID: number
   collection: Collection
   others: Collection[]
@@ -26,7 +28,7 @@ export default function EditionActions({
       o.publisher === collection.publisher &&
       o.medium === collection.medium &&
       o.type === collection.type &&
-      o.editionLayout === collection.editionLayout &&
+      JSON.stringify(o.editionTraits) === JSON.stringify(collection.editionTraits) &&
       o.contentVariant === collection.contentVariant,
   )
   return (
@@ -43,32 +45,37 @@ export default function EditionActions({
           </Button>
         </Menu.Target>
         <Menu.Dropdown>
-          <Menu.Label>Merge into</Menu.Label>
-          {candidates.map((o) => (
-            <Menu.Item key={o.id} onClick={() => setMerge(o)}>
-              {o.editionName} · {o.language} {o.medium ? `· ${o.medium}` : ''}
-            </Menu.Item>
-          ))}
-          {candidates.length === 0 && <Menu.Item disabled>No matching edition</Menu.Item>}
-          <Menu.Divider />
-          <Menu.Item
-            color="red"
-            leftSection={<IconTrash size={14} />}
-            onClick={() =>
-              confirm({
-                title: 'Remove local edition?',
-                message:
-                  'This removes the edition from your library. Owned files and pending downloads must be unlinked first; files on disk are kept.',
-                label: 'Remove edition',
-                onConfirm: async () => {
-                  await api.deleteCollection(seriesID, collection.id)
-                  run(async () => {}, 'Edition removed')
-                },
-              })
-            }
-          >
-            Remove edition
-          </Menu.Item>
+          {children}
+          {collection.custom && (
+            <>
+              <Menu.Label>Merge into</Menu.Label>
+              {candidates.map((o) => (
+                <Menu.Item key={o.id} onClick={() => setMerge(o)}>
+                  {o.editionName} · {o.language} {o.medium ? `· ${o.medium}` : ''}
+                </Menu.Item>
+              ))}
+              {candidates.length === 0 && <Menu.Item disabled>No matching edition</Menu.Item>}
+              <Menu.Divider />
+              <Menu.Item
+                color="red"
+                leftSection={<IconTrash size={14} />}
+                onClick={() =>
+                  confirm({
+                    title: 'Remove local edition?',
+                    message:
+                      'This removes the edition from your library. Owned files and pending downloads must be unlinked first; files on disk are kept.',
+                    label: 'Remove edition',
+                    onConfirm: async () => {
+                      await api.deleteCollection(seriesID, collection.id)
+                      run(async () => {}, 'Edition removed')
+                    },
+                  })
+                }
+              >
+                Remove edition
+              </Menu.Item>
+            </>
+          )}
         </Menu.Dropdown>
       </Menu>
       {confirmation}
@@ -131,7 +138,7 @@ function MergePreview({
         {p && (
           <>
             <Text size="sm">
-              {p.localUnits.length} units · {p.fileCount} files · {p.localTargets.length} versions
+              {p.localUnits.length} books · {p.fileCount} files · {p.localTargets.length} versions
             </Text>
             {p.localUnits.map((w) => (
               <Text size="xs" key={w.id}>
@@ -151,7 +158,7 @@ function MergePreview({
             {p.pending && <Alert color="orange">Finish pending downloads before merging.</Alert>}
             {p.unmatched.length > 0 && (
               <Alert color="orange">
-                Some units have no unique match. Resolve them before merging.
+                Some books have no unique match. Resolve them before merging.
               </Alert>
             )}
           </>

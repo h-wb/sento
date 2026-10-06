@@ -11,7 +11,6 @@ import (
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/scheduler"
-	"github.com/h-wb/sento/internal/service"
 )
 
 func (s *Server) mountAPI(r chi.Router) {
@@ -22,6 +21,7 @@ func (s *Server) mountAPI(r chi.Router) {
 
 	r.Get("/lookup", s.handleLookup)
 	r.Get("/calendar", s.handleCalendar)
+	r.Get("/review", s.handleReview)
 	r.Delete("/files/{fid}", s.handleDeleteFile)
 	r.Post("/library/import/scan", s.handleImportScan)
 	r.Post("/library/import", s.handleImportFolder)
@@ -55,6 +55,9 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Put("/targets/{tid}", s.handleSaveTarget)
 			r.Delete("/targets/{tid}", s.handleDeleteTarget)
 			r.Get("/target-slots", s.handleTargetSlots)
+			r.Get("/edition-overview", s.handleEditionOverview)
+			r.Get("/targets/{tid}/books", s.handleUnitPage)
+			r.Post("/targets/{tid}/monitor", s.handleBulkMonitor)
 			r.Post("/units", s.handleSaveUnit)
 			r.Put("/units/{uid}", s.handleSaveUnit)
 			r.Delete("/units/{uid}", s.handleDeleteUnit)
@@ -65,6 +68,8 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Put("/coverage/pin", s.handlePinCoverage)
 			r.Put("/unit-monitor", s.handleUnitMonitor)
 			r.Put("/files/{fid}/mapping", s.handleRemapFile)
+			r.Patch("/files/{fid}/facts", s.handleFileFacts)
+			r.Post("/check-files", s.handleCheckFiles)
 			r.Get("/observations", s.handleObservations)
 			r.Post("/observations", s.handleObservations)
 			r.Put("/observations/{oid}", s.handleResolveObservation)
@@ -133,28 +138,7 @@ func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	from := now.AddDate(0, 0, -14).Format("2006-01-02")
 	to := now.AddDate(0, 0, days).Format("2006-01-02")
-	entries, err := s.store.Calendar(r.Context(), from, to)
-	if err == nil {
-		slotsBySeries := map[int64]map[int64][]service.UnitSlot{}
-		for i := range entries {
-			e := &entries[i]
-			slots, exists := slotsBySeries[e.SeriesID]
-			if !exists {
-				slots, err = s.library.TargetSlots(r.Context(), e.SeriesID)
-				if err != nil {
-					break
-				}
-				slotsBySeries[e.SeriesID] = slots
-			}
-			e.Owned = false
-			for _, slot := range slots[e.TargetID] {
-				if slot.Work.ID == e.WorkID {
-					e.Owned = len(slot.FileIDs) > 0
-					break
-				}
-			}
-		}
-	}
+	entries, err := s.library.Calendar(r.Context(), from, to)
 	respondList(w, entries, err)
 }
 

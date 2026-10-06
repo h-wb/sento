@@ -101,9 +101,7 @@ func defaultEditionID(collections []metadata.Collection, lang string) string {
 	return best
 }
 
-// Refresh re-fetches metadata and reconciles it into the store. Collections
-// are matched by descriptor, not provider UUID (D13); slot/file links are
-// never touched.
+// Refresh reconciles provider references and local overrides, preserving stable local IDs.
 func (l *Library) Refresh(ctx context.Context, seriesID int64) error {
 	existing, err := l.store.GetSeries(ctx, seriesID)
 	if err != nil {
@@ -126,7 +124,7 @@ func (l *Library) Refresh(ctx context.Context, seriesID int64) error {
 
 // CreateCollectionParams describes a user-defined collection: volume
 // editions clone numbering from BasedOn or generate 1..Volumes; chapter
-// collections derive slots from total_chapters and take a cutoff.
+// editions start with explicit chapters unless count inference is selected.
 type CreateCollectionParams struct {
 	EditionName string
 	Language    string

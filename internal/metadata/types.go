@@ -5,6 +5,7 @@ package metadata
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 )
 
@@ -91,23 +92,31 @@ type Provider interface {
 	GetWorks(ctx context.Context, seriesID int64) (map[string][]Work, error)
 }
 
-func EditionLayout(name string) string {
+// EditionTraits records only positive evidence. Multiple traits can coexist.
+func EditionTraits(name string) []string {
 	n := strings.ToLower(name)
-	switch {
-	case strings.Contains(n, "omnibus"):
-		return "omnibus"
-	case strings.Contains(n, "box"):
-		return "boxset"
-	case strings.Contains(n, "deluxe"):
-		return "deluxe"
-	default:
-		return "standard"
+	out := []string{}
+	for _, trait := range []struct{ word, value string }{{"box", "boxset"}, {"deluxe", "deluxe"}, {"omnibus", "omnibus"}, {"standard", "standard"}} {
+		if strings.Contains(n, trait.word) {
+			out = append(out, trait.value)
+		}
 	}
+	return out
+}
+func TraitsJSON(traits []string) string {
+	if traits == nil {
+		traits = []string{}
+	}
+	raw, _ := json.Marshal(traits)
+	return string(raw)
 }
 func ContentVariant(name string) string {
 	n := strings.ToLower(name)
 	if strings.Contains(n, "color") || strings.Contains(n, "colour") {
 		return "colored"
 	}
-	return "original"
+	if strings.Contains(n, "original") {
+		return "original"
+	}
+	return "unknown"
 }

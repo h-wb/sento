@@ -10,6 +10,7 @@ import (
 )
 
 type DownloadTarget struct {
+	IncludeExtras  bool   `json:"includeExtras"`
 	ID             int64  `json:"id"`
 	CollectionID   int64  `json:"collectionId"`
 	Name           string `json:"name"`
@@ -22,12 +23,9 @@ type DownloadTarget struct {
 	AcquireUnknown bool   `json:"acquireUnknown"`
 }
 
-const targetColumns = `id,collection_id,name,is_default,monitored,COALESCE(profile_id,0) AS profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown`
+const targetColumns = `id,collection_id,name,is_default,monitored,COALESCE(profile_id,0) AS profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras`
 
 func (s *Store) ListTargets(ctx context.Context, seriesID int64) ([]DownloadTarget, error) {
-	if err := s.EnsureModels(ctx, seriesID); err != nil {
-		return nil, err
-	}
 	return list[DownloadTarget](ctx, s, `SELECT `+targetColumns+` FROM download_targets WHERE collection_id IN(SELECT id FROM collections WHERE series_id=?) ORDER BY collection_id,is_default DESC,id`, seriesID)
 }
 func (s *Store) GetTarget(ctx context.Context, id int64) (*DownloadTarget, error) {
@@ -61,9 +59,22 @@ func (s *Store) SaveTarget(ctx context.Context, seriesID int64, t DownloadTarget
 		prof = t.ProfileID
 	}
 	if t.ID == 0 {
-		id, e := s.insert(ctx, `INSERT INTO download_targets(collection_id,name,monitored,profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown) VALUES(?,?,?,?,?,?,?,?) RETURNING id`, t.CollectionID, t.Name, t.Monitored, prof, t.CutoffNum, t.RequiredGroup, t.AllowUnknown, t.AcquireUnknown)
-		return id, conflict(e, "a collected version already uses this name")
+		tx, e := s.db.BeginTx(ctx, nil)
+		if e != nil {
+			return 0, e
+		}
+		defer func() { _ = tx.Rollback() }()
+		if e = s.lockEditions(ctx, tx, true, c.ID); e != nil {
+			return 0, e
+		}
+		var id int64
+		e = tx.QueryRowContext(ctx, s.q(`INSERT INTO download_targets(collection_id,name,monitored,profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id`), t.CollectionID, t.Name, t.Monitored, prof, t.CutoffNum, t.RequiredGroup, t.AllowUnknown, t.AcquireUnknown, t.IncludeExtras).Scan(&id)
+		if e != nil {
+			return 0, conflict(e, "a collected version already uses this name")
+		}
+		return id, tx.Commit()
 	}
+
 	old, err := s.GetTarget(ctx, t.ID)
 	if err != nil {
 		return 0, err
@@ -75,13 +86,23 @@ func (s *Store) SaveTarget(ctx context.Context, seriesID int64, t DownloadTarget
 	if err != nil {
 		return 0, err
 	}
-	if pending && (t.Name != old.Name || t.ProfileID != old.ProfileID || t.CutoffNum != old.CutoffNum || t.RequiredGroup != old.RequiredGroup || t.AllowUnknown != old.AllowUnknown || t.AcquireUnknown != old.AcquireUnknown) {
+	if pending && (t.Name != old.Name || t.ProfileID != old.ProfileID || t.CutoffNum != old.CutoffNum || t.RequiredGroup != old.RequiredGroup || t.AllowUnknown != old.AllowUnknown || t.AcquireUnknown != old.AcquireUnknown || t.IncludeExtras != old.IncludeExtras) {
 		return 0, apperr.Conflictf("finish pending downloads before changing acquisition versions")
 	}
-	err = s.touch(ctx, `UPDATE download_targets SET name=?,monitored=?,profile_id=?,cutoff_num=?,required_group=?,allow_unknown=?,acquire_unknown=? WHERE id=?`, t.Name, t.Monitored, prof, t.CutoffNum, t.RequiredGroup, t.AllowUnknown, t.AcquireUnknown, t.ID)
-	if err == nil && old.IsDefault {
-		err = s.touch(ctx, `UPDATE collections SET monitored=?,cutoff_num=? WHERE id=?`, t.Monitored, t.CutoffNum, c.ID)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
 	}
+	defer func() { _ = tx.Rollback() }()
+	monitorOnly := t.Name == old.Name && t.ProfileID == old.ProfileID && t.CutoffNum == old.CutoffNum && t.RequiredGroup == old.RequiredGroup && t.AllowUnknown == old.AllowUnknown && t.AcquireUnknown == old.AcquireUnknown && t.IncludeExtras == old.IncludeExtras
+	if err = s.lockEditions(ctx, tx, monitorOnly, c.ID); err != nil {
+		return 0, err
+	}
+	_, err = tx.ExecContext(ctx, s.q(`UPDATE download_targets SET name=?,monitored=?,profile_id=?,cutoff_num=?,required_group=?,allow_unknown=?,acquire_unknown=?,include_extras=? WHERE id=?`), t.Name, t.Monitored, prof, t.CutoffNum, t.RequiredGroup, t.AllowUnknown, t.AcquireUnknown, t.IncludeExtras, t.ID)
+	if err == nil {
+		err = tx.Commit()
+	}
+
 	return t.ID, err
 }
 func (s *Store) DeleteTarget(ctx context.Context, seriesID, id int64) error {
@@ -107,24 +128,36 @@ func (s *Store) DeleteTarget(ctx context.Context, seriesID, id int64) error {
 		return apperr.Conflictf("collection has pending downloads")
 	}
 	// Target deletion drops references, never assets or files.
-	return s.touch(ctx, `DELETE FROM download_targets WHERE id=?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = s.lockEditions(ctx, tx, false, c.ID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM download_targets WHERE id=?`), id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 type AssetFacts struct {
-	Title       string          `json:"title,omitempty"`
-	Site        string          `json:"site,omitempty"`
-	Protocol    string          `json:"protocol,omitempty"`
-	Flags       map[string]bool `json:"flags,omitempty"`
-	FactsKnown  bool            `json:"factsKnown"`
-	Language    string          `json:"language,omitempty"`
-	Group       string          `json:"group,omitempty"`
-	Format      string          `json:"format,omitempty"`
-	FormatScore int             `json:"formatScore"`
-	Resolution  int             `json:"resolution"`
-	Revision    int             `json:"revision"`
-	Digital     bool            `json:"digital"`
-	ProfileID   int64           `json:"profileId,omitempty"`
-	ReleaseKey  string          `json:"releaseKey,omitempty"`
+	Sources     map[string]string `json:"sources,omitempty"`
+	Title       string            `json:"title,omitempty"`
+	Site        string            `json:"site,omitempty"`
+	Protocol    string            `json:"protocol,omitempty"`
+	Flags       map[string]bool   `json:"flags,omitempty"`
+	FactsKnown  bool              `json:"factsKnown"`
+	Language    string            `json:"language,omitempty"`
+	Group       string            `json:"group,omitempty"`
+	Format      string            `json:"format,omitempty"`
+	FormatScore int               `json:"formatScore"`
+	Resolution  int               `json:"resolution"`
+	Revision    int               `json:"revision"`
+	Digital     bool              `json:"digital"`
+	ProfileID   int64             `json:"profileId,omitempty"`
+	ReleaseKey  string            `json:"releaseKey,omitempty"`
 }
 type AssetCoverage struct {
 	Evidence string `json:"evidence"`
@@ -136,10 +169,17 @@ type AssetCoverage struct {
 }
 
 func (s *Store) Coverage(ctx context.Context, seriesID int64) ([]AssetCoverage, error) {
-	return list[AssetCoverage](ctx, s, `SELECT a.file_id,a.target_id,a.work_id,a.verified,a.pinned,a.evidence FROM asset_coverage a JOIN files f ON f.id=a.file_id WHERE f.series_id=?`, seriesID)
+	return list[AssetCoverage](ctx, s, `SELECT c.file_id,t.id AS target_id,c.work_id,c.verified,COALESCE(a.pinned,FALSE) AS pinned,c.evidence
+ FROM asset_contents c JOIN works w ON w.id=c.work_id JOIN download_targets t ON t.collection_id=w.collection_id
+ JOIN files f ON f.id=c.file_id LEFT JOIN asset_coverage a ON a.file_id=c.file_id AND a.work_id=c.work_id AND a.target_id=t.id
+ WHERE f.series_id=? AND COALESCE(a.selected,TRUE)=TRUE`, seriesID)
 }
 func (s *Store) PinCoverage(ctx context.Context, seriesID int64, a AssetCoverage) error {
-	return s.touch(ctx, `UPDATE asset_coverage SET pinned=? WHERE file_id=? AND target_id=? AND work_id=? AND file_id IN(SELECT id FROM files WHERE series_id=?)`, a.Pinned, a.FileID, a.TargetID, a.WorkID, seriesID)
+	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,pinned)
+ SELECT c.file_id,t.id,c.work_id,? FROM asset_contents c JOIN works w ON w.id=c.work_id JOIN download_targets t ON t.collection_id=w.collection_id JOIN files f ON f.id=c.file_id
+ WHERE c.file_id=? AND t.id=? AND c.work_id=? AND f.series_id=?
+ ON CONFLICT(file_id,target_id,work_id) DO UPDATE SET pinned=excluded.pinned`), a.Pinned, a.FileID, a.TargetID, a.WorkID, seriesID)
+	return err
 }
 func (s *Store) FileFacts(ctx context.Context, id int64) (AssetFacts, error) {
 	var f AssetFacts
@@ -189,6 +229,22 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Exp
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	cids := []int64{}
+	for _, sl := range slots {
+		cids = append(cids, sl.CollectionID)
+	}
+	if err = s.lockEditions(ctx, tx, true, cids...); err != nil {
+		return err
+	}
+	for _, sl := range slots {
+		var valid int
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), sl.WorkID, sl.TargetID, sl.CollectionID, seriesID).Scan(&valid); err != nil {
+			return err
+		}
+		if valid != 1 {
+			return apperr.Invalidf("book mapping changed; reopen this file to review it")
+		}
+	}
 	pins := map[string]bool{}
 	rows, err := tx.QueryContext(ctx, s.q(`SELECT target_id,work_id,pinned FROM asset_coverage WHERE file_id=?`), fileID)
 	if err != nil {
@@ -211,10 +267,22 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Exp
 	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_coverage WHERE file_id=?`), fileID); err != nil {
 		return err
 	}
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_contents WHERE file_id=?`), fileID); err != nil {
+		return err
+	}
 	for _, sl := range slots {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,verified,evidence) VALUES(?,?,TRUE,'manual') ON CONFLICT DO NOTHING`), fileID, sl.WorkID); err != nil {
+			return err
+		}
 		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,pinned,evidence) VALUES(?,?,?,? ,'manual') ON CONFLICT DO NOTHING`), fileID, sl.TargetID, sl.WorkID, pins[SlotKey("unit", sl.TargetID, sl.WorkID)]); err != nil {
 			return err
 		}
+	}
+	// Explicit mapping choices may exclude existing versions; future versions can still reuse content.
+	if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,selected)
+ SELECT c.file_id,t.id,c.work_id,FALSE FROM asset_contents c JOIN works w ON w.id=c.work_id JOIN download_targets t ON t.collection_id=w.collection_id
+ WHERE c.file_id=? ON CONFLICT DO NOTHING`), fileID); err != nil {
+		return err
 	}
 	if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=FALSE,unrequested=? WHERE id=?`), len(slots) == 0, fileID); err != nil {
 		return err
@@ -268,4 +336,74 @@ func (f *AssetFacts) Scan(src any) error {
 	default:
 		return fmt.Errorf("cannot scan asset facts from %T", src)
 	}
+}
+
+func (s *Store) BulkMonitor(ctx context.Context, sid, tid int64, ids []int64, monitored bool) error {
+	if len(ids) == 0 || len(ids) > 500 {
+		return apperr.Invalidf("select between 1 and 500 books")
+	}
+	t, err := s.GetTarget(ctx, tid)
+	if err != nil {
+		return err
+	}
+	c, err := s.GetCollection(ctx, t.CollectionID)
+	if err != nil {
+		return err
+	}
+	if c.SeriesID != sid {
+		return ErrNotFound
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = s.lockEditions(ctx, tx, true, c.ID); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		var count int
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works WHERE id=? AND collection_id=?`), id, c.ID).Scan(&count); err != nil {
+			return err
+		}
+		if count != 1 {
+			return apperr.Invalidf("book belongs to another edition")
+		}
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO unit_overrides(target_id,work_id,monitored) VALUES(?,?,?) ON CONFLICT(target_id,work_id) DO UPDATE SET monitored=excluded.monitored`), tid, id, monitored); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+type AssetFactPatch struct {
+	Language *string `json:"language,omitempty"`
+	Group    *string `json:"group,omitempty"`
+}
+
+func (s *Store) CorrectFileFacts(ctx context.Context, sid, fid int64, p AssetFactPatch) error {
+	f, err := get[File](ctx, s, `SELECT id,series_id,facts_json FROM files WHERE id=?`, fid)
+	if err != nil {
+		return err
+	}
+	if f.SeriesID != sid {
+		return ErrNotFound
+	}
+	facts := f.Facts
+	if facts.Sources == nil {
+		facts.Sources = map[string]string{}
+	}
+	if p.Language != nil {
+		facts.Language = strings.TrimSpace(*p.Language)
+		facts.Sources["language"] = "manual"
+	}
+	if p.Group != nil {
+		facts.Group = strings.TrimSpace(*p.Group)
+		facts.Sources["group"] = "manual"
+	}
+	raw, err := json.Marshal(facts)
+	if err != nil {
+		return err
+	}
+	return s.touch(ctx, `UPDATE files SET facts_json=? WHERE id=?`, string(raw), fid)
 }

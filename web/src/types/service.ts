@@ -69,6 +69,33 @@ export interface ConnectionTest {
 }
 
 //////////
+// source: edition_view.go
+
+export interface TargetSummary {
+  targetId: number /* int64 */;
+  collectionId: number /* int64 */;
+  total: number /* int */;
+  owned: number /* int */;
+  onDisk: number /* int */;
+  wanted: number /* int */;
+  review: number /* int */;
+  profileName: string;
+  profileSource: string;
+}
+export interface EditionOverview {
+  targets: TargetSummary[];
+  booksOnDisk: number /* int */;
+  wantedCopies: number /* int */;
+  reviewFiles: number /* int */;
+}
+export interface UnitPage {
+  items: UnitSlot[];
+  total: number /* int */;
+  page: number /* int */;
+  pages: number /* int */;
+}
+
+//////////
 // source: extensions.go
 
 /**
@@ -153,7 +180,7 @@ export interface AddSeriesRequest {
 /**
  * CreateCollectionParams describes a user-defined collection: volume
  * editions clone numbering from BasedOn or generate 1..Volumes; chapter
- * collections derive slots from total_chapters and take a cutoff.
+ * editions start with explicit chapters unless count inference is selected.
  */
 export interface CreateCollectionParams {
   EditionName: string;
@@ -367,6 +394,9 @@ export interface SeriesIndexerView extends IndexerView {
 // source: targets.go
 
 export interface UnitSlot {
+  onDiskFileIds: number /* int64 */[];
+  reason: string;
+  currentScore: number /* int */;
   work: Work;
   targetId: number /* int64 */;
   monitored: boolean;

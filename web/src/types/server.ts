@@ -186,6 +186,7 @@ export interface NamingPreview {
  * BindingPatch is PUT /series/{id}/bindings/{bid}.
  */
 export interface BindingPatch {
+  trustChapters?: boolean;
   collectionId?: number /* int64 */;
   state: 'active' | 'disabled';
 }

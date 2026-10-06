@@ -158,7 +158,7 @@ Unchecked entries are not written yet.
 
 - [ ] `flows/01-startup.md` — boot & wiring: config → db → registry → server → scheduler
 - [ ] `flows/02-add-series.md` — add a series: MangaBaka fetch → store → collections → slot derivation
-- [ ] `flows/03-refresh.md` — metadata refresh & reconcile (descriptor matching, D13)
+- [ ] `flows/03-refresh.md` — metadata refresh & reconcile (provider references, local overrides, and stale-state gating)
 - [ ] `flows/04-search.md` — search & decision engine: providers → parse → funnel → score
 - [ ] `flows/05-grab.md` — grab: slot-coverage greedy selection → provider grab → queue item
 - [ ] `flows/06-import.md` — queue processing & import: poll → payload → CBZ/ComicInfo → slot links

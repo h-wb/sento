@@ -12,6 +12,14 @@ func (s *SearchService) observeCandidates(ctx context.Context, run *searchRun, c
 	if run.ledger != LedgerChapter {
 		return
 	}
+	bindings, err := s.store.ListBindings(ctx, run.seriesID)
+	if err != nil {
+		return
+	}
+	trusted := map[int64]bool{}
+	for _, b := range bindings {
+		trusted[b.ID] = b.TrustChapters && b.State == "active"
+	}
 	count := 0
 	for _, cand := range cands {
 		if cand.Source == nil {
@@ -47,7 +55,10 @@ func (s *SearchService) observeCandidates(ctx context.Context, run *searchRun, c
 				return
 			}
 			count++
-			_ = s.store.ObserveUnit(ctx, run.seriesID, store.UnitObservation{CollectionID: cid, Source: cand.Source.SourceID, ExternalKey: cand.Source.ChapterKey, Label: mediafile.RenderPlainNum(int64(r.From)), Number: int64(r.From)})
+			o := store.UnitObservation{CollectionID: cid, Source: cand.Source.SourceID, ExternalKey: cand.Source.ChapterKey, Label: mediafile.RenderPlainNum(int64(r.From)), Number: int64(r.From)}
+			if err := s.store.ObserveUnit(ctx, run.seriesID, o); err == nil && trusted[cand.Source.BindingID] {
+				_ = s.store.AcceptTrustedObservation(ctx, run.seriesID, o)
+			}
 		}
 	}
 }

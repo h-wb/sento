@@ -1,26 +1,6 @@
-# Profiles & the ledger
+# Profiles and acquisition state
 
-> Historical walkthrough of the original numbered ledger. The current acquisition model uses stable units and collected versions; see [Editions, units, collected versions, and files](collections.md). The numbered views and legacy ownership tables have been removed; this document records the earlier design.
-
-> Tour session 2 — covers `internal/profile` and `internal/ledger`.
-> Specs: [decision-engine.md §5](../spec/decision-engine.md),
-> [spec.md §4.2](../spec/spec.md). Both are pure domain (no I/O); the store
-> persists, the service validates, the funnel/UI consume.
-
-## Why these two together
-
-They are the two halves of "what should I grab?":
-
-- **`ledger`** answers *what do I want?* — derives the list of numbered
-  slots (volumes, chapters) a series should own, and marks which are
-  still missing (`Wanted`). Pure function of stored metadata + file links.
-- **`profile`** answers *which release is good enough?* — a Sonarr-style
-  custom-format + scoring model plus the per-ledger funnel knobs. Pure
-  predicate/score over a candidate.
-
-The funnel (session 6) sits between them: ledger says slot 5 is wanted,
-the providers return candidates, profile scores them, the best covering
-candidate gets grabbed.
+Profiles decide which releases are acceptable; the shared service ledger decides which books need a copy. Both search and the UI use the same evaluation. See [the edition model](collections.md) for identity and recovery rules.
 
 ## `internal/profile`
 
@@ -69,58 +49,14 @@ A `Profile` does two jobs:
    profiles existed: volumes 20–1500 MB / prefer torrent, chapters
    2–200 MB / prefer source.
 
-## `internal/ledger`
+## Shared ledger
 
-The one architectural invariant: **slots are computed, never stored**.
-The DB holds metadata (collections, works), file↔slot links, and
-monitoring overrides; the ledger is a pure function of those. This makes
-refresh/reconcile cheap and conflict-free.
+`internal/service/targets.go` loads works, acquisition targets, per-book overrides, verified file contents, selections/pins, stored presence, pending jobs, and effective profiles in batches. `targetSlots` evaluates each target/work pair. GETs never initialize chapters or check paths.
 
-### `BuildVolumeSlots` — one per collection
+Monitoring is gated by the series, parent edition, work, target, extras rule, exclusive chapter cutoff, and individual overrides. Retired or catalog-missing publications stop automation. Availability stays released, upcoming, or unknown; unknown dates follow the target’s explicit policy.
 
-A volume slot per `count_type=main` work (extras exposed but unmonitored
-by default, D11). Three derived booleans per slot:
+On-disk contents are independent of fulfillment. A confirmed archive can satisfy multiple targets of the same edition when it meets each target’s language, group, and profile requirements. Policy changes may leave an existing copy unsatisfactory. Pins prevent upgrades; changing or deleting collection preferences does not delete knowledge of an archive’s contents.
 
-- **Monitored** = collection monitored AND `count_type==main`, unless an
-  explicit per-slot `override` says otherwise.
-- **Released** — the tricky one, because MangaBaka dating is patchy. A
-  dated work is released iff its date ≤ today; an *undated* work is
-  released iff the collection has no dates at all, or its sequence sits
-  at/below the highest *dated* sequence (spec.md §4.2). So undated early
-  volumes count as released, undated volumes beyond the dated frontier
-  don't.
-- **Wanted** = monitored AND released AND no files linked. This is the
-  output the funnel searches for.
+Pending downloads and jobs awaiting review keep reservations. Storage uncertainty blocks acquisition. Wanted therefore means the book is collectible, available under policy, lacks a satisfactory copy (or qualifies for an enabled upgrade), and has no pending claim or unresolved storage/content issue.
 
-### `BuildChapterSlots` — per series, not per collection
-
-Slots `1..totalChapters`, integer-only, from MangaBaka `total_chapters`
-*only* — sources never feed the chapter bound (D7-rev/D15). Monitoring is
-**cutoff-based** (D6): a slot is monitored iff the collection is monitored
-and its number is *above* `CutoffNum` (cutoff itself excluded — "monitor
-from N onward"). Overrides apply on top. Chapter slots have no `Released`
-field — a chapter's existence implies release, so Wanted = monitored AND
-unowned. Zero total → nil (no slots).
-
-`SlotKey(ledger, collectionID, number)` (`"volume/7/500"`) is the join key
-between a slot and its linked files — the same string the importer writes
-when it links a file.
-
-## Session log
-
-- [x] profile walkthrough — Sonarr matching semantics (OR-within-type,
-      AND-across-types, required-is-hard, negate-inverts, empty-matches-
-      nothing), condition `test` dispatch, the Input-is-parsed-facts layer
-      boundary, Validate gatekeeping, scores + per-ledger funnel knobs
-      (preferred protocol = +200 bonus not a filter).
-- [x] ledger walkthrough — computed-not-stored invariant; BuildVolumeSlots
-      (monitored/released/wanted, the undated-release frontier heuristic);
-      BuildChapterSlots (cutoff-based D6, total_chapters-only D15, no
-      Released field); SlotKey as the slot↔files join.
-- [x] verified against all 12 tests (green); no bugs. One efficiency lead
-      logged: `matchRegexp` recompiles per call (hot in the funnel) —
-      improvements.md, deferred to session 6.
-
-**Session 2 complete.** profile + ledger fully toured. Both pure, clean,
-well-tested; the "what do I want / is this good enough" pair the funnel
-joins in session 6.
+`internal/ledger` retains small value types/projections for existing calendar/API consumers. Canonical acquisition identity is `(target ID, work ID)`, never the displayed volume/chapter number.

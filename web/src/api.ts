@@ -1,3 +1,5 @@
+import type { ReviewItem } from './types/store'
+import type { EditionOverview, UnitPage } from './types/service'
 import type {
   DownloadTarget,
   Work,
@@ -138,6 +140,31 @@ export const api = {
       body: JSON.stringify({ targetId, workId, monitored }),
     }),
   targets: (id: number) => request<DownloadTarget[]>(`/series/${id}/targets`),
+  correctFileFacts: (id: number, fid: number, patch: { language?: string; group?: string }) =>
+    request<void>(`/series/${id}/files/${fid}/facts`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  checkFiles: (id: number) => request<void>(`/series/${id}/check-files`, { method: 'POST' }),
+  editionOverview: (id: number) => request<EditionOverview>(`/series/${id}/edition-overview`),
+  targetPage: (id: number, target: number, page: number, filter: string) =>
+    request<UnitPage>(
+      `/series/${id}/targets/${target}/books?page=${page}&filter=${encodeURIComponent(filter)}`,
+    ),
+  bulkMonitor: (id: number, target: number, workIds: number[], monitored: boolean) =>
+    request<void>(`/series/${id}/targets/${target}/monitor`, {
+      method: 'POST',
+      body: JSON.stringify({ workIds, monitored }),
+    }),
+  trustBinding: (id: number, bid: number, trustChapters: boolean) =>
+    request<void>(`/series/${id}/bindings/${bid}`, {
+      method: 'PUT',
+      body: JSON.stringify({ trustChapters }),
+    }),
+  review: (seriesId = 0) => request<ReviewItem[]>(`/review?seriesId=${seriesId}`),
+  retryQueue: (id: number, remoteId = '') =>
+    request<void>(`/queue/${id}/retry`, { method: 'POST', body: JSON.stringify({ remoteId }) }),
+  cancelQueue: (id: number) => request<void>(`/queue/${id}/cancel`, { method: 'POST' }),
   targetSlots: (id: number) => request<Record<string, UnitSlot[]>>(`/series/${id}/target-slots`),
   saveTarget: (id: number, target: DownloadTarget) =>
     request<DownloadTarget>(`/series/${id}/targets${target.id ? `/${target.id}` : ''}`, {

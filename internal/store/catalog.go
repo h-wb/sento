@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/georgysavva/scany/v2/sqlscan"
 	"strconv"
 	"strings"
 	"time"
@@ -71,11 +72,6 @@ func (s *Store) EnsureModels(ctx context.Context, seriesID int64) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	for _, c := range cols {
-		if c.EditionLayout == "" || c.ContentVariant == "" {
-			if _, err = tx.ExecContext(ctx, s.q(`UPDATE collections SET edition_layout=?,content_variant=? WHERE id=?`), orDefault(c.EditionLayout, metadata.EditionLayout(c.EditionName)), orDefault(c.ContentVariant, metadata.ContentVariant(c.EditionName)), c.ID); err != nil {
-				return err
-			}
-		}
 		if !c.Custom && c.SyncState == "local" {
 			if _, err = tx.ExecContext(ctx, s.q(`UPDATE collections SET sync_state='linked' WHERE id=?`), c.ID); err != nil {
 				return err
@@ -133,29 +129,32 @@ func (s *Store) SaveWork(ctx context.Context, seriesID int64, w Work) (int64, er
 	if w.CountType != "main" && w.CountType != "extra" && w.CountType != "other" {
 		return 0, apperr.Invalidf("count type must be main, extra or other")
 	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = s.lockEditions(ctx, tx, false, c.ID); err != nil {
+		return 0, err
+	}
 	if w.ID == 0 {
-		return s.insert(ctx, `INSERT INTO works(collection_id,sequence_num,sequence_string,count_type,release_date,isbn,pages,number_known,revision) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id`, w.CollectionID, w.SequenceNum, w.SequenceStr, w.CountType, w.ReleaseDate, w.ISBN, w.Pages, w.NumberKnown, w.Revision)
+		var id int64
+		err = tx.QueryRowContext(ctx, s.q(`INSERT INTO works(collection_id,sequence_num,sequence_string,count_type,release_date,isbn,pages,number_known,revision) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id`), w.CollectionID, w.SequenceNum, w.SequenceStr, w.CountType, w.ReleaseDate, w.ISBN, w.Pages, w.NumberKnown, w.Revision).Scan(&id)
+		if err != nil {
+			return 0, err
+		}
+		return id, tx.Commit()
 	}
-	old, err := s.GetWork(ctx, w.ID)
-	if err != nil {
+	var old Work
+	if err = sqlscan.Get(ctx, tx, &old, s.q(`SELECT `+workColumns+` FROM works WHERE id=? AND collection_id=?`), w.ID, c.ID); err != nil {
 		return 0, err
 	}
-	if old.CollectionID != c.ID {
-		return 0, ErrNotFound
-	}
-	pending, err := s.CollectionPending(ctx, c.ID)
-	if err != nil {
-		return 0, err
-	}
-	if pending {
-		return 0, apperr.Conflictf("finish or cancel pending downloads before changing units")
-	}
-	previous, err := get[string](ctx, s, `SELECT overrides_json FROM works WHERE id=?`, w.ID)
-	if err != nil {
+	var previous string
+	if err = tx.QueryRowContext(ctx, s.q(`SELECT overrides_json FROM works WHERE id=?`), w.ID).Scan(&previous); err != nil {
 		return 0, err
 	}
 	local := map[string]any{}
-	if err = json.Unmarshal([]byte(*previous), &local); err != nil {
+	if err = json.Unmarshal([]byte(previous), &local); err != nil {
 		return 0, err
 	}
 	before := map[string]any{"sequence_num": old.SequenceNum, "sequence_string": old.SequenceStr, "count_type": old.CountType, "release_date": old.ReleaseDate, "isbn": old.ISBN, "pages": old.Pages, "number_known": old.NumberKnown, "revision": old.Revision}
@@ -166,8 +165,11 @@ func (s *Store) SaveWork(ctx context.Context, seriesID int64, w Work) (int64, er
 		}
 	}
 	overrides, _ := json.Marshal(local)
-	err = s.touch(ctx, `UPDATE works SET sequence_num=?,sequence_string=?,count_type=?,release_date=?,isbn=?,pages=?,number_known=?,revision=?,overrides_json=? WHERE id=?`, w.SequenceNum, w.SequenceStr, w.CountType, w.ReleaseDate, w.ISBN, w.Pages, w.NumberKnown, w.Revision, string(overrides), w.ID)
-	return w.ID, err
+	_, err = tx.ExecContext(ctx, s.q(`UPDATE works SET sequence_num=?,sequence_string=?,count_type=?,release_date=?,isbn=?,pages=?,number_known=?,revision=?,overrides_json=? WHERE id=?`), w.SequenceNum, w.SequenceStr, w.CountType, w.ReleaseDate, w.ISBN, w.Pages, w.NumberKnown, w.Revision, string(overrides), w.ID)
+	if err != nil {
+		return 0, err
+	}
+	return w.ID, tx.Commit()
 }
 func (s *Store) DeleteWork(ctx context.Context, seriesID, id int64) error {
 	w, err := s.GetWork(ctx, id)
@@ -181,31 +183,38 @@ func (s *Store) DeleteWork(ctx context.Context, seriesID, id int64) error {
 	if c.SeriesID != seriesID {
 		return ErrNotFound
 	}
-	pending, err := s.CollectionPending(ctx, c.ID)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if pending {
-		return apperr.Conflictf("collection has pending downloads")
-	}
-	n, err := get[int](ctx, s, `SELECT COUNT(*) FROM asset_coverage WHERE work_id=?`, id)
-	if err != nil {
+	defer func() { _ = tx.Rollback() }()
+	if err = s.lockEditions(ctx, tx, false, c.ID); err != nil {
 		return err
 	}
-	if *n > 0 {
-		return apperr.Conflictf("unlink owned files before deleting this unit")
+	var n int
+	if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM asset_contents WHERE work_id=?`), id).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return apperr.Conflictf("unlink owned files before deleting this book")
 	}
 	if w.ProviderID != "" {
-		return s.touch(ctx, `UPDATE works SET sync_state='retired' WHERE id=?`, id)
+		_, err = tx.ExecContext(ctx, s.q(`UPDATE works SET sync_state='retired' WHERE id=? AND collection_id=?`), id, c.ID)
+	} else {
+		_, err = tx.ExecContext(ctx, s.q(`DELETE FROM works WHERE id=? AND collection_id=?`), id, c.ID)
 	}
-	return s.touch(ctx, `DELETE FROM works WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
+
 func (s *Store) CollectionPending(ctx context.Context, cid int64) (bool, error) {
 	c, err := s.GetCollection(ctx, cid)
 	if err != nil {
 		return false, err
 	}
-	raws, err := list[string](ctx, s, `SELECT expected_slots_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing')`, c.SeriesID)
+	raws, err := list[string](ctx, s, `SELECT expected_slots_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`, c.SeriesID)
 	if err != nil {
 		return false, err
 	}
@@ -349,7 +358,7 @@ func (s *Store) SetBindingEdition(ctx context.Context, seriesID, bindingID, cid 
 			return ErrNotFound
 		}
 	}
-	return s.touch(ctx, `UPDATE source_bindings SET collection_id=? WHERE id=? AND series_id=?`, cid, bindingID, seriesID)
+	return s.touch(ctx, `UPDATE source_bindings SET trust_chapters=CASE WHEN collection_id=? THEN trust_chapters ELSE FALSE END,collection_id=? WHERE id=? AND series_id=?`, cid, cid, bindingID, seriesID)
 }
 
 func (s *Store) DeleteRelation(ctx context.Context, seriesID int64, r WorkRelation) error {
@@ -391,4 +400,18 @@ func (s *Store) ResetWork(ctx context.Context, seriesID, id int64) error {
 		return apperr.Conflictf("finish pending downloads before resetting metadata")
 	}
 	return s.touch(ctx, `UPDATE works SET overrides_json='{}',sync_state='linked' WHERE id=?`, id)
+}
+
+func (s *Store) SetBindingTrust(ctx context.Context, sid, bid int64, trust bool) error {
+	return s.touch(ctx, `UPDATE source_bindings SET trust_chapters=? WHERE id=? AND series_id=? AND state='active' AND collection_id IN(SELECT id FROM collections WHERE ctype='chapter')`, trust, bid, sid)
+}
+func (s *Store) AcceptTrustedObservation(ctx context.Context, sid int64, o UnitObservation) error {
+	id, err := get[int64](ctx, s, `SELECT id FROM unit_observations WHERE collection_id=? AND source=? AND external_key=? AND state='pending'`, o.CollectionID, o.Source, o.ExternalKey)
+	if err == ErrNotFound {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return s.ResolveObservation(ctx, sid, *id, true)
 }

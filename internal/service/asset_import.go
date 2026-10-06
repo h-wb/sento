@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/h-wb/sento/internal/mediafile"
+	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/store"
 	"io"
 	"os"
@@ -55,9 +56,6 @@ func verifyDestination(path, hash string) error {
 	return nil
 }
 func (im *Importer) normalizeExpected(ctx context.Context, item store.QueueItem) ([]store.ExpectedSlot, error) {
-	if err := im.store.EnsureModels(ctx, item.SeriesID); err != nil {
-		return nil, err
-	}
 	var slots []store.ExpectedSlot
 	if err := json.Unmarshal(item.ExpectedSlots, &slots); err != nil {
 		return nil, err
@@ -97,21 +95,45 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 	for _, sl := range slots {
 		links = append(links, store.SlotLink{Ledger: sl.Ledger, CollectionID: sl.CollectionID, Number: sl.Number, TargetID: sl.TargetID, WorkID: sl.WorkID})
 	}
-	id, err := im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol}, parsed, links)
-	if err != nil {
-		return err
-	}
 	var snap ReleaseCandidate
 	_ = json.Unmarshal(item.Snapshot, &snap)
 	facts := store.AssetFacts{Title: snap.Title, Site: snap.Site, Protocol: item.Protocol, FactsKnown: snap.Title != "", Flags: candidateFlags(snap), Language: snap.Parse.Language, Group: snap.Parse.Group, Format: strings.TrimPrefix(filepath.Ext(path), "."), FormatScore: snap.FormatScore, Resolution: snap.Parse.Quality.Resolution, Revision: snap.Parse.Version, Digital: snap.Parse.Quality.Digital, ProfileID: snap.ProfileID, ReleaseKey: item.ReleaseKey}
 	if facts.Group == "" {
 		facts.Group = snap.Scanlator
 	}
+	facts.Sources = map[string]string{"language": "offer", "group": "offer", "quality": "offer"}
+	claims := facts
+	if actual, ok := parsed.(parse.Result); ok {
+		// An offer's claims remain available for review; file facts are specific to these bytes.
+		facts.Sources = map[string]string{"language": "filename", "group": "filename", "quality": "filename"}
+		facts.Title = filepath.Base(path)
+		facts.Group = actual.Group
+		facts.Language = actual.Language
+		facts.Flags = candidateFlags(ReleaseCandidate{Parse: actual})
+		facts.Resolution = actual.Quality.Resolution
+		facts.Revision = actual.Version
+		facts.Digital = actual.Quality.Digital
+		facts.FactsKnown = true
+	}
 	hash, err := fileHash(path)
 	if err != nil {
 		return err
 	}
-	return im.store.SetAssetFacts(ctx, id, facts, hash)
+	review := false
+	for _, sl := range slots {
+		target, e := im.store.GetTarget(ctx, sl.TargetID)
+		if e != nil {
+			return e
+		}
+		if target.RequiredGroup != "" && !matchGroup(target.RequiredGroup, facts.Group) {
+			review = true
+		}
+	}
+	_, err = im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol, Facts: facts, Claims: claims, Hash: hash, NeedsReview: review}, parsed, links)
+	if err == nil && review {
+		return fmt.Errorf("file's observed release group differs from the requested copy; confirm its facts in review")
+	}
+	return err
 }
 
 // installAsset never replaces an existing pathname, even if another actor
@@ -196,9 +218,19 @@ func (im *Importer) importReviewFile(ctx context.Context, item store.QueueItem, 
 	if err != nil {
 		return err
 	}
-	id, err := im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: dest, Size: info.Size(), Provenance: item.Protocol, NeedsReview: true, Unrequested: true}, parsed, nil)
-	if err != nil {
-		return err
+	var snap ReleaseCandidate
+	_ = json.Unmarshal(item.Snapshot, &snap)
+	claims := store.AssetFacts{Title: snap.Title, Language: snap.Parse.Language, Group: snap.Parse.Group, ReleaseKey: item.ReleaseKey, Sources: map[string]string{"language": "offer", "group": "offer"}}
+	facts := store.AssetFacts{Title: filepath.Base(src), Format: strings.TrimPrefix(filepath.Ext(src), "."), Protocol: item.Protocol, ReleaseKey: item.ReleaseKey, Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}}
+	if p, ok := parsed.(parse.Result); ok {
+		facts.Language = p.Language
+		facts.Group = p.Group
+		facts.Flags = candidateFlags(ReleaseCandidate{Parse: p})
+		facts.FactsKnown = true
+		facts.Resolution = p.Quality.Resolution
+		facts.Revision = p.Version
+		facts.Digital = p.Quality.Digital
 	}
-	return im.store.SetAssetFacts(ctx, id, store.AssetFacts{Title: filepath.Base(src), Format: strings.TrimPrefix(filepath.Ext(src), "."), Protocol: item.Protocol, ReleaseKey: item.ReleaseKey}, hash)
+	_, err = im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: dest, Size: info.Size(), Provenance: item.Protocol, NeedsReview: true, Unrequested: true, Facts: facts, Claims: claims, Hash: hash}, parsed, nil)
+	return err
 }

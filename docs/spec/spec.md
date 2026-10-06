@@ -1,6 +1,6 @@
 # Sento — Specification (v1 draft)
 
-> The edition/version model supersedes the original number-only ownership, metadata-count-only chapter model, and no-upgrade assumptions below. See [the current domain model](../domain/collections.md) for identity, acquisition, migration, and compatibility rules.
+> Current edition, acquisition, and recovery behavior is specified in [the domain model](../domain/collections.md). Sections marked `[default]` remain proposals.
 
 
 Sonarr/Radarr-style automation for manga: monitor series, find releases on
@@ -17,21 +17,21 @@ clean library for readers like Komga/Kavita.
 
 | # | Decision | Choice |
 |---|----------|--------|
-| D1 | Metadata source of truth | MangaBaka only (series / collections / works) |
+| D1 | Metadata source of truth | MangaBaka supplies catalog metadata; independent local editions and field overrides are supported. |
 | D2 | Library entity | **Series + monitored editions**: entry = MangaBaka series; user monitors ≥1 collections (edition × language × medium) under it |
 | D3 | Extension engine | **Stock Suwayomi as headless sidecar**, accessed via its GraphQL + HTTP API, hidden behind a `SourceProvider` interface |
-| D4 | Tracking model | **Dual ledgers of numbered slots**: volume slots (from MangaBaka works, per monitored collection) + chapter slots (`1..total_chapters`). Both independently monitorable |
+| D4 | Tracking model | Stable edition/work IDs with independent acquisition targets; one shared evaluator for search and UI. |
 | D5 | Vol↔chapter mapping | **None in v1.** No auto-supersede, no auto-delete. Schema stays mapping-ready (files record parsed vol/ch ranges) |
-| D6 | Chapter monitoring | Cutoff-based: "monitor chapters from N onward", default N = latest at add time |
-| D7 | Chapter slot bound | ~~`max(MangaBaka total_chapters, highest chapter seen on bound sources)`~~ superseded by D15 |
-| D8 | Slot numbering | Integer slots in v1; non-integer chapters (110.5, omake) ignored by default |
+| D6 | Chapter monitoring | Skip through chapter N: number > N, with per-book overrides including chapter zero. |
+| D7 | Chapter slot bound | Explicit chapter memberships; optional series-count inference is capped at 10,000. |
+| D8 | Slot numbering | Integer hundredths support fractional numbering and true zero; specials may be unnumbered. |
 | D9 | Stack | Go backend (single binary), TypeScript web UI (SPA served by the binary) |
-| D10 | Chapter language | Single language per series |
-| D11 | Extras/specials | Follow MangaBaka's model: volume-side extras = `count_extra` works (exposed, default unmonitored); non-integer chapters stay out of scope (MangaBaka doesn't model them) |
+| D10 | Chapter language | Language belongs to each edition; several chapter languages can coexist. |
+| D11 | Extras/specials | Regular, bonus/special, and other books; Include extras and per-book monitoring controls. |
 | D12 | Pack auto-grab | Ship conservative thresholds + manual confirm; tune with real-world use |
 | D13 | MangaBaka volatility | MangaBaka (esp. collections/works) is WIP and may change: Sento isolates it behind a `MetadataProvider` anti-corruption layer, owns its identity model, caches raw payloads, and degrades gracefully (§5.1) |
 | D14 | Existing-library import | First-class, Sonarr-style: scan root folders, match series, link files to slots **in place** — non-destructive by default, renaming/organizing only as an explicit separate action (§11.4) |
-| D15 | Metadata/download separation | Chapter slot bound = **MangaBaka `total_chapters` only**. Sources never feed the ledger (a mis-numbered source chapter must not create phantom slots); source-reported numbers are used only to match candidates to existing slots. Reverses the `source_seen_max` half of D7 |
+| D15 | Metadata/download separation | Verified source observations enter review or an explicitly trusted binding; never expand numbering from source maxima. |
 
 ## 2. Goals / non-goals
 
@@ -88,54 +88,15 @@ optional externals. Sento also runs bare (single binary, SQLite).
 
 ### 4.1 Entities
 
-```
-Series                      — mirror of MangaBaka series (id, titles, status,
-                              total_chapters, relationships, …) + Sento state
-MonitoredCollection         — a MangaBaka collection the user monitors for a
-                              series (edition × language × medium × publisher)
-VolumeSlot   (derived)      — one MangaBaka work in a monitored collection:
-                              sequence number, ISBN, release date, monitored?
-ChapterLedger (per series)  — chapter range config: cutoff, upper bound,
-                              language, monitored?
-ChapterSlot  (derived)      — integer n in [cutoff..upperBound]
-File                        — an imported file: path, size, hash, parsed
-                              {volume range | chapter range}, source, group,
-                              link to slots it fills
-SourceBinding               — series ↔ (Suwayomi source id, source manga id),
-                              with state (active/broken) and priority
-Grab / QueueItem            — an in-flight download (torrent or suwayomi),
-                              with the slots it is expected to fill
-```
-
-Slots are *derived*, not rows: volume slots materialize from cached works;
-chapter slots from the ledger range. Only deviations are stored (per-slot
-unmonitored flag, slot↔file links).
+Series contain independently identified editions and books. Acquisition targets describe which copies to keep, with profile inheritance and per-book overrides. Files record intrinsic contents and observed facts separately from release claims. Fulfillment is derived from present verified files and current target rules; selections and pins are explicit overrides.
 
 ### 4.2 Ledger semantics
 
-- **Volume ledger** (per monitored collection): slot for every `count_type =
-  main` work. Default monitored: all, incl. future works discovered on
-  metadata refresh. `count_extra/other` works exposed but unmonitored
-  (monitorable per slot) — extras exist exactly where MangaBaka models them
-  (D11).
-- **Chapter ledger** (per series, *not* per collection — scanlation chapters
-  don't belong to a publisher edition): slots `1..total_chapters` from
-  MangaBaka only (D15). One language per series for chapter searching
-  (default: instance language, e.g. `en`) (D10).
-- A slot is **satisfied** when ≥1 file is linked to it. A monitored,
-  unsatisfied, released slot is **wanted**.
-- "Released": volume slots use the work's `release_date` (if absent: released
-  iff sequence ≤ max sequence with a date `[default]`); chapter slots are
-  always considered released (their existence implies it).
-- Completion display: volumes `owned/total` per collection; chapters
-  `owned/(upperBound − cutoff + 1)` plus an "all-time" bar against
-  `total_chapters` for context.
+The shared series ledger gates collection on parent/catalog state, target intent, availability, extras/cutoff rules, pending reservations, storage health, and optional upgrades. Dates may be unknown. New targets can reuse existing qualifying files. Unique books on disk and wanted copies are separate totals. Volume and chapter zero and fractional labels have stable work IDs.
 
 ### 4.3 Files standing alone
 
-Imports that match the series but no monitored slot (e.g. chapter below
-cutoff, volume of an unmonitored edition) are still imported and linked as
-**unrequested files** — visible, never auto-deleted. `[default]`
+Unmatched files stay on disk and enter the shared review inbox. Confirmed contents survive target deletion. Policy-incompatible files remain visible as on disk. No automatic cleanup or chapter-to-volume replacement is performed.
 
 ## 5. Metadata service (MangaBaka)
 
@@ -152,13 +113,7 @@ semi-stable and everything edition-related as **unstable surface**:
 - **Sento owns identity.** Library entries, monitored collections, files and
   slot links all key on Sento's own IDs. MangaBaka IDs are stored as
   *external references* that can be re-resolved.
-- **Collection identity = descriptor, not UUID.** A monitored collection is
-  identified by its descriptor tuple `(edition name, language, publisher,
-  medium, type)`. The MangaBaka collection UUID is cached for API calls but
-  treated as a re-resolvable cache key: on refresh, collections are matched
-  by descriptor first; a changed UUID is silently re-bound, a vanished
-  descriptor raises a health warning (never destructive — slots and files
-  stay).
+- **Stable local identity.** Provider references and aliases are resolved first. Exact descriptors are fallback evidence only for a unique already-linked edition. Local editions are linked explicitly, never silently adopted. Missing catalog editions retain books and files while automation pauses.
 - **Raw payload cache.** Every series/collections/works response is stored
   as raw JSON with a schema-version tag. If MangaBaka changes shape, a new
   adapter version re-derives our columns from cached payloads — no data loss,
@@ -167,11 +122,7 @@ semi-stable and everything edition-related as **unstable surface**:
   scheduled live smoke-check (one known series) compares actual responses to
   the expected shape and surfaces "metadata provider drift" as a health
   warning instead of crashing sync.
-- **Degraded mode.** If collections/works become unavailable or unparseable,
-  the volume ledger falls back to count-based slots `1..final_volume` from
-  the documented series endpoint (no dates/ISBNs, single implicit edition);
-  the chapter ledger is unaffected (`total_chapters` + source-seen bound).
-  Existing slot↔file links are preserved through any fallback or recovery.
+- **Degraded mode.** A failed catalog refresh keeps existing metadata. A successful snapshot marks absent entries stale. Explicit local continuation preserves the publication while detaching its upstream references. The default chapter edition may infer a bounded series count; local chapter editions start with explicit books.
 
 ### 5.2 API usage
 
@@ -276,11 +227,7 @@ ordered hard rejections (content-type, coverage, edition routing, pack rule
 D12, size, seeders, blocklist, term rules), then a transparent weighted
 score (coverage-dominant: +1000/wanted slot; protocol preference per
 ledger; term/scanlator/source/indexer bonuses). Greedy selection lets packs
-and singles compete naturally. Release profiles (per-series, instance
-default) hold all filters/scores; no quality ladder until the post-v1
-upgrade engine. Every grab *and* rejection is recorded with its full score
-breakdown ("why this file" UI). No upgrades in v1: a satisfied slot is
-never auto-replaced (D5); manual "replace with…" exists.
+and singles compete naturally. Profiles inherit from version to edition to series to the instance default. Optional score-based upgrades respect pins and retain earlier copies. Every grab and rejection records its decision details.
 
 ## 10. Scheduler
 
@@ -290,7 +237,7 @@ Reuses one internal cron/queue system (Go, persisted jobs):
 |------|-----------------|
 | Metadata refresh (releasing) | 24h |
 | Metadata refresh (ended) | 7d |
-| New-chapter check per series (bound sources `GetChapters` diff → extends upperBound, enqueues wanted search) | 2h, releasing only |
+| New-chapter check per series (verified bindings propose individual observations for review or configured trust) | 2h, releasing only |
 | Wanted/missing automatic search (volumes + chapters), with per-slot exponential backoff (new releases searched immediately, old misses decay to weekly) | 12h sweep |
 | Volume release-date trigger (search on/after `release_date`) | daily |
 | Queue/import processing | event-driven + 1m poll |
@@ -302,35 +249,19 @@ Reuses one internal cron/queue system (Go, persisted jobs):
 ### 11.1 Pipeline
 
 ```
-completed download → identify (parse + grab context) → verify (archive opens,
-image count > 0) → for each covered slot: hardlink/move into library path →
-write/merge ComicInfo.xml → link File↔slots → notify (webhook) → cleanup
+completed download → identify files → install without overwriting →
+record per-file facts and intrinsic contents atomically → verify expected coverage → cleanup
 ```
 
-- Torrent volume packs: each inner file parsed and imported individually.
-- Archives are kept as-delivered (CBZ); folder-of-images sources are zipped
-  to CBZ by Suwayomi (`downloadAsCbz`). No image re-encoding in v1.
-- Manual import queue for anything unidentifiable.
+Ambiguous or partial imports retain files and reservations in the review inbox. Packs remain one physical archive where possible. Original torrent payloads stay in place for seeding. Cleanup follows completed imports; a retry does not submit another download.
 
-### 11.2 Library layout & naming `[default, fully templatable]`
+### 11.2 Library layout and naming
 
-```
-{library}/
-  {Series Title} [mangabaka-{seriesId}]/
-    {Series Title} v{volume:00} [{edition}][{lang}].cbz        ← volumes
-    chapters/
-      {Series Title} c{chapter:000} [{group}][{lang}].cbz      ← chapters
-```
+New files use stable IDs and a content hash:
 
-- Tokens: `{Series Title}`, `{Series TitleSlug}`, `{volume}`, `{chapter}`,
-  `{edition}`, `{lang}`, `{group}`, `{seriesId}`, `{collectionId}`,
-  `{isbn}`, `{year}` with padding syntax `{volume:000}`.
-- Default keeps IDs in the *folder* name and richness in ComicInfo, not a
-  parenthesis-soup filename — readers parse `v01`/`c001` natively. Your
-  draft's `(key:value)` filename standard remains possible via templates.
-- Chapters in a `chapters/` subfolder so volume rows stay clean in readers;
-  configurable to flat. (Komga: keep "oneshot in subfolder" behavior in
-  mind; verify during implementation.)
+`{series folder}/collections/{edition ID}/versions/{target ID}/{book name} [{sha256}].cbz`
+
+Names may use configured title, number, language, edition, and group tokens. Existing paths remain intact. Hash-addressed destinations and exclusive installation prevent one release from overwriting another. Filename organization is independent of intrinsic content mappings.
 
 ### 11.3 ComicInfo.xml `[default: on]`
 
@@ -394,11 +325,7 @@ separate, explicit, per-series or bulk action with a dry-run preview.
 chapters (Mihon local downloads, HakuNeko) are detected and surfaced but
 not imported; a "pack to CBZ" assist is roadmap (§13).
 
-**Rescan**: triggered on series refresh, manual button, and a daily sweep
-`[default]` — detects new files (→ identify + link), changed files (size/
-mtime → re-hash), and deleted files (→ unlink; the slot becomes wanted
-again and *may re-download* — surfaced prominently in the activity feed,
-same semantics as Sonarr).
+**Rescan** checks stored file presence and imports newly discovered paths in place. Known paths are retained; ordinary page reads perform no filesystem access. Missing archives under healthy roots become wanted, while unavailable storage blocks acquisition and appears in review.
 
 ## 12. Application layer
 
@@ -419,9 +346,7 @@ same semantics as Sonarr).
 All former open questions are resolved (answers folded into D10–D13 and the
 sections above). What's deliberately deferred, roughly in order:
 
-1. **Upgrade engine** — quality ladder within a ledger (web→digital→
-   remaster) and volume-supersedes-chapters; both blocked on the
-   vol↔chapter mapping/confidence design (D5).
+1. **Cross-edition replacement and retention** — automatic chapter-to-volume replacement and destructive cleanup remain deferred. Score-based upgrades within an edition are available.
 2. **Suwayomi management from Sento UI** — extension install/update/health
    via GraphQL, so users never open the Suwayomi WebUI; longer-term, a
    possible slim replacement engine behind the same `SourceProvider`.
@@ -430,8 +355,7 @@ sections above). What's deliberately deferred, roughly in order:
 4. **RSS sync** via Prowlarr for passive release discovery (§7).
 5. **Folder-of-images adoption** — "pack to CBZ" assist for Mihon/HakuNeko
    style libraries detected during import (§11.4).
-6. **Multi-language chapter ledgers** — explicitly rejected for v1 (D10);
-   revisit only on demand.
+6. **Richer content relationships** — multilingual chapter editions already exist; automatic equivalence or translation inference remains out of scope.
 
 Explicitly rejected (not deferred): Komga/Kavita scan webhooks — files on
 disk are the whole integration surface.

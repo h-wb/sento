@@ -25,8 +25,7 @@ func (s *Store) Calendar(ctx context.Context, from, to string) ([]CalendarEntry,
 		       c.id AS collection_id, c.edition_name,
 		       w.sequence_num, COALESCE(w.sequence_string,'') AS sequence_string,
 		       w.release_date,
-		       EXISTS(SELECT 1 FROM asset_coverage a JOIN files f ON f.id=a.file_id
-                   WHERE a.work_id=w.id AND a.target_id=t.id AND a.verified=TRUE AND f.needs_review=FALSE) AS owned
+		       FALSE AS owned
 		FROM works w
 		JOIN collections c ON c.id = w.collection_id
 		JOIN download_targets t ON t.collection_id=c.id

@@ -89,10 +89,6 @@ func (s *Server) handleGetSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.store.EnsureModels(r.Context(), id); err != nil {
-		writeErr(w, err)
-		return
-	}
 	series, err := s.store.GetSeries(r.Context(), id)
 	if err != nil {
 		writeErr(w, err)
@@ -375,6 +371,16 @@ func (s *Server) handleUpdateBinding(w http.ResponseWriter, r *http.Request) {
 	var patch BindingPatch
 	if !decodeBody(w, r, &patch) {
 		return
+	}
+	if patch.TrustChapters != nil {
+		if err := s.store.SetBindingTrust(r.Context(), id, bid, *patch.TrustChapters); err != nil {
+			writeErr(w, err)
+			return
+		}
+		if patch.CollectionID == nil && patch.State == "" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 	}
 	if patch.CollectionID != nil {
 		if err := s.store.SetBindingEdition(r.Context(), id, bid, *patch.CollectionID); err != nil {

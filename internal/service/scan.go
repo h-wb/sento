@@ -36,6 +36,9 @@ var scanExts = map[string]bool{".cbz": true, ".cbr": true, ".zip": true, ".pdf":
 // ScanSeriesFolder walks dir (default: the series folder, derived from the
 // naming template when unset) and links every archive it can identify.
 func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir string) (*ScanResult, error) {
+	if err := sc.store.CheckFilePresence(ctx, seriesID); err != nil {
+		return nil, err
+	}
 	if err := sc.store.EnsureModels(ctx, seriesID); err != nil {
 		return nil, err
 	}
@@ -68,10 +71,8 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 	if err != nil {
 		return nil, err
 	}
-	// Volume links route to a monitored volume collection via edition-hint
-	// matching (R6-lite; review UI is post-v1). Chapter links route to a
-	// chapter collection even when paused — ownership is still worth
-	// tracking — preferring monitored ones.
+	// Edition evidence determines file contents even when collection is paused.
+	// Ambiguous archives remain available for explicit review.
 	var monitored, chapterCols []store.Collection
 	for _, c := range collections {
 		switch c.Type {
@@ -120,7 +121,13 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 		if ierr == nil {
 			size = info.Size()
 		}
-		fid, aerr := sc.store.AddFile(ctx, store.File{
+		hash, herr := fileHash(path)
+		if herr != nil {
+			return herr
+		}
+		_, aerr := sc.store.AddFile(ctx, store.File{
+			Facts:       store.AssetFacts{Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}, Title: filepath.Base(path), Protocol: "torrent", FactsKnown: true, Flags: candidateFlags(ReleaseCandidate{Parse: parsed}), Language: parsed.Language, Group: parsed.Group, Format: strings.TrimPrefix(filepath.Ext(path), "."), Resolution: parsed.Quality.Resolution, Revision: parsed.Version, Digital: parsed.Quality.Digital},
+			Hash:        hash,
 			SeriesID:    seriesID,
 			Path:        path,
 			Size:        size,
@@ -129,13 +136,6 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 			NeedsReview: len(links) == 0,
 		}, parsed, links)
 		if aerr != nil {
-			return aerr
-		}
-		hash, herr := fileHash(path)
-		if herr != nil {
-			return herr
-		}
-		if aerr = sc.store.SetAssetFacts(ctx, fid, store.AssetFacts{Title: filepath.Base(path), Protocol: "torrent", FactsKnown: true, Flags: candidateFlags(ReleaseCandidate{Parse: parsed}), Language: parsed.Language, Group: parsed.Group, Format: strings.TrimPrefix(filepath.Ext(path), "."), Resolution: parsed.Quality.Resolution, Revision: parsed.Version, Digital: parsed.Quality.Digital}, hash); aerr != nil {
 			return aerr
 		}
 		if len(links) == 0 {
@@ -147,6 +147,9 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 	})
 	if err != nil {
 		return nil, fmt.Errorf("scanning %s: %w", dir, err)
+	}
+	if err := sc.store.CheckFilePresence(ctx, seriesID); err != nil {
+		return nil, err
 	}
 	return res, nil
 }

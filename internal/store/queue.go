@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/h-wb/sento/internal/apperr"
 	"strings"
+	"time"
 )
 
 // JSONText is raw JSON that scans from a TEXT column (json.RawMessage
@@ -36,6 +37,8 @@ func (j JSONText) MarshalJSON() ([]byte, error) {
 }
 
 type QueueItem struct {
+	RetryCount    int      `json:"retryCount"`
+	RetryAt       string   `json:"retryAt"`
 	ProviderID    string   `json:"providerId,omitempty"`
 	ReleaseKey    string   `json:"releaseKey,omitempty"`
 	Snapshot      JSONText `json:"snapshot" db:"snapshot_json" tstype:"any"`
@@ -56,11 +59,15 @@ type QueueItem struct {
 }
 
 const (
-	QueueQueued      = "queued"
-	QueueDownloading = "downloading"
-	QueueImporting   = "importing"
-	QueueImported    = "imported"
-	QueueFailed      = "failed"
+	QueueQueued          = "queued"
+	QueueDownloading     = "downloading"
+	QueueImporting       = "importing"
+	QueueImported        = "imported"
+	QueueFailed          = "failed"
+	QueueNeedsReview     = "needs_review"
+	QueueRetryWait       = "retry_wait"
+	QueueDispatchUnknown = "dispatch_unknown"
+	QueueCancelled       = "cancelled"
 )
 
 // ExpectedSlot records explicit version and unit coverage for a pending grab.
@@ -82,17 +89,17 @@ func (s *Store) AddQueueItem(ctx context.Context, q QueueItem) (int64, error) {
 
 func (s *Store) UpdateQueueItem(ctx context.Context, id int64, status, errMsg string) error {
 	return s.touch(ctx, `
-		UPDATE queue_items SET status = ?, error = ?, updated_at = ? WHERE id = ?`,
+		UPDATE queue_items SET status = ?, error = ?, updated_at = ? WHERE id = ? AND status NOT IN('cancelled','imported')`,
 		status, errMsg, utcNow(), id)
 }
 
 func (s *Store) ListQueueItems(ctx context.Context, activeOnly bool) ([]QueueItem, error) {
 	q := `SELECT id, series_id, protocol, external_id, title, status, expected_slots_json,
 	             COALESCE(error,'') AS error, created_at,provider_id,release_key,snapshot_json,
-	             COALESCE(updated_at,'') AS updated_at
+	             COALESCE(updated_at,'') AS updated_at,retry_count,retry_at
 	      FROM queue_items`
 	if activeOnly {
-		q += ` WHERE status IN ('queued','downloading','importing')`
+		q += ` WHERE status IN ('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`
 	}
 	q += ` ORDER BY created_at DESC LIMIT 200`
 	return list[QueueItem](ctx, s, q)
@@ -103,7 +110,7 @@ func (s *Store) ListQueueItems(ctx context.Context, activeOnly bool) ([]QueueIte
 func (s *Store) PendingSlotKeys(ctx context.Context, seriesID int64) (map[string]bool, error) {
 	raws, err := list[string](ctx, s, `
 		SELECT expected_slots_json FROM queue_items
-		WHERE series_id = ? AND status IN ('queued','downloading','importing')`, seriesID)
+		WHERE series_id = ? AND status IN ('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +182,7 @@ func (s *Store) SeriesTitles(ctx context.Context, seriesID int64) ([]string, err
 }
 
 func (s *Store) PendingUnits(ctx context.Context, seriesID int64) (map[string]bool, error) {
-	raws, err := list[string](ctx, s, `SELECT expected_slots_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing')`, seriesID)
+	raws, err := list[string](ctx, s, `SELECT expected_slots_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +250,23 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []ExpectedS
 		return 0, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM unit_reservations WHERE queue_id IN(SELECT id FROM queue_items WHERE status IN('failed','imported'))`); err != nil {
+	editionIDs := []int64{}
+	for _, sl := range slots {
+		editionIDs = append(editionIDs, sl.CollectionID)
+	}
+	if err = s.lockEditions(ctx, tx, true, editionIDs...); err != nil {
+		return 0, false, err
+	}
+	for _, sl := range slots {
+		var n int
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id WHERE w.id=? AND t.id=? AND w.collection_id=? AND w.sync_state<>'retired'`), sl.WorkID, sl.TargetID, sl.CollectionID).Scan(&n); err != nil {
+			return 0, false, err
+		}
+		if n != 1 {
+			return 0, false, apperr.Conflictf("edition changed while preparing the download; search again")
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM unit_reservations WHERE queue_id IN(SELECT id FROM queue_items WHERE status IN('failed','imported','cancelled'))`); err != nil {
 		return 0, false, err
 	}
 	var id int64
@@ -303,7 +326,7 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []ExpectedS
 	return id, created, tx.Commit()
 }
 func (s *Store) SetQueueExternalID(ctx context.Context, id int64, key string) error {
-	return s.touch(ctx, `UPDATE queue_items SET external_id=? WHERE id=?`, key, id)
+	return s.touch(ctx, `UPDATE queue_items SET external_id=?,status='queued',retry_count=0,retry_at='' WHERE id=? AND status NOT IN('cancelled','imported')`, key, id)
 }
 
 // BeginImport freezes the plan and reads it after acquiring the row's write
@@ -314,7 +337,7 @@ func (s *Store) BeginImport(ctx context.Context, id int64) (*QueueItem, error) {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	result, err := tx.ExecContext(ctx, s.q(`UPDATE queue_items SET status='importing',updated_at=? WHERE id=? AND status IN('queued','downloading','importing')`), utcNow(), id)
+	result, err := tx.ExecContext(ctx, s.q(`UPDATE queue_items SET status='importing',updated_at=? WHERE id=? AND status IN('queued','downloading','importing','retry_wait')`), utcNow(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -331,4 +354,37 @@ func (s *Store) BeginImport(ctx context.Context, id int64) (*QueueItem, error) {
 		return nil, err
 	}
 	return &q, tx.Commit()
+}
+
+func (s *Store) DeferQueue(ctx context.Context, q QueueItem, reason string) error {
+	delay := 30 * time.Second * time.Duration(1<<min(q.RetryCount, 6))
+	return s.touch(ctx, `UPDATE queue_items SET status='retry_wait',error=?,retry_count=retry_count+1,retry_at=?,updated_at=? WHERE id=? AND status NOT IN('cancelled','imported')`, reason, time.Now().UTC().Add(delay).Format("2006-01-02 15:04:05"), utcNow(), q.ID)
+}
+func (s *Store) ResumeQueue(ctx context.Context, id int64, remoteID string) error {
+	if remoteID != "" {
+		return s.touch(ctx, `UPDATE queue_items SET status='queued',external_id=?,error='',retry_at='',retry_count=0 WHERE id=? AND status IN('needs_review','retry_wait','dispatch_unknown')`, remoteID, id)
+	}
+	return s.touch(ctx, `UPDATE queue_items SET status='queued',error='',retry_at='',retry_count=0 WHERE id=? AND status IN('needs_review','retry_wait','dispatch_unknown')`, id)
+}
+func (s *Store) CancelQueue(ctx context.Context, id int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, s.q(`UPDATE queue_items SET status='cancelled',updated_at=? WHERE id=? AND status NOT IN('imported','importing')`), utcNow(), id)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return apperr.Conflictf("wait for the current import to finish before cancelling")
+	}
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM unit_reservations WHERE queue_id=?`), id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

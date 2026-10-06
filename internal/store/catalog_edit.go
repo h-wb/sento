@@ -5,19 +5,22 @@ import (
 	"database/sql"
 	"encoding/json"
 	"github.com/h-wb/sento/internal/apperr"
+	"github.com/h-wb/sento/internal/metadata"
+	"slices"
 	"strings"
 )
 
 type CollectionMetadataPatch struct {
-	NumberingSource  *string  `json:"numberingSource"`
-	EditionLayout    *string  `json:"editionLayout"`
-	ContentVariant   *string  `json:"contentVariant"`
-	DiscoverChapters *bool    `json:"discoverChapters"`
-	EditionName      *string  `json:"editionName"`
-	Language         *string  `json:"language"`
-	Publisher        *string  `json:"publisher"`
-	Medium           *string  `json:"medium"`
-	Reset            []string `json:"reset"`
+	MakeLocal        bool      `json:"makeLocal,omitempty"`
+	NumberingSource  *string   `json:"numberingSource"`
+	EditionTraits    *[]string `json:"editionTraits"`
+	ContentVariant   *string   `json:"contentVariant"`
+	DiscoverChapters *bool     `json:"discoverChapters"`
+	EditionName      *string   `json:"editionName"`
+	Language         *string   `json:"language"`
+	Publisher        *string   `json:"publisher"`
+	Medium           *string   `json:"medium"`
+	Reset            []string  `json:"reset"`
 }
 
 func (s *Store) EditCollection(ctx context.Context, seriesID, cid int64, p CollectionMetadataPatch) error {
@@ -43,12 +46,43 @@ func (s *Store) EditCollection(ctx context.Context, seriesID, cid int64, p Colle
 	if err = json.Unmarshal([]byte(*raw), &overrides); err != nil {
 		return err
 	}
-	fields := map[string]*string{"edition_name": p.EditionName, "language": p.Language, "publisher": p.Publisher, "medium": p.Medium, "edition_layout": p.EditionLayout, "content_variant": p.ContentVariant}
+	var traits *string
+	if p.EditionTraits != nil {
+		values := slices.Clone(*p.EditionTraits)
+		slices.Sort(values)
+		values = slices.Compact(values)
+		for _, v := range values {
+			if v != "standard" && v != "omnibus" && v != "deluxe" && v != "boxset" {
+				return apperr.Invalidf("unknown edition trait")
+			}
+		}
+		if slices.Contains(values, "standard") && slices.Contains(values, "omnibus") {
+			return apperr.Invalidf("choose standard numbering or omnibus numbering")
+		}
+		raw := metadata.TraitsJSON(values)
+		traits = &raw
+	}
+	fields := map[string]*string{"edition_name": p.EditionName, "language": p.Language, "publisher": p.Publisher, "medium": p.Medium, "edition_traits": traits, "content_variant": p.ContentVariant}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err = s.lockEditions(ctx, tx, false, cid); err != nil {
+		return err
+	}
+
+	if p.MakeLocal {
+		if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='collection' AND local_id=?) OR (kind='work' AND local_id IN(SELECT id FROM works WHERE collection_id=?))`), cid, cid); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, s.q(`UPDATE collections SET custom=TRUE,mb_collection_id=NULL,sync_state='local',numbering_source='manual' WHERE id=?`), cid); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, s.q(`UPDATE works SET mb_work_id=NULL,sync_state=CASE WHEN sync_state='retired' THEN 'retired' ELSE 'local' END WHERE collection_id=?`), cid); err != nil {
+			return err
+		}
+	}
 	if p.NumberingSource != nil {
 		v := *p.NumberingSource
 		if v != "manual" && v != "series_count" && v != "catalog" {
@@ -75,18 +109,15 @@ func (s *Store) EditCollection(ctx context.Context, seriesID, cid int64, p Colle
 			continue
 		}
 		text := strings.TrimSpace(*v)
-		if k == "edition_layout" && text != "standard" && text != "omnibus" && text != "boxset" && text != "deluxe" && text != "custom" {
-			return apperr.Invalidf("unknown edition layout")
-		}
-		if k == "content_variant" && text != "original" && text != "colored" {
+		if k == "content_variant" && text != "original" && text != "colored" && text != "unknown" {
 			return apperr.Invalidf("unknown content variant")
 		}
 		if (k == "language" || k == "edition_name") && text == "" {
 			return apperr.Invalidf("name and language are required")
 		}
-		before := map[string]string{"edition_name": c.EditionName, "language": c.Language, "publisher": c.Publisher, "medium": c.Medium, "edition_layout": c.EditionLayout, "content_variant": c.ContentVariant}
+		before := map[string]string{"edition_name": c.EditionName, "language": c.Language, "publisher": c.Publisher, "medium": c.Medium, "edition_traits": metadata.TraitsJSON(c.EditionTraits), "content_variant": c.ContentVariant}
 		if before[k] != text {
-			if k == "language" || k == "medium" || k == "edition_layout" || k == "content_variant" {
+			if k == "language" || k == "medium" || k == "edition_traits" || k == "content_variant" {
 				identityChanged = true
 			}
 			overrides[k] = text
@@ -143,9 +174,6 @@ func (s *Store) PreviewMerge(ctx context.Context, seriesID, fromID, intoID int64
 }
 
 func (s *Store) previewUnitLink(ctx context.Context, seriesID, localID, catalogID int64, catalogOnly bool) (*CatalogLinkPreview, error) {
-	if err := s.EnsureModels(ctx, seriesID); err != nil {
-		return nil, err
-	}
 	local, err := s.GetCollection(ctx, localID)
 	if err != nil {
 		return nil, err
@@ -160,7 +188,7 @@ func (s *Store) previewUnitLink(ctx context.Context, seriesID, localID, catalogI
 	if !local.Custom || (catalogOnly && catalog.ProviderID == "") || local.ID == catalog.ID || catalog.SyncState == "superseded" {
 		return nil, apperr.Invalidf("choose a local edition and a catalog edition")
 	}
-	if local.Type != catalog.Type || local.Language != catalog.Language || local.EditionLayout != catalog.EditionLayout || local.ContentVariant != catalog.ContentVariant {
+	if local.Type != catalog.Type || local.Language != catalog.Language || !slices.Equal(local.EditionTraits, catalog.EditionTraits) || local.ContentVariant != catalog.ContentVariant {
 		return nil, apperr.Invalidf("catalog link must match publication type, language, layout and content version")
 	}
 	lw, err := s.ListWorks(ctx, localID)
@@ -203,7 +231,7 @@ func (s *Store) previewUnitLink(ctx context.Context, seriesID, localID, catalogI
 			out.CatalogTargets = append(out.CatalogTargets, t)
 		}
 	}
-	n, err := get[int](ctx, s, `SELECT COUNT(DISTINCT file_id) FROM asset_coverage WHERE work_id IN(SELECT id FROM works WHERE collection_id=?)`, localID)
+	n, err := get[int](ctx, s, `SELECT COUNT(DISTINCT file_id) FROM asset_contents WHERE work_id IN(SELECT id FROM works WHERE collection_id=?)`, localID)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +259,7 @@ func (s *Store) LinkCatalog(ctx context.Context, seriesID, localID, catalogID in
 			return apperr.Conflictf("edition has pending downloads")
 		}
 	}
-	n, err := get[int](ctx, s, `SELECT COUNT(*) FROM asset_coverage a JOIN works w ON w.id=a.work_id WHERE w.collection_id=?`, catalogID)
+	n, err := get[int](ctx, s, `SELECT COUNT(*) FROM asset_contents a JOIN works w ON w.id=a.work_id WHERE w.collection_id=?`, catalogID)
 	if err != nil {
 		return err
 	}
@@ -252,6 +280,10 @@ func (s *Store) LinkCatalog(ctx context.Context, seriesID, localID, catalogID in
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err = s.lockEditions(ctx, tx, false, localID, catalogID); err != nil {
+		return err
+	}
+
 	for local, catalog := range p.Mapping {
 		var ref sql.NullString
 		if err = tx.QueryRowContext(ctx, s.q(`SELECT mb_work_id FROM works WHERE id=?`), catalog).Scan(&ref); err != nil {
@@ -264,7 +296,10 @@ func (s *Store) LinkCatalog(ctx context.Context, seriesID, localID, catalogID in
 	if _, err = tx.ExecContext(ctx, s.q(`UPDATE collections SET mb_collection_id=?,sync_state='linked',numbering_source='catalog',raw_json=(SELECT raw_json FROM collections WHERE id=?) WHERE id=?`), p.Catalog.ProviderID, catalogID, localID); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, s.q(`UPDATE collections SET sync_state='superseded',monitored=FALSE WHERE id=?`), catalogID); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`UPDATE download_targets SET monitored=FALSE WHERE collection_id=?`), catalogID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, s.q(`UPDATE collections SET sync_state='superseded' WHERE id=?`), catalogID); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, s.q(`UPDATE source_bindings SET collection_id=? WHERE collection_id=?`), localID, catalogID); err != nil {
@@ -280,9 +315,24 @@ func (s *Store) LinkCatalog(ctx context.Context, seriesID, localID, catalogID in
 }
 
 func (s *Store) invalidateEditionCoverage(ctx context.Context, tx *sql.Tx, cid int64) error {
-	if _, err := tx.ExecContext(ctx, s.q(`UPDATE asset_coverage SET verified=FALSE WHERE work_id IN(SELECT id FROM works WHERE collection_id=?)`), cid); err != nil {
+	if _, err := tx.ExecContext(ctx, s.q(`UPDATE asset_contents SET verified=FALSE WHERE work_id IN(SELECT id FROM works WHERE collection_id=?)`), cid); err != nil {
 		return err
 	}
-	_, err := tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=TRUE WHERE id IN(SELECT file_id FROM asset_coverage WHERE work_id IN(SELECT id FROM works WHERE collection_id=?)) AND NOT EXISTS(SELECT 1 FROM asset_coverage a WHERE a.file_id=files.id AND a.verified=TRUE)`), cid)
+	_, err := tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=TRUE WHERE id IN(SELECT file_id FROM asset_contents WHERE work_id IN(SELECT id FROM works WHERE collection_id=?)) AND NOT EXISTS(SELECT 1 FROM asset_contents a WHERE a.file_id=files.id AND a.verified=TRUE)`), cid)
 	return err
+}
+
+// EditionTraitList stores known traits; [] explicitly means unspecified.
+type EditionTraitList []string
+
+func (t *EditionTraitList) Scan(src any) error {
+	switch v := src.(type) {
+	case string:
+		return json.Unmarshal([]byte(v), t)
+	case []byte:
+		return json.Unmarshal(v, t)
+	default:
+		*t = EditionTraitList{}
+		return nil
+	}
 }

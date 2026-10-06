@@ -1,0 +1,811 @@
+import { useState, type ReactNode } from 'react'
+import { useUnsavedChanges } from '../useUnsavedChanges'
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Group,
+  Modal,
+  MultiSelect,
+  NumberInput,
+  Select,
+  Stack,
+  Switch,
+  Text,
+  TextInput,
+} from '@mantine/core'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../api'
+import type {
+  Collection,
+  DownloadTarget,
+  Work,
+  CatalogLinkPreview,
+  File as SeriesFile,
+} from '../types/store'
+import type { UnitSlot } from '../types/service'
+import { useConfirmAction } from './ConfirmAction'
+
+const editionLabel = (c: Collection) =>
+  [c.language, c.editionName, c.publisher, c.medium].filter(Boolean).join(' · ')
+function useEditor() {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  return {
+    busy,
+    error,
+    run: async (fn: () => Promise<void>) => {
+      setBusy(true)
+      setError('')
+      try {
+        await fn()
+      } catch (e) {
+        setError(String(e))
+      } finally {
+        setBusy(false)
+      }
+    },
+  }
+}
+export function TargetEditor({
+  value,
+  chapter,
+  save,
+  close,
+}: {
+  value: DownloadTarget
+  chapter: boolean
+  save: (v: DownloadTarget) => Promise<void>
+  close: () => void
+}) {
+  const [v, set] = useState(value)
+  const q = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
+  const edit = useEditor()
+  return (
+    <EditorModal
+      dirty={JSON.stringify(v) !== JSON.stringify(value)}
+      busy={edit.busy}
+      onClose={close}
+      title={v.id ? 'Collection settings' : 'Keep an additional copy'}
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          void edit.run(() => save(v))
+        }}
+      >
+        <Stack>
+          <Text size="sm" c="dimmed">
+            Keep another release of this edition, such as a second release group. A group preference
+            alone can be set in a profile. Files are preserved when a version is removed.
+          </Text>
+          <fieldset className="formFields" disabled={edit.busy}>
+            <Stack>
+              <TextInput
+                label="Version name"
+                required
+                value={v.name}
+                onChange={(e) => set({ ...v, name: e.currentTarget.value })}
+              />
+              <Select
+                label="Release profile"
+                placeholder="Inherit edition profile"
+                clearable
+                data={
+                  q.data?.map((p) => ({
+                    value: String(p.id),
+                    label: p.name,
+                  })) ?? []
+                }
+                value={v.profileId ? String(v.profileId) : null}
+                onChange={(s) => set({ ...v, profileId: Number(s) || 0 })}
+              />
+              <TextInput
+                label="Required release group"
+                description="Optional regular expression; other groups cannot satisfy this version"
+                value={v.requiredGroup}
+                onChange={(e) => set({ ...v, requiredGroup: e.currentTarget.value })}
+              />
+              {chapter && (
+                <NumberInput
+                  label="Skip through chapter"
+                  description="Skip this chapter and earlier ones. Use 0 to skip through chapter 0."
+                  value={v.cutoffNum / 100}
+                  min={0}
+                  decimalScale={2}
+                  onChange={(n) => set({ ...v, cutoffNum: Math.round(Number(n) * 100) })}
+                />
+              )}
+              <Checkbox
+                label="Include extras and specials"
+                description="Collect bonus and other books too. Individual choices override this setting."
+                checked={v.includeExtras}
+                onChange={(e) => set({ ...v, includeExtras: e.currentTarget.checked })}
+              />
+              <Checkbox
+                label="Allow releases with unknown language"
+                checked={v.allowUnknown}
+                onChange={(e) => set({ ...v, allowUnknown: e.currentTarget.checked })}
+              />
+              <Checkbox
+                label="Search books with unknown publication dates"
+                checked={v.acquireUnknown}
+                onChange={(e) => set({ ...v, acquireUnknown: e.currentTarget.checked })}
+              />
+              <Switch
+                label="Collect this version"
+                checked={v.monitored}
+                onChange={(e) => set({ ...v, monitored: e.currentTarget.checked })}
+              />
+            </Stack>
+          </fieldset>
+          {edit.error && <Alert color="red">{edit.error}</Alert>}
+          <Group justify="flex-end">
+            <Button type="submit" loading={edit.busy}>
+              Save version
+            </Button>
+          </Group>
+        </Stack>
+      </form>
+    </EditorModal>
+  )
+}
+export function UnitEditor({
+  value,
+  save,
+  remove,
+  reset,
+  close,
+}: {
+  value: Work
+  save: (v: Work) => Promise<void>
+  remove: () => Promise<void>
+  reset: () => Promise<void>
+  close: () => void
+}) {
+  const [v, set] = useState(value)
+  const edit = useEditor()
+  const { confirm, confirmation } = useConfirmAction()
+  return (
+    <>
+      <EditorModal
+        dirty={JSON.stringify(v) !== JSON.stringify(value)}
+        busy={edit.busy}
+        onClose={close}
+        title={v.id ? 'Edit book' : 'Add book'}
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            void edit.run(() => save(v))
+          }}
+        >
+          <Stack>
+            <Text size="sm" c="dimmed">
+              Numbers identify books within this edition. Specials can use a label without a number.
+            </Text>
+            <fieldset className="formFields" disabled={edit.busy}>
+              <Stack>
+                <TextInput
+                  label="Display label"
+                  required
+                  value={v.sequenceStr}
+                  onChange={(e) => set({ ...v, sequenceStr: e.currentTarget.value })}
+                />
+                <Checkbox
+                  label="Has a volume or chapter number"
+                  checked={v.numberKnown}
+                  onChange={(e) => set({ ...v, numberKnown: e.currentTarget.checked })}
+                />
+                {v.numberKnown && (
+                  <NumberInput
+                    label="Number"
+                    decimalScale={2}
+                    min={0}
+                    value={v.sequenceNum / 100}
+                    onChange={(n) => set({ ...v, sequenceNum: Math.round(Number(n) * 100) })}
+                  />
+                )}
+                <Select
+                  label="Category"
+                  description="Regular books are collected by default. Enable extras in collection settings to include bonuses."
+                  data={[
+                    { value: 'main', label: 'Regular' },
+                    { value: 'extra', label: 'Bonus / special' },
+                    { value: 'other', label: 'Other' },
+                  ]}
+                  value={v.countType}
+                  onChange={(s) => set({ ...v, countType: s ?? 'main' })}
+                />
+                <TextInput
+                  type="date"
+                  label="Publication date"
+                  value={v.releaseDate ?? ''}
+                  onChange={(e) => set({ ...v, releaseDate: e.currentTarget.value })}
+                />
+                <TextInput
+                  label="ISBN"
+                  value={v.isbn ?? ''}
+                  onChange={(e) => set({ ...v, isbn: e.currentTarget.value })}
+                />
+                <TextInput
+                  label="Revision"
+                  value={v.revision ?? ''}
+                  onChange={(e) => set({ ...v, revision: e.currentTarget.value })}
+                />
+              </Stack>
+            </fieldset>
+            {edit.error && <Alert color="red">{edit.error}</Alert>}
+            <Group justify="space-between">
+              {v.providerId && (
+                <Button variant="subtle" disabled={edit.busy} onClick={() => void edit.run(reset)}>
+                  Use catalog values
+                </Button>
+              )}
+              {v.id > 0 && (
+                <Button
+                  color="red"
+                  variant="subtle"
+                  onClick={() =>
+                    confirm({
+                      title: v.providerId ? 'Retire catalog book?' : 'Delete book?',
+                      message: 'Owned books must be unlinked first. Files stay on disk.',
+                      label: v.providerId ? 'Retire book' : 'Delete book',
+                      onConfirm: remove,
+                    })
+                  }
+                >
+                  {v.providerId ? 'Retire book' : 'Delete book'}
+                </Button>
+              )}
+              <Group>
+                <Button type="submit" loading={edit.busy}>
+                  Save book
+                </Button>
+              </Group>
+            </Group>
+          </Stack>
+        </form>
+      </EditorModal>
+      {confirmation}
+    </>
+  )
+}
+export function EditionEditor({
+  value,
+  save,
+  reset,
+  close,
+}: {
+  value: Collection
+  save: (p: {
+    profileId?: number
+    editionName: string
+    language: string
+    publisher: string
+    medium: string
+    editionTraits: string[]
+    contentVariant: string
+    numberingSource: string
+    discoverChapters?: boolean
+  }) => Promise<void>
+  reset: () => Promise<void>
+  close: () => void
+}) {
+  const [v, set] = useState(value)
+  const edit = useEditor()
+  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
+  return (
+    <EditorModal
+      dirty={JSON.stringify(v) !== JSON.stringify(value)}
+      busy={edit.busy}
+      onClose={close}
+      title={'Edit edition'}
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          void edit.run(() => save(v))
+        }}
+      >
+        <Stack>
+          <Text size="sm" c="dimmed">
+            Edits are preserved during catalog refresh. To collect a different language or edition,
+            add an edition.
+          </Text>
+          {(['editionName', 'language', 'publisher', 'medium'] as const).map((k) => (
+            <TextInput
+              key={k}
+              label={
+                {
+                  editionName: 'Edition name',
+                  language: 'Language',
+                  publisher: 'Publisher',
+                  medium: 'Publication medium',
+                }[k]
+              }
+              required={k === 'editionName' || k === 'language'}
+              value={v[k]}
+              disabled={edit.busy}
+              onChange={(e) => set({ ...v, [k]: e.currentTarget.value })}
+            />
+          ))}
+          <Select
+            label="Edition release profile"
+            description="Used by versions that inherit this edition’s profile."
+            placeholder="Inherit series profile"
+            clearable
+            data={(profiles.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
+            value={v.profileId ? String(v.profileId) : null}
+            onChange={(id) => set({ ...v, profileId: Number(id) || 0 })}
+            disabled={edit.busy}
+          />
+          <MultiSelect
+            label="Edition traits"
+            description="Choose all known traits. Leave blank when unspecified."
+            data={[
+              { value: 'standard', label: 'Standard numbering' },
+              { value: 'omnibus', label: 'Omnibus' },
+              { value: 'deluxe', label: 'Deluxe' },
+              { value: 'boxset', label: 'Box set' },
+            ]}
+            value={v.editionTraits ?? []}
+            onChange={(editionTraits) => set({ ...v, editionTraits })}
+            disabled={edit.busy}
+          />
+          <Select
+            label="Content version"
+            data={[
+              { value: 'unknown', label: 'Unspecified' },
+              { value: 'original', label: 'Original' },
+              { value: 'colored', label: 'Colored' },
+            ]}
+            value={v.contentVariant || 'unknown'}
+            onChange={(variant) => set({ ...v, contentVariant: variant ?? 'unknown' })}
+            disabled={edit.busy}
+          />
+          {v.type === 'chapter' && v.custom && (
+            <Select
+              label="Chapter numbering"
+              description="Use explicit books for gaps or edition-specific numbering"
+              data={[
+                { value: 'manual', label: 'Explicit books only' },
+                { value: 'series_count', label: 'Infer 1 to the series chapter count' },
+                { value: 'catalog', label: 'Catalog books only' },
+              ]}
+              value={v.numberingSource}
+              disabled={edit.busy}
+              onChange={(source) => set({ ...v, numberingSource: source ?? 'manual' })}
+            />
+          )}
+          {v.type === 'chapter' && (
+            <Checkbox
+              label="Collect source observations for review"
+              description="Only verified source edition mappings can submit chapter observations"
+              checked={v.discoverChapters}
+              onChange={(e) => set({ ...v, discoverChapters: e.currentTarget.checked })}
+            />
+          )}{' '}
+          {edit.error && <Alert color="red">{edit.error}</Alert>}
+          <Group justify="space-between">
+            {(v.syncState === 'linked' || v.syncState === 'stale') && (
+              <Button variant="subtle" disabled={edit.busy} onClick={() => void edit.run(reset)}>
+                Use catalog values
+              </Button>
+            )}
+            <Button type="submit" loading={edit.busy}>
+              Save edition
+            </Button>
+          </Group>
+        </Stack>
+      </form>
+    </EditorModal>
+  )
+}
+export function CatalogLink({
+  seriesID,
+  value,
+  collections,
+  done,
+  close,
+}: {
+  seriesID: number
+  value: Collection
+  collections: Collection[]
+  done: () => Promise<void>
+  close: () => void
+}) {
+  const [id, setID] = useState<string | null>(null)
+  const [preview, setPreview] = useState<CatalogLinkPreview | null>(null)
+  const edit = useEditor()
+  return (
+    <Modal
+      opened
+      onClose={() => {
+        if (!edit.busy) close()
+      }}
+      title="Link edition to MangaBaka"
+    >
+      <Stack>
+        <Text size="sm">
+          Your edition keeps its local identity, files, and edits. Review the proposed book matches
+          before linking.
+        </Text>
+        <Select
+          label="Catalog edition"
+          data={collections
+            .filter(
+              (c) =>
+                !c.custom &&
+                c.id !== value.id &&
+                c.type === value.type &&
+                c.language === value.language,
+            )
+            .map((c) => ({ value: String(c.id), label: editionLabel(c) }))}
+          value={id}
+          onChange={(v) => {
+            setID(v)
+            setPreview(null)
+          }}
+        />
+        <Button
+          variant="default"
+          disabled={!id}
+          loading={edit.busy}
+          onClick={() =>
+            void edit.run(async () =>
+              setPreview(await api.catalogLinkPreview(seriesID, value.id, Number(id))),
+            )
+          }
+        >
+          Preview matches
+        </Button>
+        {preview && (
+          <>
+            <Text size="sm">
+              {Object.keys(preview.mapping).length} books matched; {preview.unmatched.length} local
+              books remain unmatched.
+            </Text>
+            <Stack gap={4}>
+              {preview.localUnits.map((w) => (
+                <Text key={w.id} size="xs">
+                  {w.sequenceStr} · {w.countType} →{' '}
+                  {preview.mapping[w.id]
+                    ? `${preview.catalogUnits.find((v) => v.id === preview.mapping[w.id])?.sequenceStr} · ${preview.catalogUnits.find((v) => v.id === preview.mapping[w.id])?.countType}`
+                    : 'No catalog match; kept locally'}
+                </Text>
+              ))}
+            </Stack>
+            <Text size="xs" c="dimmed">
+              Unmatched local books stay intact. The unused catalog row is retired after linking.
+            </Text>
+          </>
+        )}
+        {edit.error && <Alert color="red">{edit.error}</Alert>}
+        <Group justify="flex-end">
+          <Button variant="default" disabled={edit.busy} onClick={close}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!preview}
+            loading={edit.busy}
+            onClick={() =>
+              void edit.run(async () => {
+                await api.linkCatalog(seriesID, value.id, Number(id))
+                await done()
+              })
+            }
+          >
+            Link edition
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  )
+}
+export function MappingEditor({
+  seriesID,
+  value,
+  targets,
+  existing,
+  units,
+  collections,
+  save,
+  close,
+}: {
+  seriesID: number
+  value: SeriesFile
+  targets: DownloadTarget[]
+  existing: import('../types/store').AssetCoverage[]
+  units: UnitSlot[]
+  collections: Collection[]
+  save: (slots: import('../types/store').ExpectedSlot[]) => Promise<void>
+  close: () => void
+}) {
+  const initial = existing.map((a) => ({
+    targetId: a.targetId,
+    workId: a.workId,
+    collectionId: targets.find((t) => t.id === a.targetId)?.collectionId ?? 0,
+    number: units.find((s) => s.work.id === a.workId)?.work.sequenceNum ?? 0,
+    ledger:
+      collections.find((c) => c.id === targets.find((t) => t.id === a.targetId)?.collectionId)
+        ?.type ?? 'volume',
+  }))
+  const [draft, setDraft] = useState(initial)
+  const [target, setTarget] = useState<string | null>(
+    existing[0] ? String(existing[0].targetId) : null,
+  )
+  const edit = useEditor()
+  const [language, setLanguage] = useState(value.facts?.language ?? '')
+  const [group, setGroup] = useState(value.facts?.group ?? '')
+  const t = targets.find((t) => String(t.id) === target)
+  const chosen = draft.filter((s) => s.targetId === t?.id).map((s) => String(s.workId))
+  return (
+    <EditorModal
+      dirty={
+        JSON.stringify(draft) !== JSON.stringify(initial) ||
+        language !== (value.facts?.language ?? '') ||
+        group !== (value.facts?.group ?? '')
+      }
+      busy={edit.busy}
+      onClose={close}
+      title="Match imported file"
+    >
+      <Stack>
+        <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
+          {value.path}
+        </Text>
+        <Text size="sm">
+          Confirm the edition and books this archive contains. This confirmation overrides parsed
+          language for coverage. Group requirements still apply. A pack can cover several books.
+          Existing mappings to other versions are kept.
+        </Text>
+        {value.facts && (
+          <Text size="xs" c="dimmed">
+            {[
+              value.facts.language || 'Language unknown',
+              value.facts.group || 'Group unknown',
+              value.facts.format,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </Text>
+        )}
+        <Text size="xs" c="dimmed">
+          Release advertised:{' '}
+          {[value.claims?.language, value.claims?.group].filter(Boolean).join(' · ') ||
+            'No claims recorded'}
+        </Text>
+        <Group grow>
+          <TextInput
+            label="Confirmed language"
+            value={language}
+            onChange={(e) => setLanguage(e.currentTarget.value)}
+          />
+          <TextInput
+            label="Confirmed release group"
+            value={group}
+            onChange={(e) => setGroup(e.currentTarget.value)}
+          />
+        </Group>
+        <Select
+          label="Collected version"
+          data={targets.map((t) => ({
+            value: String(t.id),
+            label: `${editionLabel(collections.find((c) => c.id === t.collectionId)!)} · ${t.name}`,
+          }))}
+          value={target}
+          onChange={setTarget}
+        />
+        <MultiSelect
+          label="Books in this file"
+          searchable
+          disabled={!t}
+          data={units
+            .filter((s) => s.targetId === t?.id)
+            .map((s) => ({ value: String(s.work.id), label: s.work.sequenceStr }))}
+          value={chosen}
+          onChange={(ids) => {
+            if (!t) return
+            setDraft([
+              ...draft.filter((s) => s.targetId !== t.id),
+              ...ids.map((id) => ({
+                targetId: t.id,
+                workId: Number(id),
+                collectionId: t.collectionId,
+                number: units.find((s) => s.work.id === Number(id))?.work.sequenceNum ?? 0,
+                ledger: collections.find((c) => c.id === t.collectionId)?.type ?? 'volume',
+              })),
+            ])
+          }}
+        />
+        <Stack gap={2}>
+          {draft.map((s) => (
+            <Text size="xs" key={`${s.targetId}-${s.workId}`}>
+              {targets.find((t) => t.id === s.targetId)?.name} ·{' '}
+              {units.find((u) => u.work.id === s.workId)?.work.sequenceStr}
+            </Text>
+          ))}
+        </Stack>
+        {draft.length === 0 && (
+          <Text size="sm" c="dimmed">
+            This file will stay in the library without claiming ownership of any book.
+          </Text>
+        )}
+        {edit.error && <Alert color="red">{edit.error}</Alert>}
+        <Group justify="space-between">
+          <Button
+            variant="subtle"
+            color="red"
+            disabled={edit.busy || draft.length === 0}
+            onClick={() => setDraft([])}
+          >
+            Clear mappings
+          </Button>
+          <Button
+            loading={edit.busy}
+            onClick={() =>
+              void edit.run(async () => {
+                if (
+                  language !== (value.facts?.language ?? '') ||
+                  group !== (value.facts?.group ?? '')
+                )
+                  await api.correctFileFacts(seriesID, value.id, { language, group })
+                await save(draft)
+              })
+            }
+          >
+            Save coverage
+          </Button>
+        </Group>
+      </Stack>
+    </EditorModal>
+  )
+}
+
+export function Relationships({
+  seriesID,
+  units,
+  collections,
+  close,
+}: {
+  seriesID: number
+  units: UnitSlot[]
+  collections: Collection[]
+  close: () => void
+}) {
+  const [from, setFrom] = useState<string | null>(null)
+  const [to, setTo] = useState<string | null>(null)
+  const [relation, setRelation] = useState<string | null>('contains')
+  const edit = useEditor()
+  const q = useQuery({
+    queryKey: ['series', seriesID, 'relations'],
+    queryFn: () => api.relations(seriesID),
+  })
+  const options = [
+    ...new Map(
+      units.map((s) => [
+        s.work.id,
+        {
+          value: String(s.work.id),
+          label: `${editionLabel(collections.find((c) => c.id === s.work.collectionId)!)} · ${s.work.sequenceStr}`,
+        },
+      ]),
+    ).values(),
+  ]
+  return (
+    <Modal opened onClose={close} title="Content relationships" size="lg">
+      <Stack>
+        <Text size="sm">
+          Record known relationships, such as omnibus 1 containing standard volumes 1–3. A
+          relationship does not mark the other edition as owned.
+        </Text>
+        <Select label="From book" searchable data={options} value={from} onChange={setFrom} />
+        <Select
+          label="Relationship"
+          data={[
+            { value: 'contains', label: 'Contains' },
+            { value: 'equivalent', label: 'Equivalent content' },
+            { value: 'revision', label: 'Revision of' },
+          ]}
+          value={relation}
+          onChange={setRelation}
+        />
+        <Select
+          label="To book"
+          searchable
+          data={options.filter((o) => o.value !== from)}
+          value={to}
+          onChange={setTo}
+        />
+        {edit.error && <Alert color="red">{edit.error}</Alert>}
+        <Button
+          disabled={!from || !to || !relation}
+          loading={edit.busy}
+          onClick={() =>
+            void edit.run(async () => {
+              await api.saveRelation(seriesID, {
+                fromId: Number(from),
+                toId: Number(to),
+                relation: relation!,
+              })
+              await q.refetch()
+            })
+          }
+        >
+          Add relationship
+        </Button>
+        {q.data?.map((r) => (
+          <Group key={`${r.fromId}-${r.toId}-${r.relation}`}>
+            <Text size="xs" style={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
+              {options.find((o) => Number(o.value) === r.fromId)?.label} {r.relation}{' '}
+              {options.find((o) => Number(o.value) === r.toId)?.label}
+            </Text>
+            <Button
+              size="compact-xs"
+              color="red"
+              variant="subtle"
+              disabled={edit.busy}
+              onClick={() =>
+                void edit.run(async () => {
+                  await api.deleteRelation(seriesID, r)
+                  await q.refetch()
+                })
+              }
+            >
+              Remove
+            </Button>
+          </Group>
+        ))}
+      </Stack>
+    </Modal>
+  )
+}
+
+export function EditorModal({
+  dirty,
+  busy,
+  onClose,
+  title,
+  children,
+  size,
+}: {
+  dirty: boolean
+  busy: boolean
+  onClose: () => void
+  title: string
+  children: ReactNode
+  size?: string
+}) {
+  useUnsavedChanges(dirty)
+  const { confirm, confirmation } = useConfirmAction()
+  const close = () => {
+    if (busy) return
+    if (!dirty) {
+      onClose()
+      return
+    }
+    confirm({
+      title: 'Discard unsaved changes?',
+      message: 'Your edits have not been saved.',
+      label: 'Discard changes',
+      onConfirm: async () => onClose(),
+    })
+  }
+  return (
+    <>
+      <Modal
+        opened
+        title={title}
+        size={size}
+        onClose={close}
+        closeOnEscape={!busy}
+        closeOnClickOutside={!busy}
+        withCloseButton={!busy}
+      >
+        {children}
+      </Modal>
+      {confirmation}
+    </>
+  )
+}

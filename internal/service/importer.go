@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -75,6 +76,12 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 		if ctx.Err() != nil {
 			return imported, ctx.Err() // shutting down: leave the rest queued
 		}
+		if item.Status == store.QueueNeedsReview || item.Status == store.QueueDispatchUnknown {
+			continue
+		}
+		if item.Status == store.QueueRetryWait && item.RetryAt != "" && time.Now().Before(parseTime(item.RetryAt)) {
+			continue
+		}
 		prov := im.registry.Get(item.ProviderID)
 		if item.ProviderID == "" {
 			prov = im.registry.ForProtocol(item.Protocol)
@@ -85,7 +92,16 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 		done, err := im.processItem(ctx, prov, item)
 		if err != nil {
 			slog.Warn("queue item failed", "id", item.ID, "title", item.Title, "error", err)
-			_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueFailed, err.Error())
+			switch {
+			case errors.Is(err, errDownloadDead):
+				_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueFailed, err.Error())
+			case errors.Is(err, errImportReview):
+				_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueNeedsReview, err.Error())
+			case errors.Is(err, errDispatchUnknown):
+				_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueDispatchUnknown, err.Error())
+			default:
+				_ = im.store.DeferQueue(ctx, item, err.Error())
+			}
 			event := "import_failed"
 			if errors.Is(err, errDownloadDead) {
 				// Sonarr semantics: a download that never completes gets
@@ -114,13 +130,27 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 
 // errDownloadDead marks downloads that never completed (vs import errors).
 var errDownloadDead = errors.New("download dead")
+var errImportReview = errors.New("import needs review")
+var errDispatchUnknown = errors.New("download dispatch needs review")
 
 func (im *Importer) processItem(ctx context.Context, prov provider.Provider, item store.QueueItem) (bool, error) {
 	if item.ExternalID == "" {
-		if time.Since(parseTime(item.CreatedAt)) > 10*time.Minute {
-			return false, fmt.Errorf("download interrupted before the remote handle was recorded; retry this release")
+		// Reconcile an uncertain submission with its stable provider key; never submit twice.
+		if item.ReleaseKey != "" {
+			state, err := prov.State(ctx, item.ReleaseKey)
+			if err == nil && (state.Done || state.InFlight) {
+				if err = im.store.SetQueueExternalID(ctx, item.ID, item.ReleaseKey); err != nil {
+					return false, err
+				}
+				item.ExternalID = item.ReleaseKey
+			}
 		}
-		return false, nil
+		if item.ExternalID == "" {
+			if time.Since(parseTime(item.CreatedAt)) > 10*time.Minute {
+				return false, fmt.Errorf("%w: confirm the download in your client, then attach its ID or cancel this job", errDispatchUnknown)
+			}
+			return false, nil
+		}
 	}
 	state, err := prov.State(ctx, item.ExternalID)
 	if err != nil {
@@ -160,6 +190,12 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 	}
 	item = *frozen
 
+	if complete, checkErr := im.reviewedJobComplete(ctx, item); checkErr != nil {
+		return false, checkErr
+	} else if complete {
+		_ = prov.Cleanup(ctx, item.ExternalID)
+		return true, im.store.UpdateQueueItem(ctx, item.ID, store.QueueImported, "")
+	}
 	payload, err := prov.Fetch(ctx, item.ExternalID)
 	if err != nil {
 		return false, err
@@ -171,7 +207,7 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 		err = im.importFiles(ctx, item, im.mapPath(payload.Dir), payload.Files)
 	}
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("%w: %v", errImportReview, err)
 	}
 
 	if err := prov.Cleanup(ctx, item.ExternalID); err != nil {
@@ -303,6 +339,37 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 		return err
 	}
 	linked := map[string]bool{}
+	preservedHashes := map[string]bool{}
+	if item.ReleaseKey != "" {
+		view, e := loadLedger(ctx, im.store, item.SeriesID)
+		if e != nil {
+			return e
+		}
+		known, e := im.store.ListFiles(ctx, item.SeriesID)
+		if e != nil {
+			return e
+		}
+		belongs := map[int64]bool{}
+		for _, f := range known {
+			if f.Facts.ReleaseKey == item.ReleaseKey && f.Presence == "present" && !f.NeedsReview && !f.Unrequested {
+				belongs[f.ID] = true
+				if f.Hash != "" {
+					preservedHashes[f.Hash] = true
+				}
+			}
+		}
+		for _, sl := range expected {
+			for _, book := range view.Slots[sl.TargetID] {
+				if book.Work.ID == sl.WorkID {
+					for _, fid := range book.FileIDs {
+						if belongs[fid] {
+							linked[store.SlotKey("unit", sl.TargetID, sl.WorkID)] = true
+						}
+					}
+				}
+			}
+		}
+	}
 	for _, rel := range files {
 		if filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(filepath.Clean(rel), ".."+string(filepath.Separator)) {
 			return fmt.Errorf("invalid payload path")
@@ -310,6 +377,15 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 		ext := strings.ToLower(filepath.Ext(rel))
 		if ext != ".cbz" && ext != ".cbr" {
 			continue
+		}
+		if len(preservedHashes) > 0 {
+			hash, e := fileHash(filepath.Join(dir, rel))
+			if e != nil {
+				return e
+			}
+			if preservedHashes[hash] {
+				continue
+			}
 		}
 		res := parse.ParseAnchored(filepath.Base(rel), parse.ChannelFile, titles)
 		if !res.Anchored || res.TitleLeftover != "" || res.ContentType != parse.ContentManga {
@@ -438,4 +514,50 @@ func (im *Importer) BlocklistQueueItem(ctx context.Context, qid int64) error {
 		return nil
 	}
 	return store.ErrNotFound
+}
+
+// Reviewed payloads can complete without redownloading or reparsing names that
+// the user already corrected. Only assets from this offer can resolve its job.
+func (im *Importer) reviewedJobComplete(ctx context.Context, item store.QueueItem) (bool, error) {
+	if item.ReleaseKey == "" {
+		return false, nil
+	}
+	if err := im.store.CheckFilePresence(ctx, item.SeriesID); err != nil {
+		return false, err
+	}
+	var plan []store.ExpectedSlot
+	if err := json.Unmarshal(item.ExpectedSlots, &plan); err != nil {
+		return false, err
+	}
+	if len(plan) == 0 {
+		return false, nil
+	}
+	view, err := loadLedger(ctx, im.store, item.SeriesID)
+	if err != nil {
+		return false, err
+	}
+	files, err := im.store.ListFiles(ctx, item.SeriesID)
+	if err != nil {
+		return false, err
+	}
+	belongs := map[int64]bool{}
+	for _, f := range files {
+		belongs[f.ID] = f.Facts.ReleaseKey == item.ReleaseKey
+	}
+	for _, sl := range plan {
+		found := false
+		for _, book := range view.Slots[sl.TargetID] {
+			if book.Work.ID == sl.WorkID {
+				for _, fid := range book.FileIDs {
+					if belongs[fid] {
+						found = true
+					}
+				}
+			}
+		}
+		if !found {
+			return false, nil
+		}
+	}
+	return true, nil
 }

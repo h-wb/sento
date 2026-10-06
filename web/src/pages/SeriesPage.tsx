@@ -1,4 +1,5 @@
-import EditionManager, { EditorModal } from '../components/EditionManager'
+import EditionManager from '../components/EditionManager'
+import { EditorModal } from '../components/EditionDialogs'
 import { useCallback, useState } from 'react'
 import {
   Anchor,
@@ -63,8 +64,8 @@ export default function SeriesPage() {
     queryFn: () => api.getSeries(seriesID),
   })
   const slotsQuery = useQuery({
-    queryKey: ['series', seriesID, 'target-slots'],
-    queryFn: () => api.targetSlots(seriesID),
+    queryKey: ['series', seriesID, 'edition-overview'],
+    queryFn: () => api.editionOverview(seriesID),
   })
   const filesQuery = useQuery({
     queryKey: ['series', seriesID, 'files'],
@@ -111,9 +112,8 @@ export default function SeriesPage() {
     )
   }
 
-  const allSlots = Object.values(slots ?? {}).flat()
-  const owned = allSlots.filter((s) => s.fileIds?.length).length
-  const wanted = allSlots.filter((s) => s.wanted).length
+  const owned = slots?.booksOnDisk ?? 0
+  const wanted = slots?.wantedCopies ?? 0
 
   return (
     <>
@@ -202,7 +202,7 @@ export default function SeriesPage() {
                     {owned}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    Owned
+                    Books on disk
                   </Text>
                 </div>
                 <div>
@@ -210,7 +210,7 @@ export default function SeriesPage() {
                     {wanted}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    Wanted
+                    Copies wanted
                   </Text>
                 </div>
               </>
@@ -648,8 +648,8 @@ function AddEditionModal({
         )}
         {ctype === 'chapter' && (
           <NumberInput
-            label="Monitor from chapter"
-            description="Chapters below the cutoff are ignored (0 = collect everything)"
+            label="Skip through chapter"
+            description="Only chapters above this number are collected automatically. You can collect chapter zero from its book list."
             min={0}
             value={cutoff}
             onChange={setCutoff}

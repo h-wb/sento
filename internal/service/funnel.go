@@ -6,6 +6,7 @@ package service
 
 import (
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -497,9 +498,9 @@ func editionCompatible(p parse.Result, c store.Collection) bool {
 	if p.Language != "" && p.Language != "multi" && baseLang(p.Language) != baseLang(c.Language) {
 		return false
 	}
-	layout := c.EditionLayout
-	if layout == "" {
-		layout = metadata.EditionLayout(c.EditionName)
+	traits := c.EditionTraits
+	if traits == nil {
+		traits = metadata.EditionTraits(c.EditionName)
 	}
 	variant := c.ContentVariant
 	if variant == "" {
@@ -508,21 +509,8 @@ func editionCompatible(p parse.Result, c store.Collection) bool {
 	if p.Edition.Colored != (variant == "colored") {
 		return false
 	}
-	switch {
-	case p.Edition.Omnibus:
-		if layout != "omnibus" {
-			return false
-		}
-	case p.Edition.BoxSet:
-		if layout != "boxset" {
-			return false
-		}
-	case p.Edition.Deluxe:
-		if layout != "deluxe" {
-			return false
-		}
-	default:
-		if layout != "standard" && layout != "custom" {
+	for trait, present := range map[string]bool{"omnibus": p.Edition.Omnibus, "boxset": p.Edition.BoxSet, "deluxe": p.Edition.Deluxe} {
+		if present != slices.Contains(traits, trait) {
 			return false
 		}
 	}
@@ -561,13 +549,13 @@ func editionCompatibleWithEvidence(p parse.Result, c store.Collection, evidence 
 	if p.Language != "" && p.Language != "multi" && baseLang(p.Language) != baseLang(c.Language) {
 		return false
 	}
-	layout := c.EditionLayout
-	if layout == "" {
-		layout = metadata.EditionLayout(c.EditionName)
+	traits := c.EditionTraits
+	if traits == nil {
+		traits = metadata.EditionTraits(c.EditionName)
 	}
 	variant := c.ContentVariant
 	if variant == "" {
 		variant = metadata.ContentVariant(c.EditionName)
 	}
-	return (!p.Edition.Omnibus || layout == "omnibus") && (!p.Edition.BoxSet || layout == "boxset") && (!p.Edition.Deluxe || layout == "deluxe") && (!p.Edition.Colored || variant == "colored")
+	return (!p.Edition.Omnibus || (slices.Contains(traits, "omnibus") || len(traits) == 0)) && (!p.Edition.BoxSet || (slices.Contains(traits, "boxset") || len(traits) == 0)) && (!p.Edition.Deluxe || (slices.Contains(traits, "deluxe") || len(traits) == 0)) && (!p.Edition.Colored || (variant == "colored" || variant == "unknown"))
 }
