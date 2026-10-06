@@ -1,3 +1,4 @@
+import EditionActions from './EditionActions'
 import { useState, type ReactNode } from 'react'
 import { useMediaQuery } from '@mantine/hooks'
 import { useUnsavedChanges } from '../useUnsavedChanges'
@@ -90,9 +91,9 @@ export default function EditionManager({
   const [link, setLink] = useState<Collection | null>(null)
   const [file, setFile] = useState<SeriesFile | null>(null)
   const [relationships, setRelationships] = useState(false)
-  const [showFiles,setShowFiles]=useState(false)
-  const [fileFilter,setFileFilter]=useState('')
-  const [filePage,setFilePage]=useState(1)
+  const [showFiles, setShowFiles] = useState(false)
+  const [fileFilter, setFileFilter] = useState('')
+  const [filePage, setFilePage] = useState(1)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const { confirm, confirmation } = useConfirmAction()
@@ -126,14 +127,15 @@ export default function EditionManager({
     <Stack gap="lg">
       <Group justify="space-between">
         <Text size="sm" c="dimmed">
-          Each edition keeps its own volumes or chapters. Versions let you keep different releases.
+          Editions separate languages and publication formats. Collected versions keep different
+          releases of the same edition.
         </Text>
         <Group>
           <Button size="xs" variant="default" onClick={() => setRelationships(true)}>
             Content relationships
           </Button>
           <Button size="xs" onClick={onAddEdition}>
-            Add missing edition
+            Add edition
           </Button>
         </Group>
       </Group>
@@ -216,7 +218,10 @@ export default function EditionManager({
                 <Group justify="space-between" align="flex-start">
                   <div style={{ minWidth: 0 }}>
                     <Text fw={600} style={{ overflowWrap: 'anywhere' }}>
-                      {editionLabel(c)}
+                      {c.editionName}
+                    </Text>
+                    <Text size="xs" c="dimmed" mt={4}>
+                      {[c.language, c.publisher, c.medium].filter(Boolean).join(' · ')}
                     </Text>
                     <Group gap="xs" mt={4}>
                       <Badge size="xs" variant="outline">
@@ -238,6 +243,16 @@ export default function EditionManager({
                     <Button size="compact-xs" variant="subtle" onClick={() => setEdition(c)}>
                       Edit edition
                     </Button>
+                    {c.custom && (
+                      <EditionActions
+                        seriesID={seriesID}
+                        collection={c}
+                        others={visible.filter((o) => o.id !== c.id)}
+                        run={async (fn) => {
+                          await run(fn)
+                        }}
+                      />
+                    )}
                     {c.custom && (
                       <Button size="compact-xs" variant="subtle" onClick={() => setLink(c)}>
                         Link to catalog
@@ -288,7 +303,7 @@ export default function EditionManager({
                         })
                       }
                     >
-                      Keep another version
+                      Add collected version
                     </Button>
                     <Button
                       variant="default"
@@ -493,7 +508,86 @@ export default function EditionManager({
           </Stack>
         </Card>
       )}
-      {files.length>0&&<Card withBorder><Stack gap="sm"><Group justify="space-between"><Text fw={600}>Files and coverage</Text><Button size="compact-xs" variant="subtle" onClick={()=>{setShowFiles(!showFiles);setFilePage(1)}}>{showFiles?'Show review only':'Manage all files'}</Button></Group>{showFiles&&<TextInput placeholder="Find a file" aria-label="Find a file" value={fileFilter} onChange={e=>{setFileFilter(e.currentTarget.value);setFilePage(1)}}/>}{(()=>{const review=(f:SeriesFile)=>f.needsReview||f.unrequested||coverage.data?.some(a=>a.fileId===f.id&&!a.verified);const list=files.filter(f=>(showFiles||review(f))&&f.path.toLowerCase().includes(fileFilter.toLowerCase())).sort((a,b)=>Number(!!review(b))-Number(!!review(a)));return <>{list.length===0&&<Text size="sm" c="dimmed">No files need review.</Text>}{list.slice((filePage-1)*20,filePage*20).map(f=><Group key={f.id} justify="space-between"><div style={{minWidth:0,flex:1}}><Text size="sm" title={f.path} style={{overflowWrap:'anywhere'}}>{f.path.split(/[\\/]/).pop()?.replace(/ \[[a-f0-9]{64}\](?=\.[^.]+$)/i,'')}</Text><Text size="xs" c="dimmed">{review(f)?'Needs review':'Confirmed coverage'} · {f.facts?.language||'Language unknown'}{f.facts?.group?` · ${f.facts.group}`:''}</Text></div><Button size="xs" variant="default" onClick={()=>setFile(f)}>{review(f)?'Match file':'Edit mappings'}</Button></Group>)}{list.length>20&&<Pagination size="sm" total={Math.ceil(list.length/20)} value={filePage} onChange={setFilePage}/>}</>})()}</Stack></Card>}
+      {files.length > 0 && (
+        <Card withBorder>
+          <Stack gap="sm">
+            <Group justify="space-between">
+              <Text fw={600}>Files and coverage</Text>
+              <Button
+                size="compact-xs"
+                variant="subtle"
+                onClick={() => {
+                  setShowFiles(!showFiles)
+                  setFilePage(1)
+                }}
+              >
+                {showFiles ? 'Show review only' : 'Manage all files'}
+              </Button>
+            </Group>
+            {showFiles && (
+              <TextInput
+                placeholder="Find a file"
+                aria-label="Find a file"
+                value={fileFilter}
+                onChange={(e) => {
+                  setFileFilter(e.currentTarget.value)
+                  setFilePage(1)
+                }}
+              />
+            )}
+            {(() => {
+              const review = (f: SeriesFile) =>
+                f.needsReview ||
+                f.unrequested ||
+                coverage.data?.some((a) => a.fileId === f.id && !a.verified)
+              const list = files
+                .filter(
+                  (f) =>
+                    (showFiles || review(f)) &&
+                    f.path.toLowerCase().includes(fileFilter.toLowerCase()),
+                )
+                .sort((a, b) => Number(!!review(b)) - Number(!!review(a)))
+              return (
+                <>
+                  {list.length === 0 && (
+                    <Text size="sm" c="dimmed">
+                      No files need review.
+                    </Text>
+                  )}
+                  {list.slice((filePage - 1) * 20, filePage * 20).map((f) => (
+                    <Group key={f.id} justify="space-between">
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <Text size="sm" title={f.path} style={{ overflowWrap: 'anywhere' }}>
+                          {f.path
+                            .split(/[\\/]/)
+                            .pop()
+                            ?.replace(/ \[[a-f0-9]{64}\](?=\.[^.]+$)/i, '')}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {review(f) ? 'Needs review' : 'Confirmed coverage'} ·{' '}
+                          {f.facts?.language || 'Language unknown'}
+                          {f.facts?.group ? ` · ${f.facts.group}` : ''}
+                        </Text>
+                      </div>
+                      <Button size="xs" variant="default" onClick={() => setFile(f)}>
+                        {review(f) ? 'Match file' : 'Edit mappings'}
+                      </Button>
+                    </Group>
+                  ))}
+                  {list.length > 20 && (
+                    <Pagination
+                      size="sm"
+                      total={Math.ceil(list.length / 20)}
+                      value={filePage}
+                      onChange={setFilePage}
+                    />
+                  )}
+                </>
+              )
+            })()}
+          </Stack>
+        </Card>
+      )}
       {(observations.data ?? []).filter((o) => o.state === 'pending').length > 0 && (
         <Card withBorder>
           <Text fw={600}>Chapter observations</Text>
@@ -585,6 +679,8 @@ export default function EditionManager({
               ...patch,
               reset: [],
             })
+            if (patch.profileId !== edition.profileId)
+              await api.setCollectionProfile(seriesID, edition.id, patch.profileId || 0)
             await changed()
             setEdition(null)
           }}
@@ -682,7 +778,7 @@ function TargetEditor({
       dirty={JSON.stringify(v) !== JSON.stringify(value)}
       busy={edit.busy}
       onClose={close}
-      title={v.id ? 'Version settings' : 'Keep another version'}
+      title={v.id ? 'Version settings' : 'Add collected version'}
     >
       <form
         onSubmit={(e) => {
@@ -883,13 +979,14 @@ function EditionEditor({
 }: {
   value: Collection
   save: (p: {
+    profileId?: number
     editionName: string
     language: string
     publisher: string
     medium: string
     editionLayout: string
     contentVariant: string
-    numberingSource:string
+    numberingSource: string
     discoverChapters?: boolean
   }) => Promise<void>
   reset: () => Promise<void>
@@ -897,6 +994,7 @@ function EditionEditor({
 }) {
   const [v, set] = useState(value)
   const edit = useEditor()
+  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
   return (
     <EditorModal
       dirty={JSON.stringify(v) !== JSON.stringify(value)}
@@ -912,7 +1010,8 @@ function EditionEditor({
       >
         <Stack>
           <Text size="sm" c="dimmed">
-            Edits are preserved during catalog refresh. To collect a different language or edition, add a missing edition.
+            Edits are preserved during catalog refresh. To collect a different language or edition,
+            add an edition.
           </Text>
           {(['editionName', 'language', 'publisher', 'medium'] as const).map((k) => (
             <TextInput
@@ -931,6 +1030,16 @@ function EditionEditor({
               onChange={(e) => set({ ...v, [k]: e.currentTarget.value })}
             />
           ))}
+          <Select
+            label="Edition release profile"
+            description="Used by versions that inherit this edition’s profile."
+            placeholder="Inherit series profile"
+            clearable
+            data={(profiles.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
+            value={v.profileId ? String(v.profileId) : null}
+            onChange={(id) => set({ ...v, profileId: Number(id) || 0 })}
+            disabled={edit.busy}
+          />
           <Select
             label="Edition layout"
             data={[
@@ -954,7 +1063,20 @@ function EditionEditor({
             onChange={(variant) => set({ ...v, contentVariant: variant ?? 'original' })}
             disabled={edit.busy}
           />
-          {v.type==='chapter'&&v.custom&&<Select label="Chapter numbering" description="Use explicit units for gaps or edition-specific numbering" data={[{value:'manual',label:'Explicit units only'},{value:'series_count',label:'Infer 1 to the series chapter count'},{value:'catalog',label:'Catalog units only'}]} value={v.numberingSource} disabled={edit.busy} onChange={source=>set({...v,numberingSource:source??'manual'})}/>}
+          {v.type === 'chapter' && v.custom && (
+            <Select
+              label="Chapter numbering"
+              description="Use explicit units for gaps or edition-specific numbering"
+              data={[
+                { value: 'manual', label: 'Explicit units only' },
+                { value: 'series_count', label: 'Infer 1 to the series chapter count' },
+                { value: 'catalog', label: 'Catalog units only' },
+              ]}
+              value={v.numberingSource}
+              disabled={edit.busy}
+              onChange={(source) => set({ ...v, numberingSource: source ?? 'manual' })}
+            />
+          )}
           {v.type === 'chapter' && (
             <Checkbox
               label="Collect source observations for review"
@@ -1125,7 +1247,8 @@ function MappingEditor({
           {value.path}
         </Text>
         <Text size="sm">
-          Confirm the edition and units this archive contains. This confirmation overrides parsed language for coverage. Group requirements still apply. A pack can cover several units.
+          Confirm the edition and units this archive contains. This confirmation overrides parsed
+          language for coverage. Group requirements still apply. A pack can cover several units.
           Existing mappings to other versions are kept.
         </Text>
         {value.facts && (
@@ -1301,7 +1424,7 @@ function Relationships({
   )
 }
 
-function EditorModal({
+export function EditorModal({
   dirty,
   busy,
   onClose,

@@ -19,8 +19,8 @@ test('editions retain independent versions, editable units, and mobile layout', 
       .locator('.mantine-Card-root')
       .filter({ hasText: 'Standard Edition' })
       .first()
-    await edition.getByRole('button', { name: 'Keep another version', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Keep another version', exact: true })
+    await edition.getByRole('button', { name: 'Add collected version', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Add collected version', exact: true })
     await dialog.getByRole('textbox', { name: 'Version name', exact: true }).fill('Preferred group')
     await dialog.getByRole('textbox', { name: 'Required release group', exact: true }).fill('LuCaZ')
     await dialog.getByRole('button', { name: 'Save version', exact: true }).click()
@@ -48,6 +48,36 @@ test('editions retain independent versions, editable units, and mobile layout', 
     await expect(edit).toBeHidden()
     await page.reload()
     await expect(page.getByText(/Publisher corrected edition/).first()).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Collections', exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Add edition', exact: true }).click()
+    const add = page.getByRole('dialog', { name: 'Add edition', exact: true })
+    await add.getByRole('textbox', { name: 'Edition name', exact: true }).fill('Spanish edition')
+    await add.getByRole('button', { name: 'Close dialog', exact: true }).click()
+    const discard = page.getByRole('dialog', { name: 'Discard unsaved changes?', exact: true })
+    await expect(discard).toBeVisible()
+    await discard.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect(add.getByRole('textbox', { name: 'Edition name', exact: true })).toHaveValue(
+      'Spanish edition',
+    )
+    await add.getByRole('textbox', { name: 'Language', exact: true }).fill('es')
+    await add.getByRole('button', { name: 'Add edition', exact: true }).click()
+    await expect(add).toBeHidden()
+    await expect(page.getByText('Spanish edition', { exact: true })).toBeVisible()
+    const added = await request.get(`/api/v1/series/${id}/`)
+    const detail = await added.json()
+    const spanish = detail.collections.find(
+      (c: { editionName: string }) => c.editionName === 'Spanish edition',
+    )
+    expect(spanish.custom).toBe(true)
+    const freshSlots = await (await request.get(`/api/v1/series/${id}/target-slots`)).json()
+    expect(
+      Object.values(freshSlots)
+        .flat()
+        .filter(
+          (s: unknown) =>
+            (s as { work: { collectionId: number } }).work.collectionId === spanish.id,
+        ),
+    ).toHaveLength(0)
     await page.setViewportSize({ width: 390, height: 844 })
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))

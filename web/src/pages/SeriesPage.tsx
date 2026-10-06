@@ -1,9 +1,7 @@
-import type { UnitSlot } from '../types/service'
-import EditionManager from '../components/EditionManager'
+import EditionManager, { EditorModal } from '../components/EditionManager'
 import { useCallback, useState } from 'react'
 import {
   Anchor,
-  Alert,
   ActionIcon,
   Badge,
   Button,
@@ -35,7 +33,6 @@ import {
   IconRefresh,
   IconSearch,
   IconTrash,
-  IconVersions,
   IconX,
 } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -57,7 +54,6 @@ export default function SeriesPage() {
   const [busy, setBusy] = useState(false)
   const [slotSel, setSlotSel] = useState<SlotSelection | null>(null)
   const [fullDesc, setFullDesc] = useState(false)
-  const [manageCollections, setManageCollections] = useState(false)
   const [addCollection, setAddCollection] = useState(false)
   const [tab, setTab] = useState<string | null>('editions')
 
@@ -115,7 +111,6 @@ export default function SeriesPage() {
     )
   }
 
-  const volumeCollections = collections.filter((c) => c.type === 'volume')
   const allSlots = Object.values(slots ?? {}).flat()
   const owned = allSlots.filter((s) => s.fileIds?.length).length
   const wanted = allSlots.filter((s) => s.wanted).length
@@ -225,7 +220,7 @@ export default function SeriesPage() {
       </div>
       <div className={classes.actions}>
         <Group gap="xs">
-          <Tooltip label="Search monitored collections and download the best matching releases automatically.">
+          <Tooltip label="Search collected editions and download the best matching releases automatically.">
             <Button
               size="sm"
               leftSection={<IconSearch size={15} />}
@@ -266,14 +261,6 @@ export default function SeriesPage() {
               Refresh
             </Button>
           </Tooltip>
-          <Button
-            size="sm"
-            variant="default"
-            leftSection={<IconVersions size={15} />}
-            onClick={() => setManageCollections(true)}
-          >
-            Collections
-          </Button>
         </Group>
         <Group gap="md">
           <ProfileBarButton seriesID={seriesID} profileId={series.profileId ?? 0} />
@@ -322,27 +309,19 @@ export default function SeriesPage() {
       {!series.monitored && (
         <Text size="sm" c="dimmed" mb="lg">
           Automatic downloads are paused for this series. You can still browse releases from its
-          collections.
+          editions.
         </Text>
       )}
       {confirmation}
-      <CollectionsModal
-        seriesID={seriesID}
-        collections={collections}
-        slots={slots}
-        opened={manageCollections}
-        run={run}
-        onAdd={() => setAddCollection(true)}
-        onClose={() => setManageCollections(false)}
-      />
-      <AddCollectionModal
-        seriesID={seriesID}
-        collections={volumeCollections}
-        opened={addCollection}
-        busy={busy}
-        run={run}
-        onClose={() => setAddCollection(false)}
-      />
+      {addCollection && (
+        <AddEditionModal
+          seriesID={seriesID}
+          collections={collections}
+          busy={busy}
+          run={run}
+          onClose={() => setAddCollection(false)}
+        />
+      )}
 
       <Tabs value={tab} onChange={setTab} keepMounted={false}>
         <Tabs.List>
@@ -552,138 +531,19 @@ function ProfileBarButton({ seriesID, profileId }: { seriesID: number; profileId
   )
 }
 
-function CollectionsModal({
-  seriesID,
-  collections,
-  slots,
-  opened,
-  run,
-  onAdd,
-  onClose,
-}: {
-  seriesID: number
-  collections: Collection[]
-  slots: Record<string, UnitSlot[]> | null
-  opened: boolean
-  run: (fn: () => Promise<unknown>, msg?: string) => void
-  onAdd: () => void
-  onClose: () => void
-}) {
-  return (
-    <Modal opened={opened} onClose={onClose} title="Collections" size="lg">
-      <Stack gap="sm">
-        <Text size="xs" c="dimmed">
-          Choose the editions and languages you collect. Sento searches monitored collections for
-          missing releases.
-        </Text>
-        {collections.map((c) => {
-          const isChapter = c.type === 'chapter'
-          const cs = Object.values(slots ?? {})
-            .flat()
-            .filter((s) => s.work.collectionId === c.id)
-          const own = cs.filter((s) => (s.fileIds?.length ?? 0) > 0).length
-          return (
-            <Group key={c.id} justify="space-between" wrap="nowrap">
-              <div>
-                <Text size="sm" fw={500}>
-                  {c.editionName}{' '}
-                  <Text span size="xs" c="dimmed">
-                    {[c.language, c.medium, c.publisher].filter(Boolean).join(' · ')}
-                  </Text>{' '}
-                  {isChapter && (
-                    <Badge size="xs" color="teal" variant="light">
-                      chapters
-                    </Badge>
-                  )}{' '}
-                  {c.custom && (
-                    <Badge size="xs" color="grape" variant="light">
-                      custom
-                    </Badge>
-                  )}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  {own}/{cs.length} owned
-                </Text>
-              </div>
-              <Group gap="xs" wrap="nowrap">
-                {c.custom && (
-                  <CustomCollectionActions
-                    seriesID={seriesID}
-                    collection={c}
-                    others={collections.filter((o) => o.id !== c.id && o.type === c.type)}
-                    run={run}
-                  />
-                )}
-                <CollectionProfileSelect seriesID={seriesID} collection={c} run={run} />
-                <Switch
-                  size="xs"
-                  label="Monitored"
-                  checked={c.monitored}
-                  onChange={(e) =>
-                    run(() => api.setCollectionMonitored(seriesID, c.id, e.currentTarget.checked))
-                  }
-                />
-              </Group>
-            </Group>
-          )
-        })}
-        {collections.length === 0 && (
-          <Text size="sm" c="dimmed">
-            No collections known for this series.
-          </Text>
-        )}
-        <Button size="xs" variant="default" style={{ alignSelf: 'flex-start' }} onClick={onAdd}>
-          Add custom collection
-        </Button>
-      </Stack>
-    </Modal>
-  )
-}
-
-// CollectionProfileSelect overrides one collection's release profile
-// (empty = inherit the series profile).
-function CollectionProfileSelect({
-  seriesID,
-  collection,
-  run,
-}: {
-  seriesID: number
-  collection: Collection
-  run: (fn: () => Promise<unknown>, msg?: string) => void
-}) {
-  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
-  if (!profiles.data?.length) return null
-  return (
-    <Select
-      size="xs"
-      w={150}
-      title="Release profile (overrides the series profile)"
-      placeholder="Series profile"
-      clearable
-      data={profiles.data.map((p) => ({ value: String(p.id), label: p.name }))}
-      value={collection.profileId ? String(collection.profileId) : null}
-      onChange={(v) =>
-        run(() => api.setCollectionProfile(seriesID, collection.id, v ? Number(v) : 0))
-      }
-    />
-  )
-}
-
 // AddCollectionModal creates a custom collection: based on an existing one
 // (clones the volume numbering — language variants) or from scratch with
 // a volume count (collections MangaBaka doesn't know yet). Metadata refresh
 // keeps local editions independent until explicitly linked to the catalog.
-function AddCollectionModal({
+function AddEditionModal({
   seriesID,
   collections,
-  opened,
   busy,
   run,
   onClose,
 }: {
   seriesID: number
   collections: Collection[]
-  opened: boolean
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onClose: () => void
@@ -694,7 +554,7 @@ function AddCollectionModal({
   const [publisher, setPublisher] = useState('')
   const [medium, setMedium] = useState('')
   const [basedOn, setBasedOn] = useState<string | null>(null)
-  const [volumes, setVolumes] = useState<number | string>(12)
+  const [volumes, setVolumes] = useState<number | string>(0)
   const [cutoff, setCutoff] = useState<number | string>(0)
 
   const create = () =>
@@ -707,24 +567,44 @@ function AddCollectionModal({
             publisher,
             medium,
             type: ctype,
-            basedOn: ctype === 'volume' && basedOn ? Number(basedOn) : 0,
+            basedOn: basedOn ? Number(basedOn) : 0,
             volumes: ctype === 'volume' && !basedOn ? Number(volumes) || 0 : 0,
             cutoffNum: ctype === 'chapter' ? Math.round((Number(cutoff) || 0) * 100) : 0,
             monitored: true,
           })
           .then(onClose),
-      'Collection created',
+      'Edition added',
     )
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Add collection" size="md">
-      <Stack gap="xs">
+    <EditorModal
+      dirty={
+        name !== 'Standard Edition' ||
+        !!language ||
+        !!publisher ||
+        !!medium ||
+        !!basedOn ||
+        Number(volumes) !== 0 ||
+        Number(cutoff) !== 0 ||
+        ctype !== 'volume'
+      }
+      busy={busy}
+      onClose={onClose}
+      title="Add edition"
+      size="md"
+    >
+      <Stack gap="sm">
+        <Text size="sm" c="dimmed">
+          Add a language or publication edition missing from MangaBaka. To keep another release
+          group for an existing edition, add a collected version instead.
+        </Text>
         <SegmentedControl
           size="xs"
           value={ctype}
           onChange={(v) => {
             const t = v as 'volume' | 'chapter'
             setCtype(t)
+            setBasedOn(null)
             // Swap the default name when the user hasn't typed their own.
             if (t === 'chapter' && name === 'Standard Edition') setName('Chapters')
             if (t === 'volume' && name === 'Chapters') setName('Standard Edition')
@@ -734,24 +614,26 @@ function AddCollectionModal({
             { value: 'chapter', label: 'Chapters' },
           ]}
         />
-        {ctype === 'volume' && (
+        {
           <Select
-            label="Based on"
-            description="Clones the volume numbering (release dates stay unknown); pick nothing to start from scratch"
+            label="Copy numbering from"
+            description="Copy unit labels only. Dates and catalog references are kept separate."
             placeholder="From scratch"
             clearable
-            data={collections.map((c) => ({
-              value: String(c.id),
-              label: `${c.editionName} · ${c.language} · ${c.medium || '?'} (${c.countMain} vols)`,
-            }))}
+            data={collections
+              .filter((c) => c.type === ctype)
+              .map((c) => ({
+                value: String(c.id),
+                label: [c.editionName, c.language, c.medium].filter(Boolean).join(' · '),
+              }))}
             value={basedOn}
             onChange={setBasedOn}
           />
-        )}
+        }
         {ctype === 'volume' && !basedOn && (
           <NumberInput
             label="Volumes"
-            description="Use 0 to add units individually"
+            description="Leave at 0 to add volumes individually; only enter a count you know."
             min={0}
             max={500}
             value={volumes}
@@ -774,7 +656,7 @@ function AddCollectionModal({
           />
         )}
         <TextInput
-          label="Collection name"
+          label="Edition name"
           value={name}
           onChange={(e) => setName(e.currentTarget.value)}
         />
@@ -798,83 +680,13 @@ function AddCollectionModal({
           />
         </Group>
         <Button mt="xs" loading={busy} disabled={!name.trim() || !language.trim()} onClick={create}>
-          Create collection
+          Add edition
         </Button>
       </Stack>
-    </Modal>
+    </EditorModal>
   )
 }
 
-// CustomCollectionActions: merge a custom edition into another one (links
-// re-point by volume number) or delete it (files stay in the library).
-function CustomCollectionActions({
-  seriesID,
-  collection,
-  others,
-  run,
-}: {
-  seriesID: number
-  collection: Collection
-  others: Collection[]
-  run: (fn: () => Promise<unknown>, msg?: string) => void
-}) {
-  const [merge, setMerge] = useState<Collection | null>(null)
-  return (
-    <>
-      <Menu position="bottom-end" withinPortal>
-        <Menu.Target>
-          <Button size="compact-xs" variant="subtle" px={4}>
-            <IconDotsVertical size={14} />
-          </Button>
-        </Menu.Target>
-        <Menu.Dropdown>
-          <Menu.Label>Merge into</Menu.Label>
-          {others
-            .filter(
-              (o) =>
-                o.editionName === collection.editionName &&
-                o.language === collection.language &&
-                o.publisher === collection.publisher &&
-                o.medium === collection.medium &&
-                o.type === collection.type,
-            )
-            .map((o) => (
-              <Menu.Item key={o.id} onClick={() => setMerge(o)}>
-                {o.editionName} · {o.language} {o.medium ? `· ${o.medium}` : ''}
-              </Menu.Item>
-            ))}
-          {others.length === 0 && <Menu.Item disabled>No other collection</Menu.Item>}
-          <Menu.Divider />
-          <Menu.Item
-            color="red"
-            leftSection={<IconTrash size={14} />}
-            onClick={() =>
-              run(() => api.deleteCollection(seriesID, collection.id), 'Collection deleted')
-            }
-          >
-            Delete collection
-          </Menu.Item>
-        </Menu.Dropdown>
-      </Menu>
-      {merge && (
-        <MergePreview
-          seriesID={seriesID}
-          collection={collection}
-          into={merge}
-          close={() => setMerge(null)}
-          done={() => {
-            setMerge(null)
-            run(async () => {}, 'Collections merged')
-          }}
-        />
-      )}
-    </>
-  )
-}
-
-// ChapterStrip compresses the whole chapter run into one thin bar:
-// contiguous same-state chapters become proportional segments, so 1,100
-// chapters stay readable at a glance.
 function IndexersTab({
   seriesID,
   seriesTitle,
@@ -1192,103 +1004,6 @@ function RebindModal({
             </Group>
           )
         })}
-      </Stack>
-    </Modal>
-  )
-}
-
-function MergePreview({
-  seriesID,
-  collection,
-  into,
-  close,
-  done,
-}: {
-  seriesID: number
-  collection: Collection
-  into: Collection
-  close: () => void
-  done: () => void
-}) {
-  const preview = useQuery({
-    queryKey: ['series', seriesID, 'merge-preview', collection.id, into.id],
-    queryFn: () => api.mergePreview(seriesID, collection.id, into.id),
-  })
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const p = preview.data
-  return (
-    <Modal
-      opened
-      title="Review edition merge"
-      onClose={() => {
-        if (!busy) close()
-      }}
-      closeOnEscape={!busy}
-      closeOnClickOutside={!busy}
-    >
-      <Stack>
-        <Text size="sm">
-          The destination edition keeps its metadata. Your collected versions, their policies, pins,
-          and confirmed file mappings are retained. Files stay in place.
-        </Text>
-        <QueryFeedback
-          pending={preview.isPending}
-          error={preview.error}
-          onRetry={() => void preview.refetch()}
-        />
-        {p && (
-          <>
-            <Text size="sm">
-              {p.localUnits.length} units · {p.fileCount} files · {p.localTargets.length} versions
-            </Text>
-            {p.localUnits.map((w) => (
-              <Text size="xs" key={w.id}>
-                {w.sequenceStr} · {w.countType} →{' '}
-                {p.mapping[w.id]
-                  ? p.catalogUnits.find((v) => v.id === p.mapping[w.id])?.sequenceStr
-                  : 'No match'}
-              </Text>
-            ))}
-            {p.localTargets.map((t) => (
-              <Text size="xs" key={t.id}>
-                Version: {t.name}
-                {t.requiredGroup ? ` · group ${t.requiredGroup}` : ''}
-                {t.profileId ? ` · profile ${t.profileId}` : ' · inherited profile'}
-              </Text>
-            ))}
-            {p.pending && <Alert color="orange">Finish pending downloads before merging.</Alert>}
-            {p.unmatched.length > 0 && (
-              <Alert color="orange">
-                Some units have no unique match. Resolve them before merging.
-              </Alert>
-            )}
-          </>
-        )}
-        {error && <Alert color="red">{error}</Alert>}
-        <Group justify="flex-end">
-          <Button variant="default" disabled={busy} onClick={close}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!p || p.pending || p.unmatched.length > 0}
-            loading={busy}
-            onClick={async () => {
-              setBusy(true)
-              setError('')
-              try {
-                await api.mergeCollection(seriesID, collection.id, into.id)
-                done()
-              } catch (e) {
-                setError(String(e))
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            Merge duplicate editions
-          </Button>
-        </Group>
       </Stack>
     </Modal>
   )
