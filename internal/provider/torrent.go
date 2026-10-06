@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/h-wb/sento/internal/qbittorrent"
 	"github.com/h-wb/sento/internal/torznab"
@@ -114,8 +115,15 @@ func (p *TorrentProvider) Grab(ctx context.Context, c Candidate) (string, error)
 	if c.Torrent == nil {
 		return "", fmt.Errorf("torrent: candidate has no torrent ref")
 	}
+	// The external id must be the infohash: State and Fetch find the
+	// download in qBittorrent by it. Many indexers publish none in their
+	// feed, so it is derived from what is actually handed to the client.
+	hash := strings.ToLower(c.Torrent.InfoHash)
 	switch {
 	case c.Torrent.MagnetURL != "":
+		if hash == "" {
+			hash = magnetInfoHash(c.Torrent.MagnetURL)
+		}
 		if err := p.qbit.AddTorrent(ctx, c.Torrent.MagnetURL, p.category); err != nil {
 			return "", err
 		}
@@ -127,21 +135,34 @@ func (p *TorrentProvider) Grab(ctx context.Context, c Candidate) (string, error)
 		if err != nil {
 			return "", err
 		}
+		if hash == "" {
+			hash = torrentInfoHash(data)
+		}
 		if err := p.qbit.AddTorrentFile(ctx, c.Title+".torrent", data, p.category); err != nil {
 			return "", err
 		}
 	default:
 		return "", fmt.Errorf("torrent: candidate has no magnet or download url")
 	}
-	return c.ExternalKey(), nil
+	if hash == "" {
+		// Nothing to derive it from (a v2-only torrent, an odd magnet):
+		// fall back to the feed identity, as before.
+		return c.ExternalKey(), nil
+	}
+	return hash, nil
 }
+
+// torrentClient fetches .torrent files. Bounded: a grab from a background
+// sweep carries no deadline of its own, and a stalled indexer must not
+// hang the sweep.
+var torrentClient = &http.Client{Timeout: 60 * time.Second}
 
 func fetchTorrentFile(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := torrentClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("torrent: fetching .torrent: %w", err)
 	}

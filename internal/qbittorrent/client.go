@@ -68,47 +68,64 @@ func (c *Client) login(ctx context.Context) error {
 	return nil
 }
 
-// do retries once on 403 (expired session).
-func (c *Client) do(ctx context.Context, method, path string, form url.Values) ([]byte, error) {
+// send performs one API call, logging in first and retrying once on 403
+// (qBittorrent expires idle sessions; the cookie we hold may be stale).
+// It returns the final status and a bounded body for the caller to judge.
+func (c *Client) send(ctx context.Context, method, path, contentType string, body []byte) (int, []byte, error) {
 	if err := c.login(ctx); err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	for attempt := 0; attempt < 2; attempt++ {
-		var body io.Reader
-		if form != nil {
-			body = strings.NewReader(form.Encode())
+		var rd io.Reader
+		if body != nil {
+			rd = bytes.NewReader(body)
 		}
-		req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+		req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, rd)
 		if err != nil {
-			return nil, err
+			return 0, nil, err
 		}
-		if form != nil {
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
 		}
 		resp, err := c.http.Do(req)
 		if err != nil {
-			return nil, err
+			return 0, nil, err
 		}
 		data, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 		_ = resp.Body.Close()
 		if err != nil {
-			return nil, err
+			return 0, nil, err
 		}
 		if resp.StatusCode == http.StatusForbidden {
 			c.mu.Lock()
 			c.loggedIn = false
 			c.mu.Unlock()
 			if err := c.login(ctx); err != nil {
-				return nil, err
+				return 0, nil, err
 			}
 			continue
 		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return nil, fmt.Errorf("qbittorrent: %s returned %d", path, resp.StatusCode)
-		}
-		return data, nil
+		return resp.StatusCode, data, nil
 	}
-	return nil, fmt.Errorf("qbittorrent: authentication loop on %s", path)
+	return 0, nil, fmt.Errorf("qbittorrent: authentication loop on %s", path)
+}
+
+// do sends a form (or bodyless) request and requires a 2xx answer.
+func (c *Client) do(ctx context.Context, method, path string, form url.Values) ([]byte, error) {
+	var body []byte
+	contentType := ""
+	if form != nil {
+		body = []byte(form.Encode())
+		contentType = "application/x-www-form-urlencoded"
+	}
+	status, data, err := c.send(ctx, method, path, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("qbittorrent: %s returned %d", path, status)
+	}
+	return data, nil
 }
 
 // AddTorrent adds a magnet link or torrent URL under the given category.
@@ -123,9 +140,6 @@ func (c *Client) AddTorrent(ctx context.Context, urlOrMagnet, category string) e
 // its own network, where an indexer/proxy may be unreachable, and drops
 // failures silently.
 func (c *Client) AddTorrentFile(ctx context.Context, name string, torrent []byte, category string) error {
-	if err := c.login(ctx); err != nil {
-		return err
-	}
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	part, err := w.CreateFormFile("torrents", name)
@@ -141,25 +155,25 @@ func (c *Client) AddTorrentFile(ctx context.Context, name string, torrent []byte
 	if err := w.Close(); err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.baseURL+"/api/v2/torrents/add", &buf)
+	status, body, err := c.send(ctx, http.MethodPost, "/api/v2/torrents/add",
+		w.FormDataContentType(), buf.Bytes())
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", w.FormDataContentType())
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-	_ = resp.Body.Close()
-	if resp.StatusCode == http.StatusConflict {
+	if status == http.StatusConflict {
 		return nil // already added: the goal state holds
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 || strings.Contains(string(body), "Fails") {
-		return fmt.Errorf("qbittorrent: add failed (%d: %s)", resp.StatusCode, body)
+	if status < 200 || status >= 300 || bytes.Contains(body, []byte("Fails")) {
+		return fmt.Errorf("qbittorrent: add failed (%d: %s)", status, truncate(body, 200))
 	}
 	return nil
+}
+
+func truncate(b []byte, n int) string {
+	if len(b) > n {
+		return string(b[:n]) + "…"
+	}
+	return string(b)
 }
 
 type Torrent struct {
