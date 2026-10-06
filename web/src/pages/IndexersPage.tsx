@@ -31,14 +31,18 @@ import {
 import SourcePrefsFields from '../components/SourcePrefsFields'
 import { notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
+import { QueryFeedback } from '../components/QueryFeedback'
+import { EmptyState } from '../components/EmptyState'
+import { useConfirmAction } from '../components/ConfirmAction'
 
 // Indexers are explicit entries (Sonarr's model): every searchable thing
 // with its protocol — a Torznab endpoint or an extension source on the
 // host. The entry's name is the display name everywhere.
 export default function IndexersPage() {
   usePageTitle('Indexers')
+  const { confirm, confirmation } = useConfirmAction()
   const queryClient = useQueryClient()
-  const { data: indexers, error } = useQuery({ queryKey: ['indexers'], queryFn: api.indexers })
+  const { data: indexers, error, isPending, refetch } = useQuery({ queryKey: ['indexers'], queryFn: api.indexers })
   const [editing, setEditing] = useState<IndexerView | 'new' | null>(null)
   const [duplicating, setDuplicating] = useState<IndexerView | null>(null)
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['indexers'] })
@@ -65,19 +69,15 @@ export default function IndexersPage() {
     <>
       <PageHeader
         title="Indexers"
-        description="Everything Sento searches, with its protocol: Torznab endpoints (torrents) and extension sources from the host. The name you give an entry is how it appears in results, history and the queue. Series can override the toggles individually."
+        description="Where Sento finds releases. Choose which indexers search volumes and chapters."
         action={
           <Button size="xs" onClick={() => setEditing('new')}>
             Add indexer
           </Button>
         }
       />
-      {error && (
-        <Alert color="red" mb="md">
-          {String(error)}
-        </Alert>
-      )}
-      <Table striped maw={860}>
+      <QueryFeedback pending={isPending} error={error} onRetry={() => void refetch()} />
+      {!!indexers?.length && <Table.ScrollContainer minWidth={700}><Table highlightOnHover verticalSpacing="sm" className="dataTable">
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Name</Table.Th>
@@ -111,6 +111,8 @@ export default function IndexersPage() {
               <Table.Td>
                 <Switch
                   size="xs"
+                  aria-label={`Enable ${ix.name}`}
+                  disabled={patch.isPending}
                   checked={ix.enabled}
                   onChange={(e) => patch.mutate({ id: ix.id, p: { enabled: e.currentTarget.checked } })}
                 />
@@ -118,8 +120,9 @@ export default function IndexersPage() {
               <Table.Td>
                 <Switch
                   size="xs"
+                  aria-label={`Search volumes on ${ix.name}`}
                   checked={ix.useVolumes}
-                  disabled={!ix.enabled}
+                  disabled={!ix.enabled || patch.isPending}
                   onChange={(e) =>
                     patch.mutate({ id: ix.id, p: { useVolumes: e.currentTarget.checked } })
                   }
@@ -128,8 +131,9 @@ export default function IndexersPage() {
               <Table.Td>
                 <Switch
                   size="xs"
+                  aria-label={`Search chapters on ${ix.name}`}
                   checked={ix.useChapters}
-                  disabled={!ix.enabled}
+                  disabled={!ix.enabled || patch.isPending}
                   onChange={(e) =>
                     patch.mutate({ id: ix.id, p: { useChapters: e.currentTarget.checked } })
                   }
@@ -141,8 +145,10 @@ export default function IndexersPage() {
                   w={70}
                   min={0}
                   max={99}
+                  key={`${ix.id}-${ix.priority}`}
+                  aria-label={`Priority for ${ix.name}`}
                   defaultValue={ix.priority}
-                  disabled={!ix.enabled}
+                  disabled={!ix.enabled || patch.isPending}
                   onBlur={(e) => {
                     const v = Number(e.currentTarget.value)
                     if (!isNaN(v) && v !== ix.priority) patch.mutate({ id: ix.id, p: { priority: v } })
@@ -153,8 +159,9 @@ export default function IndexersPage() {
                 <Group gap={2} wrap="nowrap" justify="flex-end">
                   <Tooltip label="Test">
                     <ActionIcon
-                      size="sm"
+                      size="md"
                       variant="subtle"
+                      aria-label={`Test ${ix.name}`}
                       loading={test.isPending && test.variables?.id === ix.id}
                       onClick={() => test.mutate(ix)}
                     >
@@ -162,12 +169,12 @@ export default function IndexersPage() {
                     </ActionIcon>
                   </Tooltip>
                   <Tooltip label="Edit">
-                    <ActionIcon size="sm" variant="subtle" onClick={() => setEditing(ix)}>
+                    <ActionIcon size="md" variant="subtle" aria-label={`Edit ${ix.name}`} onClick={() => setEditing(ix)}>
                       <IconPencil size={14} />
                     </ActionIcon>
                   </Tooltip>
                   <Tooltip label="Duplicate">
-                    <ActionIcon size="sm" variant="subtle" onClick={() => setDuplicating(ix)}>
+                    <ActionIcon size="md" variant="subtle" aria-label={`Duplicate ${ix.name}`} onClick={() => setDuplicating(ix)}>
                       <IconCopy size={14} />
                     </ActionIcon>
                   </Tooltip>
@@ -176,9 +183,8 @@ export default function IndexersPage() {
                       size="sm"
                       variant="subtle"
                       color="red"
-                      onClick={() => {
-                        if (window.confirm(`Remove indexer “${ix.name}”?`)) remove.mutate(ix)
-                      }}
+                      aria-label={`Remove ${ix.name}`}
+                      onClick={() => confirm({ title: 'Remove indexer?', message: `“${ix.name}” will no longer be searched. If this is an extension's last indexer, its extension will be uninstalled.`, label: 'Remove indexer', onConfirm: () => remove.mutateAsync(ix) })}
                     >
                       <IconTrash size={14} />
                     </ActionIcon>
@@ -188,12 +194,10 @@ export default function IndexersPage() {
             </Table.Tr>
           ))}
         </Table.Tbody>
-      </Table>
+      </Table></Table.ScrollContainer>}
+      {confirmation}
       {indexers && indexers.length === 0 && (
-        <Text c="dimmed" size="sm">
-          No indexers yet. Add a Torznab endpoint (every Prowlarr/Jackett indexer is one) or an
-          extension source from the host.
-        </Text>
+        <EmptyState title="No indexers yet" description="Add a torrent indexer from Prowlarr or Jackett, or choose an extension source." action={<Button size="sm" variant="default" onClick={() => setEditing('new')}>Add your first indexer</Button>} />
       )}
       {(editing || duplicating) && (
         <IndexerModal
@@ -385,14 +389,15 @@ function IndexerModal({
       onClose={configuring ? onSaved : onClose}
       title={isEdit ? `Edit ${initial.name}` : configuring ? `${name} — settings` : 'Add indexer'}
       size="lg"
+      closeOnClickOutside={!save.isPending} closeOnEscape={!save.isPending} withCloseButton={!save.isPending}
     >
-      <Stack gap="sm">
+      <fieldset className="formFields" disabled={save.isPending}><Stack gap="sm">
         {!isEdit && (
           <SegmentedControl
             value={protocol}
             onChange={(v) => setProtocol(v as 'torznab' | 'source')}
             data={[
-              { value: 'torznab', label: 'Torznab (torrents)' },
+              { value: 'torznab', label: 'Torrent indexer' },
               { value: 'source', label: 'Extension source' },
             ]}
           />
@@ -410,7 +415,7 @@ function IndexerModal({
             <TextInput
               label="Torznab URL"
               placeholder="http://prowlarr:9696/1/api"
-              description="Prowlarr and Jackett expose every indexer as a Torznab endpoint"
+              description="Use the Torznab URL provided by Prowlarr or Jackett"
               value={torznab.url}
               onChange={(e) => setTorznab({ ...torznab, url: e.currentTarget.value })}
             />
@@ -426,7 +431,7 @@ function IndexerModal({
                 style={{ alignSelf: 'flex-start' }}
                 onClick={() => setBrowse({ url: '', apiKey: torznab.apiKey })}
               >
-                Browse a Prowlarr instead…
+                Choose from Prowlarr…
               </Button>
             )}
             {browse && (
@@ -627,13 +632,13 @@ function IndexerModal({
           </Button>
           <Button
             loading={save.isPending}
-            disabled={!name.trim() || (protocol === 'source' && !isEdit && !source.sourceId)}
+            disabled={!name.trim() || (protocol === 'torznab' && !torznab.url.trim()) || (protocol === 'source' && !isEdit && !source.sourceId)}
             onClick={() => save.mutate()}
           >
             {isEdit ? 'Save' : configuring ? 'Save settings' : 'Add'}
           </Button>
         </Group>
-      </Stack>
+      </Stack></fieldset>
     </Modal>
   )
 }

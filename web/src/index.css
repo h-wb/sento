@@ -1,95 +1,19 @@
-:root {
-  color-scheme: light dark;
+:root { color-scheme: light dark; }
+body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+[data-mantine-color-scheme='dark'] { color-scheme: dark; }
+[data-mantine-color-scheme='light'] { color-scheme: light; }
+[data-mantine-color-scheme='dark'] body { background: #181816; }
+[data-mantine-color-scheme='light'] body { background: #fff; }
+table, .tabnums { font-variant-numeric: tabular-nums; }
+* { scrollbar-width: thin; scrollbar-color: light-dark(#d4d4cf, #40403e) transparent; }
+:focus-visible { outline: 2px solid var(--mantine-color-brand-5); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
-body {
-  margin: 0;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* Fainter hairline borders so flat surfaces read as crisp, not boxed-in. */
-[data-mantine-color-scheme='dark'] {
-  --mantine-color-default-border: var(--mantine-color-dark-5);
-}
-[data-mantine-color-scheme='light'] {
-  --mantine-color-default-border: var(--mantine-color-gray-2);
-}
-
-/* Right-aligned numeric columns line up when digits are fixed-width. */
-table,
-.tabnums {
-  font-variant-numeric: tabular-nums;
-}
-
-/* Flat base background per color scheme. */
-[data-mantine-color-scheme='dark'] body {
-  background-color: var(--mantine-color-dark-8);
-}
-[data-mantine-color-scheme='light'] body {
-  background-color: var(--mantine-color-gray-0);
-}
-
-/* Optional radial-gradient mesh for depth — only when the active theme opts in
-   (data-mesh="on"), tinted from the theme's own brand color. */
-[data-mesh='on'][data-mantine-color-scheme='dark'] body {
-  background-image:
-    radial-gradient(
-      60rem 60rem at 80% -10%,
-      color-mix(in oklch, var(--mantine-color-brand-6) 26%, transparent),
-      transparent 60%
-    ),
-    radial-gradient(
-      50rem 50rem at -10% 110%,
-      color-mix(in oklch, var(--mantine-color-brand-4) 16%, transparent),
-      transparent 55%
-    );
-  background-attachment: fixed;
-}
-[data-mesh='on'][data-mantine-color-scheme='light'] body {
-  background-image:
-    radial-gradient(
-      60rem 60rem at 80% -10%,
-      color-mix(in oklch, var(--mantine-color-brand-5) 12%, transparent),
-      transparent 60%
-    ),
-    radial-gradient(
-      50rem 50rem at -10% 110%,
-      color-mix(in oklch, var(--mantine-color-brand-3) 10%, transparent),
-      transparent 55%
-    );
-  background-attachment: fixed;
-}
-
-/* Slim, theme-aware scrollbars. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-3)) transparent;
-}
-*::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-*::-webkit-scrollbar-thumb {
-  background: light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-3));
-  border-radius: 8px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: light-dark(var(--mantine-color-gray-5), var(--mantine-color-dark-2));
-  background-clip: content-box;
-}
-
-/* Reusable lift-on-hover for clickable cards. */
-.hoverLift {
-  transition:
-    transform 150ms ease,
-    box-shadow 150ms ease,
-    border-color 150ms ease;
-}
-.hoverLift:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--mantine-shadow-md);
-  border-color: var(--mantine-color-brand-6);
-}
+.formFields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.settingsLayout { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 360px); gap: 32px; align-items: start; }
+.emptyStateIcon { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 10px; background: light-dark(#f5f5f2, #242422); color: var(--mantine-color-dimmed); margin-bottom: 4px; }
+.tabCount { margin-left: 6px; color: var(--mantine-color-dimmed); font-size: 11px; font-variant-numeric: tabular-nums; }
+.dataTable { border-top: 1px solid var(--mantine-color-default-border); }
+@media (max-width: 64em) { .settingsLayout { grid-template-columns: minmax(0, 1fr); } }

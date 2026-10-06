@@ -1,20 +1,23 @@
-import { Alert, Badge, Card, Group, Stack, Text } from '@mantine/core'
+import { Badge, Button, Card, Group, Stack, Text } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, fmtNum } from '../api'
 import { fmtDay, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
+import { QueryFeedback } from '../components/QueryFeedback'
+import { EmptyState } from '../components/EmptyState'
 
 // Upcoming (and recent) dated volume releases of monitored collections,
 // grouped by date — Sonarr's calendar, list-shaped.
 export default function CalendarPage() {
   usePageTitle('Calendar')
-  const { data: entries, error } = useQuery({
+  const { data: entries, error, isPending, refetch } = useQuery({
     queryKey: ['calendar'],
     queryFn: () => api.calendar(),
   })
 
-  const today = new Date().toISOString().slice(0, 10)
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const byDate = new Map<string, NonNullable<typeof entries>>()
   for (const e of entries ?? []) {
     const list = byDate.get(e.releaseDate) ?? []
@@ -26,17 +29,12 @@ export default function CalendarPage() {
     <>
       <PageHeader
         title="Calendar"
-        description="Upcoming and recent release dates for monitored editions."
+        description="Release dates for the editions you monitor."
       />
-      {error && <Alert color="red">{String(error)}</Alert>}
-      {entries && entries.length === 0 && (
-        <Text c="dimmed">
-          No dated releases in range — the calendar fills in as monitored editions get release
-          dates from MangaBaka.
-        </Text>
-      )}
+      <QueryFeedback pending={isPending} error={error} onRetry={() => void refetch()} />
+      {entries?.length === 0 && !error && <EmptyState title="No scheduled releases" description="Release dates appear here when they're available for your monitored editions." action={<Button component={Link} to="/" variant="default" size="sm">Browse library</Button>} />}
       <Stack gap="md">
-        {[...byDate.entries()].map(([date, list]) => (
+        {[...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, list]) => (
           <div key={date}>
             <Group gap={8} mb={6}>
               <Text fw={600} size="sm" title={date}>
@@ -63,8 +61,8 @@ export default function CalendarPage() {
                   to={`/series/${e.seriesId}`}
                   style={{ textDecoration: 'none' }}
                 >
-                  <Group justify="space-between" wrap="nowrap">
-                    <Text size="sm">
+                  <Group justify="space-between">
+                    <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
                       {e.seriesTitle} — Volume {e.sequenceStr || fmtNum(e.sequenceNum)}
                     </Text>
                     <Group gap={6} wrap="nowrap">

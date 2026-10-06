@@ -1,139 +1,107 @@
 import { useState } from 'react'
-import { Anchor, Badge, Button, Card, Group, Image, Select, Stack, Text, TextInput } from '@mantine/core'
-import { IconSearch } from '@tabler/icons-react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { Anchor, Badge, Button, Card, Divider, Group, Image, Select, Stack, Text, TextInput } from '@mantine/core'
+import { IconBooks, IconSearch } from '@tabler/icons-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type LookupResult } from '../api'
 import { notify } from '../ui'
+import { EmptyState } from './EmptyState'
+import { QueryFeedback } from './QueryFeedback'
 
-// The quick search-and-add flow, reused by the global modal and the /add page.
-// `onDone` fires when a series is added or an existing one is opened (the modal
-// uses it to close itself and navigate); `onOpenImporter` is an optional escape
-// hatch to the bulk import view.
-export function AddSeriesForm({
-  onDone,
-  onOpenImporter,
-}: {
+export function AddSeriesForm({ onDone, onOpenImporter }: {
   onDone: (seriesId: number) => void
   onOpenImporter?: () => void
 }) {
+  const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
   const [monitor, setMonitor] = useState('default')
-  const [profileId, setProfileId] = useState(0) // 0 = instance default
-  const { data: profiles } = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
-
-  // Known MangaBaka ids, so results already in the library link instead
-  // of offering a duplicate add.
-  const { data: existing } = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
-  const inLibrary = new Map((existing ?? []).map((s) => [s.mangabakaId, s.id]))
-
-  const lookup = useMutation({ mutationFn: (q: string) => api.lookup(q), onError: notify.err })
+  const [profileId, setProfileId] = useState(0)
+  const [searchedQuery, setSearchedQuery] = useState('')
+  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
+  const existing = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
+  const inLibrary = new Map((existing.data ?? []).map((s) => [s.mangabakaId, s.id]))
+  const lookup = useMutation({ mutationFn: (q: string) => api.lookup(q) })
   const add = useMutation({
     mutationFn: (r: LookupResult) => api.addSeries({ mangabakaId: r.mangabakaId, monitor, profileId }),
-    onSuccess: (s) => {
+    onSuccess: async (s) => {
+      await queryClient.invalidateQueries({ queryKey: ['series'] })
       notify.ok(`Added "${s.title}"`)
       onDone(s.id)
     },
     onError: notify.err,
   })
-
-  const search = () => query.trim() && lookup.mutate(query)
-  const results = lookup.data
   const busy = lookup.isPending || add.isPending
-
+  const search = () => {
+    if (!query.trim() || busy) return
+    setSearchedQuery(query.trim())
+    lookup.mutate(query.trim())
+  }
   return (
     <>
-      <Group mb="xs">
-        <TextInput
-          placeholder="Search MangaBaka…"
-          leftSection={<IconSearch size={16} />}
-          value={query}
-          onChange={(e) => setQuery(e.currentTarget.value)}
-          onKeyDown={(e) => e.key === 'Enter' && search()}
-          style={{ flex: 1 }}
-          data-autofocus
-        />
-        <Button onClick={search} loading={busy}>
-          Search
-        </Button>
-      </Group>
-      <Group align="flex-start" gap="md" mb="md" wrap="wrap">
-        <Select
-          w={260}
-          size="xs"
-          label="Monitor collections on add"
-          description="Changeable later per series"
-          allowDeselect={false}
-          value={monitor}
-          onChange={(v) => v && setMonitor(v)}
-          data={[
-            { value: 'default', label: 'Default collection (standard, preferred language)' },
+      <form onSubmit={(e) => { e.preventDefault(); search() }}>
+        <Group gap="sm" wrap="nowrap" align="flex-start">
+          <TextInput placeholder="Search MangaBaka…" aria-label="Search MangaBaka"
+            leftSection={<IconSearch size={16} />} value={query}
+            onChange={(e) => setQuery(e.currentTarget.value)} style={{ flex: 1, minWidth: 0 }}
+            disabled={add.isPending} data-autofocus />
+          <Button type="submit" loading={lookup.isPending} disabled={!query.trim() || add.isPending}>Search</Button>
+        </Group>
+      </form>
+      <Group align="flex-start" gap="md" mt="md" mb="lg">
+        <Select size="sm" label="Monitor on add" description="Which collections to track for downloads"
+          style={{ flex: 1, minWidth: 200 }} allowDeselect={false} value={monitor} disabled={busy}
+          onChange={(v) => v && setMonitor(v)} data={[
+            { value: 'default', label: 'Default collection' },
             { value: 'all', label: 'All volume collections' },
-            { value: 'none', label: 'None' },
-          ]}
-        />
-        {(profiles?.length ?? 0) > 1 && (
-          <Select
-            w={220}
-            size="xs"
-            label="Release profile"
-            allowDeselect={false}
-            value={String(profileId)}
-            onChange={(v) => v && setProfileId(Number(v))}
-            data={[
+            { value: 'none', label: 'None — add without monitoring' },
+          ]} />
+        {(profiles.data?.length ?? 0) > 1 && (
+          <Select size="sm" label="Release profile" description="Rules for choosing releases"
+            style={{ flex: 1, minWidth: 180 }} allowDeselect={false} value={String(profileId)} disabled={busy}
+            onChange={(v) => v && setProfileId(Number(v))} data={[
               { value: '0', label: 'Instance default' },
-              ...(profiles ?? []).map((p) => ({ value: String(p.id), label: p.name })),
-            ]}
-          />
+              ...(profiles.data ?? []).map((p) => ({ value: String(p.id), label: p.name })),
+            ]} />
         )}
       </Group>
-      <Stack>
-        {results?.map((r) => {
-          const existingID = inLibrary.get(r.mangabakaId)
-          return (
-            <Card key={r.mangabakaId} withBorder padding="sm">
-              <Group wrap="nowrap" align="flex-start">
-                <Image src={r.coverUrl} w={60} h={90} radius="sm" alt="" />
-                <div style={{ flex: 1 }}>
-                  <Text fw={600}>{r.title}</Text>
-                  <Group gap={4} mt={4}>
-                    <Badge size="xs">{r.type}</Badge>
-                    <Badge size="xs" variant="light">
-                      {r.status}
-                    </Badge>
-                    {r.year ? (
-                      <Text size="xs" c="dimmed">
-                        {r.year}
-                      </Text>
-                    ) : null}
-                    {existingID && (
-                      <Badge size="xs" color="green" variant="light">
-                        in library
-                      </Badge>
-                    )}
-                  </Group>
-                </div>
-                {existingID ? (
-                  <Button size="xs" variant="default" onClick={() => onDone(existingID)}>
-                    Open
-                  </Button>
-                ) : (
-                  <Button size="xs" onClick={() => add.mutate(r)} disabled={busy}>
-                    Add
-                  </Button>
-                )}
-              </Group>
-            </Card>
-          )
-        })}
-        {results?.length === 0 && <Text c="dimmed">No results.</Text>}
-      </Stack>
-      {onOpenImporter && (
-        <Group justify="center" mt="lg">
-          <Anchor component="button" type="button" size="sm" c="dimmed" onClick={onOpenImporter}>
-            Importing an existing library? Open the importer →
-          </Anchor>
-        </Group>
+      <QueryFeedback error={existing.error || profiles.error} onRetry={() => { void existing.refetch(); void profiles.refetch() }} />
+      <QueryFeedback pending={lookup.isPending} error={lookup.error} onRetry={search} />
+      {!lookup.isPending && !lookup.error && lookup.data && (
+        <Stack gap="sm" aria-live="polite">
+          <Text size="xs" c="dimmed">{lookup.data.length} {lookup.data.length === 1 ? 'result' : 'results'} for “{searchedQuery}”</Text>
+          {lookup.data.map((r) => {
+            const existingID = inLibrary.get(r.mangabakaId)
+            return (
+              <Card key={r.mangabakaId} padding="sm">
+                <Group wrap="nowrap" align="flex-start" gap="sm">
+                  <Image src={r.coverUrl} w={48} h={72} radius="sm" alt="" fallbackSrc="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='72'%3E%3Crect width='48' height='72' fill='%2352524e'/%3E%3C/svg%3E" />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Text fw={500} size="sm">{r.title}</Text>
+                    <Group gap={6} mt={6}>
+                      <Text size="xs" c="dimmed" tt="capitalize">{[r.type, r.status, r.year].filter(Boolean).join(' · ')}</Text>
+                      {existingID && <Badge size="xs" color="green">In library</Badge>}
+                    </Group>
+                  </div>
+                  {existingID ? (
+                    <Button size="xs" variant="default" onClick={() => onDone(existingID)} disabled={add.isPending}>Open</Button>
+                  ) : (
+                    <Button size="xs" onClick={() => add.mutate(r)} loading={add.isPending && add.variables?.mangabakaId === r.mangabakaId}
+                      disabled={busy || existing.isPending || !!existing.error || profiles.isPending || !!profiles.error}>Add</Button>
+                  )}
+                </Group>
+              </Card>
+            )
+          })}
+          {lookup.data.length === 0 && <EmptyState icon={<IconSearch size={24} />} title="No matching series"
+            description="Try another title, its original name, or a shorter search." />}
+        </Stack>
       )}
+      {!lookup.data && !lookup.isPending && !lookup.error && <EmptyState icon={<IconBooks size={26} stroke={1.5} />}
+        title="Search for a series" description="Search by title, then choose the manga you want to add. Monitoring and release profiles can be changed later." />}
+      {onOpenImporter && <><Divider mt="lg" /><Group justify="center" mt="md">
+        <Anchor component="button" type="button" size="xs" c="dimmed" onClick={onOpenImporter} disabled={add.isPending}>
+          Already have manga on disk? Import a folder →
+        </Anchor>
+      </Group></>}
     </>
   )
 }

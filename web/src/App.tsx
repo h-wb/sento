@@ -3,12 +3,12 @@ import {
   AppShell,
   Avatar,
   Badge,
+  Tooltip,
   Burger,
   Center,
   ColorSwatch,
   Divider,
   Group,
-  Indicator,
   Kbd,
   Loader,
   Menu,
@@ -117,7 +117,7 @@ export default function App() {
   const [helpOpen, { open: openHelp, close: closeHelp }] = useDisclosure(false)
   const [addOpen, { open: openAdd, close: closeAdd }] = useDisclosure(false)
   const { colorScheme, setColorScheme } = useMantineColorScheme()
-  const { themeId, setThemeId, preset } = useThemePreset()
+  const { themeId, setThemeId } = useThemePreset()
 
   // Light background polling so the shell can hint at what's going on.
   const status = useQuery({ queryKey: ['status'], queryFn: api.status, refetchInterval: 60_000 })
@@ -129,7 +129,7 @@ export default function App() {
   // Cached library list, shared with LibraryPage — powers ⌘K series search.
   const seriesList = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
   const active = queue.data?.length ?? 0
-  const healthy = !status.isError && (status.data?.database.ok ?? true)
+  const healthy = !status.isError && status.data?.database.ok === true
 
   // Drive the top progress bar off real network activity.
   const fetching = useIsFetching()
@@ -155,7 +155,7 @@ export default function App() {
         openHelp()
       } else if (e.key === 'g') {
         gAt = e.timeStamp
-      } else if (e.timeStamp - gAt < 1000) {
+      } else if (gAt > 0 && e.timeStamp - gAt < 1000) {
         if (e.key === 'n') {
           e.preventDefault()
           openAdd()
@@ -172,7 +172,7 @@ export default function App() {
   }, [navigate, openHelp, openAdd])
 
   const isActive = (to: string) =>
-    to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
+    to === '/' ? location.pathname === '/' || location.pathname.startsWith('/series/') : location.pathname.startsWith(to)
 
   const toAction = (l: NavItem, group: string): SpotlightActionData => ({
     id: l.to,
@@ -232,37 +232,19 @@ export default function App() {
     <AddSeriesCtx.Provider value={openAdd}>
       <NavigationProgress color="brand" />
       <AppShell
-        header={{ height: 56 }}
-        navbar={{ width: 220, breakpoint: 'sm', collapsed: { mobile: !navOpened } }}
-        padding="lg"
+        header={{ height: 64 }}
+        navbar={{ width: 216, breakpoint: 'sm', collapsed: { mobile: !navOpened } }}
+        padding={0}
       >
       <AppShell.Header className={classes.header}>
         <Group h="100%" px="md" gap="md">
-          <Burger opened={navOpened} onClick={toggleNav} hiddenFrom="sm" size="sm" />
-          <Indicator
-            color={healthy ? 'teal' : 'red'}
-            size={7}
-            offset={2}
-            position="top-end"
-            processing={!healthy}
-          >
-            <Title order={3} className={classes.wordmark}>
-              {preset.effects.gradient ? (
-                <Text
-                  span
-                  inherit
-                  variant="gradient"
-                  gradient={{ from: 'brand.4', to: `${preset.accentTo}.4`, deg: 45 }}
-                >
-                  sento
-                </Text>
-              ) : (
-                'sento'
-              )}
-            </Title>
-          </Indicator>
-          <Text c="dimmed" size="sm" visibleFrom="xs">
-            manga automation
+          <Burger opened={navOpened} onClick={toggleNav} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
+          <Group gap={10} wrap="nowrap">
+            <span className={classes.brandMark} aria-hidden="true"><IconBooks size={19} stroke={1.7} /></span>
+            <Title order={3} className={classes.wordmark}>sento</Title>
+          </Group>
+          <Text c="dimmed" size="xs" visibleFrom="sm" className={classes.breadcrumb}>
+            / &nbsp; {[...primaryLinks, ...configLinks, systemLink].find((l) => isActive(l.to))?.label ?? (location.pathname === '/add' ? 'Add series' : 'Series')}
           </Text>
           <Group gap="xs" ml="auto" wrap="nowrap">
             <UnstyledButton
@@ -272,10 +254,11 @@ export default function App() {
             >
               <Group gap="xs" px="sm" h={32} wrap="nowrap">
                 <IconSearch size={15} />
-                <Text size="sm">Search…</Text>
+                <Text size="sm">Search library…</Text>
                 <Kbd size="xs">⌘K</Kbd>
               </Group>
             </UnstyledButton>
+            <ActionIcon hiddenFrom="xs" variant="default" size="lg" aria-label="Search library" onClick={spotlight.open}><IconSearch size={18} /></ActionIcon>
             <Menu position="bottom-end" withArrow width={220} closeOnItemClick={false}>
               <Menu.Target>
                 <ActionIcon variant="default" size="lg" radius="md" aria-label="Appearance">
@@ -315,23 +298,30 @@ export default function App() {
           </Group>
         </Group>
       </AppShell.Header>
-      <AppShell.Navbar p="xs" className={classes.navbar}>
+      <AppShell.Navbar p="md" className={classes.navbar}>
         <AppShell.Section grow>
+          <Text className={classes.sectionLabel}>Collection</Text>
           {primaryLinks.map(renderLink)}
 
-          <Text className={classes.sectionLabel}>Configure</Text>
+          <Text className={classes.sectionLabel}>Settings</Text>
           {configLinks.map(renderLink)}
         </AppShell.Section>
         <AppShell.Section>
           <Divider mb="xs" />
           {renderLink(systemLink)}
+          <Group gap={7} px="sm" pt="md" pb={4}>
+            <span className={classes.statusDot} data-healthy={healthy} />
+            <Tooltip label="Connection to the Sento server. Download services have their own status on Connections.">
+              <Text size="xs" c="dimmed">{status.isPending ? 'Connecting' : healthy ? 'Server connected' : 'Server unavailable'}</Text>
+            </Tooltip>
+          </Group>
           <Text size="xs" c="dimmed" px="sm" py={4}>
             {status.data ? `v${status.data.version}` : '…'}
             {!healthy && ' · backend unreachable'}
           </Text>
         </AppShell.Section>
       </AppShell.Navbar>
-      <AppShell.Main>
+      <AppShell.Main className={classes.main}><div className={classes.content}>
         <Suspense
           fallback={
             <Center mih="60vh">
@@ -342,7 +332,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<LibraryPage />} />
             <Route path="/add" element={<AddPage />} />
-            <Route path="/series/:id" element={<SeriesPage />} />
+            <Route path="/series/:id" element={<SeriesPage key={location.pathname} />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/queue" element={<QueuePage />} />
             <Route path="/connections" element={<ConnectionsPage />} />
@@ -354,7 +344,7 @@ export default function App() {
             <Route path="/system" element={<SystemPage />} />
           </Routes>
         </Suspense>
-      </AppShell.Main>
+      </div></AppShell.Main>
         <Spotlight
           actions={spotlightActions}
           nothingFound="Nothing found…"
@@ -397,7 +387,7 @@ export default function App() {
           }}
           onOpenImporter={() => {
             closeAdd()
-            navigate('/add')
+            navigate('/add?tab=import')
           }}
         />
       </Modal>

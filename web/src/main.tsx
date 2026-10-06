@@ -2,7 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Notifications } from '@mantine/notifications'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { UnsavedChangesProvider } from './UnsavedChangesProvider'
 import '@mantine/core/styles.css'
 import '@mantine/notifications/styles.css'
 import '@mantine/spotlight/styles.css'
@@ -18,14 +19,14 @@ const queryClient = new QueryClient({
   },
 })
 
+const router = createBrowserRouter([{ path: '*', element: <UnsavedChangesProvider><App /></UnsavedChangesProvider> }])
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
       <Notifications position="bottom-right" limit={4} />
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <RouterProvider router={router} />
       </QueryClientProvider>
     </ThemeProvider>
   </StrictMode>,

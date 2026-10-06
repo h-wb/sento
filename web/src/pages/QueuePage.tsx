@@ -1,245 +1,127 @@
 import { useState } from 'react'
-import {
-  Anchor,
-  Badge,
-  Button,
-  Card,
-  Center,
-  Group,
-  Loader,
-  Progress,
-  Stack,
-  Switch,
-  Table,
-  Text,
-  Title,
-  Tooltip,
-} from '@mantine/core'
-import { DonutChart } from '@mantine/charts'
-import { IconDownload } from '@tabler/icons-react'
+import { Anchor, Badge, Button, Card, Group, Progress, Stack, Table, Tabs, Text, Tooltip } from '@mantine/core'
+import { useMediaQuery } from '@mantine/hooks'
+import { ErrorDetails } from '../components/ErrorDetails'
+import { IconBan, IconDownload, IconRefresh } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { fmtWhen, notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
+import { QueryFeedback } from '../components/QueryFeedback'
+import { EmptyState } from '../components/EmptyState'
+import { useConfirmAction } from '../components/ConfirmAction'
 
-const statusColor: Record<string, string> = {
-  queued: 'gray',
-  downloading: 'blue',
-  importing: 'cyan',
-  imported: 'green',
-  failed: 'red',
-}
+const statusColor: Record<string, string> = { queued: 'gray', downloading: 'blue', importing: 'cyan', imported: 'green', failed: 'red' }
+const statusLabel: Record<string, string> = { queued: 'Queued', downloading: 'Downloading', importing: 'Importing', imported: 'Imported', failed: 'Failed' }
 
 export default function QueuePage() {
   usePageTitle('Activity')
-  const [showAll, setShowAll] = useState(true)
+  const small = useMediaQuery('(max-width: 48em)')
+  const [tab, setTab] = useState<string | null>('queue')
   const queryClient = useQueryClient()
-
-  const { data: items, error } = useQuery({
-    queryKey: ['queue', showAll],
-    queryFn: () => api.queue(showAll),
-    refetchInterval: 5000,
-  })
-  // Status breakdown for the donut, in a sensible visual order.
-  const breakdown = ['downloading', 'queued', 'importing', 'imported', 'failed']
-    .map((s) => ({
-      name: s,
-      value: items?.filter((i) => i.status === s).length ?? 0,
-      color: `${statusColor[s] ?? 'gray'}.5`,
-    }))
-    .filter((d) => d.value > 0)
+  const { confirm, confirmation } = useConfirmAction()
+  const queue = useQuery({ queryKey: ['queue', true], queryFn: () => api.queue(true), refetchInterval: 5000 })
+  const blocked = useQuery({ queryKey: ['blocklist'], queryFn: api.blocklist })
+  const items = queue.data ?? []
+  const active = items.filter((i) => i.status !== 'imported')
+  const completed = items.filter((i) => i.status === 'imported')
+  const shown = tab === 'history' ? completed : active
+  const failed = active.filter((i) => i.status === 'failed').length
   const process = useMutation({
     mutationFn: api.processQueue,
-    onSuccess: (r) => notify.ok(`Queue processed — ${r.processed} item(s) imported`),
+    onSuccess: (r) => notify.ok(`${r.processed} ${r.processed === 1 ? 'item' : 'items'} imported`),
     onError: notify.err,
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['queue'] }),
+    onSettled: () => { void queryClient.invalidateQueries({ queryKey: ['queue'] }); void queryClient.invalidateQueries({ queryKey: ['series'] }) },
   })
-  const { data: blocked } = useQuery({ queryKey: ['blocklist'], queryFn: api.blocklist })
   const block = useMutation({
     mutationFn: (qid: number) => api.blocklistQueueItem(qid),
-    onSuccess: () => notify.ok('Release blocklisted — it will never be grabbed again'),
-    onError: notify.err,
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['queue'] })
-      queryClient.invalidateQueries({ queryKey: ['blocklist'] })
-    },
+    onSuccess: () => notify.ok('Release blocked'),
+    onSettled: () => { void queryClient.invalidateQueries({ queryKey: ['queue'] }); void queryClient.invalidateQueries({ queryKey: ['blocklist'] }) },
   })
   const unblock = useMutation({
     mutationFn: (id: number) => api.unblock(id),
-    onSuccess: () => notify.ok('Unblocked'),
+    onSuccess: () => notify.ok('Release unblocked'),
     onError: notify.err,
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['blocklist'] }),
   })
-
   return (
     <>
-      <PageHeader
-        title="Activity"
-        description="Grabs and imports, live as they happen."
-        action={
-          <Group>
-            <Switch
-              label="Include finished"
-              checked={showAll}
-              onChange={(e) => setShowAll(e.currentTarget.checked)}
-            />
-            <Button size="xs" onClick={() => process.mutate()} loading={process.isPending}>
-              Process now
-            </Button>
-          </Group>
-        }
-      />
-      {error && (
-        <Text size="sm" c="red" mb="sm">
-          {String(error)}
-        </Text>
-      )}
+      <PageHeader title="Activity" description="Downloads and imports."
+        action={<Tooltip label="Check finished downloads and import available files. Downloads are also checked automatically.">
+          <Button size="sm" variant="default" leftSection={<IconRefresh size={15} />}
+            onClick={() => process.mutate()} loading={process.isPending}>Check downloads</Button>
+        </Tooltip>} />
+      <Tabs value={tab} onChange={setTab}>
+        <Tabs.List mb="lg">
+          <Tabs.Tab value="queue">Queue <span className="tabCount">{active.length}</span></Tabs.Tab>
+          <Tabs.Tab value="history">Completed <span className="tabCount">{completed.length}</span></Tabs.Tab>
+          <Tabs.Tab value="blocked">Blocked releases <span className="tabCount">{blocked.data?.length ?? 0}</span></Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel value="queue">
+          {failed > 0 && <Text size="sm" c="red" mb="md">{failed} {failed === 1 ? 'download needs' : 'downloads need'} attention. Review the error below or block the release.</Text>}
+        </Tabs.Panel>
+        {tab !== 'blocked' && <>
+          <QueryFeedback pending={queue.isPending} error={queue.error} onRetry={() => void queue.refetch()} />
+          {!queue.isPending && !queue.error && shown.length === 0 && <EmptyState icon={<IconDownload size={26} stroke={1.5} />}
+            title={tab === 'history' ? 'No completed imports' : 'No downloads in progress'}
+            description={tab === 'history' ? 'Finished imports will appear here.' : 'Releases you download will appear here. Sento imports them when they finish.'}
+            action={tab === 'queue' ? <Button component={Link} to="/" variant="default" size="sm">Browse library</Button> : undefined} />}
+          {shown.length > 0 && <>
+            {small ? <Stack gap="sm">{shown.map((i) => <Card key={i.id} padding="md">
+              <Group justify="space-between" mb="xs">
+                <Badge size="sm" variant="dot" color={statusColor[i.status] ?? 'gray'}>{statusLabel[i.status] ?? i.status}</Badge>
+                <Text size="xs" c="dimmed">{i.protocol === 'source' ? 'Source' : 'Torrent'} · {fmtWhen(i.createdAt)}</Text>
+              </Group>
+              <Anchor component={Link} to={`/series/${i.seriesId}`} size="sm" fw={500} c="inherit" underline="hover" lineClamp={3} title={i.title} style={{ overflowWrap: 'anywhere' }}>{i.title}</Anchor>
+              {i.status === 'downloading' && i.progress != null && <Group gap="sm" wrap="nowrap" mt="md">
+                <Progress value={Math.max(0, Math.min(100, i.progress * 100))} size={4} style={{ flex: 1 }} aria-label={`Download progress for ${i.title}`} />
+                <Text size="xs" c="dimmed">{Math.round(Math.max(0, Math.min(1, i.progress)) * 100)}%</Text>
+              </Group>}
+              {i.error && <div style={{ marginTop: 12 }}><ErrorDetails error={i.error} title="Download error" /></div>}
+              {i.status === 'failed' && <Button size="xs" variant="default" mt="sm" onClick={() => confirm({
+                title: 'Block this release?', message: `“${i.title}” will be excluded from future downloads. You can unblock it later.`, label: 'Block release', onConfirm: () => block.mutateAsync(i.id),
+              })}>Block release</Button>}
+            </Card>)}</Stack> : <Table highlightOnHover verticalSpacing="md" className="dataTable" style={{ tableLayout: 'fixed' }}>
+              <Table.Thead><Table.Tr><Table.Th w="50%">Release</Table.Th><Table.Th w="12%">Type</Table.Th><Table.Th w="25%">Status</Table.Th><Table.Th w="13%">Added</Table.Th></Table.Tr></Table.Thead>
+              <Table.Tbody>{shown.map((i) => <Table.Tr key={i.id}>
+                <Table.Td><Stack gap={5} style={{ minWidth: 0 }}>
+                  <Anchor component={Link} to={`/series/${i.seriesId}`} size="sm" c="inherit" underline="hover" lineClamp={2} title={i.title} style={{ overflowWrap: 'anywhere' }}>{i.title}</Anchor>
+                  {i.error && <ErrorDetails error={i.error} title="Download error" />}
+                  {i.status === 'failed' && <Button size="compact-xs" variant="subtle" color="red" style={{ alignSelf: 'flex-start' }}
+                    onClick={() => confirm({ title: 'Block this release?', message: `“${i.title}” will be excluded from future downloads. You can unblock it later.`, label: 'Block release', onConfirm: () => block.mutateAsync(i.id) })}>Block release</Button>}
+                </Stack></Table.Td>
+                <Table.Td><Text size="xs" c="dimmed">{i.protocol === 'source' ? 'Source' : 'Torrent'}</Text></Table.Td>
+                <Table.Td><Stack gap={8}>
+                  <Badge size="sm" variant="dot" color={statusColor[i.status] ?? 'gray'}>{statusLabel[i.status] ?? i.status}</Badge>
+                  {i.status === 'downloading' && i.progress != null && <Group gap={8} wrap="nowrap" maw={160}>
+                    <Progress value={Math.max(0, Math.min(100, i.progress * 100))} size={4} style={{ flex: 1 }} aria-label={`Download progress for ${i.title}`} />
+                    <Text size="xs" c="dimmed" className="tabnums">{Math.round(Math.max(0, Math.min(1, i.progress)) * 100)}%</Text>
+                  </Group>}
+                </Stack></Table.Td>
+                <Table.Td><Text size="xs" c="dimmed" title={i.createdAt}>{fmtWhen(i.createdAt)}</Text></Table.Td>
+              </Table.Tr>)}</Table.Tbody>
+            </Table>}
+            {tab === 'history' && <Text size="xs" c="dimmed" mt="sm">Recent imports from the latest 200 queue items.</Text>}
+          </>}
+        </>}
+        <Tabs.Panel value="blocked">
+          <QueryFeedback pending={blocked.isPending} error={blocked.error} onRetry={() => void blocked.refetch()} />
+          {blocked.data?.length === 0 && !blocked.error && <EmptyState icon={<IconBan size={26} stroke={1.5} />} title="No blocked releases" description="Block a failed release to prevent Sento from downloading it again." />}
+          {(blocked.data?.length ?? 0) > 0 && <Stack gap="sm">{blocked.data?.map((b) => <Card key={b.id} padding="md">
+            <Group justify="space-between" align="flex-start" wrap="nowrap">
+              <Stack gap={4} style={{ minWidth: 0, flex: 1 }}>
+                <Text size="sm" style={{ overflowWrap: 'anywhere' }}>{b.key}</Text>
+                <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>{b.reason}</Text>
+                <Text size="xs" c="dimmed">{b.protocol === 'source' ? 'Source' : 'Torrent'}</Text>
+              </Stack>
+              <Button size="xs" variant="default" loading={unblock.isPending && unblock.variables === b.id} disabled={unblock.isPending} onClick={() => unblock.mutate(b.id)}>Unblock</Button>
+            </Group>
+          </Card>)}</Stack>}
 
-      {breakdown.length > 1 && (
-        <Card withBorder maw={260} mb="md">
-          <Text size="sm" fw={600} mb="xs">
-            Queue breakdown
-          </Text>
-          <DonutChart
-            data={breakdown}
-            size={140}
-            thickness={18}
-            chartLabel={`${items?.length ?? 0}`}
-            withTooltip
-            mx="auto"
-          />
-        </Card>
-      )}
-
-      {items && items.length === 0 ? (
-        <Center mih={200}>
-          <Stack align="center" gap="xs">
-            <IconDownload size={36} opacity={0.4} />
-            <Text c="dimmed">Nothing in the queue.</Text>
-            <Text size="xs" c="dimmed">
-              Grabs from searches and the scheduler appear here and import automatically.
-            </Text>
-          </Stack>
-        </Center>
-      ) : (
-        <Table striped highlightOnHover>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Title</Table.Th>
-              <Table.Th>Protocol</Table.Th>
-              <Table.Th>Status</Table.Th>
-              <Table.Th>When</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {items?.map((i) => (
-              <Table.Tr key={i.id}>
-                <Table.Td>
-                  <Group gap={6} wrap="nowrap">
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <Anchor component={Link} to={`/series/${i.seriesId}`} size="sm" c="inherit">
-                        {i.title}
-                      </Anchor>
-                      {i.error && (
-                        <Text size="xs" c="red">
-                          {i.error}
-                        </Text>
-                      )}
-                    </div>
-                    {i.status === 'failed' && (
-                      <Tooltip label="Blocklist this release (never grab it again)">
-                        <Button
-                          size="compact-xs"
-                          variant="subtle"
-                          color="orange"
-                          onClick={() => block.mutate(i.id)}
-                        >
-                          Blocklist
-                        </Button>
-                      </Tooltip>
-                    )}
-                  </Group>
-                </Table.Td>
-                <Table.Td>
-                  <Badge size="xs" variant="outline">
-                    {i.protocol}
-                  </Badge>
-                </Table.Td>
-                <Table.Td>
-                  <Stack gap={4}>
-                    <Badge
-                      size="xs"
-                      color={statusColor[i.status] ?? 'gray'}
-                      leftSection={
-                        i.status === 'downloading' || i.status === 'importing' ? (
-                          <Loader size={8} color="white" />
-                        ) : undefined
-                      }
-                    >
-                      {i.status}
-                    </Badge>
-                    {i.status === 'downloading' && i.progress != null && (
-                      <Group gap={6} wrap="nowrap" w={120}>
-                        <Progress
-                          value={i.progress * 100}
-                          size="sm"
-                          radius="xl"
-                          style={{ flex: 1 }}
-                          striped
-                          animated
-                        />
-                        <Text size="xs" c="dimmed" w={32} ta="right">
-                          {Math.round(i.progress * 100)}%
-                        </Text>
-                      </Group>
-                    )}
-                  </Stack>
-                </Table.Td>
-                <Table.Td>
-                  <Text size="xs" c="dimmed" title={i.createdAt}>
-                    {fmtWhen(i.createdAt)}
-                  </Text>
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      )}
-
-      {blocked && blocked.length > 0 && (
-        <>
-          <Title order={4} mt="xl" mb="xs">
-            Blocklist
-          </Title>
-          <Table maw={860}>
-            <Table.Tbody>
-              {blocked.map((b) => (
-                <Table.Tr key={b.id}>
-                  <Table.Td>
-                    <Text size="xs" style={{ wordBreak: 'break-all' }}>
-                      {b.key}
-                    </Text>
-                    <Text size="xs" c="dimmed" lineClamp={1}>
-                      {b.reason}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td w={90}>
-                    <Badge size="xs" variant="outline">
-                      {b.protocol}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td w={90}>
-                    <Button size="compact-xs" variant="subtle" onClick={() => unblock.mutate(b.id)}>
-                      Unblock
-                    </Button>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </>
-      )}
+        </Tabs.Panel>
+      </Tabs>
+      {confirmation}
     </>
   )
 }

@@ -1,6 +1,12 @@
-import { MantineProvider } from '@mantine/core'
+import { MantineProvider, type CSSVariablesResolver } from '@mantine/core'
 import { useEffect, useState, type ReactNode } from 'react'
 import { buildTheme, PRESETS, THEME_STORAGE_KEY, ThemeCtx } from './theme'
+
+const surfaces: CSSVariablesResolver = () => ({
+  variables: {},
+  light: { '--mantine-color-body': '#ffffff', '--mantine-color-default-border': '#e5e5e0' },
+  dark: { '--mantine-color-body': '#181816', '--mantine-color-default-border': '#353532' },
+})
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [themeId, setThemeId] = useState<string>(
@@ -10,13 +16,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     localStorage.setItem(THEME_STORAGE_KEY, preset.id)
-    // Lets index.css gate the background mesh on the active theme.
-    document.documentElement.dataset.mesh = preset.effects.mesh ? 'on' : 'off'
   }, [preset])
 
   return (
     <ThemeCtx.Provider value={{ themeId: preset.id, setThemeId, preset }}>
-      <MantineProvider theme={buildTheme(preset)} defaultColorScheme="dark">
+      <MantineProvider theme={buildTheme(preset)} defaultColorScheme="dark" cssVariablesResolver={surfaces}>
         {children}
       </MantineProvider>
     </ThemeCtx.Provider>

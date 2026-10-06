@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { Anchor, Badge, Button, Group, Stack, Switch, Table, Text, TextInput, Tooltip } from '@mantine/core'
+import { Anchor, Badge, Button, Group, Stack, Switch, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core'
+import { useConfirmAction } from './ConfirmAction'
+import { notify } from '../ui'
 import { IconSearch } from '@tabler/icons-react'
 import { fmtNum, fmtSize, type ReleaseCandidate } from '../api'
 import type { Range } from '../types/parse'
@@ -18,13 +20,13 @@ const rejectionLabel: Record<string, string> = {
   'rejected.content_type': 'not manga',
   'rejected.series_match': 'different series',
   'rejected.edition_routing': 'no matching collection',
-  'rejected.no_coverage': 'covers nothing wanted',
-  'rejected.blocklisted': 'blocklisted',
+  'rejected.no_coverage': 'no wanted volumes or chapters',
+  'rejected.blocklisted': 'blocked',
   'rejected.language': 'wrong language',
-  'rejected.format_score': 'below format score floor',
-  'rejected.pack_threshold': 'pack mostly unwanted',
-  'rejected.size': 'implausible size',
-  'rejected.seeders': 'no seeders',
+  'rejected.format_score': 'below minimum score',
+  'rejected.pack_threshold': 'pack mostly already owned',
+  'rejected.size': 'outside size limits',
+  'rejected.seeders': 'not enough seeders',
 }
 const friendly = (code: string) => rejectionLabel[code] ?? code.replace('rejected.', '')
 
@@ -53,9 +55,20 @@ export default function CandidateList({
 }: {
   candidates: ReleaseCandidate[]
   dropped?: number
-  onGrab?: (c: ReleaseCandidate, force: boolean) => void
+  onGrab?: (c: ReleaseCandidate, force: boolean) => void | Promise<void>
   busy?: boolean
 }) {
+  const { confirm, confirmation } = useConfirmAction()
+  const [queued, setQueued] = useState<Set<string>>(new Set())
+  const download = async (c: ReleaseCandidate, force: boolean) => {
+    if (!onGrab || busy || queued.has(c.guid)) return
+    await onGrab(c, force)
+    setQueued((prev) => new Set([...prev, c.guid]))
+  }
+  const requestDownload = (c: ReleaseCandidate, force: boolean) => {
+    if (force) confirm({ title: 'Download rejected release?', message: `“${c.title}” doesn't meet your rules: ${(c.rejections ?? []).map(friendly).join(', ')}. Download it anyway?`, label: 'Download anyway', onConfirm: () => download(c, true) })
+    else void download(c, false).catch(notify.err)
+  }
   const [showRejected, setShowRejected] = useState(false)
   const [filter, setFilter] = useState('')
   const [sort, setSort] = useState<SortKey>('score')
@@ -90,8 +103,8 @@ export default function CandidateList({
             <Text span c="green" fw={600} size="xs">
               {ok.length}
             </Text>{' '}
-            grabbable · {rejected.length} rejected
-            {dropped > 0 && ` · ${dropped} for the other ledger`}
+            available · {rejected.length} rejected
+            {dropped > 0 && ` · ${dropped} excluded from this search`}
           </Text>
           {rejected.length > 0 && ok.length > 0 && (
             <Switch
@@ -120,21 +133,21 @@ export default function CandidateList({
             <Table.Tr>
               <Table.Th w={130}>Site</Table.Th>
               <Table.Th>Release</Table.Th>
-              <Table.Th w={90} style={sortableTh} onClick={() => sortBy('size')}>
-                Size{arrow('size')}
+              <Table.Th w={90} style={sortableTh} aria-sort={sort === 'size' ? (asc ? 'ascending' : 'descending') : 'none'}>
+                <UnstyledButton onClick={() => sortBy('size')}>Size{arrow('size')}</UnstyledButton>
               </Table.Th>
-              <Table.Th w={80} style={sortableTh} onClick={() => sortBy('seeders')}>
-                Seeders{arrow('seeders')}
+              <Table.Th w={80} style={sortableTh} aria-sort={sort === 'seeders' ? (asc ? 'ascending' : 'descending') : 'none'}>
+                <UnstyledButton onClick={() => sortBy('seeders')}>Seeders{arrow('seeders')}</UnstyledButton>
               </Table.Th>
-              <Table.Th w={90} style={sortableTh} onClick={() => sortBy('score')}>
-                Score{arrow('score')}
+              <Table.Th w={90} style={sortableTh} aria-sort={sort === 'score' ? (asc ? 'ascending' : 'descending') : 'none'}>
+                <UnstyledButton onClick={() => sortBy('score')}>Score{arrow('score')}</UnstyledButton>
               </Table.Th>
               {onGrab && <Table.Th w={70} />}
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {shown.map((c) => (
-              <CandidateRow key={c.guid} c={c} onGrab={onGrab} busy={busy} />
+              <CandidateRow key={c.guid} c={c} onGrab={onGrab ? requestDownload : undefined} busy={busy} queued={queued.has(c.guid)} />
             ))}
           </Table.Tbody>
         </Table>
@@ -144,6 +157,7 @@ export default function CandidateList({
           Nothing matches “{filter}”.
         </Text>
       )}
+      {confirmation}
     </Stack>
   )
 }
@@ -152,10 +166,12 @@ function CandidateRow({
   c,
   onGrab,
   busy,
+  queued,
 }: {
   c: ReleaseCandidate
-  onGrab?: (c: ReleaseCandidate, force: boolean) => void
+  onGrab?: (c: ReleaseCandidate, force: boolean) => void | Promise<void>
   busy: boolean
+  queued: boolean
 }) {
   const rejections = c.rejections ?? []
   const rejected = rejections.length > 0
@@ -267,7 +283,7 @@ function CandidateRow({
             </Badge>
           </Tooltip>
         ) : (
-          <Tooltip label="Decision score — the highest eligible release wins auto-grab">
+          <Tooltip label="Higher scores are preferred for automatic downloads">
             <Badge size="xs" color="green" variant="light">
               {c.score}
             </Badge>
@@ -279,20 +295,20 @@ function CandidateRow({
           <Tooltip
             label={
               hard
-                ? 'Hard rejection — cannot grab'
+                ? 'This release cannot be downloaded'
                 : rejected
-                  ? 'Force grab (overrides the soft rejection)'
-                  : 'Grab'
+                  ? 'Review the rejection before downloading'
+                  : 'Download release'
             }
           >
             <Button
               size="compact-xs"
-              color={rejected ? 'orange' : 'indigo'}
+              color={rejected ? 'orange' : 'brand'}
               variant={rejected ? 'light' : 'filled'}
-              disabled={hard || busy}
+              disabled={hard || busy || queued}
               onClick={() => onGrab(c, rejected)}
             >
-              {rejected ? 'Force' : 'Grab'}
+              {queued ? 'Queued' : rejected ? 'Download anyway' : 'Download'}
             </Button>
           </Tooltip>
         </Table.Td>

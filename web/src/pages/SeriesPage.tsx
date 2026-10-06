@@ -1,15 +1,13 @@
 import { useCallback, useState } from 'react'
 import {
+  Anchor,
   ActionIcon,
-  Alert,
   Badge,
   Button,
   Card,
   Collapse,
-  Divider,
   Group,
   Image,
-  Loader,
   Menu,
   Modal,
   NumberInput,
@@ -30,8 +28,7 @@ import {
 } from '@mantine/core'
 import {
   IconAdjustmentsHorizontal,
-  IconBookmark,
-  IconBookmarkFilled,
+  IconChevronLeft,
   IconChevronRight,
   IconDotsVertical,
   IconEye,
@@ -47,7 +44,7 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   api,
   fmtNum,
@@ -61,11 +58,16 @@ import {
 } from '../api'
 import SlotModal, { type SlotSelection } from '../components/SlotModal'
 import { fmtWhen, notify, usePageTitle } from '../ui'
+import { QueryFeedback } from '../components/QueryFeedback'
+import { EmptyState } from '../components/EmptyState'
+import { useConfirmAction } from '../components/ConfirmAction'
+import classes from './SeriesPage.module.css'
 
 export default function SeriesPage() {
   const { id } = useParams()
   const seriesID = Number(id)
   const navigate = useNavigate()
+  const { confirm, confirmation } = useConfirmAction()
 
   const [busy, setBusy] = useState(false)
   const [slotSel, setSlotSel] = useState<SlotSelection | null>(null)
@@ -98,8 +100,11 @@ export default function SeriesPage() {
 
   // Refresh everything under this series (slots, files, indexers, detail).
   const load = useCallback(
-    () => queryClient.invalidateQueries({ queryKey: ['series', seriesID] }),
-    [queryClient, seriesID],
+    () => {
+      void queryClient.invalidateQueries({ queryKey: ['queue'] })
+      return queryClient.invalidateQueries({ queryKey: ['series'] })
+    },
+    [queryClient],
   )
 
   const run = async (fn: () => Promise<unknown>, doneMsg?: string) => {
@@ -116,7 +121,7 @@ export default function SeriesPage() {
   }
 
   if (!series) {
-    if (detail.error) return <Alert color="red">{String(detail.error)}</Alert>
+    if (detail.error) return <QueryFeedback error={detail.error} onRetry={() => void detail.refetch()} />
     return (
       <Group align="flex-start">
         <Skeleton w={140} h={200} radius="sm" />
@@ -130,142 +135,74 @@ export default function SeriesPage() {
   }
 
   const volumeCollections = collections.filter((c) => c.type === 'volume')
+  const allSlots = [...Object.values(slots?.volumes ?? {}).flat(), ...Object.values(slots?.chapters ?? {}).flat()]
+  const owned = allSlots.filter((s) => s.fileIds?.length).length
+  const wanted = allSlots.filter((s) => s.wanted).length
 
   return (
     <>
-      <div
-        style={{
-          position: 'sticky',
-          top: 'var(--app-shell-header-height, 56px)',
-          zIndex: 20,
-          background: 'var(--mantine-color-body)',
-          // Bleed into the AppShell.Main padding on all sides so the bar
-          // sits flush under the header at rest — the same place it pins
-          // when stuck — instead of gaining the gutter as extra height.
-          marginTop: 'calc(var(--mantine-spacing-md) * -1)',
-          marginInline: 'calc(var(--mantine-spacing-md) * -1)',
-          paddingInline: 'var(--mantine-spacing-md)',
-          marginBottom: 'var(--mantine-spacing-md)',
-        }}
-      >
-        <Group gap={4} py={4}>
-          <BarButton
-            icon={<IconRefresh size={18} />}
-            label="Refresh & Scan"
-            loading={busy}
-            onClick={() =>
-              run(async () => {
+      <Anchor component={Link} to="/" size="xs" c="dimmed" underline="hover" className={classes.back}>
+        <IconChevronLeft size={13} /> Library
+      </Anchor>
+      <div className={classes.hero}>
+        <Image src={series.coverUrl} className={classes.cover} alt={series.title}
+          fallbackSrc="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='240'%3E%3Crect width='160' height='240' fill='%2352524e'/%3E%3C/svg%3E" />
+        <div className={classes.details}>
+          <Title order={2} className={classes.title}>{series.title}</Title>
+          <Group gap={8} mt={10}>
+            <Text size="sm" c="dimmed" tt="capitalize">{[series.type, series.status?.replaceAll('_', ' '), series.year].filter(Boolean).join(' · ')}</Text>
+            {series.contentRating && series.contentRating !== 'safe' && <Badge size="xs" color="gray">{series.contentRating}</Badge>}
+          </Group>
+          {series.description && <>
+            <Text size="sm" c="dimmed" mt="md" lh={1.65} lineClamp={fullDesc ? undefined : 3} id="series-description">{series.description}</Text>
+            <UnstyledButton onClick={() => setFullDesc((v) => !v)} aria-expanded={fullDesc} aria-controls="series-description" mt={5}>
+              <Text size="xs" fw={500}>{fullDesc ? 'Show less' : 'Read more'}</Text>
+            </UnstyledButton>
+          </>}
+          <Group gap={24} mt="lg" className={classes.stats}>
+            {series.finalVolume > 0 && <div><Text size="lg" fw={500}>{series.finalVolume}</Text><Text size="xs" c="dimmed">Volumes</Text></div>}
+            {series.totalChapters > 0 && <div><Text size="lg" fw={500}>{series.totalChapters}</Text><Text size="xs" c="dimmed">Chapters</Text></div>}
+            {slots && <><div><Text size="lg" fw={500}>{owned}</Text><Text size="xs" c="dimmed">Owned</Text></div>
+              <div><Text size="lg" fw={500}>{wanted}</Text><Text size="xs" c="dimmed">Wanted</Text></div></>}
+          </Group>
+        </div>
+      </div>
+      <div className={classes.actions}>
+        <Group gap="xs">
+          <Tooltip label="Search monitored collections and download the best matching releases automatically.">
+            <Button size="sm" leftSection={<IconSearch size={15} />} loading={busy} disabled={!series.monitored}
+              onClick={() => run(async () => {
+                const [v, c] = await Promise.all([api.search(seriesID, { ledger: 'volume' }), api.search(seriesID, { ledger: 'chapter' })])
+                const queued = (v.queued?.length ?? 0) + (c.queued?.length ?? 0)
+                notify.ok(queued ? `${queued} ${queued === 1 ? 'release' : 'releases'} queued` : 'No matching releases to download')
+              })}>Search & download</Button>
+          </Tooltip>
+          <Tooltip label="Update series information and check its folder for existing files.">
+            <Button size="sm" variant="default" leftSection={<IconRefresh size={15} />} disabled={busy}
+              onClick={() => run(async () => {
                 await api.refreshSeries(seriesID)
                 const r = await api.scanSeries(seriesID)
-                notify.ok(`Refreshed — scan: ${r.scanned} new, ${r.linked} linked`)
-              })
-            }
-          />
-          <BarButton
-            icon={<IconSearch size={18} />}
-            label="Search Monitored"
-            loading={busy}
-            onClick={() =>
-              run(async () => {
-                const [v, c] = await Promise.all([
-                  api.search(seriesID, { ledger: 'volume' }),
-                  api.search(seriesID, { ledger: 'chapter' }),
-                ])
-                const queued = (v.queued?.length ?? 0) + (c.queued?.length ?? 0)
-                notify.ok(
-                  queued
-                    ? `Queued ${queued} release${queued > 1 ? 's' : ''}`
-                    : 'Nothing grabbed — no suitable release for the wanted slots',
-                )
-              })
-            }
-          />
-          <Divider orientation="vertical" mx={4} />
-          {(tab === 'volumes' || tab === 'chapters') && (
-            <BarButton
-              icon={<IconVersions size={18} />}
-              label="Collections"
-              onClick={() => setManageCollections(true)}
-            />
-          )}
-          <BarButton
-            icon={
-              series.monitored ? (
-                <IconBookmarkFilled size={18} />
-              ) : (
-                <IconBookmark size={18} />
-              )
-            }
-            label={series.monitored ? 'Monitored' : 'Unmonitored'}
-            onClick={() => run(() => api.setSeriesMonitored(seriesID, !series.monitored))}
-          />
-          <ProfileBarButton seriesID={seriesID} profileId={series.profileId ?? 0} />
-          <Divider orientation="vertical" mx={4} />
-          <BarButton
-            icon={<IconTrash size={18} />}
-            label="Delete"
-            color="red"
-            onClick={() => {
-              if (
-                !window.confirm(
-                  `Remove "${series.title}" from Sento?\n\nLibrary files stay on disk; monitoring, history and slot links are deleted.`,
-                )
-              )
-                return
-              run(() => api.deleteSeries(seriesID).then(() => navigate('/')))
-            }}
-          />
-          {(tab === 'volumes' || tab === 'chapters') && (
-            <div style={{ marginLeft: 'auto' }}>
-              <ViewToggle
-                value={tab === 'volumes' ? volumesView : chaptersView}
-                onChange={tab === 'volumes' ? setVolumesView : setChaptersView}
-              />
-            </div>
-          )}
+                notify.ok(`Series refreshed · ${r.linked} files linked`)
+              })}>Refresh</Button>
+          </Tooltip>
+          <Button size="sm" variant="default" leftSection={<IconVersions size={15} />} onClick={() => setManageCollections(true)}>Collections</Button>
         </Group>
-        <Divider />
+        <Group gap="md">
+          <ProfileBarButton seriesID={seriesID} profileId={series.profileId ?? 0} />
+          <Tooltip label="Allow Sento to search for and download missing releases for this series.">
+            <Switch size="sm" label="Monitor series" checked={series.monitored} disabled={busy}
+              onChange={(e) => { const monitored = e.currentTarget.checked; void run(() => api.setSeriesMonitored(seriesID, monitored)) }} />
+          </Tooltip>
+          <Menu position="bottom-end">
+            <Menu.Target><ActionIcon size="lg" variant="subtle" color="gray" aria-label="Series actions"><IconDotsVertical size={18} /></ActionIcon></Menu.Target>
+            <Menu.Dropdown><Menu.Item color="red" leftSection={<IconTrash size={15} />} disabled={busy}
+              onClick={() => confirm({ title: 'Remove series?', message: `Remove “${series.title}” from Sento, including monitoring and history. Your library files stay on disk.`, label: 'Remove series',
+                onConfirm: async () => { await api.deleteSeries(seriesID); await queryClient.invalidateQueries({ queryKey: ['series'] }); navigate('/') } })}>Remove series</Menu.Item></Menu.Dropdown>
+          </Menu>
+        </Group>
       </div>
-
-      <Group align="flex-start" wrap="nowrap" mb="md">
-        <Image src={series.coverUrl} w={140} radius="sm" alt="" visibleFrom="xs" />
-        <div style={{ flex: 1 }}>
-          <Title order={2}>{series.title}</Title>
-          <Group gap={6} mt={4}>
-            <Badge>{series.status}</Badge>
-            <Badge variant="light">{series.type}</Badge>
-            {series.year ? <Badge variant="default">{series.year}</Badge> : null}
-            {series.finalVolume > 0 && <Badge variant="outline">{series.finalVolume} volumes</Badge>}
-            {series.totalChapters > 0 && (
-              <Badge variant="outline">{series.totalChapters} chapters</Badge>
-            )}
-            {series.contentRating && series.contentRating !== 'safe' && (
-              <Badge variant="outline" color="pink">
-                {series.contentRating}
-              </Badge>
-            )}
-            {!series.monitored && (
-              <Badge variant="outline" color="gray">
-                unmonitored
-              </Badge>
-            )}
-          </Group>
-          {series.description && (
-            <Text
-              size="sm"
-              c="dimmed"
-              mt="xs"
-              lineClamp={fullDesc ? undefined : 3}
-              onClick={() => setFullDesc((v) => !v)}
-              style={{ cursor: 'pointer' }}
-              title={fullDesc ? 'Click to collapse' : 'Click to expand'}
-            >
-              {series.description}
-            </Text>
-          )}
-        </div>
-      </Group>
-
+      {!series.monitored && <Text size="sm" c="dimmed" mb="lg">Automatic downloads are paused for this series. You can still browse releases from its collections.</Text>}
+      {confirmation}
       <CollectionsModal
         seriesID={seriesID}
         collections={collections}
@@ -284,7 +221,7 @@ export default function SeriesPage() {
         onClose={() => setAddCollection(false)}
       />
 
-      <Tabs value={tab} onChange={setTab}>
+      <Tabs value={tab} onChange={setTab} keepMounted={false}>
         <Tabs.List>
           <Tabs.Tab value="volumes">Volumes</Tabs.Tab>
           <Tabs.Tab value="chapters">Chapters</Tabs.Tab>
@@ -292,9 +229,15 @@ export default function SeriesPage() {
           <Tabs.Tab value="files">Files ({files.length})</Tabs.Tab>
           <Tabs.Tab value="history">History</Tabs.Tab>
         </Tabs.List>
+        {(tab === 'volumes' || tab === 'chapters') && <Group justify="flex-end" mt="md">
+          <ViewToggle value={tab === 'volumes' ? volumesView : chaptersView} onChange={tab === 'volumes' ? setVolumesView : setChaptersView} />
+        </Group>}
+        <QueryFeedback error={slotsQuery.error} onRetry={() => void slotsQuery.refetch()} />
+        <QueryFeedback error={filesQuery.error} onRetry={() => void filesQuery.refetch()} />
 
         <Tabs.Panel value="volumes" pt="md">
-          <VolumesTab
+          <QueryFeedback pending={slotsQuery.isPending} />
+          {!slotsQuery.isPending && !slotsQuery.error && <VolumesTab
             seriesID={seriesID}
             collections={collections}
             slots={slots}
@@ -304,11 +247,12 @@ export default function SeriesPage() {
             onSlot={setSlotSel}
             onManageCollections={() => setManageCollections(true)}
             view={volumesView}
-          />
+          />}
         </Tabs.Panel>
 
         <Tabs.Panel value="chapters" pt="md">
-          <ChaptersTab
+          <QueryFeedback pending={slotsQuery.isPending} />
+          {!slotsQuery.isPending && !slotsQuery.error && <ChaptersTab
             seriesID={seriesID}
             collections={collections}
             slots={slots}
@@ -318,7 +262,7 @@ export default function SeriesPage() {
             onSlot={setSlotSel}
             onManageCollections={() => setManageCollections(true)}
             view={chaptersView}
-          />
+          />}
         </Tabs.Panel>
 
         <Tabs.Panel value="indexers" pt="md">
@@ -344,7 +288,7 @@ export default function SeriesPage() {
                   )
                 }
               >
-                Scan folder (import existing files)
+                Scan for files
               </Button>
             </Group>
             {files.map((f) => (
@@ -364,7 +308,8 @@ export default function SeriesPage() {
                 </Group>
               </Card>
             ))}
-            {files.length === 0 && <Text c="dimmed">No files yet.</Text>}
+            {filesQuery.isPending && <QueryFeedback pending />}
+            {!filesQuery.isPending && !filesQuery.error && files.length === 0 && <EmptyState title="No files yet" description="Download a release or scan the series folder to add existing files." />}
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="history" pt="md">
@@ -392,15 +337,16 @@ const eventColor: Record<string, string> = {
 }
 
 function HistoryTab({ seriesID }: { seriesID: number }) {
-  const { data: events } = useQuery({
+  const { data: events, error, isPending, refetch } = useQuery({
     queryKey: ['series', seriesID, 'history'],
     queryFn: () => api.history(seriesID),
   })
 
+  if (isPending || error) return <QueryFeedback pending={isPending} error={error} onRetry={() => void refetch()} />
   if (events && events.length === 0)
-    return <Text c="dimmed">Nothing yet — grabs and imports will show up here.</Text>
+    return <EmptyState title="No history yet" description="Downloads, imports, and errors for this series will appear here." />
   return (
-    <Table striped>
+    <Table.ScrollContainer minWidth={580}><Table highlightOnHover verticalSpacing="sm">
       <Table.Thead>
         <Table.Tr>
           <Table.Th>When</Table.Th>
@@ -419,7 +365,7 @@ function HistoryTab({ seriesID }: { seriesID: number }) {
             </Table.Td>
             <Table.Td>
               <Badge size="xs" color={eventColor[d.body.event] ?? 'gray'}>
-                {d.body.event}
+                {d.body.event.replaceAll('_', ' ')}
                 {d.body.force ? ' (forced)' : ''}
               </Badge>
             </Table.Td>
@@ -442,40 +388,7 @@ function HistoryTab({ seriesID }: { seriesID: number }) {
           </Table.Tr>
         ))}
       </Table.Tbody>
-    </Table>
-  )
-}
-
-// BarButton is one entry of the Sonarr-style action bar: icon above a
-// small label.
-function BarButton({
-  icon,
-  label,
-  color,
-  loading,
-  onClick,
-}: {
-  icon: React.ReactNode
-  label: string
-  color?: string
-  loading?: boolean
-  onClick: () => void
-}) {
-  return (
-    <UnstyledButton
-      onClick={onClick}
-      disabled={loading}
-      px="sm"
-      py={4}
-      style={{ borderRadius: 6, opacity: loading ? 0.5 : 1 }}
-    >
-      <Stack gap={2} align="center" c={color}>
-        {loading ? <Loader size={18} color={color} /> : icon}
-        <Text size="xs" c={color ?? 'dimmed'}>
-          {label}
-        </Text>
-      </Stack>
-    </UnstyledButton>
+    </Table></Table.ScrollContainer>
   )
 }
 
@@ -567,23 +480,10 @@ function ViewToggle({ value, onChange }: { value: LedgerView; onChange: (v: Ledg
       size="xs"
       value={value}
       onChange={(v) => onChange(v as LedgerView)}
+      aria-label="Collection layout"
       data={[
-        {
-          value: 'table',
-          label: (
-            <Tooltip label="Table view">
-              <IconTable size={14} style={{ display: 'block' }} />
-            </Tooltip>
-          ),
-        },
-        {
-          value: 'chips',
-          label: (
-            <Tooltip label="Compact grid">
-              <IconLayoutGrid size={14} style={{ display: 'block' }} />
-            </Tooltip>
-          ),
-        },
+        { value: 'table', label: <Group gap={6}><IconTable size={14} /><span>Table</span></Group> },
+        { value: 'chips', label: <Group gap={6}><IconLayoutGrid size={14} /><span>Grid</span></Group> },
       ]}
     />
   )
@@ -606,15 +506,9 @@ function ProfileBarButton({ seriesID, profileId }: { seriesID: number; profileId
   return (
     <Menu position="bottom-start" withinPortal>
       <Menu.Target>
-        <UnstyledButton px="sm" py={4} style={{ borderRadius: 6 }} title="Release profile">
-          <Stack gap={2} align="center">
-            <IconAdjustmentsHorizontal size={18} color="var(--mantine-color-dimmed)" />
-            <Text size="xs" c="dimmed">
-              {current?.name ?? 'Profile'}
-              {profileId === 0 && ' (default)'}
-            </Text>
-          </Stack>
-        </UnstyledButton>
+        <Button size="sm" variant="subtle" color="gray" leftSection={<IconAdjustmentsHorizontal size={15} />} aria-label="Release profile">
+          {current?.name ?? 'Profile'}{profileId === 0 && ' (default)'}
+        </Button>
       </Menu.Target>
       <Menu.Dropdown>
         <Menu.Label>Release profile</Menu.Label>
@@ -694,7 +588,7 @@ function SlotActions({
   busy,
   run,
   onInteractive,
-  autoLabel = 'Auto search — grab the best release',
+  autoLabel = 'Search and download the best matching release',
 }: {
   seriesID: number
   ledger: 'volume' | 'chapter'
@@ -714,6 +608,8 @@ function SlotActions({
           size="sm"
           variant="subtle"
           loading={busy && clicked}
+          disabled={busy}
+          aria-label={`Search and download ${ledger} ${target.number ? fmtNum(target.number) : 'collection'}`}
           onClick={(e) => {
             e.stopPropagation()
             setClicked(true)
@@ -722,7 +618,7 @@ function SlotActions({
               notify.ok(
                 r.queued?.length
                   ? `Grabbed ${r.queued.length} release${r.queued.length > 1 ? 's' : ''}`
-                  : 'Nothing grabbed — no suitable release found',
+                  : 'No matching releases to download',
               )
             })
           }}
@@ -734,6 +630,7 @@ function SlotActions({
         <ActionIcon
           size="sm"
           variant="subtle"
+          aria-label={`Browse releases for ${ledger} ${target.number ? fmtNum(target.number) : 'collection'}`}
           onClick={(e) => {
             e.stopPropagation()
             onInteractive()
@@ -778,15 +675,7 @@ function VolumesTab({
       {monitoredCols.length === 0 && (
         <Text size="sm" c="dimmed">
           No monitored collection —{' '}
-          <Text
-            span
-            size="sm"
-            c="indigo"
-            style={{ cursor: 'pointer' }}
-            onClick={onManageCollections}
-          >
-            open Collections
-          </Text>{' '}
+          <Anchor component="button" type="button" size="sm" onClick={onManageCollections}>choose a collection</Anchor>{' '}
           to pick the one you collect.
         </Text>
       )}
@@ -849,12 +738,8 @@ function CollectionSection({
 
   return (
     <Card withBorder padding="sm">
-      <Group
-        justify="space-between"
-        wrap="nowrap"
-        style={{ cursor: 'pointer' }}
-        onClick={() => setOpen((o) => !o)}
-      >
+      <Group justify="space-between" align="flex-start">
+        <UnstyledButton onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <Group gap={8} wrap="nowrap">
           <IconChevronRight
             size={16}
@@ -876,14 +761,14 @@ function CollectionSection({
               {owned}/{colSlots.length} owned
             </Text>
           </div>
-        </Group>
+        </Group></UnstyledButton>
         <SlotActions
           seriesID={seriesID}
           ledger="volume"
           target={{ collectionId: c.id, number: 0 }}
           busy={busy}
           run={run}
-          autoLabel="Auto search — grab the best for each wanted volume"
+          autoLabel="Search and download wanted volumes"
           onInteractive={() =>
             onSlot({
               ledger: 'volume',
@@ -911,19 +796,19 @@ function CollectionSection({
                   s.wanted ? ' · wanted' : ''
                 } — click for details`}
               >
-                <Badge
-                  size="sm"
-                  style={{ cursor: 'pointer' }}
+                <Button
+                  size="compact-xs"
+                  aria-label={`Volume ${fmtNum(s.number)} details`}
                   {...chipProps(s)}
                   onClick={() => openSlot(s)}
                 >
                   {fmtNum(s.number)}
-                </Badge>
+                </Button>
               </Tooltip>
             ))}
           </Group>
         ) : (
-          <Table highlightOnHover verticalSpacing={4} mt="xs">
+          <Table.ScrollContainer minWidth={520}><Table highlightOnHover verticalSpacing={8} mt="xs">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th w={70}>Volume</Table.Th>
@@ -941,9 +826,7 @@ function CollectionSection({
                   onClick={() => openSlot(s)}
                 >
                   <Table.Td>
-                    <Text size="sm" fw={500}>
-                      {fmtNum(s.number)}
-                    </Text>
+                    <UnstyledButton onClick={(e) => { e.stopPropagation(); openSlot(s) }} aria-label={`Volume ${fmtNum(s.number)} details`}><Text size="sm" fw={500}>{fmtNum(s.number)}</Text></UnstyledButton>
                   </Table.Td>
                   <Table.Td>
                     <Text size="xs" c="dimmed">
@@ -971,7 +854,7 @@ function CollectionSection({
                 </Table.Tr>
               ))}
             </Table.Tbody>
-          </Table>
+          </Table></Table.ScrollContainer>
         )}
         {colSlots.length === 0 && (
           <Text size="sm" c="dimmed" mt="xs">
@@ -1007,9 +890,7 @@ function CollectionsModal({
     <Modal opened={opened} onClose={onClose} title="Collections" size="lg">
       <Stack gap="sm">
         <Text size="xs" c="dimmed">
-          Monitored collections show on the Volumes/Chapters tabs and are searched; the rest are
-          reference. Most series want one monitored volume collection and one chapter collection —
-          add more (another language, colored, a specific team) when you collect several variants.
+          Choose the editions and languages you collect. Sento searches monitored collections for missing releases.
         </Text>
         {collections.map((c) => {
           const isChapter = c.type === 'chapter'
@@ -1224,7 +1105,7 @@ function AddCollectionModal({
           disabled={!name.trim() || !language.trim()}
           onClick={create}
         >
-          Create (monitored)
+          Create collection
         </Button>
       </Stack>
     </Modal>
@@ -1362,15 +1243,7 @@ function ChaptersTab({
       {monitoredCols.length === 0 && (
         <Text size="sm" c="dimmed">
           No monitored chapter collection —{' '}
-          <Text
-            span
-            size="sm"
-            c="indigo"
-            style={{ cursor: 'pointer' }}
-            onClick={onManageCollections}
-          >
-            open Collections
-          </Text>{' '}
+          <Anchor component="button" type="button" size="sm" onClick={onManageCollections}>choose a collection</Anchor>{' '}
           to enable one.
         </Text>
       )}
@@ -1455,12 +1328,8 @@ function ChapterCollectionSection({
 
   return (
     <Card withBorder padding="sm">
-      <Group
-        justify="space-between"
-        wrap="nowrap"
-        style={{ cursor: 'pointer' }}
-        onClick={() => setOpen((o) => !o)}
-      >
+      <Group justify="space-between" align="flex-start">
+        <UnstyledButton onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <Group gap={8} wrap="nowrap">
           <IconChevronRight
             size={16}
@@ -1482,7 +1351,7 @@ function ChapterCollectionSection({
               {owned}/{monitored.length} monitored owned · {wanted.length} wanted
             </Text>
           </div>
-        </Group>
+        </Group></UnstyledButton>
         <Group gap={4} wrap="nowrap">
           <CutoffButton seriesID={seriesID} collection={col} run={run} />
           <SlotActions
@@ -1491,7 +1360,7 @@ function ChapterCollectionSection({
             target={{ collectionId: col.id, number: 0 }}
             busy={busy}
             run={run}
-            autoLabel="Auto search — grab the best for each wanted chapter"
+            autoLabel="Search and download wanted chapters"
             onInteractive={() =>
               onSlot({
                 ledger: 'chapter',
@@ -1535,20 +1404,20 @@ function ChapterCollectionSection({
                 key={c.number}
                 label={`c${fmtNum(c.number)}${c.wanted ? ' · wanted' : ''} — click for details`}
               >
-                <Badge
-                  size="xs"
-                  style={{ cursor: 'pointer' }}
+                <Button
+                  size="compact-xs"
+                  aria-label={`Chapter ${fmtNum(c.number)} details`}
                   {...chipProps(c)}
                   onClick={() => openSlot(c)}
                 >
                   {fmtNum(c.number)}
-                </Badge>
+                </Button>
               </Tooltip>
             ))}
           </Group>
         )}
         {view === 'table' && visible.length > 0 && (
-          <Table highlightOnHover verticalSpacing={4} mt="xs">
+          <Table.ScrollContainer minWidth={520}><Table highlightOnHover verticalSpacing={8} mt="xs">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th w={90}>Chapter</Table.Th>
@@ -1561,9 +1430,7 @@ function ChapterCollectionSection({
               {visible.map((c) => (
                 <Table.Tr key={c.number} style={{ cursor: 'pointer' }} onClick={() => openSlot(c)}>
                   <Table.Td>
-                    <Text size="sm" fw={500}>
-                      {fmtNum(c.number)}
-                    </Text>
+                    <UnstyledButton onClick={(e) => { e.stopPropagation(); openSlot(c) }} aria-label={`Chapter ${fmtNum(c.number)} details`}><Text size="sm" fw={500}>{fmtNum(c.number)}</Text></UnstyledButton>
                   </Table.Td>
                   <Table.Td>
                     <StatusBadge slot={c} />
@@ -1586,7 +1453,7 @@ function ChapterCollectionSection({
                 </Table.Tr>
               ))}
             </Table.Tbody>
-          </Table>
+          </Table></Table.ScrollContainer>
         )}
         {!showAll && filtered.length > 200 && (
           <Text size="xs" c="dimmed" mt="xs">
@@ -1605,7 +1472,7 @@ function ChapterCollectionSection({
         {filtered.length === 0 && (
           <Text size="sm" c="dimmed" mt="xs">
             {filter === 'wanted'
-              ? 'No wanted chapters — everything monitored is owned. Switch the filter to browse the rest.'
+              ? 'No wanted chapters. Choose All to browse the rest.'
               : 'Nothing matches this filter.'}
           </Text>
         )}
@@ -1628,7 +1495,7 @@ function IndexersTab({
   busy: boolean
 }) {
   const [rebind, setRebind] = useState<SeriesIndexerView | null>(null)
-  const { data: sites } = useQuery({
+  const { data: sites, error, isPending, refetch } = useQuery({
     queryKey: ['series', seriesID, 'indexers'],
     queryFn: () => api.seriesIndexers(seriesID),
   })
@@ -1649,19 +1516,19 @@ function IndexersTab({
   return (
     <Stack>
       <Text size="sm" c="dimmed">
-        Defaults come from the global Indexers page; switches here override them for this series
-        only. Extension sources bind automatically on first search (every entry at ≥0.90 title
-        match — sites often list a series several times); all active entries are searched and the
-        best release wins per slot. Disable or remove an entry if it produces garbage.
+        These settings apply to this series. <Anchor component={Link} to="/indexers" size="sm">Manage indexers</Anchor> to change the defaults.
+        Source matches are found automatically when you search; you can also choose them below.
       </Text>
-      <Table>
+      <QueryFeedback pending={isPending} error={error} onRetry={() => void refetch()} />
+      {sites?.length === 0 && !error && <EmptyState title="No indexers configured" description="Add a torrent indexer or an extension source to find releases." action={<Button component={Link} to="/indexers" size="sm" variant="default">Set up indexers</Button>} />}
+      {!!sites?.length && <Table.ScrollContainer minWidth={700}><Table>
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Site</Table.Th>
             <Table.Th>Enabled</Table.Th>
             <Table.Th>Volumes</Table.Th>
             <Table.Th>Chapters</Table.Th>
-            <Table.Th>Binding</Table.Th>
+            <Table.Th>Source matches</Table.Th>
             <Table.Th></Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -1686,6 +1553,8 @@ function IndexersTab({
                 <Table.Td>
                   <Switch
                     size="xs"
+                    aria-label={`Enable ${s.name} for this series`}
+                    disabled={busy}
                     checked={s.enabled}
                     onChange={(e) => override(s, { enabled: e.currentTarget.checked })}
                   />
@@ -1693,16 +1562,18 @@ function IndexersTab({
                 <Table.Td>
                   <Switch
                     size="xs"
+                    aria-label={`Search volumes on ${s.name}`}
                     checked={s.useVolumes}
-                    disabled={!s.enabled}
+                    disabled={!s.enabled || busy}
                     onChange={(e) => override(s, { useVolumes: e.currentTarget.checked })}
                   />
                 </Table.Td>
                 <Table.Td>
                   <Switch
                     size="xs"
+                    aria-label={`Search chapters on ${s.name}`}
                     checked={s.useChapters}
-                    disabled={!s.enabled}
+                    disabled={!s.enabled || busy}
                     onChange={(e) => override(s, { useChapters: e.currentTarget.checked })}
                   />
                 </Table.Td>
@@ -1734,7 +1605,7 @@ function IndexersTab({
                     )}
                     {s.protocol === 'source' && (
                       <Button size="compact-xs" variant="default" onClick={() => setRebind(s)}>
-                        {s.bindings?.some((b) => b.state === 'active') ? 'Bind more' : 'Bind'}
+                        {s.bindings?.some((b) => b.state === 'active') ? 'Add match' : 'Find match'}
                       </Button>
                     )}
                   </Group>
@@ -1743,7 +1614,7 @@ function IndexersTab({
             )
           })}
         </Table.Tbody>
-      </Table>
+      </Table></Table.ScrollContainer>}
 
       <RebindModal
         seriesID={seriesID}
@@ -1777,7 +1648,7 @@ function BindingList({
   if (bindings.length === 0) {
     return (
       <Text size="xs" c="dimmed">
-        auto on search
+        Found on first search
       </Text>
     )
   }
@@ -1798,7 +1669,8 @@ function BindingList({
             </Text>
             <Tooltip label={b.state === 'active' ? 'Disable entry' : 'Enable entry'}>
               <ActionIcon
-                size="xs"
+                size="md"
+                aria-label={`${b.state === 'active' ? 'Disable' : 'Enable'} match ${b.mangaTitle}`}
                 variant="subtle"
                 color={b.state === 'active' ? 'gray' : 'yellow'}
                 onClick={() =>
@@ -1814,9 +1686,10 @@ function BindingList({
                 {b.state === 'active' ? <IconEye size={12} /> : <IconEyeOff size={12} />}
               </ActionIcon>
             </Tooltip>
-            <Tooltip label="Remove binding">
+            <Tooltip label="Remove source match">
               <ActionIcon
-                size="xs"
+                size="md"
+                aria-label={`Remove match ${b.mangaTitle}`}
                 variant="subtle"
                 color="red"
                 onClick={() => run(() => api.deleteBinding(seriesID, b.id))}
@@ -1852,7 +1725,7 @@ function RebindModal({
   if (!site) return null
 
   return (
-    <Modal opened onClose={onClose} title={`Bind ${site.name}`} size="lg">
+    <Modal opened onClose={onClose} title={`Find a match on ${site.name}`} size="lg">
       <Stack>
         <Group align="flex-end">
           <TextInput
@@ -1893,11 +1766,11 @@ function RebindModal({
                         sourceName: site.name,
                         mangaTitle: m.title,
                       }),
-                    'Source bound',
+                    'Source match added',
                   )
                 }
               >
-                {isBound ? 'Bound' : 'Bind'}
+                {isBound ? 'Matched' : 'Use this match'}
               </Button>
             </Group>
           )

@@ -1,9 +1,8 @@
-// Theme system, qui-style: a registry of curated presets the user can switch
-// between. Each preset is just a brand color scale + a few flags; it composes
-// with Mantine's built-in light/dark color scheme. The choice is persisted.
+// Accent presets share the same quiet surfaces and typography.
 // (Provider component lives in ThemeProvider.tsx.)
 
 import { createContext, useContext } from 'react'
+import classes from './theme.module.css'
 import { createTheme, type MantineColorsTuple } from '@mantine/core'
 
 export interface Preset {
@@ -11,10 +10,7 @@ export interface Preset {
   label: string
   swatch: string // representative color shown in the picker
   brand: MantineColorsTuple // 10 shades, light → dark (index 6 = primary)
-  accentTo: string // second gradient stop (built-in Mantine color name)
   radius: 'xs' | 'sm' | 'md' | 'lg'
-  display: boolean // use the Space Grotesk display font for headings
-  effects: { mesh: boolean; gradient: boolean }
 }
 
 export const PRESETS: Preset[] = [
@@ -22,7 +18,7 @@ export const PRESETS: Preset[] = [
     id: 'minimal',
     label: 'Minimal',
     swatch: '#52525b',
-    // Neutral zinc scale — the qui-style monochrome default. Covers provide
+    // Neutral zinc scale. Covers provide
     // the only real color.
     brand: [
       '#fafafa',
@@ -36,10 +32,7 @@ export const PRESETS: Preset[] = [
       '#27272a',
       '#18181b',
     ],
-    accentTo: 'gray',
     radius: 'sm',
-    display: false,
-    effects: { mesh: false, gradient: false },
   },
   {
     id: 'aurora',
@@ -57,10 +50,7 @@ export const PRESETS: Preset[] = [
       '#48219e',
       '#3d188b',
     ],
-    accentTo: 'cyan',
-    radius: 'md',
-    display: true,
-    effects: { mesh: true, gradient: true },
+    radius: 'sm',
   },
   {
     id: 'nightwalker',
@@ -78,10 +68,7 @@ export const PRESETS: Preset[] = [
       '#1e40af',
       '#1e3a8a',
     ],
-    accentTo: 'cyan',
-    radius: 'md',
-    display: true,
-    effects: { mesh: true, gradient: true },
+    radius: 'sm',
   },
   {
     id: 'emerald',
@@ -99,10 +86,7 @@ export const PRESETS: Preset[] = [
       '#065f46',
       '#064e3b',
     ],
-    accentTo: 'teal',
-    radius: 'md',
-    display: true,
-    effects: { mesh: true, gradient: false },
+    radius: 'sm',
   },
   {
     id: 'sunset',
@@ -120,10 +104,7 @@ export const PRESETS: Preset[] = [
       '#9a3412',
       '#7c2d12',
     ],
-    accentTo: 'pink',
-    radius: 'md',
-    display: true,
-    effects: { mesh: true, gradient: true },
+    radius: 'sm',
   },
 ]
 
@@ -132,11 +113,14 @@ export const THEME_STORAGE_KEY = 'sento-theme'
 export function buildTheme(p: Preset) {
   return createTheme({
     primaryColor: 'brand',
-    colors: { brand: p.brand },
     defaultRadius: p.radius,
-    fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    colors: {
+      brand: p.brand,
+      dark: ['#e8e8e6', '#b6b6b2', '#92928e', '#666662', '#40403e', '#30302e', '#242422', '#1d1d1b', '#181816', '#121210'],
+    },
     headings: {
-      fontFamily: p.display ? '"Space Grotesk", Inter, sans-serif' : 'Inter, sans-serif',
+      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
       fontWeight: '600',
     },
     shadows: {
@@ -145,7 +129,12 @@ export function buildTheme(p: Preset) {
     },
     cursorType: 'pointer',
     components: {
-      // Flat surfaces, qui-style: defined by a hairline border, not a shadow.
+      Button: { defaultProps: { fw: 500 } },
+      Table: { classNames: { th: classes.tableHeader, td: classes.tableCell } },
+      Input: { classNames: { input: classes.input } },
+      Modal: { classNames: { title: classes.modalTitle }, defaultProps: { closeButtonProps: { 'aria-label': 'Close dialog' }, overlayProps: { backgroundOpacity: 0.35, blur: 2 } } },
+      Tabs: { classNames: { list: classes.tabsList, tab: classes.tab } },
+      Badge: { classNames: { label: classes.badgeLabel }, defaultProps: { radius: 'sm', variant: 'light', fw: 500 } },
       Card: { defaultProps: { withBorder: true, shadow: undefined } },
       Paper: { defaultProps: { withBorder: true, shadow: undefined } },
     },

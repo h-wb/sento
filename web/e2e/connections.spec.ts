@@ -47,7 +47,7 @@ test('a service is tested on its own before saving', async ({ page }) => {
 test('a failing extension repo is reported on its row', async ({ page }) => {
   await page.goto('/connections')
   const host = page.getByRole('region', { name: 'Source host' })
-  await expect(host.getByText(/No repos yet/)).toBeVisible()
+  await expect(host.getByText(/Add a repository to see available sources/)).toBeVisible()
 
   await host.getByRole('textbox', { name: 'Extension repo URL' }).fill('https://broken.example/index.min.json')
   await host.getByRole('button', { name: 'Add repo' }).click()
@@ -55,7 +55,7 @@ test('a failing extension repo is reported on its row', async ({ page }) => {
   await expect(host.getByText(/returned HTTP 404/)).toBeVisible()
 
   await host.getByRole('button', { name: 'Remove' }).click()
-  await expect(host.getByText(/No repos yet/)).toBeVisible()
+  await expect(host.getByText(/Add a repository to see available sources/)).toBeVisible()
 })
 
 test('the indexers page lists everything Sento can search', async ({ page }) => {

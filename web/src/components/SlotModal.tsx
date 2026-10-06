@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, Badge, Button, Card, Group, Loader, Modal, Stack, Tabs, Text } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { IconFile, IconListSearch, IconRefresh, IconSearch, IconTrash } from '@tabler/icons-react'
 import { api, fmtNum, fmtSize, type ReleaseCandidate, type SeriesFile } from '../api'
 import { notify } from '../ui'
 import CandidateList from './CandidateList'
+import { useConfirmAction } from './ConfirmAction'
 
 export type SlotSelection = {
   ledger: 'volume' | 'chapter'
@@ -29,6 +30,7 @@ type StreamResult = {
   notes: string[]
   errors: string[]
   done: boolean
+  stopped?: boolean
 }
 
 export default function SlotModal({
@@ -76,6 +78,9 @@ function Inner({
   const editionWide = sel.number === 0
   const linked = files.filter((f) => sel.fileIds.includes(f.id))
 
+  const { confirm, confirmation } = useConfirmAction()
+  const searchController = useRef<AbortController | null>(null)
+  useEffect(() => () => searchController.current?.abort(), [])
   const [busy, setBusy] = useState(false)
   const [searching, setSearching] = useState(false)
   const [result, setResult] = useState<StreamResult | null>(null)
@@ -89,6 +94,9 @@ function Inner({
   // Streaming search: each provider's batch renders as soon as it lands,
   // so fast extension sources show up while torrent indexers still load.
   const interactiveSearch = async () => {
+    if (searching || busy) return
+    const controller = new AbortController()
+    searchController.current = controller
     const slotRef = { collectionId: sel.collectionId ?? 0, number: sel.number }
     setSearching(true)
     setResult({
@@ -133,9 +141,10 @@ function Inner({
               return prev
           }
         })
-      })
+      }, controller.signal)
     } catch (e) {
-      notify.err(e)
+      if (controller.signal.aborted) setResult((prev) => prev ? { ...prev, stopped: true } : prev)
+      if (!controller.signal.aborted) setResult((prev) => prev ? { ...prev, errors: [...prev.errors, e instanceof Error ? e.message : String(e)] } : prev)
     } finally {
       setSearching(false)
       setResult((prev) => (prev ? { ...prev, pending: [], done: true } : prev))
@@ -156,40 +165,21 @@ function Inner({
     ? `${sel.collectionName ?? 'Collection'} — wanted ${sel.ledger}s`
     : `${sel.ledger === 'volume' ? 'Volume' : 'Chapter'} ${fmtNum(sel.number)}`
 
-  const run = async (fn: () => Promise<unknown>, doneMsg?: string) => {
+  const grab = async (c: ReleaseCandidate, force: boolean) => {
     setBusy(true)
     try {
-      await fn()
-      if (doneMsg) notify.ok(doneMsg)
-    } catch (e) {
-      notify.err(e)
-    } finally {
-      setBusy(false)
-    }
+      await api.search(seriesID, { ledger: sel.ledger, grab: c.guid, force, slot: { collectionId: sel.collectionId ?? 0, number: sel.number } })
+      onChanged()
+      notify.ok('Release queued for download')
+    } finally { setBusy(false) }
   }
 
-  const grab = (c: ReleaseCandidate, force: boolean) =>
-    run(
-      () =>
-        api
-          .search(seriesID, {
-            ledger: sel.ledger,
-            grab: c.guid,
-            force,
-            slot: { collectionId: sel.collectionId ?? 0, number: sel.number },
-          })
-          .then(onChanged),
-      `Grabbed via ${c.provider}/${c.site}`,
-    )
-
   return (
-    <Modal opened onClose={onClose} title={label} size="xl" fullScreen={small}>
+    <Modal opened onClose={onClose} title={label} size="xl" fullScreen={small} closeOnEscape={!busy} closeOnClickOutside={!busy} withCloseButton={!busy}>
       <Stack gap="sm">
         {editionWide ? (
           <Text size="sm" c="dimmed">
-            Candidates are matched against every wanted {sel.ledger} of this collection —
-            multi-{sel.ledger} packs cover several slots at once. Packs that are mostly already
-            owned get flagged and need a force grab.
+            Browse releases for the wanted {sel.ledger}s in this collection. Packs can include several {sel.ledger}s.
           </Text>
         ) : (
           <Group gap={6}>
@@ -236,12 +226,14 @@ function Inner({
               )}
               {(searching || (result?.pending.length ?? 0) > 0 || result?.done) && (
                 <Group gap={6}>
+                  {searching && <Button size="compact-xs" variant="default" onClick={() => searchController.current?.abort()}>Stop search</Button>}
                   {result?.done && (
                     <Button
                       size="compact-xs"
                       variant="default"
                       leftSection={<IconRefresh size={12} />}
                       onClick={interactiveSearch}
+                      disabled={busy}
                     >
                       Search again
                     </Button>
@@ -272,11 +264,9 @@ function Inner({
                       {e}
                     </Alert>
                   ))}
-                  {result.done && result.candidates.length === 0 && (
+                  {result.done && !result.stopped && result.errors.length === 0 && result.candidates.length === 0 && (
                     <Text size="sm" c="dimmed">
-                      No releases found for this {sel.ledger}. Check the Indexers tab — sites must
-                      be enabled for this ledger, and extension sources need a confident title
-                      match.
+                      No releases found. Check that this series has an enabled indexer for {sel.ledger}s and that its source matches the correct title.
                     </Text>
                   )}
                   {result.candidates.length > 0 && (
@@ -321,15 +311,8 @@ function Inner({
                         color="red"
                         variant="subtle"
                         leftSection={<IconTrash size={14} />}
-                        onClick={() => {
-                          if (
-                            !window.confirm(
-                              `Delete from disk?\n${f.path}\n\nThe slot becomes wanted again and may re-download.`,
-                            )
-                          )
-                            return
-                          run(() => api.deleteFile(f.id).then(onChanged), 'File deleted')
-                        }}
+                        disabled={busy}
+                        onClick={() => confirm({ title: 'Delete file from disk?', message: `Delete ${f.path}? This cannot be undone. Sento may download the missing ${sel.ledger} again.`, label: 'Delete file', onConfirm: async () => { await api.deleteFile(f.id); onChanged(); notify.ok('File deleted') } })}
                       >
                         Delete
                       </Button>
@@ -341,6 +324,7 @@ function Inner({
           )}
         </Tabs>
       </Stack>
+      {confirmation}
     </Modal>
   )
 }

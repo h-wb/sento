@@ -20,6 +20,8 @@ import { api, type ConnectionSettings, type ConnectionTest } from '../api'
 import type { RepoStatus } from '../types/sourcehost'
 import { notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
+import { QueryFeedback } from '../components/QueryFeedback'
+import { useUnsavedChanges } from '../useUnsavedChanges'
 
 // The services Sento connects to — one per download path: qBittorrent for
 // torrents, the sento-host sidecar for extension sources. What gets
@@ -38,8 +40,10 @@ export default function ConnectionsPage() {
     refetchInterval: 60_000,
   })
 
-  if (settings.isPending) return null
-  if (settings.error) return <Alert color="red">{String(settings.error)}</Alert>
+  if (settings.isPending || settings.error) return <>
+    <PageHeader title="Connections" description="Download services and extension repositories." />
+    <QueryFeedback pending={settings.isPending} error={settings.error} onRetry={() => void settings.refetch()} />
+  </>
   const saved = settings.data
   const live = (service: string) => status.data?.find((t) => t.service === service)
 
@@ -57,7 +61,7 @@ export default function ConnectionsPage() {
     <>
       <PageHeader
         title="Connections"
-        description="The services Sento downloads through. What it searches — Torznab endpoints and extension sources — is on the Indexers page."
+        description="Download services and extension repositories."
       />
 
       <Stack maw={680}>
@@ -65,12 +69,11 @@ export default function ConnectionsPage() {
           <Alert color="blue" title="Nothing is connected yet">
             <List size="sm" type="ordered" spacing={2}>
               <List.Item>
-                Connect at least one service below: qBittorrent for torrent releases, the source
-                host for chapters from extension sources.
+                Connect qBittorrent for torrents or the source host for extension sources.
               </List.Item>
-              <List.Item>For extension sources, add an extension repo once the host is connected.</List.Item>
+              <List.Item>For extension sources, add a repository below.</List.Item>
               <List.Item>
-                Add what to search on the <Link to="/indexers">Indexers</Link> page.
+                Choose what to search on the <Link to="/indexers">Indexers</Link> page.
               </List.Item>
             </List>
           </Alert>
@@ -79,7 +82,7 @@ export default function ConnectionsPage() {
         <ServiceCard
           section="Torrents"
           title="qBittorrent"
-          blurb="Downloads the torrent releases Sento grabs. Imports hardlink out of its download folder, so that folder has to be reachable from Sento."
+          blurb="Downloads torrent releases. Sento must have access to its download folder to import files."
           service="qbittorrent"
           saved={saved}
           live={live('qbittorrent')}
@@ -116,7 +119,7 @@ export default function ConnectionsPage() {
               </Group>
               <TextInput
                 label="Category"
-                description="Torrents are added under this category and imports only look at it"
+                description="Sento only imports torrents in this category"
                 value={form.qbittorrent.category}
                 onChange={(e) =>
                   set({ qbittorrent: { ...form.qbittorrent, category: e.currentTarget.value } })
@@ -129,7 +132,7 @@ export default function ConnectionsPage() {
         <ServiceCard
           section="Extension sources"
           title="Source host"
-          blurb="The sento-host sidecar runs Tachiyomi/Mihon extensions: it searches their sites and serves the pages Sento assembles into chapters."
+          blurb="Runs Mihon-compatible extensions so Sento can find and download chapters from their sources."
           service="sourceHost"
           saved={saved}
           live={live('sourceHost')}
@@ -246,12 +249,13 @@ function ServiceCard({
     setDraftTest(null)
   }
   const dirty = !same(form, saved)
+  useUnsavedChanges(dirty)
 
   const save = useMutation({
     // Only this service's fields are written; the rest stays as saved.
     mutationFn: () => api.saveConnections(merge(saved, form)),
     onSuccess: () => {
-      notify.ok(`${title} saved and applied — no restart needed`)
+      notify.ok(`${title} saved`)
       setDraftTest(null)
       onSaved()
     },
@@ -285,7 +289,7 @@ function ServiceCard({
         </Alert>
       )}
 
-      {fields(form, set)}
+      <fieldset disabled={save.isPending || test.isPending} className="formFields">{fields(form, set)}</fieldset>
 
       <Group mt="md" gap="xs">
         <Button
@@ -293,17 +297,18 @@ function ServiceCard({
           size="xs"
           onClick={() => test.mutate()}
           loading={test.isPending}
-          disabled={!isSet(form)}
+          disabled={!isSet(form) || save.isPending}
         >
           Test
         </Button>
-        <Button size="xs" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty}>
+        <Button size="xs" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty || test.isPending}>
           Save
         </Button>
         {dirty && (
           <Button
             variant="subtle"
             size="xs"
+            disabled={save.isPending || test.isPending}
             onClick={() => {
               setForm(saved)
               setDraftTest(null)
@@ -312,6 +317,7 @@ function ServiceCard({
             Reset
           </Button>
         )}
+        {dirty && <Text size="xs" c="dimmed">Unsaved changes</Text>}
         {draftTest && <StatusBadge result={draftTest} configured draft />}
       </Group>
       {children}
@@ -339,7 +345,7 @@ function Repos() {
   })
   const urls = repos.data?.urls ?? []
   const rows: RepoStatus[] = repos.data?.repos ?? urls.map((url) => ({ url, extensions: 0 }))
-  const add = () => saveRepos.mutate([...urls, newRepo.trim()])
+  const add = () => { if (newRepo.trim() && !saveRepos.isPending && !urls.includes(newRepo.trim())) saveRepos.mutate([...urls, newRepo.trim()]) }
 
   return (
     <>
@@ -347,14 +353,13 @@ function Repos() {
         Extension repos
       </Title>
       <Text size="xs" c="dimmed" mb="sm">
-        Mihon-compatible repo index URLs — none ship with Sento. A repo only makes extensions
-        available: they install when you add one of their sources on the{' '}
-        <Link to="/indexers">Indexers</Link> page and uninstall with its last entry.
+        Add a Mihon-compatible repository, then choose its sources on <Link to="/indexers">Indexers</Link>.
       </Text>
+      <QueryFeedback pending={repos.isPending} error={repos.error} onRetry={() => void repos.refetch()} />
       <Stack gap="xs">
         {repos.data && rows.length === 0 && (
           <Text size="sm" c="dimmed">
-            No repos yet — without one there is nothing to add as an extension source.
+            Add a repository to see available sources.
           </Text>
         )}
         {rows.map((repo) => (
@@ -381,7 +386,7 @@ function Repos() {
             size="xs"
             variant="default"
             loading={saveRepos.isPending}
-            disabled={!newRepo.trim()}
+            disabled={!newRepo.trim() || urls.includes(newRepo.trim())}
             onClick={add}
           >
             Add repo

@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Alert, Badge, Button, Card, Group, Stack, Text, TextInput, Title } from '@mantine/core'
-import { IconFolderSearch } from '@tabler/icons-react'
-import { useMutation } from '@tanstack/react-query'
+import { Alert, Badge, Button, Card, Group, Stack, Text, TextInput, Title, Select, Tabs } from '@mantine/core'
+import { IconFolderSearch, IconSearch } from '@tabler/icons-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, type ImportProposal } from '../api'
 import { usePageTitle } from '../ui'
@@ -18,9 +18,14 @@ export default function AddPage() {
         title="Add Series"
         description="Search MangaBaka and add a series to your library."
       />
-      <AddSeriesForm onDone={(id) => navigate(`/series/${id}`)} />
-
-      <ImportSection />
+      <Tabs defaultValue={new URLSearchParams(window.location.search).get('tab') === 'import' ? 'import' : 'search'}>
+        <Tabs.List mb="lg">
+          <Tabs.Tab value="search" leftSection={<IconSearch size={15} />}>Find a series</Tabs.Tab>
+          <Tabs.Tab value="import" leftSection={<IconFolderSearch size={15} />}>Import from disk</Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel value="search" maw={720}><AddSeriesForm onDone={(id) => navigate(`/series/${id}`)} /></Tabs.Panel>
+        <Tabs.Panel value="import"><ImportSection /></Tabs.Panel>
+      </Tabs>
     </>
   )
 }
@@ -28,23 +33,24 @@ export default function AddPage() {
 // ImportSection bulk-imports an existing library: scan a root folder,
 // confirm the proposed MangaBaka matches, files link in place (D14).
 function ImportSection() {
+  const queryClient = useQueryClient()
   const [root, setRoot] = useState('')
+  const [matches, setMatches] = useState<Record<string, string | null>>({})
+  const [imported, setImported] = useState<Record<string, number>>({})
   const [done, setDone] = useState<Record<string, string>>({}) // dir → outcome
 
   const scan = useMutation({
     mutationFn: () => api.importScan(root || undefined),
-    onSuccess: () => setDone({}),
+    onSuccess: () => { setDone({}); setMatches({}) },
   })
   const importOne = useMutation({
     mutationFn: (p: { dir: string; mangabakaId: number }) =>
       api.importFolder(p.dir, p.mangabakaId),
-    onSuccess: (r, p) =>
-      setDone((d) => ({
-        ...d,
-        [p.dir]: r.scan
-          ? `imported — ${r.scan.linked} linked, ${r.scan.unrequested} unrequested`
-          : 'imported',
-      })),
+    onSuccess: (r, p) => {
+      setDone((d) => ({ ...d, [p.dir]: r.scan ? `Imported · ${r.scan.linked} files linked` : 'Imported' }))
+      setImported((prev) => ({ ...prev, [p.dir]: r.seriesId }))
+      void queryClient.invalidateQueries({ queryKey: ['series'] })
+    },
     onError: (e, p) => setDone((d) => ({ ...d, [p.dir]: String(e) })),
   })
 
@@ -56,15 +62,18 @@ function ImportSection() {
   }
 
   return (
-    <Stack mt="xl" gap="xs">
+    <Stack gap="md" maw={860}>
       <Title order={4}>Import existing library</Title>
       <Text size="sm" c="dimmed">
         Scan a folder of series directories: each is matched against MangaBaka and its files are
         linked in place — nothing is moved or renamed.
       </Text>
-      <Group>
+      <form onSubmit={(e) => { e.preventDefault(); if (!scan.isPending && !importOne.isPending) scan.mutate() }}><Group align="flex-end">
         <TextInput
-          placeholder="Root folder (empty = configured library path)"
+          label="Library folder"
+          description="A path on the Sento server; leave blank to use the configured library folder"
+          placeholder="/manga"
+          disabled={scan.isPending || importOne.isPending}
           value={root}
           onChange={(e) => setRoot(e.currentTarget.value)}
           style={{ flex: 1, maxWidth: 480 }}
@@ -73,68 +82,77 @@ function ImportSection() {
           variant="default"
           leftSection={<IconFolderSearch size={16} />}
           loading={scan.isPending}
-          onClick={() => scan.mutate()}
+          type="submit"
+          disabled={importOne.isPending}
         >
           Scan
         </Button>
-      </Group>
+      </Group></form>
       {scan.error && <Alert color="red">{String(scan.error)}</Alert>}
       {scan.data?.length === 0 && <Text c="dimmed">No subfolders found.</Text>}
       <Stack gap={6}>
-        {scan.data?.map((p) => (
-          <Card key={p.dir} withBorder padding="xs">
-            <Group justify="space-between" wrap="nowrap">
+        {scan.data?.map((p) => {
+          const existingId = p.existingSeriesId || imported[p.dir]
+          const match = Object.hasOwn(matches, p.dir) ? matches[p.dir] : p.bestId ? String(p.bestId) : null
+          const candidates = (p.candidates ?? []).map((c) => ({ value: String(c.mangabakaId), label: `${c.title}${c.year ? ` (${c.year})` : ''}` }))
+          if (p.bestId && !candidates.some((c) => c.value === String(p.bestId))) candidates.push({ value: String(p.bestId), label: proposalLabel(p) })
+          return <Card key={p.dir} withBorder padding="xs">
+            <Group justify="space-between" align="flex-end">
               <div style={{ minWidth: 0, flex: 1 }}>
                 <Text size="sm" style={{ wordBreak: 'break-all' }}>
                   {p.dir}
                 </Text>
                 <Group gap={6} mt={2}>
-                  {p.existingSeriesId ? (
+                  {existingId ? (
                     <Badge size="xs" color="green" variant="light">
                       already in library
                     </Badge>
                   ) : (
                     <>
                       <Text size="xs" c="dimmed">
-                        → {proposalLabel(p)}
+                        Suggested: {proposalLabel(p)}
                       </Text>
                       <Badge
                         size="xs"
                         color={p.confidence >= 0.9 ? 'green' : p.confidence >= 0.7 ? 'yellow' : 'red'}
                         variant="light"
                       >
-                        {Math.round(p.confidence * 100)}%
+                        {Math.round(p.confidence * 100)}% match
                       </Badge>
                     </>
                   )}
                   {done[p.dir] && (
-                    <Text size="xs" c={done[p.dir].startsWith('imported') ? 'green' : 'red'}>
+                    <Text size="xs" c={imported[p.dir] ? 'green' : 'red'}>
                       {done[p.dir]}
                     </Text>
                   )}
                 </Group>
+                {!existingId && <Select mt="sm" size="sm" label="Match to series" placeholder="No match found"
+                  searchable clearable data={candidates} value={match}
+                  disabled={importOne.isPending} onChange={(value) => setMatches((prev) => ({ ...prev, [p.dir]: value }))} />}
               </div>
-              {p.existingSeriesId ? (
+              {existingId ? (
                 <Button
                   size="compact-xs"
                   variant="subtle"
                   component={Link}
-                  to={`/series/${p.existingSeriesId}`}
+                  to={`/series/${existingId}`}
                 >
                   Open
                 </Button>
               ) : (
                 <Button
                   size="compact-xs"
-                  disabled={!p.bestId || !!done[p.dir] || importOne.isPending}
-                  onClick={() => p.bestId && importOne.mutate({ dir: p.dir, mangabakaId: p.bestId })}
+                  disabled={!match || importOne.isPending}
+                  loading={importOne.isPending && importOne.variables?.dir === p.dir}
+                  onClick={() => match && importOne.mutate({ dir: p.dir, mangabakaId: Number(match) })}
                 >
-                  Import
+                  {done[p.dir] && !imported[p.dir] ? 'Retry import' : 'Import'}
                 </Button>
               )}
             </Group>
           </Card>
-        ))}
+        })}
       </Stack>
     </Stack>
   )

@@ -1,10 +1,11 @@
-import { ActionIcon, Alert, Badge, Card, Group, Table, Text, Title, Tooltip } from '@mantine/core'
+import { ActionIcon, Badge, Card, Group, Table, Text, Title, Tooltip } from '@mantine/core'
 import { BarChart } from '@mantine/charts'
 import { IconRefresh } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type TaskStatus } from '../api'
 import { fmtUntil, fmtWhen, notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
+import { QueryFeedback } from '../components/QueryFeedback'
 
 function fmtInterval(secs: number): string {
   if (secs >= 86400) return `${Math.round(secs / 86400)} day${secs >= 2 * 86400 ? 's' : ''}`
@@ -22,9 +23,9 @@ function fmtDuration(ms: number): string {
 export default function SystemPage() {
   usePageTitle('System')
   const queryClient = useQueryClient()
-  const { data: status, error } = useQuery({ queryKey: ['status'], queryFn: api.status })
+  const { data: status, error, isPending, refetch } = useQuery({ queryKey: ['status'], queryFn: api.status })
   // Schedule state moves while you watch (running flags, next runs).
-  const { data: tasks } = useQuery({
+  const { data: tasks, error: tasksError, isPending: tasksPending, refetch: refetchTasks } = useQuery({
     queryKey: ['tasks'],
     queryFn: api.systemTasks,
     refetchInterval: 10_000,
@@ -48,7 +49,7 @@ export default function SystemPage() {
   return (
     <>
       <PageHeader title="System" description="Service status and background tasks." />
-      {error && <Alert color="red">{String(error)}</Alert>}
+      <QueryFeedback pending={isPending} error={error} onRetry={() => void refetch()} />
       {status && (
         <Card withBorder maw={420} mb="lg">
           <Group justify="space-between">
@@ -85,9 +86,10 @@ export default function SystemPage() {
         Scheduled tasks
       </Title>
       <Text size="sm" c="dimmed" mb="sm">
-        Background loops run on fixed intervals; trigger one out of cycle with the run button.
+        Tasks run automatically on this schedule. Use the run button to start one now.
       </Text>
-      <Table striped maw={900}>
+      <QueryFeedback pending={tasksPending} error={tasksError} onRetry={() => void refetchTasks()} />
+      <Table.ScrollContainer minWidth={680}><Table highlightOnHover verticalSpacing="sm" maw={900}>
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Name</Table.Th>
@@ -138,7 +140,9 @@ export default function SystemPage() {
                   <ActionIcon
                     size="sm"
                     variant="subtle"
-                    loading={t.running}
+                    aria-label={`Run ${t.name}`}
+                    loading={t.running || (runTask.isPending && runTask.variables?.slug === t.slug)}
+                    disabled={runTask.isPending}
                     onClick={() => runTask.mutate(t)}
                   >
                     <IconRefresh size={14} />
@@ -148,7 +152,7 @@ export default function SystemPage() {
             </Table.Tr>
           ))}
         </Table.Tbody>
-      </Table>
+      </Table></Table.ScrollContainer>
       {tasks && tasks.length === 0 && (
         <Text size="sm" c="dimmed">
           No scheduler is running.

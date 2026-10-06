@@ -267,11 +267,13 @@ export const api = {
     id: number,
     opts: { ledger: Ledger; slot?: TargetSlot },
     onEvent: (ev: SearchEvent) => void,
+    signal?: AbortSignal,
   ) => {
     const res = await fetch(`${base}/series/${id}/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...opts, dryRun: true, stream: true }),
+      signal,
     })
     if (!res.ok || !res.body) {
       let msg = `HTTP ${res.status}`

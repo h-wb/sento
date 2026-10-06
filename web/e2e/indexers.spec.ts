@@ -57,7 +57,7 @@ test('a source is picked before its extension is installed', async ({ page, requ
   await expect(modal.getByLabel('Mirror', { exact: true })).toBeVisible()
   expect(await installed()).toBe(true)
 
-  await modal.getByRole('button', { name: 'Close' }).click()
+  await modal.getByRole('button', { name: 'Close', exact: true }).click()
   await expect(modal).toBeHidden()
   const row = page.getByRole('row').filter({ hasText: 'Lazy Source (fr)' })
   await expect(row).toBeVisible()

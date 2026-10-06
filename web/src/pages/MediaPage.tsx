@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import {
-  Alert,
   Button,
   Card,
   Code,
+  Accordion,
   Group,
   Stack,
   Switch,
@@ -17,6 +17,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type MediaSettings } from '../api'
 import { notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
+import { QueryFeedback } from '../components/QueryFeedback'
+import { useUnsavedChanges } from '../useUnsavedChanges'
 
 // Token reference shown next to the templates ({token:000} pads numbers).
 const tokens: [string, string][] = [
@@ -37,8 +39,7 @@ export default function MediaPage() {
   const queryClient = useQueryClient()
   const settings = useQuery({ queryKey: ['media-settings'], queryFn: api.mediaSettings })
 
-  if (settings.isPending) return null
-  if (settings.error) return <Alert color="red">{String(settings.error)}</Alert>
+  if (settings.isPending || settings.error) return <><PageHeader title="Media" description="File naming and import settings." /><QueryFeedback pending={settings.isPending} error={settings.error} onRetry={() => void settings.refetch()} /></>
   return <MediaForm initial={settings.data} onSaved={() => queryClient.invalidateQueries({ queryKey: ['media-settings'] })} />
 }
 
@@ -70,17 +71,19 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
   })
 
   const dirty = JSON.stringify(form) !== JSON.stringify(initial)
+  useUnsavedChanges(dirty)
 
   return (
     <>
       <PageHeader
-        title="Media Management"
-        description="How finished downloads are post-processed into the library. Changes apply to future imports — existing files are never renamed."
+        title="Media"
+        description="File naming and import settings. Changes apply to future imports."
       />
 
-      <Group align="flex-start" gap="xl" wrap="wrap">
-        <Stack style={{ flex: 1, minWidth: 380, maxWidth: 560 }}>
-          <Title order={5}>Naming</Title>
+      <div className="settingsLayout">
+        <fieldset className="formFields" disabled={save.isPending}><Stack>
+          <Title order={4}>File naming</Title>
+          <QueryFeedback error={preview.error} onRetry={() => void preview.refetch()} />
           <TemplateInput
             label="Series folder"
             value={form.seriesFolder}
@@ -107,31 +110,32 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
           />
 
           <Title order={5} mt="sm">
-            Post-processing
+            Import options
           </Title>
           <Switch
             label="Rename imported files"
-            description="Off: keep the release's original filename, only the folder structure applies"
+            description="When off, keep the original filename"
             checked={form.renameImports}
             onChange={(e) => set({ renameImports: e.currentTarget.checked })}
           />
           <Switch
             label="Copy instead of hardlink"
-            description="Torrent imports hardlink so seeding continues without using twice the space; force a real copy if your filesystem misbehaves with hardlinks"
+            description="Use a full copy if hardlinks are not supported by your filesystem"
             checked={form.alwaysCopy}
             onChange={(e) => set({ alwaysCopy: e.currentTarget.checked })}
           />
           <Switch
             label="Write ComicInfo.xml"
-            description="Embed series metadata into imported archives (source downloads only; hardlinked torrents are never rewritten)"
+            description="Add metadata to source downloads for compatible manga readers"
             checked={form.writeComicInfo}
             onChange={(e) => set({ writeComicInfo: e.currentTarget.checked })}
           />
 
           <Group mt="sm">
             <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty}>
-              Save
+              Save changes
             </Button>
+            {dirty && <Text size="xs" c="dimmed">Unsaved changes</Text>}
             {saved && !dirty && (
               <Text size="sm" c="green">
                 Saved.
@@ -143,12 +147,10 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
               </Button>
             )}
           </Group>
-        </Stack>
+        </Stack></fieldset>
 
-        <Card withBorder padding="sm" style={{ minWidth: 320 }}>
-          <Title order={6} mb="xs">
-            Tokens
-          </Title>
+        <Card padding="md"><Accordion variant="default"><Accordion.Item value="tokens"><Accordion.Control>Naming tokens</Accordion.Control><Accordion.Panel>
+
           <Table withRowBorders={false} verticalSpacing={2}>
             <Table.Tbody>
               {tokens.map(([tok, desc]) => (
@@ -169,8 +171,8 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
             Brackets around an empty token disappear: <Code>[{'{group}'}]</Code> vanishes when
             there is no group.
           </Text>
-        </Card>
-      </Group>
+        </Accordion.Panel></Accordion.Item></Accordion></Card>
+      </div>
     </>
   )
 }
@@ -189,8 +191,8 @@ function TemplateInput({
   return (
     <div>
       <TextInput label={label} value={value} onChange={(e) => onChange(e.currentTarget.value)} />
-      <Text size="xs" c="dimmed" mt={2} style={{ fontFamily: 'monospace' }}>
-        → {preview ?? '…'}
+      <Text size="xs" c="dimmed" mt={2} style={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
+        Preview: {preview ?? 'Loading…'}
       </Text>
     </div>
   )

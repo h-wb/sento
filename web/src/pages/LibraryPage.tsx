@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import {
+  Anchor,
   ActionIcon,
   Affix,
-  Alert,
   Badge,
   Button,
-  Card,
   Center,
   Checkbox,
   Divider,
@@ -13,8 +12,8 @@ import {
   Image,
   Menu,
   Paper,
-  Popover,
   SimpleGrid,
+  UnstyledButton,
   Skeleton,
   Stack,
   Table,
@@ -31,7 +30,6 @@ import {
   IconChevronUp,
   IconEye,
   IconEyeOff,
-  IconFilter,
   IconLayoutGrid,
   IconLayoutList,
   IconPlus,
@@ -46,6 +44,9 @@ import type { Series } from '../types/store'
 import { fmtWhen, notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { useAddSeries } from '../addSeries'
+import { useConfirmAction } from '../components/ConfirmAction'
+import { QueryFeedback } from '../components/QueryFeedback'
+import classes from './LibraryPage.module.css'
 
 type SortField = 'sortTitle' | 'type' | 'status' | 'year' | 'finalVolume' | 'totalChapters' | 'addedAt'
 
@@ -66,10 +67,12 @@ function compare(a: Series, b: Series, field: SortField): number {
 export default function LibraryPage() {
   usePageTitle('Library')
   const navigate = useNavigate()
+  const { confirm, confirmation } = useConfirmAction()
   const queryClient = useQueryClient()
   const openAddSeries = useAddSeries()
-  const { data: series, error, isPending } = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
+  const { data: series, error, isPending, refetch } = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
   const [filter, setFilter] = useState('')
+  const [scope, setScope] = useState<'all' | 'monitored' | 'unmonitored'>('all')
   const [sortField, setSortField] = useState<SortField>('sortTitle')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -81,6 +84,7 @@ export default function LibraryPage() {
 
   const shown = (series ?? [])
     .filter((s) => s.title.toLowerCase().includes(filter.trim().toLowerCase()))
+    .filter((s) => scope === 'all' || (scope === 'monitored' ? s.monitored : !s.monitored))
     .sort((a, b) => {
       const r = compare(a, b, sortField)
       return sortDir === 'asc' ? r : -r
@@ -96,6 +100,7 @@ export default function LibraryPage() {
 
   // Selection helpers (table view only).
   const shownIds = shown.map((s) => s.id)
+  const visibleSelected = shownIds.filter((id) => selected.has(id))
   const allSelected = shownIds.length > 0 && shownIds.every((id) => selected.has(id))
   const someSelected = shownIds.some((id) => selected.has(id))
   const toggleOne = (id: number) =>
@@ -136,8 +141,9 @@ export default function LibraryPage() {
       onClick={() => toggleSort(field)}
       style={{ cursor: 'pointer', userSelect: 'none' }}
       ta={align}
+      aria-sort={sortField === field ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
     >
-      <Group gap={4} wrap="nowrap" justify={align === 'right' ? 'flex-end' : 'flex-start'}>
+      <UnstyledButton onClick={(e) => { e.stopPropagation(); toggleSort(field) }} aria-label={`Sort by ${label}`} w="100%"><Group gap={4} wrap="nowrap" justify={align === 'right' ? 'flex-end' : 'flex-start'}>
         {label}
         {sortField === field ? (
           sortDir === 'asc' ? (
@@ -148,7 +154,7 @@ export default function LibraryPage() {
         ) : (
           <IconSelector size={13} style={{ opacity: 0.35 }} />
         )}
-      </Group>
+      </Group></UnstyledButton>
     </Table.Th>
   )
 
@@ -157,117 +163,87 @@ export default function LibraryPage() {
       <PageHeader
         title="Library"
         count={series?.length}
-        description="Your manga collection."
-        action={
-          <Group gap="xs">
-            {series && series.length > 0 && (
-              <>
-                <Popover position="bottom-end" withArrow trapFocus width={260}>
-                  <Popover.Target>
-                    <Tooltip label="Filter" openDelay={400}>
-                      <ActionIcon
-                        size="lg"
-                        variant={filter ? 'light' : 'default'}
-                        aria-label="Filter"
-                      >
-                        <IconFilter size={16} />
-                      </ActionIcon>
-                    </Tooltip>
-                  </Popover.Target>
-                  <Popover.Dropdown>
-                    <TextInput
-                      size="xs"
-                      placeholder="Filter by title…"
-                      leftSection={<IconSearch size={14} />}
-                      value={filter}
-                      onChange={(e) => setFilter(e.currentTarget.value)}
-                      data-autofocus
-                      rightSection={
-                        filter ? (
-                          <ActionIcon
-                            size="sm"
-                            variant="subtle"
-                            color="gray"
-                            onClick={() => setFilter('')}
-                            aria-label="Clear filter"
-                          >
-                            ✕
-                          </ActionIcon>
-                        ) : undefined
-                      }
-                    />
-                  </Popover.Dropdown>
-                </Popover>
-
-                <Menu position="bottom-end" withArrow>
-                  <Menu.Target>
-                    <Tooltip label="Sort" openDelay={400}>
-                      <ActionIcon size="lg" variant="default" aria-label="Sort">
-                        <IconArrowsSort size={16} />
-                      </ActionIcon>
-                    </Tooltip>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    <Menu.Label>Sort by</Menu.Label>
-                    {SORTS.map((s) => (
-                      <Menu.Item
-                        key={s.value}
-                        onClick={() => toggleSort(s.value)}
-                        rightSection={
-                          sortField === s.value ? (
-                            sortDir === 'asc' ? (
-                              <IconChevronUp size={14} />
-                            ) : (
-                              <IconChevronDown size={14} />
-                            )
-                          ) : undefined
-                        }
-                      >
-                        {s.label}
-                      </Menu.Item>
-                    ))}
-                  </Menu.Dropdown>
-                </Menu>
-
-                <ActionIcon.Group>
-                  <Tooltip label="Poster grid" openDelay={400}>
-                    <ActionIcon
-                      size="lg"
-                      variant={view === 'grid' ? 'filled' : 'default'}
-                      onClick={() => setView('grid')}
-                      aria-label="Poster grid"
-                    >
-                      <IconLayoutGrid size={16} />
-                    </ActionIcon>
-                  </Tooltip>
-                  <Tooltip label="Table" openDelay={400}>
-                    <ActionIcon
-                      size="lg"
-                      variant={view === 'table' ? 'filled' : 'default'}
-                      onClick={() => setView('table')}
-                      aria-label="Table"
-                    >
-                      <IconLayoutList size={16} />
-                    </ActionIcon>
-                  </Tooltip>
-                </ActionIcon.Group>
-
-                <Divider orientation="vertical" />
-              </>
-            )}
-            <Tooltip label="Add series" openDelay={400}>
-              <ActionIcon size="lg" variant="filled" onClick={openAddSeries} aria-label="Add series">
-                <IconPlus size={16} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-        }
+        description="Manage your series and keep track of new releases."
+        action={<Button size="sm" leftSection={<IconPlus size={16} />} onClick={openAddSeries}>Add series</Button>}
       />
-      {error && <Alert color="red">{String(error)}</Alert>}
+      {series && series.length > 0 && (
+        <div className={classes.toolbar}>
+          <div className={classes.scopes} role="group" aria-label="Monitoring filter">
+            {(['all', 'monitored', 'unmonitored'] as const).map((value) => (
+              <UnstyledButton key={value} className={classes.scope} data-active={scope === value}
+                aria-pressed={scope === value} onClick={() => { setScope(value); setSelected(new Set()) }}>
+                {value === 'all' ? 'All series' : value === 'monitored' ? 'Monitored' : 'Unmonitored'}
+                <span>{value === 'all' ? series.length : series.filter((s) => value === 'monitored' ? s.monitored : !s.monitored).length}</span>
+              </UnstyledButton>
+            ))}
+          </div>
+          <Group gap="xs" wrap="nowrap" className={classes.tools}>
+            <TextInput size="sm" placeholder="Filter by title…" aria-label="Filter by title"
+              leftSection={<IconSearch size={15} />} value={filter}
+              onChange={(e) => { setFilter(e.currentTarget.value); setSelected(new Set()) }} className={classes.search} />
+            <Menu position="bottom-end" withArrow>
+              <Menu.Target>
+                <Tooltip label="Sort" openDelay={400}>
+                  <ActionIcon size="lg" variant="default" aria-label="Sort">
+                    <IconArrowsSort size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>Sort by</Menu.Label>
+                {SORTS.map((s) => (
+                  <Menu.Item
+                    key={s.value}
+                    onClick={() => toggleSort(s.value)}
+                    rightSection={
+                      sortField === s.value ? (
+                        sortDir === 'asc' ? (
+                          <IconChevronUp size={14} />
+                        ) : (
+                          <IconChevronDown size={14} />
+                        )
+                      ) : undefined
+                    }
+                  >
+                    {s.label}
+                  </Menu.Item>
+                ))}
+              </Menu.Dropdown>
+            </Menu>
+
+            <ActionIcon.Group>
+              <Tooltip label="Poster grid" openDelay={400}>
+                <ActionIcon
+                  size="lg"
+                  variant={view === 'grid' ? 'filled' : 'default'}
+                  onClick={() => { setView('grid'); setSelected(new Set()) }}
+                  aria-label="Poster grid"
+                  aria-pressed={view === 'grid'}
+                >
+                  <IconLayoutGrid size={16} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Table" openDelay={400}>
+                <ActionIcon
+                  size="lg"
+                  variant={view === 'table' ? 'filled' : 'default'}
+                  onClick={() => setView('table')}
+                  aria-label="Table"
+                  aria-pressed={view === 'table'}
+                >
+                  <IconLayoutList size={16} />
+                </ActionIcon>
+              </Tooltip>
+            </ActionIcon.Group>
+
+          </Group>
+        </div>
+      )}
+      <QueryFeedback error={error} onRetry={() => void refetch()} />
 
       {isPending &&
         (view === 'grid' ? (
-          <SimpleGrid cols={{ base: 2, sm: 4, lg: 6 }}>
+          <SimpleGrid className={classes.posterGrid} spacing="xl" verticalSpacing={30}>
             {Array.from({ length: 6 }, (_, i) => (
               <Skeleton key={i} height={280} radius="sm" />
             ))}
@@ -281,60 +257,47 @@ export default function LibraryPage() {
         ))}
 
       {series && series.length === 0 && (
-        <Center mih={300}>
-          <Stack align="center" gap="xs">
-            <IconBooks size={42} opacity={0.4} />
-            <Text c="dimmed">Your library is empty.</Text>
-            <Button variant="light" onClick={openAddSeries}>
-              Add your first series
+        <Center className={classes.empty} mih={400}>
+          <Stack align="center" gap="sm">
+            <div className={classes.emptyIcon}><IconBooks size={30} stroke={1.4} /></div>
+            <Text fw={600} size="lg">Your library is empty</Text>
+            <Text c="dimmed" size="sm" ta="center" maw={330}>Add a series to track releases and download missing volumes or chapters.</Text>
+            <Button mt="sm" variant="default" leftSection={<IconPlus size={15} />} onClick={openAddSeries}>
+              Add series
             </Button>
           </Stack>
         </Center>
       )}
       {series && series.length > 0 && shown.length === 0 && (
-        <Text c="dimmed">No series match “{filter}”.</Text>
+        <Center mih={220}><Stack align="center" gap="sm">
+          <Text c="dimmed">{filter ? `No series match “${filter}”.` : 'No series in this view.'}</Text>
+          <Button variant="subtle" color="gray" onClick={() => { setFilter(''); setScope('all') }}>Clear filters</Button>
+        </Stack></Center>
       )}
 
       {shown.length > 0 && view === 'grid' && (
-        <SimpleGrid cols={{ base: 2, sm: 4, lg: 6 }}>
+        <SimpleGrid className={classes.posterGrid} spacing="xl" verticalSpacing={30}>
           {shown.map((s) => (
-            <Card
+            <UnstyledButton
               key={s.id}
-              className="hoverLift"
+              className={classes.poster}
               component={Link}
               to={`/series/${s.id}`}
-              padding="xs"
-              withBorder
-              style={{ textDecoration: 'none' }}
-              opacity={s.monitored ? 1 : 0.55}
+              data-monitored={s.monitored}
             >
-              <Card.Section>
-                <Image
-                  src={s.coverUrl}
-                  height={220}
-                  alt={s.title}
-                  fallbackSrc="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"
-                />
-              </Card.Section>
-              <Text fw={600} size="sm" mt="xs" lineClamp={2}>
-                {s.title}
-              </Text>
-              <Group gap={4} mt={4}>
-                <Badge size="xs" variant="light">
-                  {s.status}
-                </Badge>
-                {s.finalVolume > 0 && (
-                  <Badge size="xs" variant="outline">
-                    {s.finalVolume} vol
-                  </Badge>
-                )}
-                {!s.monitored && (
-                  <Badge size="xs" color="gray" variant="outline">
-                    unmonitored
-                  </Badge>
-                )}
+              <div className={classes.cover}>
+                {s.coverUrl ? <Image src={s.coverUrl} alt={s.title} className={classes.coverImage}
+                  fallbackSrc="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='360'%3E%3Crect width='240' height='360' fill='%2352524e'/%3E%3C/svg%3E" /> :
+                  <div className={classes.coverFallback}><IconBooks size={32} stroke={1} /><Text size="sm" ta="center">{s.title}</Text></div>}
+                {!s.monitored && <Tooltip label="Unmonitored"><span className={classes.monitorFlag}><IconEyeOff size={14} /></span></Tooltip>}
+              </div>
+              <Text className={classes.posterTitle} fw={500} size="sm" mt={11} lineClamp={2}>{s.title}</Text>
+              <Group gap={6} mt={4} className={classes.metadata}>
+                {s.status && <><span className={classes.releaseDot} data-ongoing={s.status === 'ongoing'} /><Text size="xs" tt="capitalize">{s.status.replaceAll('_', ' ')}</Text></>}
+                {s.finalVolume > 0 && <Text size="xs">· {s.finalVolume} vol</Text>}
+                {!s.status && (s.year ?? 0) > 0 && <Text size="xs">{s.year}</Text>}
               </Group>
-            </Card>
+            </UnstyledButton>
           ))}
         </SimpleGrid>
       )}
@@ -392,9 +355,9 @@ export default function LibraryPage() {
                         alt=""
                         fallbackSrc="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"
                       />
-                      <Text fw={600} size="sm" lineClamp={1}>
+                      <Anchor component={Link} to={`/series/${s.id}`} c="inherit" fw={500} size="sm" lineClamp={1} underline="hover">
                         {s.title}
-                      </Text>
+                      </Anchor>
                     </Group>
                   </Table.Td>
                   <Table.Td>
@@ -443,7 +406,7 @@ export default function LibraryPage() {
 
       {/* Floating bulk action bar — slides up from the bottom on selection. */}
       <Affix position={{ bottom: 24, left: '50%' }} style={{ transform: 'translateX(-50%)' }}>
-        <Transition transition="slide-up" mounted={view === 'table' && selected.size > 0}>
+        <Transition transition="slide-up" mounted={view === 'table' && visibleSelected.length > 0}>
           {(styles) => (
             <Paper
               shadow="md"
@@ -456,7 +419,7 @@ export default function LibraryPage() {
             >
               <Group gap="sm" wrap="nowrap">
                 <Text size="sm" fw={600}>
-                  {selected.size} selected
+                  {visibleSelected.length} selected
                 </Text>
                 <Divider orientation="vertical" />
                 <Button
@@ -465,7 +428,8 @@ export default function LibraryPage() {
                   variant="light"
                   leftSection={<IconEye size={14} />}
                   loading={bulkMonitor.isPending}
-                  onClick={() => bulkMonitor.mutate({ ids: [...selected], monitored: true })}
+                  disabled={bulkDelete.isPending}
+                  onClick={() => bulkMonitor.mutate({ ids: visibleSelected, monitored: true })}
                 >
                   Monitor
                 </Button>
@@ -476,7 +440,8 @@ export default function LibraryPage() {
                   color="gray"
                   leftSection={<IconEyeOff size={14} />}
                   loading={bulkMonitor.isPending}
-                  onClick={() => bulkMonitor.mutate({ ids: [...selected], monitored: false })}
+                  disabled={bulkDelete.isPending}
+                  onClick={() => bulkMonitor.mutate({ ids: visibleSelected, monitored: false })}
                 >
                   Unmonitor
                 </Button>
@@ -487,10 +452,13 @@ export default function LibraryPage() {
                   color="red"
                   leftSection={<IconTrash size={14} />}
                   loading={bulkDelete.isPending}
-                  onClick={() => {
-                    if (window.confirm(`Delete ${selected.size} series? This cannot be undone.`))
-                      bulkDelete.mutate([...selected])
-                  }}
+                  disabled={bulkMonitor.isPending}
+                  onClick={() => confirm({
+                    title: `Remove ${visibleSelected.length} series?`,
+                    message: 'Remove these series from Sento, including monitoring and history. Your library files stay on disk.',
+                    label: 'Remove series',
+                    onConfirm: () => bulkDelete.mutateAsync(visibleSelected),
+                  })}
                 >
                   Delete
                 </Button>
@@ -502,6 +470,7 @@ export default function LibraryPage() {
           )}
         </Transition>
       </Affix>
+      {confirmation}
     </>
   )
 }

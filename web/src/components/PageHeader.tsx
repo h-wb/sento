@@ -15,18 +15,18 @@ export function PageHeader({
   action?: ReactNode
 }) {
   return (
-    <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap" gap="sm">
+    <Group justify="space-between" align="flex-start" mb={28} wrap="wrap" gap="sm">
       <Stack gap={2}>
-        <Title order={2}>
+        <Title order={2} style={{ fontSize: 28, letterSpacing: '-0.035em', fontWeight: 600 }}>
           {title}
           {count != null && count > 0 && (
-            <Text span c="dimmed" size="lg" fw={400} ml={8}>
+            <Text span c="dimmed" size="sm" fw={500} ml={12}>
               {count}
             </Text>
           )}
         </Title>
         {description && (
-          <Text c="dimmed" size="sm">
+          <Text c="dimmed" size="sm" maw={640} lh={1.6}>
             {description}
           </Text>
         )}

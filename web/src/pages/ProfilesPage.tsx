@@ -11,6 +11,7 @@ import {
   NumberInput,
   Select,
   Stack,
+  Switch,
   Table,
   Text,
   TextInput,
@@ -29,7 +30,10 @@ import {
 } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Condition, type Format, type Profile, type ProfileDoc } from '../api'
-import { notify } from '../ui'
+import { notify, usePageTitle } from '../ui'
+import { QueryFeedback } from '../components/QueryFeedback'
+import { EmptyState } from '../components/EmptyState'
+import { useConfirmAction } from '../components/ConfirmAction'
 import { PageHeader } from '../components/PageHeader'
 import { MinScoreOff } from '../types/profile'
 
@@ -74,6 +78,8 @@ function downloadJSON(name: string, data: unknown) {
 }
 
 export default function ProfilesPage() {
+  usePageTitle('Profiles')
+  const { confirm, confirmation } = useConfirmAction()
   const qc = useQueryClient()
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
   const formats = useQuery({ queryKey: ['formats'], queryFn: api.listFormats })
@@ -115,7 +121,7 @@ export default function ProfilesPage() {
     <Stack gap="lg">
       <PageHeader
         title="Profiles"
-        description="Custom formats score releases; profiles decide how much each format is worth per series."
+        description="Rules and preferences for choosing releases."
         action={
           <Group gap="xs">
             <Button
@@ -137,7 +143,8 @@ export default function ProfilesPage() {
         }
       />
 
-      <Table verticalSpacing={6} highlightOnHover>
+      <QueryFeedback pending={profiles.isPending} error={profiles.error || defaultProfile.error} onRetry={() => { void profiles.refetch(); void defaultProfile.refetch() }} />
+      <Table.ScrollContainer minWidth={560}><Table verticalSpacing="sm" highlightOnHover>
         <Table.Thead>
           <Table.Tr>
             <Table.Th w={32} />
@@ -157,6 +164,8 @@ export default function ProfilesPage() {
                     <ActionIcon
                       variant="subtle"
                       color={isDefault ? 'yellow' : 'gray'}
+                      aria-label={isDefault ? `${p.name} is the default profile` : `Make ${p.name} default`}
+                      disabled={setDefault.isPending}
                       onClick={() => !isDefault && setDefault.mutate(p.id)}
                     >
                       {isDefault ? <IconStarFilled size={16} /> : <IconStar size={16} />}
@@ -170,7 +179,7 @@ export default function ProfilesPage() {
                 </Table.Td>
                 <Table.Td>
                   <Text size="sm" c="dimmed">
-                    {p.minFormatScore <= MinScoreOff ? 'disabled' : p.minFormatScore}
+                    {p.minFormatScore <= MinScoreOff ? 'No minimum' : p.minFormatScore}
                   </Text>
                 </Table.Td>
                 <Table.Td>
@@ -181,18 +190,19 @@ export default function ProfilesPage() {
                 <Table.Td>
                   <Group gap={4} justify="flex-end" wrap="nowrap">
                     <Tooltip label="Export JSON">
-                      <ActionIcon variant="subtle" onClick={() => void exportOne(p)}>
+                      <ActionIcon variant="subtle" aria-label={`Export ${p.name}`} onClick={() => void exportOne(p).catch(notify.err)}>
                         <IconDownload size={16} />
                       </ActionIcon>
                     </Tooltip>
-                    <ActionIcon variant="subtle" onClick={() => setEditProfile(p)}>
+                    <ActionIcon variant="subtle" aria-label={`Edit ${p.name}`} onClick={() => setEditProfile(p)}>
                       <IconPencil size={16} />
                     </ActionIcon>
                     <ActionIcon
                       variant="subtle"
                       color="red"
                       disabled={isDefault}
-                      onClick={() => deleteProfile.mutate(p.id)}
+                      aria-label={`Delete ${p.name}`}
+                      onClick={() => confirm({ title: 'Delete profile?', message: `Delete “${p.name}”? Only unused profiles can be deleted. Reassign any series or collections using it first.`, label: 'Delete profile', onConfirm: () => deleteProfile.mutateAsync(p.id) })}
                     >
                       <IconTrash size={16} />
                     </ActionIcon>
@@ -202,7 +212,8 @@ export default function ProfilesPage() {
             )
           })}
         </Table.Tbody>
-      </Table>
+      </Table></Table.ScrollContainer>
+      {profiles.data?.length === 0 && <EmptyState title="No profiles" description="Create a profile to choose which releases Sento prefers." />}
 
       <Divider />
 
@@ -210,8 +221,7 @@ export default function ProfilesPage() {
         <div>
           <Title order={3}>Custom formats</Title>
           <Text c="dimmed" size="sm">
-            A format matches when at least one condition of each type matches; required and negated
-            conditions must always hold.
+            Match release details such as language, quality, or group. Profiles assign a score to each match.
           </Text>
         </div>
         <Button
@@ -224,7 +234,8 @@ export default function ProfilesPage() {
         </Button>
       </Group>
 
-      <Table verticalSpacing={6} highlightOnHover>
+      <QueryFeedback pending={formats.isPending} error={formats.error} onRetry={() => void formats.refetch()} />
+      <Table.ScrollContainer minWidth={520}><Table verticalSpacing="sm" highlightOnHover>
         <Table.Thead>
           <Table.Tr>
             <Table.Th w={180}>Name</Table.Th>
@@ -257,10 +268,10 @@ export default function ProfilesPage() {
               </Table.Td>
               <Table.Td>
                 <Group gap={4} justify="flex-end" wrap="nowrap">
-                  <ActionIcon variant="subtle" onClick={() => setEditFormat(f)}>
+                  <ActionIcon variant="subtle" aria-label={`Edit format ${f.name}`} onClick={() => setEditFormat(f)}>
                     <IconPencil size={16} />
                   </ActionIcon>
-                  <ActionIcon variant="subtle" color="red" onClick={() => deleteFormat.mutate(f.id)}>
+                  <ActionIcon variant="subtle" color="red" aria-label={`Delete format ${f.name}`} onClick={() => confirm({ title: 'Delete custom format?', message: `Delete “${f.name}”? Its scores will be removed from every profile.`, label: 'Delete format', onConfirm: () => deleteFormat.mutateAsync(f.id) })}>
                     <IconTrash size={16} />
                   </ActionIcon>
                 </Group>
@@ -268,7 +279,9 @@ export default function ProfilesPage() {
             </Table.Tr>
           ))}
         </Table.Tbody>
-      </Table>
+      </Table></Table.ScrollContainer>
+      {formats.data?.length === 0 && <Text size="sm" c="dimmed">No custom formats. Add one to prefer or avoid specific release details.</Text>}
+      {confirmation}
 
       {editProfile && (
         <ProfileModal
@@ -335,12 +348,8 @@ function ProfileModal({
     <Modal opened onClose={onClose} title={profile ? `Edit ${profile.name}` : 'Add profile'} size="lg">
       <Stack gap="sm">
         <TextInput label="Name" value={name} onChange={(e) => setName(e.currentTarget.value)} required />
-        <NumberInput
-          label="Minimum format score"
-          description={`Releases scoring below this are rejected (force-grab still works). ${MinScoreOff} disables the floor.`}
-          value={minScore}
-          onChange={(v) => setMinScore(Number(v) || 0)}
-        />
+        <Switch label="Require a minimum format score" checked={minScore > MinScoreOff} onChange={(e) => setMinScore(e.currentTarget.checked ? 0 : MinScoreOff)} />
+        {minScore > MinScoreOff && <NumberInput label="Minimum format score" description="Releases with a lower score won't download automatically" value={minScore} onChange={(v) => setMinScore(Number(v) || 0)} />}
 
         <Divider label="Format scores" />
         <Table verticalSpacing={4}>
@@ -353,6 +362,7 @@ function ProfileModal({
                 <Table.Td w={120}>
                   <NumberInput
                     size="xs"
+                    aria-label={`Score for ${f.name}`}
                     value={scores[f.id] ?? 0}
                     onChange={(v) => setScores((s) => ({ ...s, [f.id]: Number(v) || 0 }))}
                   />
@@ -362,7 +372,7 @@ function ProfileModal({
           </Table.Tbody>
         </Table>
 
-        <Divider label="Ledger rules" />
+        <Divider label="Download rules" />
         <Group grow align="flex-start">
           <RulesFields label="Volumes" rules={volume} onChange={setVolume} />
           <RulesFields label="Chapters" rules={chapter} onChange={setChapter} />
@@ -397,7 +407,7 @@ function RulesFields({
       </Text>
       <Select
         size="xs"
-        label="Preferred protocol (+200)"
+        label="Preferred download type" description="Adds 200 points to matching releases"
         data={[
           { value: 'torrent', label: 'Torrent' },
           { value: 'source', label: 'Source' },
