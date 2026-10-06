@@ -413,6 +413,8 @@ export const api = {
       ledger: Ledger
       dryRun?: boolean
       grab?: string
+      grabProvider?: string
+      grabTargetId?: number
       force?: boolean
       slot?: TargetSlot
     },
@@ -447,16 +449,32 @@ export const api = {
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buf = ''
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buf += decoder.decode(value, { stream: true })
-      let nl
-      while ((nl = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, nl).trim()
-        buf = buf.slice(nl + 1)
-        if (line) onEvent(JSON.parse(line) as SearchEvent)
+    let finished = false
+    const emit = (line: string) => {
+      if (!line.trim()) return
+      const ev = JSON.parse(line) as SearchEvent
+      if (ev.type === 'done' || ev.type === 'error') finished = true
+      onEvent(ev)
+    }
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        let nl
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          emit(buf.slice(0, nl))
+          buf = buf.slice(nl + 1)
+        }
       }
+      buf += decoder.decode()
+      emit(buf)
+      if (!finished)
+        throw new Error(
+          'Search ended before all sources replied. These results may be incomplete; search again to retry.',
+        )
+    } finally {
+      reader.releaseLock()
     }
   },
   deleteFile: (fid: number) => request<void>(`/files/${fid}`, { method: 'DELETE' }),

@@ -46,6 +46,16 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 		info := segInfo{seg: sg, recognized: h.recognized}
 		if h.recognized {
 			res.fold(h, sg.text)
+			// Mixed segments can contain both tags and explicit numbering. Bare
+			// numbers in metadata (years, resolution, 3-in-1) are not book numbers.
+			if h.year == nil && h.yearRange == nil && h.version == 0 {
+				ex := extractNumbers(sg.text, res)
+				res.Volumes = append(res.Volumes, ex.volumes...)
+				res.Chapters = append(res.Chapters, ex.chapters...)
+				if ex.version > res.Version {
+					res.Version = ex.version
+				}
+			}
 		} else {
 			// Unrecognized: number-bearing segment or group candidate.
 			ex := extractNumbers(sg.text, res)
@@ -87,23 +97,11 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 	// Edition phrases also occur in free text ("Deluxe Edition",
 	// "Digital Colored Comics") — hint-scan without cutting the title.
 	lowerFree := strings.ToLower(freeText)
-	if res.Language == "" {
-		for word, lang := range freeTextLangWords {
-			if indexWord(lowerFree, word) >= 0 {
-				res.Language = lang
-				res.step("language.freetext", word)
-				break
-			}
-		}
+	if lang := detectLanguages(lowerFree, freeTextLangWords); lang != "" {
+		res.fold(segmentHints{language: lang, languages: languageCodes(lowerFree, freeTextLangWords), recognized: true}, freeText)
 	}
-	if res.Language == "" {
-		for code, lang := range sceneLangCodes {
-			if indexWord(freeText, code) >= 0 { // case-sensitive: UPPERCASE only
-				res.Language = lang
-				res.step("language.scenecode", code)
-				break
-			}
-		}
+	if lang := detectLanguages(freeText, sceneLangCodes); lang != "" {
+		res.fold(segmentHints{language: lang, languages: languageCodes(freeText, sceneLangCodes), recognized: true}, freeText)
 	}
 	// Edition/quality tags also live in free text ("Deluxe Edition",
 	// "Digital Colored Comics", scene-style "...RAW") — fold them through the
@@ -129,7 +127,7 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 			// Trim the marker out of the title, but only when title text
 			// precedes it ("One Piece Special" → "one piece"). A leading
 			// marker is likely part of the title itself ("Special A").
-			if i > 0 && i < titleEnd {
+			if (i > 0 || anchoredTitle != "") && i < titleEnd {
 				titleEnd = i
 			}
 		}
@@ -194,12 +192,16 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 		res.Group = leading
 	}
 
+	if res.Ongoing {
+		res.Complete = false
+	}
 	// Implicit whole-series pack: torrent with no numbers at all AND a year
 	// range ("Solo Leveling (2021-2026)"). A bare numberless title is more
 	// likely a one-shot/spin-off than a pack.
 	if ch == ChannelTorrent && len(res.Volumes)+len(res.Chapters)+len(res.Bare) == 0 &&
-		!res.Ongoing && res.Title != "" && res.YearRange != nil {
+		!res.Ongoing && !res.Complete && res.Title != "" && res.YearRange != nil {
 		res.Complete = true
+		res.CompleteInferred = true
 		res.step("implicit-pack", "no numbers + year range → whole series")
 	}
 

@@ -53,6 +53,7 @@ type Result struct {
 	Year        *int         `json:"year,omitempty"`
 	YearRange   *[2]int      `json:"yearRange,omitempty"`
 	Group       string       `json:"group,omitempty"`
+	Languages   []string     `json:"languages,omitempty"`
 	Language    string       `json:"language,omitempty"`
 	ContentType ContentType  `json:"contentType"`
 	Edition     EditionHints `json:"edition"`
@@ -61,13 +62,14 @@ type Result struct {
 	// TitleLeftover holds unexplained words around an anchored title
 	// ("WANTED! Eiichiro Oda Before" around "One Piece") — a strong signal
 	// the release is a different work that merely contains the title.
-	TitleLeftover string  `json:"titleLeftover,omitempty"`
-	Complete      bool    `json:"complete,omitempty"`
-	Ongoing       bool    `json:"ongoing,omitempty"`
-	Extra         bool    `json:"extra,omitempty"`
-	Version       int     `json:"version,omitempty"`
-	Confidence    float64 `json:"confidence"`
-	Trace         []Step  `json:"-"`
+	TitleLeftover    string  `json:"titleLeftover,omitempty"`
+	CompleteInferred bool    `json:"completeInferred,omitempty"`
+	Complete         bool    `json:"complete,omitempty"`
+	Ongoing          bool    `json:"ongoing,omitempty"`
+	Extra            bool    `json:"extra,omitempty"`
+	Version          int     `json:"version,omitempty"`
+	Confidence       float64 `json:"confidence"`
+	Trace            []Step  `json:"-"`
 }
 
 func (r *Result) step(rule, text string) {

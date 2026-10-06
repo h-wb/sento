@@ -51,7 +51,18 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 		isPack := run.ledger == LedgerVolume && rc.Parse.Complete
 
 		if len(ranges) == 0 && !isPack {
-			dropped++
+			if len(rc.Parse.Volumes)+len(rc.Parse.Chapters) > 0 {
+				dropped++
+				continue
+			}
+			if rc.Parse.ContentType != parse.ContentManga {
+				rc.Rejections = []string{"rejected.content_type"}
+			} else if cand.Protocol != provider.ProtocolSource && (!rc.Parse.Anchored || rc.Parse.TitleLeftover != "") {
+				rc.Rejections = []string{"rejected.series_match"}
+			} else {
+				rc.Rejections = []string{"rejected.numbers_unknown"}
+			}
+			out = append(out, rc)
 			continue
 		}
 		if run.blocked[cand.Protocol+"/"+cand.ExternalKey()] {
@@ -99,13 +110,16 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					}
 					cp := rc
 					cp.TargetID = t.ID
+					cp.CollectionID = col.ID
+					cp.EditionSnapshot = col
+					cp.PolicySnapshot = run.targetProfiles[t.ID]
 					cp.TargetSnapshot = &t
 					cp.FormatSnapshot = run.formats
 					cp.Rejections = nil
 					cp.Covered = nil
 					cp.Coverage = nil
 					if (evidence != 0 && evidence != col.ID) || !editionCompatibleWithEvidence(cp.Parse, *col, evidence) || (evidence == 0 && ambiguousEdition(cp.Parse, run.collections, run.ledger)) {
-						if cp.Parse.Language != "" && cp.Parse.Language != "multi" && baseLang(cp.Parse.Language) != baseLang(col.Language) {
+						if !languageCompatible(cp.Parse, col.Language) {
 							cp.Rejections = append(cp.Rejections, "rejected.language")
 						} else {
 							cp.Rejections = append(cp.Rejections, "rejected.edition_routing")
@@ -128,17 +142,20 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					if !t.IsDefault || compatible > 1 {
 						cp.GUID = rc.GUID + "@" + strconv.FormatInt(t.ID, 10)
 					}
-					cp.Score -= run.priorities[[2]string{cp.Provider, cp.SiteID}]
+					cp.applySitePriority(run.priorities[[2]string{cp.Provider, cp.SiteID}])
 					out = append(out, cp)
 				}
 				continue
 			}
 			s.funnel(run, &rc, ranges)
 		}
-		rc.Score -= run.priorities[[2]string{rc.Provider, rc.SiteID}]
+		rc.applySitePriority(run.priorities[[2]string{rc.Provider, rc.SiteID}])
 		out = append(out, rc)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	for i := range out {
+		out[i].explain()
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
 	return out, dropped
 }
 
@@ -164,6 +181,10 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	collections, wanted := run.collections, run.wanted
 	reject := func(code string) { c.Rejections = append(c.Rejections, code) }
 
+	if c.Parse.CompleteInferred && len(ranges) == 0 {
+		reject("rejected.pack_unverified")
+		return
+	}
 	// R1 content-type gate.
 	if c.Parse.ContentType != parse.ContentManga {
 		reject("rejected.content_type")
@@ -212,8 +233,7 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 
 	// R2 language gate (untagged passes). Soft: record and keep going so
 	// Covered is still computed — a force-grab needs the slot list.
-	if c.Parse.Language != "" && c.Parse.Language != "multi" && wantLang != "" &&
-		baseLang(c.Parse.Language) != baseLang(wantLang) {
+	if !languageCompatible(c.Parse, wantLang) {
 		reject("rejected.language")
 	}
 
@@ -223,7 +243,10 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 			total += int((int64(r.To)-int64(r.From))/100) + 1
 		}
 		for _, w := range run.units[colID] {
-			if w.CountType != "main" && (target == nil || target.WorkID != w.ID) {
+			if w.CountType != "main" && !c.Parse.Extra && (target == nil || target.WorkID != w.ID) {
+				continue
+			}
+			if w.CountType == "main" && c.Parse.Extra && (target == nil || target.WorkID != w.ID) {
 				continue
 			}
 			hit := len(ranges) == 0 && searchLedger == LedgerVolume && c.Parse.Complete
@@ -340,18 +363,24 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	// Scoring (decision-engine.md §4): the protocol preference comes from
 	// the profile's ledger rules; term scores from the custom formats.
 	score := len(c.Covered) * 1000
+	c.ScoreParts = []ScorePart{{Label: "Wanted books", Value: score}}
 	if c.Protocol == rules.PreferredProtocol {
 		score += 200
+		c.ScoreParts = append(c.ScoreParts, ScorePart{"Preferred protocol", 200})
 	}
 	score += c.FormatScore
+	c.ScoreParts = append(c.ScoreParts, ScorePart{"Custom formats", c.FormatScore})
 	switch {
 	case c.Seeders > 20:
 		score += 50
+		c.ScoreParts = append(c.ScoreParts, ScorePart{"Torrent availability", 50})
 	case c.Seeders > 5:
 		score += 25
+		c.ScoreParts = append(c.ScoreParts, ScorePart{"Torrent availability", 25})
 	}
 	if c.Parse.Confidence < 0.8 {
 		score -= 100
+		c.ScoreParts = append(c.ScoreParts, ScorePart{"Uncertain name", -100})
 	}
 	c.Score = score
 }
@@ -466,6 +495,8 @@ func routeCollection(p parse.Result, collections []store.Collection,
 
 // Rejections that survive a force-grab (decision-engine.md §7).
 var hardRejections = map[string]bool{
+	"rejected.numbers_unknown":  true,
+	"rejected.pack_unverified":  true,
 	"rejected.language":         true,
 	"rejected.unit_ambiguous":   true,
 	"rejected.language_unknown": true,
@@ -495,7 +526,7 @@ func matchGroup(expr, value string) bool {
 // and publication medium are different, but explicit digital/scan tags help
 // disambiguate the standard publisher runs.
 func editionCompatible(p parse.Result, c store.Collection) bool {
-	if p.Language != "" && p.Language != "multi" && baseLang(p.Language) != baseLang(c.Language) {
+	if !languageCompatible(p, c.Language) {
 		return false
 	}
 	traits := c.EditionTraits
@@ -546,7 +577,7 @@ func editionCompatibleWithEvidence(p parse.Result, c store.Collection, evidence 
 	}
 	// A verified listing establishes publication identity. It does not
 	// excuse explicit contradictory language or edition flags.
-	if p.Language != "" && p.Language != "multi" && baseLang(p.Language) != baseLang(c.Language) {
+	if !languageCompatible(p, c.Language) {
 		return false
 	}
 	traits := c.EditionTraits
@@ -558,4 +589,29 @@ func editionCompatibleWithEvidence(p parse.Result, c store.Collection, evidence 
 		variant = metadata.ContentVariant(c.EditionName)
 	}
 	return (!p.Edition.Omnibus || (slices.Contains(traits, "omnibus") || len(traits) == 0)) && (!p.Edition.BoxSet || (slices.Contains(traits, "boxset") || len(traits) == 0)) && (!p.Edition.Deluxe || (slices.Contains(traits, "deluxe") || len(traits) == 0)) && (!p.Edition.Colored || (variant == "colored" || variant == "unknown"))
+}
+
+func (c *ReleaseCandidate) applySitePriority(priority int) {
+	if len(c.Rejections) > 0 {
+		return
+	}
+	c.Score -= priority
+	if priority != 0 {
+		c.ScoreParts = append(c.ScoreParts, ScorePart{"Indexer priority", -priority})
+	}
+}
+
+func languageCompatible(p parse.Result, want string) bool {
+	if want == "" {
+		return true
+	}
+	if len(p.Languages) > 0 {
+		for _, lang := range p.Languages {
+			if baseLang(lang) == baseLang(want) {
+				return true
+			}
+		}
+		return false
+	}
+	return p.Language == "" || p.Language == "multi" || baseLang(p.Language) == baseLang(want)
 }

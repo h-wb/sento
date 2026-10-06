@@ -2,6 +2,8 @@ package parse
 
 import (
 	"regexp"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -16,7 +18,8 @@ var languageTags = map[string]string{
 	"fr": "fr", "vf": "fr", "french": "fr", "fre": "fr",
 	"jp": "ja", "ja": "ja", "jap": "ja", "japanese": "ja",
 	"es": "es", "esp": "es", "spanish": "es",
-	"pt-br": "pt-BR", "pt": "pt",
+	"pt-br": "pt-BR", "pt": "pt", "brazilian portuguese": "pt-BR",
+	"de": "de", "german": "de", "deutsch": "de", "it": "it", "italian": "it", "italiano": "it", "ru": "ru", "russian": "ru", "pl": "pl", "polish": "pl", "multi": "multi", "multilingual": "multi",
 	"kr": "ko", "ko": "ko", "korean": "ko",
 	"zh": "zh", "chinese": "zh",
 }
@@ -55,6 +58,7 @@ var sceneLangCodes = map[string]string{
 }
 
 type segmentHints struct {
+	languages   []string
 	language    string
 	contentType ContentType
 	edition     EditionHints
@@ -122,7 +126,45 @@ func classifySegment(text string) segmentHints {
 
 	// Compound segment ("FULL COLOR Digital Colored Comics"): the shared
 	// vocabulary scanner, same one the free-text pass uses.
-	return scanTags(lower)
+	h = scanTags(lower)
+	if lang := detectLanguages(lower, languageTags); lang != "" {
+		h.language = lang
+		h.languages = languageCodes(lower, languageTags)
+	}
+	if h.language != "" {
+		h.recognized = true
+	}
+	return h
+}
+
+// Resolve every explicit language deterministically. Conflicting tags mean a
+// multilingual claim, never whichever map entry happened to iterate first.
+func languageCodes(text string, vocab map[string]string) []string {
+	langs := map[string]bool{}
+	for word, lang := range vocab {
+		if indexWord(text, word) >= 0 {
+			langs[lang] = true
+		}
+	}
+	if langs["pt-BR"] {
+		delete(langs, "pt")
+	}
+	values := []string{}
+	for lang := range langs {
+		values = append(values, lang)
+	}
+	sort.Strings(values)
+	return values
+}
+func detectLanguages(text string, vocab map[string]string) string {
+	values := languageCodes(text, vocab)
+	if len(values) > 1 {
+		return "multi"
+	}
+	if len(values) == 1 {
+		return values[0]
+	}
+	return ""
 }
 
 // scanTags detects edition / quality / completeness / content vocabulary in
@@ -214,9 +256,12 @@ func scanTags(lower string) segmentHints {
 		}
 	}
 
-	if ct, ok := contentTypeTags[scanned]; ok {
-		h.contentType = ct
-		h.recognized = true
+	// Content vocabulary can be combined with quality tags or a number.
+	for _, word := range []string{"anime", "artbook", "fanbook", "anthology", "guidebook", "novel", "ln", "light novel", "audiobook"} {
+		if phrase(word) {
+			h.contentType = contentTypeTags[word]
+			h.recognized = true
+		}
 	}
 
 	return h
@@ -224,8 +269,23 @@ func scanTags(lower string) segmentHints {
 
 // fold merges segment hints into the result.
 func (r *Result) fold(h segmentHints, text string) {
-	if h.language != "" && r.Language == "" {
-		r.Language = h.language
+	if h.language != "" {
+		r.step("language.explicit", h.language)
+		values := h.languages
+		if len(values) == 0 && h.language != "multi" {
+			values = []string{h.language}
+		}
+		for _, lang := range values {
+			if lang != "multi" && !slices.Contains(r.Languages, lang) {
+				r.Languages = append(r.Languages, lang)
+			}
+		}
+		sort.Strings(r.Languages)
+		if r.Language == "" {
+			r.Language = h.language
+		} else if r.Language != h.language {
+			r.Language = "multi"
+		}
 	}
 	if h.contentType != "" {
 		r.ContentType = h.contentType

@@ -89,7 +89,8 @@ func (r *Range) UnmarshalJSON(b []byte) error {
 
 // mergeRanges returns rs sorted by start, with overlapping or near-adjacent
 // ranges coalesced — "near" meaning within one whole unit, so [1,2], [3,3]
-// and [4,5] all fuse into [1,5]. Coalescing is transitive: because the input
+// and [4,5] all fuse into [1,5]. Distinct fractional books never fill gaps.
+// Coalescing is transitive: because the input
 // is sorted first, a range that bridges two others merges all three (the old
 // unsorted single-pass version left them split).
 func mergeRanges(rs []Range) []Range {
@@ -108,7 +109,7 @@ func mergeRanges(rs []Range) []Range {
 	out = append(out, sorted[0])
 	for _, r := range sorted[1:] {
 		last := &out[len(out)-1]
-		if r.From <= last.To+100 { // overlap or within one unit
+		if r.From <= last.To || (r.From%100 == 0 && last.To%100 == 0 && r.From == last.To+100) { // overlap or consecutive whole books
 			if r.To > last.To {
 				last.To = r.To
 			}

@@ -3,8 +3,12 @@
 packages:
   - path: "github.com/h-wb/sento/internal/parse"
     output_path: "web/src/types/parse.ts"
+    exclude_files: ["num.go"]
     frontmatter: |
       /* eslint-disable */
+      // The parser has custom JSON marshaling: numbers are plain units, ranges are pairs.
+      export type Num = number
+      export type Range = [Num, Num]
 
   - path: "github.com/h-wb/sento/internal/scheduler"
     output_path: "web/src/types/scheduler.ts"
@@ -48,7 +52,7 @@ packages:
     frontmatter: |
       /* eslint-disable */
       import type { SeriesRef } from "./metadata"
-      import type { Result } from "./parse"
+      import type { Result, Step } from "./parse"
       import type { Condition, LedgerRules } from "./profile"
       import type { ExtensionInfo } from "./sourcehost"
       import type { Work, ExpectedSlot, DownloadTarget, Binding, Indexer, SiteOverride } from "./store"
@@ -56,6 +60,7 @@ packages:
       profile.Condition: "Condition"
       profile.LedgerRules: "LedgerRules"
       parse.Result: "Result"
+      parse.Step: "Step"
       store.Work: "Work"
       store.ExpectedSlot: "ExpectedSlot"
       store.DownloadTarget: "DownloadTarget"

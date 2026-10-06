@@ -71,6 +71,8 @@ export interface SlotsResponse {
  * SearchBody is POST /series/{id}/search.
  */
 export interface SearchBody {
+  grabProvider?: string;
+  grabTargetId?: number /* int64 */;
   ledger: string;
   dryRun: boolean;
   slot?: TargetSlot;

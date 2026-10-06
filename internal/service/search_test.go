@@ -117,15 +117,14 @@ func TestUnifiedVolumeFunnel(t *testing.T) {
 	checkReject("g4", "rejected.series_match")
 	checkReject("g5", "rejected.series_match") // spin-off leftover
 	checkReject("g6", "rejected.language")     // French vs en collection
-	// g3 (numberless novel) and g7 (chapter release) carry nothing for the
-	// volume ledger: dropped before the funnel.
-	for _, guid := range []string{"g3", "g7"} {
-		if _, ok := byGUID[guid]; ok {
-			t.Errorf("%s should be dropped from the volume funnel", guid)
-		}
+	// Wrong-kind releases remain visible with their classification; only results
+	// explicitly numbered for the other ledger are excluded.
+	checkReject("g3", "rejected.content_type")
+	if _, ok := byGUID["g7"]; ok {
+		t.Error("chapter release leaked into volume search")
 	}
-	if result.Dropped != 2 {
-		t.Errorf("dropped: want 2, got %d", result.Dropped)
+	if result.Dropped != 1 {
+		t.Errorf("dropped: want 1, got %d", result.Dropped)
 	}
 
 	// Chapter ledger search over the same releases: only g7 matches a slot

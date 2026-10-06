@@ -73,7 +73,8 @@ assumes this boring representation.
    what remains. ` / ` and ` | ` split dual titles.
 5. **Closing moves** — group election (last unrecognized number-free
    segment, leading one as fallback), implicit-pack rule (torrent + no
-   numbers + year range → whole-series pack), confidence scoring.
+   numbers + year range → whole-series pack, flagged `CompleteInferred`:
+   the search funnel shows it but rejects it as `rejected.pack_unverified`), confidence scoring.
 
 ## Anchored parsing (`anchor.go`)
 

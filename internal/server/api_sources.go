@@ -312,27 +312,27 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case body.DryRun:
 	case body.Grab != "":
-		found := false
+		matches := []service.ReleaseCandidate{}
 		for _, c := range result.Candidates {
-			if c.GUID != body.Grab {
-				continue
+			if c.GUID == body.Grab && (body.GrabProvider == "" || body.GrabProvider == c.Provider) && (body.GrabTargetID == 0 || body.GrabTargetID == c.TargetID) {
+				matches = append(matches, c)
 			}
-			found = true
-			qid, err := s.search.Grab(r.Context(), id, body.Ledger, c, body.Force)
-			if err != nil {
-				writeErr(w, err)
-				return
-			}
-			queued = append(queued, qid)
-			break
 		}
-		if !found {
-			// The grab re-runs the search; the release can have dropped off
-			// the indexer since the user saw it. Say so instead of
-			// answering 200 with nothing queued.
-			writeErr(w, apperr.NotFoundf("release is no longer listed by its indexer; search again"))
+		if len(matches) == 0 {
+			writeErr(w, apperr.NotFoundf("release is no longer available for this selection; search again"))
 			return
 		}
+		if len(matches) > 1 {
+			writeErr(w, apperr.Conflictf("several releases share this identifier; select a specific provider and copy"))
+			return
+		}
+		qid, err := s.search.Grab(r.Context(), id, body.Ledger, matches[0], body.Force)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		queued = append(queued, qid)
+
 	default:
 		queued = s.search.GrabBest(r.Context(), id, body.Ledger, result.Candidates)
 	}

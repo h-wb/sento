@@ -56,6 +56,9 @@ type TargetSlot struct {
 // ReleaseCandidate is one candidate run through the funnel, for either
 // ledger.
 type ReleaseCandidate struct {
+	Decision         ReleaseDecision       `json:"decision"`
+	ScoreParts       []ScorePart           `json:"scoreParts,omitempty"`
+	ParseTrace       []parse.Step          `json:"parseTrace,omitempty"`
 	TargetSnapshot   *store.DownloadTarget `json:"targetSnapshot,omitempty"`
 	FormatSnapshot   []profile.Format      `json:"formatSnapshot,omitempty"`
 	PolicySnapshot   *profile.Profile      `json:"policySnapshot,omitempty"`
@@ -433,6 +436,11 @@ func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64
 	if err != nil {
 		return err
 	}
+	if len(run.targets) > 0 && len(run.targetWanted) == 0 {
+		emit(SearchEvent{Type: "sites", Ledger: searchLedger, BindingNotes: []string{"No books can be acquired in this selection. Check the edition’s book statuses, or open a specific book to search for another copy."}})
+		emit(SearchEvent{Type: "done", Ledger: searchLedger})
+		return nil
+	}
 	emit(SearchEvent{Type: "sites", Ledger: searchLedger, Searched: run.searched})
 
 	ch := make(chan SearchEvent)
@@ -460,6 +468,7 @@ func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, sear
 		switch ev.Type {
 		case "sites":
 			result.Searched = ev.Searched
+			result.BindingNotes = append(result.BindingNotes, ev.BindingNotes...)
 		case "batch":
 			result.Candidates = append(result.Candidates, ev.Candidates...)
 			result.Dropped += ev.Dropped

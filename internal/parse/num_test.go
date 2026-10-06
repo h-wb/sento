@@ -43,6 +43,11 @@ func TestMergeRanges(t *testing.T) {
 		{"overlap fuses", []Range{r(100, 300), r(200, 400)}, []Range{r(100, 400)}},
 		{"adjacent within one unit fuses", []Range{r(300, 300), r(400, 400)}, []Range{r(300, 400)}},
 		{"gap kept", []Range{r(100, 100), r(500, 500)}, []Range{r(100, 100), r(500, 500)}},
+		// Fractional books are distinct: 1.1 and 1.3 must not imply 1.2, and
+		// 2.5 followed by 3 is not a consecutive run.
+		{"separate fractions kept", []Range{r(110, 110), r(130, 130)}, []Range{r(110, 110), r(130, 130)}},
+		{"fraction then whole kept", []Range{r(100, 250), r(300, 300)}, []Range{r(100, 250), r(300, 300)}},
+		{"fraction inside range absorbed", []Range{r(100, 300), r(150, 150)}, []Range{r(100, 300)}},
 		// The bug the rewrite fixes: a range bridging two others must fuse
 		// all three. The old single-pass version returned [1,3] and [4,5].
 		{"transitive bridge", []Range{r(100, 200), r(400, 500), r(300, 300)}, []Range{r(100, 500)}},

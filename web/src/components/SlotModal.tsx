@@ -129,6 +129,7 @@ function Inner({
               case 'sites':
                 return {
                   ...prev,
+                  notes: ev.bindingNotes ?? [],
                   searched: ev.searched ?? [],
                   pending: ev.searched ?? [],
                 }
@@ -194,6 +195,8 @@ function Inner({
       await api.search(seriesID, {
         ledger: sel.ledger,
         grab: c.guid,
+        grabProvider: c.provider,
+        grabTargetId: c.targetId,
         force,
         slot: {
           collectionId: sel.collectionId ?? 0,
@@ -215,7 +218,7 @@ function Inner({
       opened
       onClose={onClose}
       title={label}
-      size="xl"
+      size="min(1100px, 96vw)"
       fullScreen={small}
       closeOnEscape={!busy}
       closeOnClickOutside={!busy}
@@ -267,7 +270,7 @@ function Inner({
                   style={{ alignSelf: 'flex-start' }}
                   onClick={interactiveSearch}
                 >
-                  Search releases for this {editionWide ? 'collection' : sel.ledger}
+                  Search releases for this {editionWide ? 'edition' : sel.ledger}
                 </Button>
               )}
               {(searching || (result?.pending.length ?? 0) > 0 || result?.done) && (
@@ -306,6 +309,17 @@ function Inner({
                 </Group>
               )}
 
+              {result?.stopped && (
+                <Text size="sm" c="dimmed" role="status">
+                  Search stopped. Results already received are still available.
+                </Text>
+              )}
+              {searching && (
+                <Text size="xs" c="dimmed" role="status">
+                  Searching {result?.pending.length || ''}{' '}
+                  {result?.pending.length === 1 ? 'source' : 'sources'}…
+                </Text>
+              )}
               {result && (
                 <Stack gap={4}>
                   {result.notes.map((n) => (
@@ -314,13 +328,14 @@ function Inner({
                     </Text>
                   ))}
                   {result.errors.map((e) => (
-                    <Alert key={e} color="orange" p="xs">
+                    <Alert key={e} color="orange" p="xs" style={{ overflowWrap: 'anywhere' }}>
                       {e}
                     </Alert>
                   ))}
                   {result.done &&
                     !result.stopped &&
                     result.errors.length === 0 &&
+                    result.notes.length === 0 &&
                     result.candidates.length === 0 && (
                       <Text size="sm" c="dimmed">
                         No releases found. Check that this series has an enabled indexer for{' '}
@@ -333,6 +348,7 @@ function Inner({
                       dropped={result.dropped}
                       onGrab={grab}
                       busy={busy}
+                      searching={searching}
                     />
                   )}
                 </Stack>
@@ -345,7 +361,7 @@ function Inner({
               <Stack gap="xs">
                 {linked.length === 0 && (
                   <Text size="sm" c="dimmed">
-                    No file for this slot.
+                    No file for this book.
                   </Text>
                 )}
                 {linked.map((f) => (
@@ -373,7 +389,7 @@ function Inner({
                         onClick={() =>
                           confirm({
                             title: 'Delete file from disk?',
-                            message: `Delete ${f.path}? This removes the archive from every unit and collected version that uses it. This cannot be undone. Missing units may download again.`,
+                            message: `Delete ${f.path}? This removes the archive from every book and collected version that uses it. This cannot be undone. Missing books may download again.`,
                             label: 'Delete file',
                             onConfirm: async () => {
                               await api.deleteFile(f.id)

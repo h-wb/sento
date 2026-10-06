@@ -41,12 +41,14 @@ type SlotsResponse struct {
 
 // SearchBody is POST /series/{id}/search.
 type SearchBody struct {
-	Ledger string              `json:"ledger"`
-	DryRun bool                `json:"dryRun"`
-	Slot   *service.TargetSlot `json:"slot"`
-	Grab   string              `json:"grab"` // GUID of one candidate
-	Force  bool                `json:"force"`
-	Stream bool                `json:"stream"`
+	GrabProvider string              `json:"grabProvider,omitempty"`
+	GrabTargetID int64               `json:"grabTargetId,omitempty"`
+	Ledger       string              `json:"ledger"`
+	DryRun       bool                `json:"dryRun"`
+	Slot         *service.TargetSlot `json:"slot"`
+	Grab         string              `json:"grab"` // GUID of one candidate
+	Force        bool                `json:"force"`
+	Stream       bool                `json:"stream"`
 }
 
 // SearchResponse is the non-streaming POST /series/{id}/search reply.
