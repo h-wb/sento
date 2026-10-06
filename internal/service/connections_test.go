@@ -74,14 +74,23 @@ func TestConnectionSettingsLegacyKey(t *testing.T) {
 	}
 	conns := NewConnections(st, config.Default())
 	cs := conns.Load(ctx)
-	if cs.Extensions.URL != "http://old.example" || cs.QBittorrent.URL != "http://qb.example" {
+	if cs.Extensions.URL != "http://old.example" || len(cs.DownloadClients) != 1 ||
+		cs.DownloadClients[0].URL != "http://qb.example" || cs.DownloadClients[0].ID != defaultClientID || cs.DownloadClients[0].Name == "" {
 		t.Fatalf("legacy settings = %+v", cs)
 	}
 	// Saved again, they move to the new key and stay readable.
 	if err := conns.Save(ctx, cs); err != nil {
 		t.Fatal(err)
 	}
-	if again := conns.Load(ctx); again.Extensions.URL != "http://old.example" {
+	// A second client gets its own id; one without a URL is dropped.
+	cs.DownloadClients = append(cs.DownloadClients, DownloadClientConn{Name: "VPN", URL: "http://vpn.example"}, DownloadClientConn{Name: "Empty"})
+	if err := conns.Save(ctx, cs); err != nil {
+		t.Fatal(err)
+	}
+	again := conns.Load(ctx)
+	if again.Extensions.URL != "http://old.example" || len(again.DownloadClients) != 2 ||
+		again.DownloadClients[0].ID != defaultClientID || again.DownloadClients[1].ID == "" || again.DownloadClients[1].ID == defaultClientID ||
+		again.DownloadClients[1].Category != "sento" {
 		t.Fatalf("after re-save = %+v", again)
 	}
 }

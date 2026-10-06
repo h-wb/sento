@@ -191,6 +191,11 @@ export const api = {
       method: unit.id ? 'PUT' : 'POST',
       body: JSON.stringify(unit),
     }),
+  splitBox: (id: number, uid: number, count: number) =>
+    request<Work[]>(`/series/${id}/units/${uid}/split`, {
+      method: 'POST',
+      body: JSON.stringify({ count }),
+    }),
   resetUnit: (id: number, uid: number) =>
     request<void>(`/series/${id}/units/${uid}/catalog-reset`, { method: 'POST' }),
   deleteRelation: (id: number, relation: WorkRelation) =>

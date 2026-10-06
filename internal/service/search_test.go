@@ -63,7 +63,7 @@ func addTorznabEntry(t *testing.T, st *store.Store, name, url string) int64 {
 
 func torrentRegistry(st *store.Store) *provider.Registry {
 	return provider.NewRegistry(
-		provider.NewTorrent(IndexerEntries(st, store.IndexerTorznab), nil, "sento"))
+		provider.NewTorrent(IndexerEntries(st, store.IndexerTorznab)))
 }
 
 func TestUnifiedVolumeFunnel(t *testing.T) {

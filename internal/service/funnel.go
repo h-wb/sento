@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/provider"
@@ -62,6 +61,17 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 		// Keep number-less candidates only as potential whole-series packs
 		// (volume ledger).
 		isPack := run.ledger == LedgerVolume && rc.Parse.Complete
+		// A torrent named for the series alone, with no number anywhere,
+		// may well be the whole edition ("Title - Deluxe Edition (2012)").
+		// The name cannot confirm it, so it is treated as an inferred pack:
+		// offered for review, never grabbed automatically, and the import
+		// maps what is actually inside.
+		if run.ledger == LedgerVolume && !isPack && cand.Protocol == provider.ProtocolTorrent &&
+			len(rc.Parse.Volumes)+len(rc.Parse.Chapters)+len(rc.Parse.Bare) == 0 &&
+			rc.Parse.Anchored && rc.Parse.TitleLeftover == "" && rc.Parse.ContentType == parse.ContentManga {
+			rc.Parse.Complete, rc.Parse.CompleteInferred = true, true
+			isPack = true
+		}
 
 		if len(ranges) == 0 && !isPack {
 			if len(rc.Parse.Volumes)+len(rc.Parse.Chapters) > 0 {
@@ -201,9 +211,10 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	collections, wanted := run.collections, run.wanted
 	reject := func(code string) { c.Rejections = append(c.Rejections, code) }
 
+	// An inferred pack runs the whole funnel so its books are known, then
+	// carries a soft rejection: a person has to confirm it.
 	if c.Parse.CompleteInferred && len(ranges) == 0 {
-		reject("rejected.pack_unverified")
-		return
+		defer reject("rejected.pack_unverified")
 	}
 	// R1 content-type gate.
 	if c.Parse.ContentType != parse.ContentManga {
@@ -516,7 +527,6 @@ func routeCollection(p parse.Result, collections []store.Collection,
 // Rejections that survive a force-grab (decision-engine.md §7).
 var hardRejections = map[string]bool{
 	"rejected.numbers_unknown":  true,
-	"rejected.pack_unverified":  true,
 	"rejected.language":         true,
 	"rejected.unit_ambiguous":   true,
 	"rejected.language_unknown": true,
@@ -542,34 +552,6 @@ func matchGroup(expr, value string) bool {
 	return err == nil && r.MatchString(value)
 }
 
-// Absence of evidence is never proof of a special edition. Source quality
-// and publication medium are different, but explicit digital/scan tags help
-// disambiguate the standard publisher runs.
-func editionCompatible(p parse.Result, c store.Collection) bool {
-	if !languageCompatible(p, c.Language) {
-		return false
-	}
-	traits := c.EditionTraits
-	if traits == nil {
-		traits = metadata.EditionTraits(c.EditionName)
-	}
-	variant := c.ContentVariant
-	if variant == "" {
-		variant = metadata.ContentVariant(c.EditionName)
-	}
-	if p.Edition.Colored != (variant == "colored") {
-		return false
-	}
-	for trait, present := range map[string]bool{"omnibus": p.Edition.Omnibus, "boxset": p.Edition.BoxSet, "deluxe": p.Edition.Deluxe} {
-		if present != slices.Contains(traits, trait) {
-			return false
-		}
-	}
-	// Medium is deliberately not checked: "(Digital)" says how a file was
-	// produced, not which book it is. It only breaks ties (preferByMedium).
-	return true
-}
-
 // Publishers that only release in English: their rip tag is language
 // evidence. Publishers that also print in Japanese (Kodansha, Shonen Jump,
 // Square Enix) and multilingual platforms are left out.
@@ -584,90 +566,8 @@ func englishPublisher(names []string) bool {
 	return false
 }
 
-// preferByMedium narrows editions a release fits by how the file was
-// produced: a digital rip belongs to the digital edition and a scan to the
-// printed one, when both are in play. With no such evidence, or no edition
-// of that medium, every edition stays. Medium never chooses between
-// languages: a digital rip in an unstated language is not thereby English.
-func preferByMedium(p parse.Result, cols []store.Collection) []store.Collection {
-	for _, c := range cols {
-		if baseLang(c.Language) != baseLang(cols[0].Language) {
-			return cols
-		}
-	}
-	var fits func(store.Collection) bool
-	switch {
-	case p.Quality.Digital:
-		fits = func(c store.Collection) bool { return c.Medium == "digital" }
-	case p.Quality.Scan:
-		fits = func(c store.Collection) bool { return c.Medium != "" && c.Medium != "digital" }
-	default:
-		return cols
-	}
-	var out []store.Collection
-	for _, c := range cols {
-		if fits(c) {
-			out = append(out, c)
-		}
-	}
-	if len(out) == 0 {
-		return cols
-	}
-	return out
-}
-
-// ambiguousEdition reports whether a release that fits col fits another
-// edition the user collects at least as well. Catalog editions nobody
-// collects do not compete: the user already chose against them.
-func (run *searchRun) ambiguousEdition(p parse.Result, col store.Collection) bool {
-	fits := []store.Collection{col}
-	otherLanguage := false
-	for _, c := range run.collections {
-		if c.ID == col.ID || c.Type != col.Type || c.SyncState == "stale" || c.SyncState == "superseded" {
-			continue
-		}
-		collected := false
-		for _, t := range run.targets {
-			collected = collected || (t.CollectionID == c.ID && t.Monitored)
-		}
-		if !collected || !editionCompatible(p, c) {
-			continue
-		}
-		if baseLang(c.Language) != baseLang(col.Language) {
-			otherLanguage = true
-			continue
-		}
-		fits = append(fits, c)
-	}
-	best := preferByMedium(p, fits)
-	return otherLanguage || len(best) != 1 || best[0].ID != col.ID
-}
-
 func candidateFlags(c ReleaseCandidate) map[string]bool {
 	return map[string]bool{"digital": c.Parse.Quality.Digital, "scan": c.Parse.Quality.Scan, "web": c.Parse.Quality.Web, "premium": c.Parse.Quality.Premium, "colored": c.Parse.Edition.Colored, "omnibus": c.Parse.Edition.Omnibus, "deluxe": c.Parse.Edition.Deluxe, "boxset": c.Parse.Edition.BoxSet, "official": c.Parse.Edition.Official, "raw": c.Parse.Edition.Raw, "complete": c.Parse.Complete}
-}
-
-func editionCompatibleWithEvidence(p parse.Result, c store.Collection, evidence int64) bool {
-	if evidence == 0 {
-		return editionCompatible(p, c)
-	}
-	if evidence != c.ID {
-		return false
-	}
-	// A verified listing establishes publication identity. It does not
-	// excuse explicit contradictory language or edition flags.
-	if !languageCompatible(p, c.Language) {
-		return false
-	}
-	traits := c.EditionTraits
-	if traits == nil {
-		traits = metadata.EditionTraits(c.EditionName)
-	}
-	variant := c.ContentVariant
-	if variant == "" {
-		variant = metadata.ContentVariant(c.EditionName)
-	}
-	return (!p.Edition.Omnibus || (slices.Contains(traits, "omnibus") || len(traits) == 0)) && (!p.Edition.BoxSet || (slices.Contains(traits, "boxset") || len(traits) == 0)) && (!p.Edition.Deluxe || (slices.Contains(traits, "deluxe") || len(traits) == 0)) && (!p.Edition.Colored || (variant == "colored" || variant == "unknown"))
 }
 
 func (c *ReleaseCandidate) applySitePriority(priority int) {

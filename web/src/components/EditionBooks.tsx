@@ -8,6 +8,7 @@ import {
   Chip,
   Group,
   Menu,
+  Modal,
   NumberInput,
   Pagination,
   Popover,
@@ -160,6 +161,7 @@ export default function EditionBooks({
     to: '',
   })
   const [rangeOpen, setRangeOpen] = useState(false)
+  const [split, setSplit] = useState<{ work: Work; count: string | number } | null>(null)
   const container = useRef<HTMLDivElement>(null)
 
   const q = useQuery({
@@ -505,6 +507,11 @@ export default function EditionBooks({
                   </Menu.Target>
                   <Menu.Dropdown>
                     <Menu.Item onClick={() => onEdit(s.work)}>Edit</Menu.Item>
+                    {c.type === 'volume' && (
+                      <Menu.Item onClick={() => setSplit({ work: s.work, count: 2 })}>
+                        This is a box of several volumes…
+                      </Menu.Item>
+                    )}
                     {onDisk.length > 0 && (
                       <Menu.Item
                         onClick={() => {
@@ -535,6 +542,43 @@ export default function EditionBooks({
       )}
       {view === 'list' && pages > 1 && (
         <Pagination size="sm" total={pages} value={current} onChange={setPage} />
+      )}
+      {split && (
+        <Modal
+          opened
+          onClose={() => setSplit(null)}
+          title={`Split "${split.work.sequenceStr}" into volumes`}
+        >
+          <Stack gap="sm">
+            <Text size="sm" c="dimmed">
+              Catalogs list a box set as one item, but releases are named after the books inside it.
+              This adds volumes 1 to N to this edition, with the box's ISBN and date, and stops
+              collecting the box itself.
+            </Text>
+            <NumberInput
+              label="Volumes in the box"
+              min={2}
+              max={100}
+              value={split.count}
+              onChange={(count) => setSplit({ ...split, count })}
+            />
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => setSplit(null)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={busy || Number(split.count) < 2}
+                onClick={() =>
+                  void run(() => api.splitBox(seriesID, split.work.id, Number(split.count))).then(
+                    () => setSplit(null),
+                  )
+                }
+              >
+                Add volumes
+              </Button>
+            </Group>
+          </Stack>
+        </Modal>
       )}
     </Stack>
   )

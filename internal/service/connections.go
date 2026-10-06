@@ -29,7 +29,11 @@ type ProwlarrConn struct {
 	APIKey string `json:"apiKey"`
 }
 
-type QBittorrentConn struct {
+// DownloadClientConn is one qBittorrent instance torrents can be sent to.
+// ID is stable across renames: indexers refer to a client by it.
+type DownloadClientConn struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
 	URL      string `json:"url"`
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -43,28 +47,61 @@ type ExtensionsConn struct {
 }
 
 type ConnectionSettings struct {
-	Prowlarr    ProwlarrConn    `json:"prowlarr"`
-	QBittorrent QBittorrentConn `json:"qbittorrent"`
-	Extensions  ExtensionsConn  `json:"extensions"`
+	Prowlarr ProwlarrConn `json:"prowlarr"`
+	// DownloadClients are the torrent clients, the default one first.
+	// Indexers pick one by id; those that pick none use the default.
+	DownloadClients []DownloadClientConn `json:"downloadClients"`
+	Extensions      ExtensionsConn       `json:"extensions"`
+}
+
+const defaultClientID = "default"
+
+// normalizeClients drops clients without a URL and gives the rest what
+// they need to be referred to: an id, a name, a category.
+func normalizeClients(clients []DownloadClientConn) []DownloadClientConn {
+	out := []DownloadClientConn{}
+	used := map[string]bool{}
+	for _, c := range clients {
+		c.URL = strings.TrimSpace(c.URL)
+		if c.URL == "" {
+			continue
+		}
+		if c.ID = strings.TrimSpace(c.ID); c.ID == "" || used[c.ID] {
+			c.ID = defaultClientID
+			for n := 2; used[c.ID]; n++ {
+				c.ID = fmt.Sprintf("client-%d", n)
+			}
+		}
+		used[c.ID] = true
+		if c.Name = strings.TrimSpace(c.Name); c.Name == "" {
+			c.Name = "qBittorrent"
+		}
+		if c.Category = strings.TrimSpace(c.Category); c.Category == "" {
+			c.Category = "sento"
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // DefaultConnections seeds settings from the file/env config.
 func DefaultConnections(cfg config.Config) ConnectionSettings {
 	return ConnectionSettings{
 		Prowlarr: ProwlarrConn{URL: cfg.Prowlarr.URL, APIKey: cfg.Prowlarr.APIKey},
-		QBittorrent: QBittorrentConn{
-			URL: cfg.QBittorrent.URL, Username: cfg.QBittorrent.Username,
+		DownloadClients: normalizeClients([]DownloadClientConn{{
+			ID: defaultClientID, URL: cfg.QBittorrent.URL, Username: cfg.QBittorrent.Username,
 			Password: cfg.QBittorrent.Password, Category: cfg.QBittorrent.Category,
-		},
+		}}),
 		Extensions: ExtensionsConn{URL: cfg.Extensions.URL},
 	}
 }
 
 func ValidateConnections(cs ConnectionSettings) error {
-	for name, u := range map[string]string{
-		"prowlarr": cs.Prowlarr.URL, "qbittorrent": cs.QBittorrent.URL,
-		"extensions": cs.Extensions.URL,
-	} {
+	urls := map[string]string{"prowlarr": cs.Prowlarr.URL, "extensions": cs.Extensions.URL}
+	for _, c := range cs.DownloadClients {
+		urls["download client "+c.Name] = c.URL
+	}
+	for name, u := range urls {
 		if u != "" && !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
 			return apperr.Invalidf("%s url must start with http:// or https://", name)
 		}
@@ -107,9 +144,19 @@ func (c *Connections) Load(ctx context.Context) ConnectionSettings {
 			var legacy struct {
 				SourceHost ExtensionsConn `json:"sourceHost"`
 			}
+			// And a single download client under "qbittorrent", before
+			// there could be several.
+			var legacyClient struct {
+				QBittorrent *DownloadClientConn `json:"qbittorrent"`
+			}
 			if cs.Extensions.URL == "" && json.Unmarshal(raw, &legacy) == nil {
 				cs.Extensions = legacy.SourceHost
 			}
+			if cs.DownloadClients == nil && json.Unmarshal(raw, &legacyClient) == nil && legacyClient.QBittorrent != nil {
+				legacyClient.QBittorrent.ID = defaultClientID
+				cs.DownloadClients = []DownloadClientConn{*legacyClient.QBittorrent}
+			}
+			cs.DownloadClients = normalizeClients(cs.DownloadClients)
 			return cs
 		}
 	}
@@ -118,6 +165,7 @@ func (c *Connections) Load(ctx context.Context) ConnectionSettings {
 
 // Save persists and applies new settings.
 func (c *Connections) Save(ctx context.Context, cs ConnectionSettings) error {
+	cs.DownloadClients = normalizeClients(cs.DownloadClients)
 	if err := ValidateConnections(cs); err != nil {
 		return err
 	}
@@ -138,9 +186,12 @@ func (c *Connections) Save(ctx context.Context, cs ConnectionSettings) error {
 func (c *Connections) Apply(cs ConnectionSettings) {
 	host := buildHost(cs)
 
-	var qb *qbittorrent.Client
-	if cs.QBittorrent.URL != "" {
-		qb = qbittorrent.New(cs.QBittorrent.URL, cs.QBittorrent.Username, cs.QBittorrent.Password)
+	var clients []provider.TorrentClient
+	for _, dc := range normalizeClients(cs.DownloadClients) {
+		clients = append(clients, provider.TorrentClient{
+			ID: dc.ID, Name: dc.Name, Category: dc.Category,
+			Client: qbittorrent.New(dc.URL, dc.Username, dc.Password),
+		})
 	}
 
 	c.registry.Replace(
@@ -148,7 +199,7 @@ func (c *Connections) Apply(cs ConnectionSettings) {
 			PageConcurrency:   c.cfg.Downloads.PageConcurrency,
 			PageRatePerSecond: c.cfg.Downloads.PageRatePerSecond,
 		}, IndexerEntries(c.store, store.IndexerSource)),
-		provider.NewTorrent(IndexerEntries(c.store, store.IndexerTorznab), qb, cs.QBittorrent.Category),
+		provider.NewTorrent(IndexerEntries(c.store, store.IndexerTorznab), clients...),
 	)
 	c.mu.Lock()
 	c.host = host
@@ -181,9 +232,9 @@ func TestConnections(ctx context.Context, cs ConnectionSettings) []ConnectionTes
 		run     func() (string, error)
 	}
 	var probes []probe
-	if cs.QBittorrent.URL != "" {
-		qb := qbittorrent.New(cs.QBittorrent.URL, cs.QBittorrent.Username, cs.QBittorrent.Password)
-		probes = append(probes, probe{"qbittorrent", func() (string, error) {
+	for _, dc := range normalizeClients(cs.DownloadClients) {
+		qb := qbittorrent.New(dc.URL, dc.Username, dc.Password)
+		probes = append(probes, probe{"downloadClient:" + dc.ID, func() (string, error) {
 			return qb.Version(ctx)
 		}})
 	}

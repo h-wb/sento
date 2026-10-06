@@ -150,6 +150,12 @@ type NamingPreview struct {
 	ChapterFile  string `json:"chapterFile"`
 }
 
+// SplitBoxBody is POST /series/{id}/units/{uid}/split: how many volumes
+// the box holds.
+type SplitBoxBody struct {
+	Count int `json:"count"`
+}
+
 // OrganizeBody is POST /series/{id}/files/organize: which of the
 // previewed changes to apply.
 type OrganizeBody struct {

@@ -221,7 +221,7 @@ export default function IndexersPage() {
   )
 }
 
-type TorznabForm = { url: string; apiKey: string; language?: string }
+type TorznabForm = { url: string; apiKey: string; language?: string; downloadClient?: string }
 type SourceForm = { sourceId: string; pkgName?: string }
 
 function IndexerModal({
@@ -244,7 +244,10 @@ function IndexerModal({
     url: init?.url ?? '',
     apiKey: init?.apiKey ?? '',
     language: init?.language ?? '',
+    downloadClient: init?.downloadClient ?? '',
   })
+  const connections = useQuery({ queryKey: ['connections'], queryFn: api.connections })
+  const downloadClients = connections.data?.downloadClients ?? []
   const [source, setSource] = useState<SourceForm>({
     sourceId: init?.sourceId ?? '',
     pkgName: init?.pkgName,
@@ -436,6 +439,25 @@ function IndexerModal({
               value={torznab.language ?? ''}
               onChange={(e) => setTorznab({ ...torznab, language: e.currentTarget.value.trim() })}
             />
+            {(downloadClients.length > 1 || !!torznab.downloadClient) && (
+              <Select
+                label="Download client"
+                description="Where this indexer's releases are sent, e.g. a tracker that must go through the VPN client."
+                maw={320}
+                allowDeselect={false}
+                value={torznab.downloadClient ?? ''}
+                onChange={(v) => setTorznab({ ...torznab, downloadClient: v ?? '' })}
+                error={
+                  torznab.downloadClient && !downloadClients.some((c) => c.id === torznab.downloadClient)
+                    ? 'This client no longer exists. Pick another.'
+                    : undefined
+                }
+                data={[
+                  { value: '', label: `Default (${downloadClients[0]?.name ?? 'none configured'})` },
+                  ...downloadClients.slice(1).map((c) => ({ value: c.id, label: c.name })),
+                ]}
+              />
+            )}
             {!browse && (
               <Button
                 variant="subtle"

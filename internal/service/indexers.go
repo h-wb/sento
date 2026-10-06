@@ -24,6 +24,10 @@ type TorznabSettings struct {
 	// Language is the language of this indexer's releases when a release
 	// does not state one ("fr" for a French tracker). Empty = mixed.
 	Language string `json:"language,omitempty"`
+	// DownloadClient is the id of the download client this indexer's
+	// releases go to (a tracker that must go through the VPN client, for
+	// instance). Empty = the default client.
+	DownloadClient string `json:"downloadClient,omitempty"`
 }
 
 // SourceSettings configures one extension-source indexer entry. PkgName
@@ -43,6 +47,7 @@ func parseEntry(ix store.Indexer) (provider.IndexerEntry, error) {
 			return e, fmt.Errorf("indexer %d settings: %w", ix.ID, err)
 		}
 		e.URL, e.APIKey, e.Language = ts.URL, ts.APIKey, strings.ToLower(strings.TrimSpace(ts.Language))
+		e.DownloadClient = ts.DownloadClient
 	case store.IndexerSource:
 		var ss SourceSettings
 		if err := json.Unmarshal(ix.Settings, &ss); err != nil {

@@ -180,7 +180,7 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 				matches = append(matches, c)
 			}
 		}
-		matches = preferByMedium(parsed, matches)
+		matches = preferByPackaging(parsed, matches)
 		if len(matches) != 1 {
 			continue
 		}

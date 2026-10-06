@@ -73,7 +73,7 @@ func TestGrabKeysTheDownloadByItsRealInfoHash(t *testing.T) {
 	}))
 	defer qbit.Close()
 
-	p := NewTorrent(nil, qbittorrent.New(qbit.URL, "", ""), "sento")
+	p := NewTorrent(nil, TorrentClient{ID: "default", Name: "qBittorrent", Client: qbittorrent.New(qbit.URL, "", ""), Category: "sento"})
 	ctx := context.Background()
 
 	id, err := p.Grab(ctx, Candidate{Title: "One Piece v01", Torrent: &TorrentRef{

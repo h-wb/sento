@@ -7,6 +7,10 @@ import type { ExtensionInfo } from "./extensions"
 import type { Work, ExpectedSlot, DownloadTarget, Binding, Indexer, SiteOverride } from "./store"
 
 //////////
+// source: box.go
+
+
+//////////
 // source: bulkimport.go
 
 /**
@@ -37,7 +41,13 @@ export interface ProwlarrConn {
   url: string;
   apiKey: string;
 }
-export interface QBittorrentConn {
+/**
+ * DownloadClientConn is one qBittorrent instance torrents can be sent to.
+ * ID is stable across renames: indexers refer to a client by it.
+ */
+export interface DownloadClientConn {
+  id: string;
+  name: string;
   url: string;
   username: string;
   password: string;
@@ -52,7 +62,11 @@ export interface ExtensionsConn {
 }
 export interface ConnectionSettings {
   prowlarr: ProwlarrConn;
-  qbittorrent: QBittorrentConn;
+  /**
+   * DownloadClients are the torrent clients, the default one first.
+   * Indexers pick one by id; those that pick none use the default.
+   */
+  downloadClients: DownloadClientConn[];
   extensions: ExtensionsConn;
 }
 /**
@@ -71,6 +85,10 @@ export interface ConnectionTest {
   error?: string;
   detail?: string;
 }
+
+//////////
+// source: edition_fit.go
+
 
 //////////
 // source: edition_view.go
@@ -185,6 +203,12 @@ export interface TorznabSettings {
    * does not state one ("fr" for a French tracker). Empty = mixed.
    */
   language?: string;
+  /**
+   * DownloadClient is the id of the download client this indexer's
+   * releases go to (a tracker that must go through the VPN client, for
+   * instance). Empty = the default client.
+   */
+  downloadClient?: string;
 }
 /**
  * SourceSettings configures one extension-source indexer entry. PkgName

@@ -4,32 +4,41 @@ import {
   Badge,
   Button,
   Card,
-  Divider,
   Group,
   List,
   PasswordInput,
+  SimpleGrid,
   Stack,
   Text,
   TextInput,
   Title,
   Tooltip,
+  UnstyledButton,
 } from '@mantine/core'
+import { IconPlus } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, type ConnectionSettings, type ConnectionTest } from '../api'
 import type { RepoStatus } from '../types/extensions'
+import type { DownloadClientConn } from '../types/service'
 import { notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
-import { useUnsavedChanges } from '../useUnsavedChanges'
+import { EditorModal } from '../components/EditionDialogs'
+import classes from './ConnectionsPage.module.css'
 
-// The services Sento connects to — one per download path: qBittorrent for
-// torrents, the sento-extensions sidecar for extension sources. What gets
-// searched lives on the Indexers page; this page is only the plumbing.
-// Stored server-side; the yaml/env config only seeds the very first run.
+// The services Sento connects to: download clients for torrents, the
+// extensions sidecar for extension sources. Each is a card showing what it
+// is and whether it answers right now; its settings open in a dialog. What
+// gets searched lives on the Indexers page; this page is only the
+// plumbing. Stored server-side; the yaml/env config only seeds the very
+// first run.
+type Editing = { kind: 'client'; client: DownloadClientConn; isNew: boolean } | { kind: 'extensions' }
+
 export default function ConnectionsPage() {
   usePageTitle('Connections')
   const queryClient = useQueryClient()
+  const [editing, setEditing] = useState<Editing | null>(null)
   const settings = useQuery({ queryKey: ['connections'], queryFn: api.connections })
   // Live state of what is saved, probed on load — no button to press to
   // find out whether a service is actually reachable.
@@ -48,6 +57,7 @@ export default function ConnectionsPage() {
   const live = (service: string) => status.data?.find((t) => t.service === service)
 
   const onSaved = () => {
+    setEditing(null)
     queryClient.invalidateQueries({ queryKey: ['connections'] })
     // The provider set changed: site lists and status are stale.
     queryClient.invalidateQueries({ queryKey: ['indexer-settings'] })
@@ -56,7 +66,16 @@ export default function ConnectionsPage() {
     queryClient.invalidateQueries({ queryKey: ['extensions'] })
     queryClient.invalidateQueries({ queryKey: ['extension-repos'] })
   }
-  const nothingSet = saved.qbittorrent.url === '' && saved.extensions.url === ''
+  const clients = saved.downloadClients
+  const nothingSet = clients.length === 0 && saved.extensions.url === ''
+  const newClient = (): DownloadClientConn => ({
+    id: clients.length === 0 ? 'default' : `client-${Date.now().toString(36)}`,
+    name: clients.length === 0 ? 'qBittorrent' : '',
+    url: '',
+    username: '',
+    password: '',
+    category: 'sento',
+  })
 
   return (
     <>
@@ -65,12 +84,13 @@ export default function ConnectionsPage() {
         description="Download services and extension repositories."
       />
 
-      <Stack maw={680}>
+      <Stack maw={900} gap="xl">
         {nothingSet && (
           <Alert color="blue" title="Nothing is connected yet">
             <List size="sm" type="ordered" spacing={2}>
               <List.Item>
-                Connect qBittorrent for torrents or the extensions sidecar for extension sources.
+                Add a download client for torrents, or connect the extensions sidecar for extension
+                sources.
               </List.Item>
               <List.Item>For extension sources, add a repository below.</List.Item>
               <List.Item>
@@ -80,65 +100,82 @@ export default function ConnectionsPage() {
           </Alert>
         )}
 
-        <ServiceCard
-          section="Torrents"
-          title="qBittorrent"
-          blurb="Downloads torrent releases. Sento must have access to its download folder to import files."
-          service="qbittorrent"
-          saved={saved}
-          live={live('qbittorrent')}
-          probing={status.isFetching}
-          onSaved={onSaved}
-          isSet={(c) => c.qbittorrent.url !== ''}
-          same={(a, b) => JSON.stringify(a.qbittorrent) === JSON.stringify(b.qbittorrent)}
-          only={(c) => ({ ...blank, qbittorrent: c.qbittorrent })}
-          merge={(base, form) => ({ ...base, qbittorrent: form.qbittorrent })}
-          fields={(form, set) => (
-            <Stack gap="xs">
-              <TextInput
-                label="URL"
-                placeholder="http://localhost:8080"
-                description="Leave empty to disable torrent downloads"
-                value={form.qbittorrent.url}
-                onChange={(e) => set({ qbittorrent: { ...form.qbittorrent, url: e.currentTarget.value } })}
+        <section aria-label="Download clients">
+          <Title order={4}>Download clients</Title>
+          <Text size="sm" c="dimmed" mb="sm">
+            qBittorrent instances that download torrent releases. Sento must have access to their
+            download folders to import files. Indexers use the default client unless they name
+            another.
+          </Text>
+          <SimpleGrid cols={{ base: 1, xs: 2, md: 3 }} spacing="sm">
+            {clients.map((client, index) => (
+              <ConnectionTile
+                key={client.id}
+                name={client.name}
+                detail={`${hostOf(client.url)} · ${client.category}`}
+                tag={index === 0 ? 'Default' : undefined}
+                status={<StatusBadge result={live(`downloadClient:${client.id}`)} configured probing={status.isFetching} />}
+                onClick={() => setEditing({ kind: 'client', client, isNew: false })}
               />
-              <Group grow>
-                <TextInput
-                  label="Username"
-                  value={form.qbittorrent.username}
-                  onChange={(e) =>
-                    set({ qbittorrent: { ...form.qbittorrent, username: e.currentTarget.value } })
-                  }
-                />
-                <PasswordInput
-                  label="Password"
-                  value={form.qbittorrent.password}
-                  onChange={(e) =>
-                    set({ qbittorrent: { ...form.qbittorrent, password: e.currentTarget.value } })
-                  }
-                />
-              </Group>
-              <TextInput
-                label="Category"
-                description="Sento only imports torrents in this category"
-                value={form.qbittorrent.category}
-                onChange={(e) =>
-                  set({ qbittorrent: { ...form.qbittorrent, category: e.currentTarget.value } })
-                }
-              />
-            </Stack>
-          )}
-        />
+            ))}
+            <UnstyledButton
+              className={classes.add}
+              onClick={() => setEditing({ kind: 'client', client: newClient(), isNew: true })}
+            >
+              <IconPlus size={16} />
+              <Text size="sm">Add download client</Text>
+            </UnstyledButton>
+          </SimpleGrid>
+        </section>
 
-        <ServiceCard
-          section="Extension sources"
+        <section aria-label="Extension sources">
+          <Title order={4}>Extension sources</Title>
+          <Text size="sm" c="dimmed" mb="sm">
+            The sidecar runs Mihon-compatible extensions so Sento can find and download chapters
+            from their sources.
+          </Text>
+          <SimpleGrid cols={{ base: 1, xs: 2, md: 3 }} spacing="sm">
+            <ConnectionTile
+              name="Extensions sidecar"
+              detail={saved.extensions.url ? hostOf(saved.extensions.url) : 'Not connected'}
+              status={
+                <StatusBadge
+                  result={live('extensions')}
+                  configured={saved.extensions.url !== ''}
+                  probing={status.isFetching}
+                />
+              }
+              onClick={() => setEditing({ kind: 'extensions' })}
+            />
+          </SimpleGrid>
+          {saved.extensions.url !== '' && (
+            <Card withBorder padding="md" mt="sm">
+              <Repos />
+            </Card>
+          )}
+        </section>
+      </Stack>
+
+      {editing?.kind === 'client' && (
+        <ClientDialog
+          key={editing.client.id}
+          client={editing.client}
+          isNew={editing.isNew}
+          isDefault={clients.length === 0 || clients[0]?.id === editing.client.id}
+          saved={saved}
+          live={editing.isNew ? undefined : live(`downloadClient:${editing.client.id}`)}
+          onSaved={onSaved}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {editing?.kind === 'extensions' && (
+        <ConnectionDialog
           title="Extensions sidecar"
-          blurb="Runs Mihon-compatible extensions so Sento can find and download chapters from their sources."
           service="extensions"
           saved={saved}
           live={live('extensions')}
-          probing={status.isFetching}
           onSaved={onSaved}
+          onClose={() => setEditing(null)}
           isSet={(c) => c.extensions.url !== ''}
           same={(a, b) => a.extensions.url === b.extensions.url}
           only={(c) => ({ ...blank, extensions: c.extensions })}
@@ -152,23 +189,166 @@ export default function ConnectionsPage() {
               onChange={(e) => set({ extensions: { url: e.currentTarget.value } })}
             />
           )}
-        >
-          {saved.extensions.url !== '' && (
-            <>
-              <Divider my="md" />
-              <Repos />
-            </>
-          )}
-        </ServiceCard>
-      </Stack>
+        />
+      )}
     </>
   )
 }
 
 const blank: ConnectionSettings = {
   prowlarr: { url: '', apiKey: '' },
-  qbittorrent: { url: '', username: '', password: '', category: '' },
+  downloadClients: [],
   extensions: { url: '' },
+}
+
+// ConnectionTile is one connection at a glance: what it is, where it
+// points, and whether it answers. Clicking it opens its settings.
+function ConnectionTile({
+  name,
+  detail,
+  tag,
+  status,
+  onClick,
+}: {
+  name: string
+  detail: string
+  tag?: string
+  status: ReactNode
+  onClick: () => void
+}) {
+  return (
+    <UnstyledButton className={classes.tile} onClick={onClick} aria-label={`Edit ${name}`}>
+      <Group justify="space-between" wrap="nowrap" gap="xs" mb={4}>
+        <Text fw={600} truncate>
+          {name}
+        </Text>
+        {tag && (
+          <Badge size="xs" variant="outline" color="gray">
+            {tag}
+          </Badge>
+        )}
+      </Group>
+      <Text size="xs" c="dimmed" truncate mb="sm">
+        {detail}
+      </Text>
+      {status}
+    </UnstyledButton>
+  )
+}
+
+// ClientDialog edits one download client; the rest of the settings are
+// saved as they are on the server.
+function ClientDialog({
+  client,
+  isNew,
+  isDefault,
+  saved,
+  live,
+  onSaved,
+  onClose,
+}: {
+  client: DownloadClientConn
+  isNew: boolean
+  isDefault: boolean
+  saved: ConnectionSettings
+  live?: ConnectionTest
+  onSaved: () => void
+  onClose: () => void
+}) {
+  // The dialog's "saved" view includes the client being added, so the
+  // form starts from it.
+  const base: ConnectionSettings = isNew
+    ? { ...saved, downloadClients: [...saved.downloadClients, client] }
+    : saved
+  const mine = (c: ConnectionSettings) => c.downloadClients.find((d) => d.id === client.id) ?? client
+  const put = (c: ConnectionSettings, value: DownloadClientConn) => ({
+    ...c,
+    downloadClients: c.downloadClients.map((d) => (d.id === client.id ? value : d)),
+  })
+  const remove = useMutation({
+    mutationFn: () =>
+      api.saveConnections({
+        ...saved,
+        downloadClients: saved.downloadClients.filter((d) => d.id !== client.id),
+      }),
+    onSuccess: () => {
+      notify.ok(`${client.name} removed`)
+      onSaved()
+    },
+    onError: notify.err,
+  })
+  return (
+    <ConnectionDialog
+      title={isNew ? 'Add download client' : client.name}
+      service={`downloadClient:${client.id}`}
+      saved={base}
+      live={live}
+      onSaved={onSaved}
+      onClose={onClose}
+      alwaysSavable={isNew}
+      isSet={(c) => mine(c).url.trim() !== ''}
+      same={(a, b) => JSON.stringify(mine(a)) === JSON.stringify(mine(b))}
+      only={(c) => ({ ...blank, downloadClients: [mine(c)] })}
+      merge={(b, form) => put(b, mine(form))}
+      blurb={
+        isDefault
+          ? 'The default client: indexers use it unless they name another.'
+          : 'Choose this client per indexer on the Indexers page, e.g. for trackers that must download through a VPN.'
+      }
+      extra={
+        !isNew && (
+          <Button
+            variant="subtle"
+            color="red"
+            size="xs"
+            loading={remove.isPending}
+            onClick={() => remove.mutate()}
+          >
+            Remove
+          </Button>
+        )
+      }
+      fields={(form, set) => {
+        const value = mine(form)
+        const edit = (patch: Partial<DownloadClientConn>) =>
+          set({ downloadClients: put(form, { ...value, ...patch }).downloadClients })
+        return (
+          <Stack gap="xs">
+            <TextInput
+              label="Name"
+              placeholder="qBittorrent"
+              value={value.name}
+              onChange={(e) => edit({ name: e.currentTarget.value })}
+            />
+            <TextInput
+              label="URL"
+              placeholder="http://localhost:8080"
+              value={value.url}
+              onChange={(e) => edit({ url: e.currentTarget.value })}
+            />
+            <Group grow>
+              <TextInput
+                label="Username"
+                value={value.username}
+                onChange={(e) => edit({ username: e.currentTarget.value })}
+              />
+              <PasswordInput
+                label="Password"
+                value={value.password}
+                onChange={(e) => edit({ password: e.currentTarget.value })}
+              />
+            </Group>
+            <TextInput
+              label="Category"
+              description="Sento only imports torrents in this category"
+              value={value.category}
+              onChange={(e) => edit({ category: e.currentTarget.value })}
+            />
+          </Stack>
+        )
+      }}
+    />
+  )
 }
 
 // StatusBadge renders one probe result. `draft` marks a test of unsaved
@@ -210,38 +390,40 @@ function StatusBadge({
   )
 }
 
-// ServiceCard is one connection: its live status, its own form, and its
-// own Test and Save — editing one service never touches the other.
-function ServiceCard({
-  section,
+// ConnectionDialog is one connection's settings: its form, a Test of the
+// values as typed, and Save. Saving writes only this connection; the rest
+// stays as it is on the server.
+function ConnectionDialog({
   title,
   blurb,
   service,
   saved,
   live,
-  probing,
   onSaved,
+  onClose,
+  alwaysSavable = false,
   isSet,
   same,
   only,
   merge,
   fields,
-  children,
+  extra,
 }: {
-  section: string
   title: string
-  blurb: string
+  blurb?: string
   service: string
   saved: ConnectionSettings
   live?: ConnectionTest
-  probing: boolean
   onSaved: () => void
+  onClose: () => void
+  // A connection being added has nothing saved to differ from.
+  alwaysSavable?: boolean
   isSet: (c: ConnectionSettings) => boolean
   same: (a: ConnectionSettings, b: ConnectionSettings) => boolean
   only: (c: ConnectionSettings) => ConnectionSettings
   merge: (base: ConnectionSettings, form: ConnectionSettings) => ConnectionSettings
   fields: (form: ConnectionSettings, set: (patch: Partial<ConnectionSettings>) => void) => ReactNode
-  children?: ReactNode
+  extra?: ReactNode
 }) {
   const [form, setForm] = useState<ConnectionSettings>(saved)
   const [draftTest, setDraftTest] = useState<ConnectionTest | null>(null)
@@ -250,14 +432,11 @@ function ServiceCard({
     setDraftTest(null)
   }
   const dirty = !same(form, saved)
-  useUnsavedChanges(dirty)
 
   const save = useMutation({
-    // Only this service's fields are written; the rest stays as saved.
     mutationFn: () => api.saveConnections(merge(saved, form)),
     onSuccess: () => {
       notify.ok(`${title} saved`)
-      setDraftTest(null)
       onSaved()
     },
     onError: notify.err,
@@ -271,58 +450,56 @@ function ServiceCard({
     },
     onError: notify.err,
   })
+  const busy = save.isPending || test.isPending
 
   return (
-    <Card withBorder padding="md" aria-label={title} component="section">
-      <Text size="xs" c="dimmed" tt="uppercase" fw={600} mb={4}>
-        {section}
-      </Text>
-      <Group justify="space-between" align="center" mb={4} wrap="wrap" gap="xs">
-        <Title order={5}>{title}</Title>
-        <StatusBadge result={live} configured={isSet(saved)} probing={probing} />
-      </Group>
-      <Text size="xs" c="dimmed" mb="sm">
-        {blurb}
-      </Text>
-      {live && !live.ok && isSet(saved) && (
-        <Alert color="red" mb="sm" py="xs">
-          <Text size="xs">{live.error}</Text>
-        </Alert>
-      )}
-
-      <fieldset disabled={save.isPending || test.isPending} className="formFields">{fields(form, set)}</fieldset>
-
-      <Group mt="md" gap="xs">
-        <Button
-          variant="default"
-          size="xs"
-          onClick={() => test.mutate()}
-          loading={test.isPending}
-          disabled={!isSet(form) || save.isPending}
-        >
-          Test
-        </Button>
-        <Button size="xs" onClick={() => save.mutate()} loading={save.isPending} disabled={!dirty || test.isPending}>
-          Save
-        </Button>
-        {dirty && (
-          <Button
-            variant="subtle"
-            size="xs"
-            disabled={save.isPending || test.isPending}
-            onClick={() => {
-              setForm(saved)
-              setDraftTest(null)
-            }}
-          >
-            Reset
-          </Button>
+    <EditorModal title={title} dirty={dirty} busy={busy} onClose={onClose}>
+      <Stack gap="sm">
+        {blurb && (
+          <Text size="sm" c="dimmed">
+            {blurb}
+          </Text>
         )}
-        {dirty && <Text size="xs" c="dimmed">Unsaved changes</Text>}
-        {draftTest && <StatusBadge result={draftTest} configured draft />}
-      </Group>
-      {children}
-    </Card>
+        {live && !live.ok && (
+          <Alert color="red" py="xs" title="Not reachable right now">
+            <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
+              {live.error}
+            </Text>
+          </Alert>
+        )}
+        <fieldset disabled={busy} className="formFields">
+          {fields(form, set)}
+        </fieldset>
+        <Group justify="space-between" mt="xs">
+          <Group gap="xs">
+            <Button
+              variant="default"
+              size="xs"
+              onClick={() => test.mutate()}
+              loading={test.isPending}
+              disabled={!isSet(form) || save.isPending}
+            >
+              Test
+            </Button>
+            {draftTest && <StatusBadge result={draftTest} configured draft />}
+          </Group>
+          <Group gap="xs">
+            {extra}
+            <Button variant="default" size="xs" onClick={onClose} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              size="xs"
+              onClick={() => save.mutate()}
+              loading={save.isPending}
+              disabled={test.isPending || (alwaysSavable ? !isSet(form) : !dirty)}
+            >
+              Save
+            </Button>
+          </Group>
+        </Group>
+      </Stack>
+    </EditorModal>
   )
 }
 

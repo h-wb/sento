@@ -51,9 +51,25 @@ func ParseAnchored(name string, ch Channel, titles []string) Result {
 	for i := bestSpan[0]; i < bestSpan[1] && i < len(runes); i++ {
 		runes[i] = ' '
 	}
+	// Leave a mark where the title ended, so the parse pass knows which
+	// words come after it.
+	if end := bestSpan[1] - 1; end >= bestSpan[0] && end < len(runes) {
+		runes[end] = anchorMark
+	}
 	parseInto(string(runes), ch, &res, bestTitle, titles)
 	return res
 }
+
+// anchorMark stands in for the last rune of a blanked-out title. A
+// private-use code point: it cannot occur in a real name.
+const anchorMark = '\uE000'
+
+// Words that end the title region once the title itself has been found:
+// after "<title> - Deluxe Edition", what follows describes the release
+// ("fixed blacks, reduced file size"), it is not more of a work's name.
+// Before such a word, extra text still means a different work ("<title>
+// Party - Deluxe Edition").
+var editionMarkers = []string{"deluxe", "omnibus", "digital", "colored", "coloured", "full color", "box set", "boxset", "edition"}
 
 // Edition/quality vocabulary that legitimately appears around a title
 // ("One Piece - Digital Colored Comics v05") and must not count as

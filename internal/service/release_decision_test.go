@@ -29,7 +29,9 @@ func TestReleaseClassificationAndDecisionEvidence(t *testing.T) {
 		{"language", "ONE PIECE v01 [French/German Digital]", "rejected.language", "blocked", 30},
 		{"unknown", "ONE PIECE 01 [English Digital]", "rejected.numbers_unknown", "blocked", 30},
 		{"novel", "ONE PIECE Light Novel v01 [English Digital]", "rejected.content_type", "blocked", 30},
-		{"pack", "ONE PIECE (2003-2026) [English Digital]", "rejected.pack_unverified", "blocked", 30},
+		{"pack", "ONE PIECE (2003-2026) [English Digital]", "rejected.pack_unverified", "review", 30},
+		{"bare pack", "ONE PIECE [English Digital]", "rejected.pack_unverified", "review", 30},
+		{"other work", "ONE PIECE Party [English Digital]", "rejected.series_match", "blocked", 30},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -301,5 +303,133 @@ func TestApplyCatalog(t *testing.T) {
 	}
 	if y, m, d, ok := splitDate("2005-04-05"); !ok || y != "2005" || m != "4" || d != "5" {
 		t.Fatalf("splitDate = %s %s %s %v", y, m, d, ok)
+	}
+}
+
+// One table decides edition fit: content facets must agree, packaging
+// facets never exclude and only pick the better home.
+func TestEditionFacets(t *testing.T) {
+	titles := []string{"NAUSICAA"}
+	parsed := func(name string) parse.Result { return parse.ParseAnchored(name, parse.ChannelTorrent, titles) }
+	edition := func(id int64, medium string, traits ...string) store.Collection {
+		return store.Collection{ID: id, Type: "volume", Language: "en", Medium: medium, EditionTraits: traits, ContentVariant: "unknown"}
+	}
+	standard, box, deluxeBox, omnibus := edition(1, "paperback", "standard"), edition(2, "paperback", "boxset"), edition(3, "hardcover", "boxset", "deluxe"), edition(4, "paperback", "omnibus")
+	for _, tc := range []struct {
+		name    string
+		release string
+		edition store.Collection
+		fits    bool
+	}{
+		{"a box of deluxe books takes deluxe volumes that never say box", "NAUSICAA - Deluxe Edition v01 (2012) [English]", deluxeBox, true},
+		{"deluxe is content: a plain volume is not a deluxe one", "NAUSICAA v01 [English]", deluxeBox, false},
+		{"and a deluxe volume is not a plain one", "NAUSICAA - Deluxe Edition v01 [English]", standard, false},
+		{"a box of standard books takes plain volumes", "NAUSICAA v01 [English]", box, true},
+		{"a release sold as a box fits the standard edition too", "NAUSICAA Box Set v01-07 [English]", standard, true},
+		{"omnibus is content", "NAUSICAA v01 [English]", omnibus, false},
+		{"medium is packaging", "NAUSICAA v01 (Digital) [English]", standard, true},
+		{"language still decides first", "NAUSICAA v01 [French]", standard, false},
+	} {
+		if got := editionCompatible(parsed(tc.release), tc.edition); got != tc.fits {
+			t.Errorf("%s: fits = %v, want %v", tc.name, got, tc.fits)
+		}
+	}
+	// Packaging picks between editions that both fit.
+	if best := preferByPackaging(parsed("NAUSICAA Box Set v01-07 [English]"), []store.Collection{standard, box}); len(best) != 1 || best[0].ID != box.ID {
+		t.Errorf("a release sold as a box should prefer the box set edition: %+v", best)
+	}
+	if best := preferByPackaging(parsed("NAUSICAA v01 [English]"), []store.Collection{standard, box}); len(best) != 2 {
+		t.Errorf("no packaging stated: both editions stay: %+v", best)
+	}
+	// A verified listing establishes the edition: the release need not
+	// restate it, but an explicit contradiction still loses.
+	if !editionFits(parsed("NAUSICAA v01"), deluxeBox, true) || editionFits(parsed("NAUSICAA Omnibus v01"), deluxeBox, true) {
+		t.Error("established edition: unstated facets should pass, contradictions should not")
+	}
+	// The table stays honest: every content facet can say "unspecified".
+	for _, f := range editionFacets {
+		if f.content && f.unspecified == nil {
+			t.Errorf("content facet %q has no unspecified rule", f.name)
+		}
+	}
+}
+
+// A catalog box set is one item; the books inside become volumes that
+// carry its ISBN and date, and the box itself stops being wanted.
+func TestSplitBox(t *testing.T) {
+	lib, st, id, _, _, _ := modelFixture(t)
+	ctx := context.Background()
+	cols, _ := st.ListCollections(ctx, id)
+	omni := collectionByName(t, cols, "Omnibus Edition", "en")
+	works, _ := st.ListWorks(ctx, omni.ID)
+	if len(works) != 1 {
+		t.Fatalf("fixture: %d works", len(works))
+	}
+	box := works[0]
+	box.ISBN, box.ReleaseDate = "9781421550640", "2012-11-06"
+	if _, err := st.SaveWork(ctx, id, box); err != nil {
+		t.Fatal(err)
+	}
+	// Collect the edition so "wanted" means something.
+	targets, _ := st.ListTargets(ctx, id)
+	var target store.DownloadTarget
+	for _, tg := range targets {
+		if tg.CollectionID == omni.ID {
+			target = tg
+		}
+	}
+	target.Monitored = true
+	if _, err := st.SaveTarget(ctx, id, target); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture's box is itself numbered 1: the split must not mistake it
+	// for the first volume.
+	volumes, err := lib.SplitBox(ctx, id, box.ID, 2)
+	if err != nil || len(volumes) != 2 {
+		t.Fatalf("split: %+v %v", volumes, err)
+	}
+	for i, v := range volumes {
+		if v.ID == box.ID || v.SequenceNum != int64(i+1)*100 || v.ISBN != box.ISBN || v.ReleaseDate != box.ReleaseDate || v.CountType != "main" {
+			t.Errorf("volume %d = %+v", i+1, v)
+		}
+	}
+	// Again, with one more: only the new volume is added.
+	if volumes, err = lib.SplitBox(ctx, id, box.ID, 3); err != nil || len(volumes) != 3 {
+		t.Fatalf("second split: %+v %v", volumes, err)
+	}
+	if all, _ := st.ListWorks(ctx, omni.ID); len(all) != 4 {
+		t.Fatalf("edition has %d books, want the box and 3 volumes", len(all))
+	}
+	rels, _ := st.Relations(ctx, id)
+	contains := 0
+	for _, r := range rels {
+		if r.FromID == box.ID && r.Relation == "contains" {
+			contains++
+		}
+	}
+	if contains != 3 {
+		t.Errorf("%d contains relations, want 3", contains)
+	}
+	slots, err := lib.TargetSlots(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wanted := 0
+	for _, sl := range slots[target.ID] {
+		if sl.Work.ID == box.ID && (sl.Monitored || sl.Wanted) {
+			t.Error("the box itself is still collected")
+		}
+		if sl.Wanted {
+			wanted++
+		}
+	}
+	if wanted != 3 {
+		t.Errorf("%d wanted books, want the 3 volumes", wanted)
+	}
+	if again, _ := st.GetWork(ctx, box.ID); again.CountType != "other" {
+		t.Errorf("the box is still counted as a %q book", again.CountType)
+	}
+	if _, err := lib.SplitBox(ctx, id, box.ID, 1); err == nil {
+		t.Error("a box of one volume was accepted")
 	}
 }

@@ -95,7 +95,7 @@ func TestHealthChecks(t *testing.T) {
 	for _, issue := range report.Issues {
 		got[issue.Message] = issue.Level
 	}
-	for _, message := range []string{"Indexer Broken is unavailable", "Indexer Gone is unavailable", "qBittorrent is unavailable"} {
+	for _, message := range []string{"Indexer Broken is unavailable", "Indexer Gone is unavailable", "Download client qBittorrent is unavailable"} {
 		if got[message] != HealthError {
 			t.Errorf("missing error %q in %+v", message, report.Issues)
 		}

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,9 +18,8 @@ import (
 // downloads grabs through qBittorrent. Search works without a download
 // client (qb nil = no grabs).
 type TorrentProvider struct {
-	entries  func(ctx context.Context) ([]IndexerEntry, error)
-	qbit     *qbittorrent.Client // nil = no grabs
-	category string
+	entries func(ctx context.Context) ([]IndexerEntry, error)
+	clients []TorrentClient // empty = no grabs; the first is the default
 	// sections caches each indexer's category names by endpoint URL: they
 	// only change when the indexer is reconfigured upstream.
 	sections sync.Map // string → map[int]string
@@ -65,10 +65,49 @@ func categoryLanguage(categories []int, names map[int]string) string {
 	return found
 }
 
-func NewTorrent(entries func(ctx context.Context) ([]IndexerEntry, error),
-	qb *qbittorrent.Client, category string,
-) Provider {
-	return &TorrentProvider{entries: entries, qbit: qb, category: category}
+// TorrentClient is one download client torrents can be sent to. Several
+// can be configured (say, one behind a VPN and one not); each indexer
+// entry names the one its releases go to.
+type TorrentClient struct {
+	ID       string
+	Name     string
+	Client   *qbittorrent.Client
+	Category string
+}
+
+func NewTorrent(entries func(ctx context.Context) ([]IndexerEntry, error), clients ...TorrentClient) Provider {
+	return &TorrentProvider{entries: entries, clients: clients}
+}
+
+// clientFor picks the download client for a release from the indexer it
+// came from: the client that indexer names, or the default (first) one.
+// A named client that no longer exists is an error, not a silent fallback:
+// sending a release to the wrong client is exactly what naming one is
+// meant to prevent.
+func (p *TorrentProvider) clientFor(ctx context.Context, siteID string) (TorrentClient, error) {
+	if len(p.clients) == 0 {
+		return TorrentClient{}, fmt.Errorf("no download client is configured")
+	}
+	wanted := ""
+	if p.entries == nil {
+		return p.clients[0], nil
+	}
+	if entries, err := p.entries(ctx); err == nil {
+		for _, e := range entries {
+			if e.EntryID() == siteID {
+				wanted = e.DownloadClient
+			}
+		}
+	}
+	if wanted == "" {
+		return p.clients[0], nil
+	}
+	for _, c := range p.clients {
+		if c.ID == wanted {
+			return c, nil
+		}
+	}
+	return TorrentClient{}, fmt.Errorf("the download client this indexer uses no longer exists; choose another on the Indexers page")
 }
 
 func (p *TorrentProvider) ID() string       { return "torrent" }
@@ -160,11 +199,12 @@ func (p *TorrentProvider) Test(ctx context.Context, e IndexerEntry) error {
 }
 
 func (p *TorrentProvider) Grab(ctx context.Context, c Candidate) (string, error) {
-	if p.qbit == nil {
-		return "", fmt.Errorf("qbittorrent is not configured")
-	}
 	if c.Torrent == nil {
 		return "", fmt.Errorf("torrent: candidate has no torrent ref")
+	}
+	dl, err := p.clientFor(ctx, c.SiteID)
+	if err != nil {
+		return "", err
 	}
 	// The external id must be the infohash: State and Fetch find the
 	// download in qBittorrent by it. Many indexers publish none in their
@@ -175,21 +215,32 @@ func (p *TorrentProvider) Grab(ctx context.Context, c Candidate) (string, error)
 		if hash == "" {
 			hash = magnetInfoHash(c.Torrent.MagnetURL)
 		}
-		if err := p.qbit.AddTorrent(ctx, c.Torrent.MagnetURL, p.category); err != nil {
+		if err := dl.Client.AddTorrent(ctx, c.Torrent.MagnetURL, dl.Category); err != nil {
 			return "", err
 		}
 	case c.Torrent.DownloadURL != "":
 		// Fetch the .torrent ourselves and upload the bytes: qBittorrent
 		// resolves URL adds asynchronously from its own network (where the
 		// indexer proxy may be unreachable) and drops failures silently.
-		data, err := fetchTorrentFile(ctx, c.Torrent.DownloadURL)
+		data, magnet, err := fetchTorrent(ctx, c.Torrent.DownloadURL)
 		if err != nil {
 			return "", err
+		}
+		if magnet != "" {
+			// The indexer has no .torrent for this release: its download
+			// link redirects to a magnet (Nyaa through Prowlarr does).
+			if hash == "" {
+				hash = magnetInfoHash(magnet)
+			}
+			if err := dl.Client.AddTorrent(ctx, magnet, dl.Category); err != nil {
+				return "", err
+			}
+			break
 		}
 		if hash == "" {
 			hash = torrentInfoHash(data)
 		}
-		if err := p.qbit.AddTorrentFile(ctx, c.Title+".torrent", data, p.category); err != nil {
+		if err := dl.Client.AddTorrentFile(ctx, c.Title+".torrent", data, dl.Category); err != nil {
 			return "", err
 		}
 	default:
@@ -203,52 +254,84 @@ func (p *TorrentProvider) Grab(ctx context.Context, c Candidate) (string, error)
 	return hash, nil
 }
 
+// magnetRedirect stops a download-link fetch that turns out to lead to a
+// magnet link, and carries the link out.
+type magnetRedirect string
+
+func (m magnetRedirect) Error() string { return "download link redirects to a magnet link" }
+
 // torrentClient fetches .torrent files. Bounded: a grab from a background
 // sweep carries no deadline of its own, and a stalled indexer must not
-// hang the sweep.
-var torrentClient = &http.Client{Timeout: 60 * time.Second}
+// hang the sweep. A redirect to a magnet link is not followed — HTTP
+// cannot fetch one — but reported.
+var torrentClient = &http.Client{
+	Timeout: 60 * time.Second,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme == "magnet" {
+			return magnetRedirect(req.URL.String())
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	},
+}
 
-func fetchTorrentFile(ctx context.Context, url string) ([]byte, error) {
+// fetchTorrent resolves an indexer's download link to what the client
+// should be given: the .torrent bytes, or the magnet link it redirects to.
+func fetchTorrent(ctx context.Context, url string) (data []byte, magnet string, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	resp, err := torrentClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("torrent: fetching .torrent: %w", err)
+		var m magnetRedirect
+		if errors.As(err, &m) {
+			return nil, string(m), nil
+		}
+		return nil, "", fmt.Errorf("torrent: fetching .torrent: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("torrent: .torrent fetch returned %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("torrent: .torrent fetch returned %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	data, err = io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if len(data) == 0 || data[0] != 'd' { // bencode dict
-		return nil, fmt.Errorf("torrent: response is not a .torrent file")
+		return nil, "", fmt.Errorf("torrent: response is not a .torrent file")
 	}
-	return data, nil
+	return data, "", nil
 }
 
-func (p *TorrentProvider) find(ctx context.Context, externalID string) (*qbittorrent.Torrent, error) {
-	if p.qbit == nil {
-		return nil, fmt.Errorf("qbittorrent is not configured")
+// find looks a download up by infohash in every client: the queue only
+// stores the hash, and a release may have gone to any of them. A client
+// that cannot be asked only matters when the torrent was not found
+// elsewhere — then the answer is unknown, not "gone".
+func (p *TorrentProvider) find(ctx context.Context, externalID string) (*qbittorrent.Torrent, *qbittorrent.Client, error) {
+	if len(p.clients) == 0 {
+		return nil, nil, fmt.Errorf("no download client is configured")
 	}
-	torrents, err := p.qbit.List(ctx, p.category)
-	if err != nil {
-		return nil, err
-	}
-	for _, t := range torrents {
-		if strings.EqualFold(t.Hash, externalID) {
-			return &t, nil
+	var unreachable error
+	for _, c := range p.clients {
+		torrents, err := c.Client.List(ctx, c.Category)
+		if err != nil {
+			unreachable = fmt.Errorf("%s: %w", c.Name, err)
+			continue
+		}
+		for _, t := range torrents {
+			if strings.EqualFold(t.Hash, externalID) {
+				return &t, c.Client, nil
+			}
 		}
 	}
-	return nil, nil
+	return nil, nil, unreachable
 }
 
 func (p *TorrentProvider) State(ctx context.Context, externalID string) (DownloadState, error) {
-	t, err := p.find(ctx, externalID)
+	t, _, err := p.find(ctx, externalID)
 	if err != nil {
 		return DownloadState{}, err
 	}
@@ -265,14 +348,14 @@ func (p *TorrentProvider) State(ctx context.Context, externalID string) (Downloa
 }
 
 func (p *TorrentProvider) Fetch(ctx context.Context, externalID string) (*Payload, error) {
-	t, err := p.find(ctx, externalID)
+	t, client, err := p.find(ctx, externalID)
 	if err != nil {
 		return nil, err
 	}
 	if t == nil {
-		return nil, fmt.Errorf("torrent %s not found in qbittorrent", externalID)
+		return nil, fmt.Errorf("torrent %s not found in any download client", externalID)
 	}
-	files, err := p.qbit.Files(ctx, t.Hash)
+	files, err := client.Files(ctx, t.Hash)
 	if err != nil {
 		return nil, err
 	}

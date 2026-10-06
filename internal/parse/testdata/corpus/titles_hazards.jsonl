@@ -11,3 +11,8 @@
 {"in":"One Piece (2024) (Digital)","ch":"torrent","titles":["ONE PIECE"],"want":{"anchored":true,"complete":false}}
 {"in":"One Piece Special","ch":"torrent","want":{"title":"one piece","extra":true}}
 {"in":"Special A v01","ch":"torrent","want":{"title":"special a","volumes":[[1,1]],"extra":true}}
+# After the title, an edition marker ends the title region: what follows is commentary on the release.
+{"in":"Nausicaa / Nausicaä of the Valley of the Wind - Deluxe Edition, fixed Blacks, reduced file size","ch":"torrent","titles":["Nausicaä of the Valley of the Wind","Nausicaa"],"want":{"anchored":true,"titleLeftover":"","edition":{"deluxe":true}}}
+{"in":"One Piece - Digital Colored Comics, cleaned and leveled v05","ch":"torrent","titles":["One Piece"],"want":{"anchored":true,"titleLeftover":"","volumes":[[5,5]]}}
+{"in":"One Piece Party - Deluxe Edition, fixed blacks","ch":"torrent","titles":["One Piece"],"want":{"anchored":true,"titleLeftover":"party"}}
+{"in":"Deluxe One Piece Party","ch":"torrent","titles":["One Piece"],"want":{"anchored":true,"titleLeftover":"party"}}

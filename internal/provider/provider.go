@@ -46,6 +46,9 @@ type IndexerEntry struct {
 	// Language is what the indexer's releases are in when nothing more
 	// specific says so ("fr" for a French tracker); empty = mixed.
 	Language string
+	// DownloadClient is the id of the client this indexer's releases are
+	// sent to; empty = the default client.
+	DownloadClient string
 	// Source entries: the host-side source id.
 	SourceID string
 }

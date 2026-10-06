@@ -403,6 +403,24 @@ func (s *Server) handleFileFacts(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleSplitBox turns one catalog item into the box of volumes it is.
+func (s *Server) handleSplitBox(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	uid, ok := pathID(w, r, "uid")
+	if !ok {
+		return
+	}
+	var body SplitBoxBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	volumes, err := s.library.SplitBox(r.Context(), id, uid, body.Count)
+	respondList(w, volumes, err)
+}
+
 // handlePlanOrganize previews what organising a series' files would
 // rename and re-tag under the current media settings.
 func (s *Server) handlePlanOrganize(w http.ResponseWriter, r *http.Request) {

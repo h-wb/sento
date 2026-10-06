@@ -3,18 +3,28 @@ import { expect, test } from '@playwright/test'
 // Connections holds the services Sento downloads through. The values
 // rendered here come from the backend's own config, so this is the
 // cheapest proof that config → API → UI is wired end to end.
-test('both services are shown with their live status', async ({ page }) => {
+test('each connection is a card with its live status, and its settings open in a dialog', async ({ page }, testInfo) => {
   await page.goto('/connections')
   await expect(page.getByRole('heading', { name: 'Connections', level: 2 })).toBeVisible()
 
-  const qbit = page.getByRole('region', { name: 'qBittorrent' })
-  await expect(qbit.getByRole('textbox', { name: 'URL' })).toHaveValue(/\/qbit$/)
   // Probed on load — nobody pressed Test.
+  const qbit = page.getByRole('button', { name: 'Edit qBittorrent' })
   await expect(qbit.getByText(/^Connected/)).toBeVisible()
+  await expect(qbit.getByText('Default', { exact: true })).toBeVisible()
+  const sidecar = page.getByRole('button', { name: 'Edit Extensions sidecar' })
+  await expect(sidecar.getByText(/^Connected · \d+ sources?/)).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('connections.png'), fullPage: true })
 
-  const host = page.getByRole('region', { name: 'Extensions sidecar' })
-  await expect(host.getByRole('textbox', { name: 'URL', exact: true })).toHaveValue(/\/host$/)
-  await expect(host.getByText(/^Connected · \d+ sources?/)).toBeVisible()
+  await qbit.click()
+  const dialog = page.getByRole('dialog', { name: 'qBittorrent' })
+  await expect(dialog.getByRole('textbox', { name: 'URL' })).toHaveValue(/\/qbit$/)
+  await page.screenshot({ path: testInfo.outputPath('connections-dialog.png') })
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+
+  await sidecar.click()
+  await expect(
+    page.getByRole('dialog', { name: 'Extensions sidecar' }).getByRole('textbox', { name: 'URL', exact: true }),
+  ).toHaveValue(/\/host$/)
 })
 
 test('the old /sources address still lands on the page', async ({ page }) => {
@@ -23,30 +33,30 @@ test('the old /sources address still lands on the page', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Connections', level: 2 })).toBeVisible()
 })
 
-// Each service tests and saves on its own: a wrong qBittorrent URL is
-// reported on that card, and the extensions sidecar is not touched by it.
-test('a service is tested on its own before saving', async ({ page }) => {
+// A connection is tested as typed before saving: a wrong URL is reported
+// in the dialog, and nothing is applied until Save.
+test('a connection is tested on its own before saving', async ({ page }) => {
   await page.goto('/connections')
-  const qbit = page.getByRole('region', { name: 'qBittorrent' })
-  const url = qbit.getByRole('textbox', { name: 'URL' })
-  const good = await url.inputValue()
+  const tile = page.getByRole('button', { name: 'Edit qBittorrent' })
+  await tile.click()
+  const dialog = page.getByRole('dialog', { name: 'qBittorrent' })
+  await expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled()
 
-  await url.fill('http://127.0.0.1:9/nothing-here')
-  await qbit.getByRole('button', { name: 'Test' }).click()
-  await expect(qbit.getByText('Unreachable')).toBeVisible()
-  // Still the saved, working connection: nothing was applied.
-  await expect(qbit.getByText(/^Connected/)).toBeVisible()
+  await dialog.getByRole('textbox', { name: 'URL' }).fill('http://127.0.0.1:9/nothing-here')
+  await dialog.getByRole('button', { name: 'Test' }).click()
+  await expect(dialog.getByText('Unreachable')).toBeVisible()
 
-  await qbit.getByRole('button', { name: 'Reset' }).click()
-  await expect(url).toHaveValue(good)
-  await expect(qbit.getByRole('button', { name: 'Save' })).toBeDisabled()
+  // Cancel drops the edits: what was saved is still what runs.
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(tile.getByText(/^Connected/)).toBeVisible()
 })
 
 // A repo that fails to load says so on its row — it used to be a bare URL
 // whose only symptom was an empty extension list somewhere else.
 test('a failing extension repo is reported on its row', async ({ page }) => {
   await page.goto('/connections')
-  const host = page.getByRole('region', { name: 'Extensions sidecar' })
+  const host = page.getByRole('region', { name: 'Extension sources' })
   await expect(host.getByText(/Add a repository to see available sources/)).toBeVisible()
 
   await host.getByRole('textbox', { name: 'Extension repo URL' }).fill('https://broken.example/index.min.json')
@@ -73,4 +83,42 @@ test('system status shows the backend version and scheduled tasks', async ({ pag
   await page.goto('/system')
   await expect(page.getByRole('heading', { name: 'System', level: 2 })).toBeVisible()
   await expect(page.getByText(/dev|\d+\.\d+/).first()).toBeVisible()
+})
+
+// A second download client can be added, shows its own status, becomes a
+// choice on torrent indexers, and can be removed.
+test('an additional download client is added, offered to indexers, and removed', async ({ page }) => {
+  await page.goto('/connections')
+  await page.getByRole('button', { name: 'Edit qBittorrent' }).click()
+  const url = await page.getByRole('dialog').getByRole('textbox', { name: 'URL' }).inputValue()
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+
+  await page.getByRole('button', { name: 'Add download client' }).click()
+  const add = page.getByRole('dialog', { name: 'Add download client' })
+  await expect(add.getByRole('button', { name: 'Save' })).toBeDisabled() // no URL yet
+  await add.getByRole('textbox', { name: 'Name', exact: true }).fill('VPN')
+  await add.getByRole('textbox', { name: 'URL' }).fill(url)
+  await add.getByRole('button', { name: 'Test' }).click()
+  await expect(add.getByText(/^Reachable/)).toBeVisible()
+  await add.getByRole('button', { name: 'Save' }).click()
+
+  const vpn = page.getByRole('button', { name: 'Edit VPN' })
+  await expect(vpn.getByText(/^Connected/)).toBeVisible()
+  await expect(vpn.getByText('Default', { exact: true })).toHaveCount(0)
+
+  // Torrent indexers can now say which client their releases go to.
+  await page.goto('/indexers')
+  await page.getByRole('button', { name: 'Add indexer' }).click()
+  const modal = page.getByRole('dialog')
+  await modal.getByLabel('Download client').first().click()
+  await expect(page.getByRole('option', { name: 'Default (qBittorrent)' })).toBeVisible()
+  await page.getByRole('option', { name: 'VPN', exact: true }).click()
+  await modal.getByRole('button', { name: 'Cancel' }).click()
+
+  // Removed from its dialog; the default client is untouched.
+  await page.goto('/connections')
+  await page.getByRole('button', { name: 'Edit VPN' }).click()
+  await page.getByRole('dialog', { name: 'VPN' }).getByRole('button', { name: 'Remove' }).click()
+  await expect(page.getByRole('button', { name: 'Edit VPN' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Edit qBittorrent' }).getByText(/^Connected/)).toBeVisible()
 })

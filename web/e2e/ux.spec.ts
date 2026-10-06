@@ -83,17 +83,16 @@ test('activity shows a failed request and lets the user retry', async ({ page })
 })
 
 test('settings navigation protects edits and supports staying or discarding', async ({ page }) => {
-  await page.goto('/connections')
-  const input = page
-    .getByRole('region', { name: 'qBittorrent' })
-    .getByRole('textbox', { name: 'URL' })
-  await expect(input).toHaveValue(/qbit$/)
-  await input.fill('http://changed.example:8080')
+  // Media keeps its form on the page (Connections edits in dialogs).
+  await page.goto('/media')
+  const input = page.getByRole('textbox', { name: 'Volumes top folder' })
+  await expect(input).toHaveValue('')
+  await input.fill('Volumes')
   await page.getByRole('link', { name: 'Library', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Discard unsaved changes?' })
   await expect(dialog).toBeVisible()
   await dialog.getByRole('button', { name: 'Keep editing' }).click()
-  await expect(input).toHaveValue('http://changed.example:8080')
+  await expect(input).toHaveValue('Volumes')
   await page.getByRole('link', { name: 'Library', exact: true }).click()
   await dialog.getByRole('button', { name: 'Discard changes' }).click()
   await expect(page.getByRole('heading', { name: /^Library/, level: 2 })).toBeVisible()

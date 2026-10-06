@@ -68,6 +68,7 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Put("/units/{uid}", s.handleSaveUnit)
 			r.Delete("/units/{uid}", s.handleDeleteUnit)
 			r.Post("/units/{uid}/catalog-reset", s.handleResetUnit)
+			r.Post("/units/{uid}/split", s.handleSplitBox)
 			r.Put("/collections/{cid}/metadata", s.handleEditCollectionMetadata)
 			r.Post("/collections/{cid}/catalog-link", s.handleCatalogLink)
 			r.Get("/coverage", s.handleCoverage)

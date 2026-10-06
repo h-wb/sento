@@ -79,6 +79,12 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 		infos = append(infos, info)
 	}
 
+	// Where the anchored title ended, when it sits in the free text.
+	anchorEnd := strings.IndexRune(freeText, anchorMark)
+	if anchorEnd >= 0 {
+		freeText = strings.Replace(freeText, string(anchorMark), strings.Repeat(" ", len(string(anchorMark))), 1)
+	}
+
 	// Free text: season, keywords, numbers, then the title.
 	titleEnd := len(freeText)
 
@@ -153,6 +159,13 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 	// Title.
 	if anchoredTitle != "" {
 		res.Title = anchoredTitle
+		if anchorEnd >= 0 && anchorEnd < len(lowerFree) {
+			for _, marker := range editionMarkers {
+				if i := indexWord(lowerFree[anchorEnd:], marker); i >= 0 && anchorEnd+i < titleEnd {
+					titleEnd = anchorEnd + i
+				}
+			}
+		}
 		leftover := strings.TrimSpace(freeText[:max(titleEnd, 0)])
 		res.TitleLeftover = leftoverWords(leftover, knownTitles)
 		if res.TitleLeftover != "" {

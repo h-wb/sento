@@ -53,7 +53,7 @@ const reasonNames: Record<string, string> = {
   'rejected.language_unknown': 'Language not confirmed',
   'rejected.content_type': 'Not manga',
   'rejected.numbers_unknown': 'No book number',
-  'rejected.pack_unverified': 'Unverified pack',
+  'rejected.pack_unverified': 'Contents not confirmed',
   'rejected.no_coverage': 'Not needed',
   'rejected.unit_ambiguous': 'Ambiguous book',
   'rejected.blocklisted': 'On your blocklist',

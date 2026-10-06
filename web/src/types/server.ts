@@ -192,6 +192,13 @@ export interface NamingPreview {
   chapterFile: string;
 }
 /**
+ * SplitBoxBody is POST /series/{id}/units/{uid}/split: how many volumes
+ * the box holds.
+ */
+export interface SplitBoxBody {
+  count: number /* int */;
+}
+/**
  * OrganizeBody is POST /series/{id}/files/organize: which of the
  * previewed changes to apply.
  */

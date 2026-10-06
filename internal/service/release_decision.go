@@ -76,7 +76,7 @@ func (c *ReleaseCandidate) explain() {
 		"rejected.edition_ambiguous": "This release also fits another edition you collect. Confirm it belongs to this one.",
 		"rejected.no_coverage":       "No books in this release need a download in the current selection.",
 		"rejected.numbers_unknown":   "No confirmed volume or chapter numbers were found.",
-		"rejected.pack_unverified":   "A date range alone cannot confirm a complete series pack.",
+		"rejected.pack_unverified":   "Nothing in the name says which books this pack holds. Confirm it is the whole edition; the import checks what is inside.",
 		"rejected.blocklisted":       "This release is on your blocklist.",
 		"rejected.language":          "The stated language does not match this edition.",
 		"rejected.language_unknown":  "This version requires a confirmed language.",

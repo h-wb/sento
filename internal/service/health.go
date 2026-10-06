@@ -133,7 +133,7 @@ func (h *HealthService) collect(ctx context.Context) []HealthIssue {
 	cs := h.conns.Load(ctx)
 	probes := []func(context.Context) []HealthIssue{
 		func(ctx context.Context) []HealthIssue {
-			return checkDownloadClient(ctx, cs.QBittorrent, len(torznabs) > 0)
+			return checkDownloadClients(ctx, cs.DownloadClients, torznabs)
 		},
 		func(ctx context.Context) []HealthIssue { return checkSources(ctx, h.conns.Host(), sources) },
 	}
@@ -187,9 +187,13 @@ func checkLibraryPath(path string) *HealthIssue {
 	return nil
 }
 
-func checkDownloadClient(ctx context.Context, qb QBittorrentConn, needed bool) []HealthIssue {
-	if qb.URL == "" {
-		if !needed {
+// checkDownloadClients verifies every download client answers, that
+// there is one when torrent indexers need it, and that each indexer's
+// chosen client still exists.
+func checkDownloadClients(ctx context.Context, clients []DownloadClientConn, torznabs []store.Indexer) []HealthIssue {
+	clients = normalizeClients(clients)
+	if len(clients) == 0 {
+		if len(torznabs) == 0 {
 			return nil
 		}
 		return []HealthIssue{{
@@ -197,13 +201,38 @@ func checkDownloadClient(ctx context.Context, qb QBittorrentConn, needed bool) [
 			Message: "No download client is configured, so torrent releases cannot be downloaded",
 		}}
 	}
-	if err := qbittorrent.New(qb.URL, qb.Username, qb.Password).Ping(ctx); err != nil {
-		return []HealthIssue{{
-			Source: "download-client", Level: HealthError, Link: "/connections",
-			Message: "qBittorrent is unavailable", Detail: err.Error(),
-		}}
+	found := make([][]HealthIssue, len(clients))
+	var wg sync.WaitGroup
+	for i, dc := range clients {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := qbittorrent.New(dc.URL, dc.Username, dc.Password).Ping(ctx); err != nil {
+				found[i] = []HealthIssue{{
+					Source: "download-client", Level: HealthError, Link: "/connections",
+					Message: fmt.Sprintf("Download client %s is unavailable", dc.Name), Detail: err.Error(),
+				}}
+			}
+		}()
 	}
-	return nil
+	wg.Wait()
+	var issues []HealthIssue
+	for _, f := range found {
+		issues = append(issues, f...)
+	}
+	known := map[string]bool{"": true}
+	for _, dc := range clients {
+		known[dc.ID] = true
+	}
+	for _, ix := range torznabs {
+		if e, err := parseEntry(ix); err == nil && !known[e.DownloadClient] {
+			issues = append(issues, HealthIssue{
+				Source: "indexer", Level: HealthError, Link: "/indexers",
+				Message: fmt.Sprintf("Indexer %s uses a download client that no longer exists", ix.Name),
+			})
+		}
+	}
+	return issues
 }
 
 // checkSources verifies the extensions sidecar answers and still carries the
