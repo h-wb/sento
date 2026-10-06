@@ -82,16 +82,56 @@ languages, 497 records, 19 sources answering. See `docs/domain/parsing.md`.
       sources, emoji-prefixed `🔒 Chapter 24.1`, decimal `Chapter 0.1` /
       `1058.5`, German dual-dash `Ch. 1 - One Piece - Der Geerbte Wille`.
 
+## Applied (maintenance pass, 2026-10)
+
+A read-through of the whole backend plus the build and CI; details are in
+the commit messages.
+
+- [x] **Data loss fixed**: re-importing a torrent payload truncated it.
+      The library file was already a hardlink to the payload, the fallback
+      copy opened it with `O_TRUNC`, and both names went to zero bytes.
+      `HardlinkOrCopy`/`CopyFile` now replace via temp file + rename.
+- [x] Imports are repeatable (`AddFile` upserts on path) and queue passes
+      are serialized (tick, run-now and `POST /queue/process` could
+      double-import).
+- [x] Torrent grabs are keyed by the real infohash (derived from the
+      `.torrent` or magnet) — indexers publishing none were untrackable —
+      and `.torrent` uploads survive an expired qBittorrent session.
+- [x] MangaBaka 429/5xx are retried with `Retry-After`; merge chains are
+      bounded.
+- [x] Scheduler cadences persist across restarts; tick panics are
+      contained.
+- [x] `profile.matchRegexp` compiles each pattern once (was a lead here).
+- [x] The image points library/downloads at its volumes; a `sento-host`
+      image and a compose file that matches the code replace the stale
+      Suwayomi one (was a lead here).
+
 ## Leads
 
-- [ ] `profile.matchRegexp` (internal/profile/profile.go) compiles the
-      regex on every call — same class as the `isPureRangeSegment` smell,
-      but on the funnel's HOT path: a search scores ~100 candidates × N
-      formats × M regex conditions, recompiling the same user patterns
-      thousands of times. Patterns are user-defined (dynamic) so the fix is
-      a memoizing cache (`sync.Map` pattern→*regexp.Regexp`), not a package
-      var. Defer until the funnel (session 6) confirms it's hot; safe,
-      self-contained when done (session 2)
+- [ ] **No authentication.** `server.api_key` is parsed but nothing
+      enforces it (startup now warns). An API key alone does not protect
+      a browser UI — whoever loads the page gets the key — so this needs
+      a decision: forms/basic auth in Sento (Sonarr's model) or
+      documented reliance on a reverse proxy. Until then the settings
+      endpoints return stored credentials in clear to anyone who can
+      reach the port (maintenance pass)
+- [ ] **Blocklist misses hash-less indexers.** A queue item is now keyed
+      by infohash, but a feed candidate without one is still keyed by its
+      guid, so a ban recorded from the queue does not match that release
+      on the next search. Fix: store the candidate's feed key on the queue
+      item (migration in both dialects) and blocklist under both
+      (maintenance pass)
+- [ ] `queue_items` and `decisions` are never pruned; `ListQueueItems`
+      caps at 200 newest, so a very large backlog is processed newest
+      first. Add retention for finished items (maintenance pass)
+- [ ] Source staging dir keeps the CBZ of a failed/blocklisted item and
+      any `.page-*`/`.part-*` temp files from a crash; nothing sweeps it
+      (maintenance pass)
+- [ ] `web/src/pages/SeriesPage.tsx` is ~1900 lines; the web app has e2e
+      coverage of navigation and add-series but none of the series page's
+      search/grab flows, which is what a split would need first
+      (maintenance pass)
+
 - [ ] **`match` fuzzy false-positive tradeoff** (known limitation, not a
       bug). `cmd/matchcheck` over ~1148 real source titles: self-match
       flawless (0 failures), order tolerance perfect (`Attack on Titan` ≡
@@ -138,7 +178,3 @@ languages, 497 records, 19 sources answering. See `docs/domain/parsing.md`.
       tomo-PT etc. to the marker alternations. Add corpus cases either
       way so the choice is explicit. Ties to D10 single-language design
       (session 1)
-- [ ] `deploy/docker-compose.yml` still runs a pinned Suwayomi server and
-      README's status paragraph says "Suwayomi-powered", but the code talks
-      to the sento-host sidecar (`host/`) — deploy/README look stale
-      relative to the code (pre-tour finding)
