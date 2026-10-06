@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/h-wb/sento/internal/mediafile"
@@ -27,6 +28,11 @@ type Importer struct {
 	registry     *provider.Registry
 	libraryRoot  string
 	pathMappings []string // "remote=local" download-client path translations
+
+	// mu serializes queue passes: the scheduler tick, the System "run now"
+	// button and POST /queue/process can overlap, and two passes over the
+	// same finished item would import it twice.
+	mu sync.Mutex
 }
 
 func NewImporter(st *store.Store, registry *provider.Registry, libraryRoot string, pathMappings []string) *Importer {
@@ -34,15 +40,18 @@ func NewImporter(st *store.Store, registry *provider.Registry, libraryRoot strin
 }
 
 // mapPath translates a download-client path to a local one (longest
-// matching "remote=local" prefix wins; unmapped paths pass through).
+// matching "remote=local" prefix wins; unmapped paths pass through). A
+// mapping matches whole path components only: "/data" maps "/data/x" but
+// leaves "/database" alone.
 func (im *Importer) mapPath(p string) string {
 	bestRemote, bestLocal := "", ""
 	for _, m := range im.pathMappings {
 		remote, local, ok := strings.Cut(m, "=")
-		if !ok {
+		remote = strings.TrimRight(remote, "/")
+		if !ok || remote == "" {
 			continue
 		}
-		if strings.HasPrefix(p, remote) && len(remote) > len(bestRemote) {
+		if (p == remote || strings.HasPrefix(p, remote+"/")) && len(remote) > len(bestRemote) {
 			bestRemote, bestLocal = remote, local
 		}
 	}
@@ -55,12 +64,18 @@ func (im *Importer) mapPath(p string) string {
 // ProcessQueue advances all active queue items. Returns the number of
 // items imported this pass.
 func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
 	items, err := im.store.ListQueueItems(ctx, true)
 	if err != nil {
 		return 0, err
 	}
 	imported := 0
 	for _, item := range items {
+		if ctx.Err() != nil {
+			return imported, ctx.Err() // shutting down: leave the rest queued
+		}
 		prov := im.registry.ForProtocol(item.Protocol)
 		if prov == nil {
 			continue // provider currently unconfigured: leave the item queued

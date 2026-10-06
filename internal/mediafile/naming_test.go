@@ -37,4 +37,13 @@ func TestRender(t *testing.T) {
 	if got != "Fatestay night UBW" {
 		t.Errorf("sanitize: %q", got)
 	}
+
+	// Every token is a path component: a custom collection's free-text
+	// language must not be able to climb out of the series folder.
+	got = Render("{Series Title} [{lang}].cbz", NameTokens{
+		SeriesTitle: "X", Lang: "../../etc", Volume: -1, Chapter: -1,
+	})
+	if got != "X [etc].cbz" {
+		t.Errorf("lang traversal: %q", got)
+	}
 }

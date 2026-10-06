@@ -61,11 +61,11 @@ func Render(template string, t NameTokens) string {
 		case "edition":
 			return sanitize(t.Edition)
 		case "lang":
-			return t.Lang
+			return sanitize(t.Lang)
 		case "group":
 			return sanitize(t.Group)
 		case "isbn":
-			return t.ISBN
+			return sanitize(t.ISBN)
 		case "year":
 			if t.Year == 0 {
 				return ""

@@ -475,13 +475,21 @@ func (s *Store) DeleteCustomCollection(ctx context.Context, seriesID, collection
 	if !col.Custom {
 		return apperr.Invalidf("only custom collections can be deleted")
 	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
 	for _, table := range []string{"file_slot_links", "slot_overrides"} {
-		if _, err := s.db.ExecContext(ctx, s.q(`DELETE FROM `+table+`
+		if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM `+table+`
 			WHERE ledger = ? AND collection_id = ?`), col.Type, collectionID); err != nil {
 			return err
 		}
 	}
-	return s.touch(ctx, `DELETE FROM collections WHERE id = ?`, collectionID)
+	if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM collections WHERE id = ?`), collectionID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) ListWorks(ctx context.Context, collectionID int64) ([]Work, error) {
@@ -507,6 +515,10 @@ func (s *Store) SetCollectionLanguage(ctx context.Context, seriesID, collectionI
 
 // --- files & links ---
 
+// AddFile records a library file and its slot links. Re-adding a known
+// path updates the row in place (paths are unique) and adds any new links,
+// so an import retried after a partial failure converges instead of
+// tripping over what the first attempt already recorded.
 func (s *Store) AddFile(ctx context.Context, f File, parse any, links []SlotLink) (int64, error) {
 	parseJSON, _ := json.Marshal(parse)
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -518,7 +530,14 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []SlotLink
 	var fileID int64
 	if err := tx.QueryRowContext(ctx, s.q(`
 		INSERT INTO files (series_id, path, size, parse_json, provenance, unrequested)
-		VALUES (?,?,?,?,?,?) RETURNING id`),
+		VALUES (?,?,?,?,?,?)
+		ON CONFLICT(path) DO UPDATE SET
+			series_id = excluded.series_id,
+			size = excluded.size,
+			parse_json = excluded.parse_json,
+			provenance = excluded.provenance,
+			unrequested = excluded.unrequested
+		RETURNING id`),
 		f.SeriesID, f.Path, f.Size, string(parseJSON), f.Provenance, f.Unrequested).Scan(&fileID); err != nil {
 		return 0, err
 	}
