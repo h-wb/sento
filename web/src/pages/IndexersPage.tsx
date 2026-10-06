@@ -244,8 +244,9 @@ function IndexerModal({
   // the host source, so entries of the same source share them.
   const [prefValues, setPrefValues] = useState<Record<string, unknown>>({})
 
-  // Extension catalog: the source flow starts from the extension — adding
-  // its source as an indexer is what installs it.
+  // Extension catalog: the source flow starts from the extension. Its
+  // sources come with the catalog, so nothing is installed until the
+  // indexer is actually added.
   const extensions = useQuery({
     queryKey: ['extensions'],
     queryFn: api.extensions,
@@ -265,6 +266,15 @@ function IndexerModal({
     }
   }
 
+  const offerSources = (srcs: Source[], p: string) => {
+    setExtSources(srcs)
+    if (srcs.length === 1) {
+      setSource({ sourceId: srcs[0].id, pkgName: p })
+      suggestName(`${srcs[0].name} (${srcs[0].lang})`)
+    }
+  }
+  // Fallback for repos whose index does not declare sources: the only way
+  // to learn them is to install the extension and ask it.
   const loadSources = useMutation({
     mutationFn: async (p: string) => {
       const ext = (extensions.data ?? []).find((e) => e.pkgName === p)
@@ -272,14 +282,17 @@ function IndexerModal({
       return api.extensionSources(p)
     },
     onSuccess: (srcs, p) => {
-      setExtSources(srcs)
-      if (srcs.length === 1) {
-        setSource({ sourceId: srcs[0].id, pkgName: p })
-        suggestName(`${srcs[0].name} (${srcs[0].lang})`)
-      }
+      setInstalledNow(true)
+      offerSources(srcs, p)
     },
     onError: notify.err,
   })
+  // The source's own settings can only be read from an installed
+  // extension. When adding installs it, the modal stays open on those
+  // settings instead of closing (`configuring`).
+  const [installedNow, setInstalledNow] = useState(false)
+  const [configuring, setConfiguring] = useState(false)
+  const extInstalled = isEdit || installedNow || !!pickedExt?.installedVersion
 
   // Prowlarr browse assist for torznab entries.
   const [browse, setBrowse] = useState<{ url: string; apiKey: string } | null>(null)
@@ -304,6 +317,11 @@ function IndexerModal({
         priority: initial?.priority ?? 0,
         settings: protocol === 'torznab' ? torznab : source,
       }
+      const installs = protocol === 'source' && !extInstalled
+      if (installs) {
+        await api.installExtension(pkg)
+        setInstalledNow(true)
+      }
       if (isEdit) {
         await api.updateIndexer(initial.id, body)
       } else if (createdId.current === null) {
@@ -312,16 +330,34 @@ function IndexerModal({
       for (const [key, value] of Object.entries(prefValues)) {
         await api.setSourcePreference(source.sourceId, key, value)
       }
+      // Freshly installed: its settings were not visible until now. Stay
+      // open on them if it has any (a login is often required to search).
+      if (installs) {
+        const prefs = await api.sourcePreferences(source.sourceId).catch(() => [])
+        return prefs.length > 0
+      }
+      return false
     },
-    onSuccess: () => {
-      notify.ok(isEdit ? 'Indexer updated' : 'Indexer added')
+    onSuccess: (hasSettings) => {
+      if (hasSettings) {
+        notify.ok('Indexer added — this source has settings of its own')
+        setConfiguring(true)
+        return
+      }
+      notify.ok(isEdit ? 'Indexer updated' : configuring ? 'Settings saved' : 'Indexer added')
       onSaved()
     },
     onError: notify.err,
   })
 
   return (
-    <Modal opened onClose={onClose} title={isEdit ? `Edit ${initial.name}` : 'Add indexer'} size="lg">
+    <Modal
+      opened
+      // Once the entry exists, closing by any route has to refresh the list.
+      onClose={configuring ? onSaved : onClose}
+      title={isEdit ? `Edit ${initial.name}` : configuring ? `${name} — settings` : 'Add indexer'}
+      size="lg"
+    >
       <Stack gap="sm">
         {!isEdit && (
           <SegmentedControl
@@ -422,14 +458,19 @@ function IndexerModal({
             indexer instead.
           </Text>
         )}
-        {protocol === 'source' && !isEdit && (
+        {protocol === 'source' && configuring && (
+          <Text size="xs" c="dimmed">
+            {name} is added. Set what this source needs below, or close to keep its defaults.
+          </Text>
+        )}
+        {protocol === 'source' && !isEdit && !configuring && (
           <>
             <Select
               label="Extension"
               description={
                 extensions.isPending
                   ? 'Loading the extension catalog…'
-                  : `${(extensions.data ?? []).length} extensions from your repos — picking one installs it`
+                  : `${(extensions.data ?? []).length} extensions from your repos — installed when you add the indexer`
               }
               placeholder="Search extensions…"
               data={(extensions.data ?? []).map((e) => ({
@@ -446,7 +487,10 @@ function IndexerModal({
                 setExtSources(null)
                 setSource({ sourceId: '' })
                 setPrefValues({})
-                loadSources.mutate(v)
+                setInstalledNow(false)
+                const declared = (extensions.data ?? []).find((e) => e.pkgName === v)?.sources
+                if (declared && declared.length > 0) offerSources(declared, v)
+                else loadSources.mutate(v)
               }}
             />
             {loadSources.isPending && (
@@ -479,7 +523,13 @@ function IndexerModal({
             )}
           </>
         )}
-        {protocol === 'source' && source.sourceId && (
+        {protocol === 'source' && source.sourceId && !extInstalled && (
+          <Text size="xs" c="dimmed">
+            Adding installs {pickedExt?.name ?? 'the extension'} on the host. If the source has
+            settings of its own (login, mirrors…), they are offered right after.
+          </Text>
+        )}
+        {protocol === 'source' && source.sourceId && extInstalled && (
           <>
             <Divider label="Source settings" labelPosition="left" mt="xs" />
             <Text size="xs" c="dimmed" mt={-6}>
@@ -495,15 +545,15 @@ function IndexerModal({
         )}
 
         <Group justify="flex-end" mt="xs">
-          <Button variant="default" onClick={onClose}>
-            Cancel
+          <Button variant="default" onClick={configuring ? onSaved : onClose}>
+            {configuring ? 'Close' : 'Cancel'}
           </Button>
           <Button
             loading={save.isPending}
             disabled={!name.trim() || (protocol === 'source' && !isEdit && !source.sourceId)}
             onClick={() => save.mutate()}
           >
-            {isEdit ? 'Save' : 'Add'}
+            {isEdit ? 'Save' : configuring ? 'Save settings' : 'Add'}
           </Button>
         </Group>
       </Stack>

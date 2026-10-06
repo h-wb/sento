@@ -222,9 +222,17 @@ func mountSourceHost(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("GET /host/api/v1/sources", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, []map[string]any{
+		sources := []map[string]any{
 			{"id": "stub-en-1", "name": "Stub Source", "lang": "en", "nsfw": false},
-		})
+		}
+		hostState.Lock()
+		if hostState.installed["eu.kanade.tachiyomi.extension.all.lazysource"] {
+			sources = append(sources,
+				map[string]any{"id": "lazy-en-1", "name": "Lazy Source", "lang": "en", "nsfw": false},
+				map[string]any{"id": "lazy-fr-1", "name": "Lazy Source", "lang": "fr", "nsfw": false})
+		}
+		hostState.Unlock()
+		writeJSON(w, sources)
 	})
 
 	mux.HandleFunc("GET /host/api/v1/sources/{sid}/search", func(w http.ResponseWriter, _ *http.Request) {
@@ -291,11 +299,28 @@ func mountSourceHost(mux *http.ServeMux) {
 		ext := map[string]any{
 			"pkgName": pkg, "name": "Stub Source", "lang": "en", "nsfw": false,
 			"availableVersion": "1.4.0",
+			"sources": []map[string]any{
+				{"id": "stub-en-1", "name": "Stub Source", "lang": "en", "nsfw": false},
+			},
 		}
 		if hostState.installed[pkg] {
 			ext["installedVersion"] = "1.4.0"
 		}
-		writeJSON(w, []map[string]any{ext})
+		// A second, never-installed extension with two sources: the Add
+		// Indexer flow must offer them without installing anything.
+		const lazy = "eu.kanade.tachiyomi.extension.all.lazysource"
+		other := map[string]any{
+			"pkgName": lazy, "name": "Lazy Source", "lang": "all", "nsfw": false,
+			"availableVersion": "1.4.2",
+			"sources": []map[string]any{
+				{"id": "lazy-en-1", "name": "Lazy Source", "lang": "en", "nsfw": false},
+				{"id": "lazy-fr-1", "name": "Lazy Source", "lang": "fr", "nsfw": false},
+			},
+		}
+		if hostState.installed[lazy] {
+			other["installedVersion"] = "1.4.2"
+		}
+		writeJSON(w, []map[string]any{ext, other})
 	})
 	mux.HandleFunc("GET /host/api/v1/extensions/{pkg}/sources", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, []map[string]any{

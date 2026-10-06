@@ -54,6 +54,11 @@ data class ExtensionDto(
     val installedVersion: String? = null,
     val availableVersion: String? = null,
     val hasUpdate: Boolean = false,
+    // The sources this extension provides, as its repo index declares
+    // them — known without installing anything. Empty when the index does
+    // not say (or the extension is installed but no longer listed):
+    // /extensions/{pkg}/sources answers for installed ones.
+    val sources: List<SourceDto> = emptyList(),
 )
 
 @Serializable
@@ -221,6 +226,10 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
                     installedVersion = inst?.versionName,
                     availableVersion = ext.versionName,
                     hasUpdate = inst != null && ext.versionCode > inst.versionCode,
+                    sources =
+                        ext.sources.map {
+                            SourceDto(it.id.toString(), it.name, it.lang, it.contentWarning != ContentWarning.SAFE)
+                        },
                 )
         }
         for ((pkg, inst) in installed) {

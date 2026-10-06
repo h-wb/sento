@@ -51,6 +51,12 @@ type ExtensionInfo struct {
 	InstalledVersion string `json:"installedVersion,omitempty"`
 	AvailableVersion string `json:"availableVersion,omitempty"`
 	HasUpdate        bool   `json:"hasUpdate,omitempty"`
+	// Sources is what the extension provides according to its repo index
+	// — known before it is installed, so a source can be picked first and
+	// the extension installed only once an indexer entry needs it. Empty
+	// when the index does not declare them; ExtensionSources then answers
+	// for an installed extension.
+	Sources []Source `json:"sources,omitempty"`
 }
 
 // ExtensionManager is an optional host capability: the sento-host sidecar

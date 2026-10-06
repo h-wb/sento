@@ -115,6 +115,21 @@ the commit messages.
       documented reliance on a reverse proxy. Until then the settings
       endpoints return stored credentials in clear to anyone who can
       reach the port (maintenance pass)
+- [ ] **Extensions are trusted on the repo URL alone.** The store index
+      publishes a signing-key fingerprint, and checking an APK against it
+      looks like an easy win — it is not, for two reasons found while
+      trying. (1) The code that runs is the publisher-built *jar* the
+      index points at, which is unsigned and has no hash in the index
+      (the sidecar prefers it because dex2jar output of newer extensions
+      fails bytecode verification); a verified APK next to it proves
+      nothing about the jar. (2) The fingerprint comes from the same
+      index as the URLs, so it only helps against a repo that changes
+      hands *after* being added — which needs the fingerprint pinned on
+      first use in Sento, and still not the jar. Real protection needs
+      upstream to publish jar digests (or a dex2jar that survives
+      verification, to run code derived from the signed APK). Until then
+      the honest position is: adding a repo URL means running that repo's
+      code (maintenance pass)
 - [ ] **Blocklist misses hash-less indexers.** A queue item is now keyed
       by infohash, but a feed candidate without one is still keyed by its
       guid, so a ban recorded from the queue does not match that release
