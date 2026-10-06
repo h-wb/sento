@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/h-wb/sento/internal/sourcehost"
+	"github.com/h-wb/sento/internal/extensions"
 )
 
 // fakeHost serves two single-pixel "pages" per chapter and counts fetches.
@@ -24,14 +24,14 @@ type fakeHost struct {
 var pngHeader = []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("x", 16))
 
 func (f *fakeHost) Name() string { return "fake" }
-func (f *fakeHost) Sources(context.Context) ([]sourcehost.Source, error) {
-	return []sourcehost.Source{{ID: "src1", Name: "Fake Source", Lang: "en"}}, nil
+func (f *fakeHost) Sources(context.Context) ([]extensions.Source, error) {
+	return []extensions.Source{{ID: "src1", Name: "Fake Source", Lang: "en"}}, nil
 }
-func (f *fakeHost) Search(_ context.Context, _, q string) ([]sourcehost.Manga, error) {
-	return []sourcehost.Manga{{Key: "/manga/op", Title: "One Piece"}}, nil
+func (f *fakeHost) Search(_ context.Context, _, q string) ([]extensions.Manga, error) {
+	return []extensions.Manga{{Key: "/manga/op", Title: "One Piece"}}, nil
 }
-func (f *fakeHost) Chapters(_ context.Context, _, mangaKey string) ([]sourcehost.Chapter, error) {
-	return []sourcehost.Chapter{
+func (f *fakeHost) Chapters(_ context.Context, _, mangaKey string) ([]extensions.Chapter, error) {
+	return []extensions.Chapter{
 		{Key: mangaKey + "/ch-1100", Name: "Chapter 1100", Number: 1100},
 	}, nil
 }
@@ -172,14 +172,14 @@ func TestSourceDownloadFailureAndRecover(t *testing.T) {
 type orderHost struct{ n int }
 
 func (h *orderHost) Name() string { return "fake" }
-func (h *orderHost) Sources(context.Context) ([]sourcehost.Source, error) {
-	return []sourcehost.Source{{ID: "src1", Name: "Fake Source", Lang: "en"}}, nil
+func (h *orderHost) Sources(context.Context) ([]extensions.Source, error) {
+	return []extensions.Source{{ID: "src1", Name: "Fake Source", Lang: "en"}}, nil
 }
-func (h *orderHost) Search(_ context.Context, _, _ string) ([]sourcehost.Manga, error) {
-	return []sourcehost.Manga{{Key: "/manga/op", Title: "One Piece"}}, nil
+func (h *orderHost) Search(_ context.Context, _, _ string) ([]extensions.Manga, error) {
+	return []extensions.Manga{{Key: "/manga/op", Title: "One Piece"}}, nil
 }
-func (h *orderHost) Chapters(_ context.Context, _, mangaKey string) ([]sourcehost.Chapter, error) {
-	return []sourcehost.Chapter{{Key: mangaKey + "/ch-1", Name: "Chapter 1", Number: 1}}, nil
+func (h *orderHost) Chapters(_ context.Context, _, mangaKey string) ([]extensions.Chapter, error) {
+	return []extensions.Chapter{{Key: mangaKey + "/ch-1", Name: "Chapter 1", Number: 1}}, nil
 }
 func (h *orderHost) Pages(_ context.Context, _, chapterKey string) ([]string, error) {
 	refs := make([]string, h.n)

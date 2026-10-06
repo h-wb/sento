@@ -1,7 +1,7 @@
 //go:build e2e
 
 // Command e2estub serves deterministic stand-ins for every upstream Sento
-// talks to — MangaBaka, a sento-host sidecar, Prowlarr and qBittorrent —
+// talks to — MangaBaka, a sento-extensions sidecar, Prowlarr and qBittorrent —
 // on one port, each under its own path prefix. The Playwright suite boots
 // it alongside a real sento so browser tests exercise the whole Go stack
 // without touching the network.
@@ -33,7 +33,7 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 	mountMangaBaka(mux)
-	mountSourceHost(mux)
+	mountExtensions(mux)
 	mountProwlarr(mux)
 	mountQBittorrent(mux)
 
@@ -206,7 +206,7 @@ func pathID(s string) int64 {
 	return id
 }
 
-// --- sento-host sidecar (SENTO_SOURCE_HOST_URL=<stub>/host) ---
+// --- sento-extensions sidecar (SENTO_EXTENSIONS_URL=<stub>/host) ---
 
 // hostState is the mutable slice of the sidecar contract: Sento reconciles
 // repos and installed extensions onto a stateless host, so the stub has to
@@ -221,7 +221,7 @@ var hostState = struct {
 // containing "broken" stands for a repo that fails to load.
 func repoWorks(url string) bool { return !strings.Contains(url, "broken") }
 
-func mountSourceHost(mux *http.ServeMux) {
+func mountExtensions(mux *http.ServeMux) {
 	mux.HandleFunc("GET /host/health", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})

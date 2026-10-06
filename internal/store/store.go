@@ -182,7 +182,7 @@ type Binding struct {
 	ID             int64  `json:"id"`
 	SeriesID       int64  `json:"seriesId"`
 	SourceID       string `json:"sourceId"`
-	SourceMangaKey string `json:"sourceMangaKey"` // opaque, minted by the source host
+	SourceMangaKey string `json:"sourceMangaKey"` // opaque, minted by the extensions sidecar
 	SourceName     string `json:"sourceName"`
 	MangaTitle     string `json:"mangaTitle"`
 	State          string `json:"state"`

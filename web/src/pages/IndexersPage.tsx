@@ -514,7 +514,7 @@ function IndexerModal({
           <Alert color="yellow" title="Extension sources are not available">
             <Text size="sm">{String(extensions.error)}</Text>
             <Text size="sm" mt={4}>
-              Connect the source host on the{' '}
+              Connect the extensions sidecar on the{' '}
               <Link to="/connections" onClick={onClose}>
                 Connections
               </Link>{' '}

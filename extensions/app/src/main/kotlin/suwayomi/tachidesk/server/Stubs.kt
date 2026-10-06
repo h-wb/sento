@@ -5,7 +5,7 @@
 package suwayomi.tachidesk.server
 
 import kotlinx.coroutines.flow.MutableStateFlow
-import sento.host.HostConfig
+import sento.extensions.SidecarConfig
 
 class ServerConfig(
     val flareSolverrEnabled: MutableStateFlow<Boolean>,
@@ -18,16 +18,16 @@ class ServerConfig(
 
 val serverConfig: ServerConfig by lazy {
     ServerConfig(
-        flareSolverrEnabled = MutableStateFlow(HostConfig.flareSolverrUrl.isNotBlank()),
-        flareSolverrUrl = MutableStateFlow(HostConfig.flareSolverrUrl),
+        flareSolverrEnabled = MutableStateFlow(SidecarConfig.flareSolverrUrl.isNotBlank()),
+        flareSolverrUrl = MutableStateFlow(SidecarConfig.flareSolverrUrl),
         flareSolverrTimeout = MutableStateFlow(60),
-        flareSolverrSessionName = MutableStateFlow("sento-host"),
+        flareSolverrSessionName = MutableStateFlow("sento-extensions"),
         flareSolverrSessionTtl = MutableStateFlow(15),
         flareSolverrAsResponseFallback = MutableStateFlow(false),
     )
 }
 
 class ApplicationDirs(
-    val dataRoot: String = HostConfig.dataRoot,
-    val extensionsRoot: String = "${HostConfig.dataRoot}/extensions",
+    val dataRoot: String = SidecarConfig.dataRoot,
+    val extensionsRoot: String = "${SidecarConfig.dataRoot}/extensions",
 )

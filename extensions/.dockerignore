@@ -1,4 +1,4 @@
-# Context for host/Dockerfile. The vendored tree is synced inside the
+# Context for extensions/Dockerfile. The vendored tree is synced inside the
 # build from the lock file, never copied from a developer's checkout.
 .gradle/
 build/

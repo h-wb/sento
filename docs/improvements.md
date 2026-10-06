@@ -60,7 +60,7 @@ Format: `- [ ] short description — context/file refs (session N)`
 
 ## Applied (live-harvest session)
 
-Drove these from real chapter names pulled off the running sento-host
+Drove these from real chapter names pulled off the running sento-extensions
 sidecar (`cmd/harvest`, build-tagged): ~110 installed sources across ~14
 languages, 497 records, 19 sources answering. See `docs/domain/parsing.md`.
 
@@ -102,7 +102,7 @@ the commit messages.
 - [x] Scheduler cadences persist across restarts; tick panics are
       contained.
 - [x] `profile.matchRegexp` compiles each pattern once (was a lead here).
-- [x] The image points library/downloads at its volumes; a `sento-host`
+- [x] The image points library/downloads at its volumes; a `sento-extensions`
       image and a compose file that matches the code replace the stale
       Suwayomi one (was a lead here).
 
@@ -174,7 +174,7 @@ the commit messages.
       *markerless* numbers; marked volumes (`Vol. 5`/`v05`) on source
       still parse as volumes and the funnel's `coverageRanges` routes
       them to volume slots, so Madokami-style volume sources work *when
-      they mark volumes* (verified live). (2) Deeper: `sourcehost.Chapter`
+      they mark volumes* (verified live). (2) Deeper: `extensions.Chapter`
       models every source release as a chapter (`Number float64` →
       candidate `ChapterNumber`); no notion of a volume-native source.
       Gap: a source listing a volume as a bare integer ("5") → misfiled

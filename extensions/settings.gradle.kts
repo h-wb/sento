@@ -1,4 +1,4 @@
-rootProject.name = "sento-host"
+rootProject.name = "sento-extensions"
 
 // AndroidCompat's build file uses typesafe accessors (projects.androidCompat.config).
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
@@ -7,7 +7,7 @@ enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 // vendir.lock.yml), not committed.
 val vendor = file("vendor/suwayomi")
 require(vendor.isDirectory) {
-    "vendor/suwayomi is missing — run: mise run host:vendor (vendir sync)"
+    "vendor/suwayomi is missing — run: mise run extensions:vendor (vendir sync)"
 }
 
 dependencyResolutionManagement {

@@ -1,6 +1,6 @@
-package sento.host
+package sento.extensions
 
-// HTTP API mirroring Sento's internal/sourcehost.Host contract: the host
+// HTTP API mirroring Sento's internal/extensions.Host contract: the host
 // is a stateless protocol adapter — sources, manga search, chapter lists,
 // page refs, page bytes. Keys are JSON envelopes of what the extension
 // API needs back (url + title/name), opaque to the caller.

@@ -5,16 +5,16 @@
 // source: client.go
 
 /**
- * Client talks to a sento-host sidecar (host/), the native implementation
+ * Client talks to a sento-extensions sidecar (host/), the native implementation
  * of this package's contract. All keys pass through opaquely.
  */
 export interface Client {
 }
 
 //////////
-// source: sourcehost.go
+// source: extensions.go
 /*
-Package sourcehost defines the protocol-adapter contract for extension
+Package extensions defines the protocol-adapter contract for extension
 sources: the host knows how to talk to manga sites (search, chapter
 lists, page images); Sento owns everything stateful around it (queueing,
 pacing, CBZ assembly, import). The Kotlin sidecar (host/) implements
@@ -78,7 +78,7 @@ export interface ExtensionInfo {
   sources?: Source[];
 }
 /**
- * ExtensionManager is an optional host capability: the sento-host sidecar
+ * ExtensionManager is an optional host capability: the sento-extensions sidecar
  * is stateless cattle whose installed extensions Sento reconciles from
  * the desired list it stores.
  */

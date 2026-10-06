@@ -16,7 +16,7 @@ type Config struct {
 	Database    Database    `yaml:"database"`
 	Library     Library     `yaml:"library"`
 	Downloads   Downloads   `yaml:"downloads"`
-	SourceHost  SourceHost  `yaml:"source_host"`
+	Extensions  Extensions  `yaml:"extensions"`
 	Prowlarr    Prowlarr    `yaml:"prowlarr"`
 	QBittorrent QBittorrent `yaml:"qbittorrent"`
 	MangaBaka   MangaBaka   `yaml:"mangabaka"`
@@ -59,9 +59,9 @@ type Database struct {
 	URL  string `yaml:"url"`
 }
 
-// SourceHost points at a sento-host sidecar (host/), the extension
+// Extensions points at a sento-extensions sidecar (extensions/), the extension
 // runtime serving manga sources.
-type SourceHost struct {
+type Extensions struct {
 	URL string `yaml:"url"`
 }
 
@@ -136,7 +136,7 @@ func applyEnv(c *Config) {
 			c.Downloads.PageRatePerSecond = f
 		}
 	}
-	str("SENTO_SOURCE_HOST_URL", &c.SourceHost.URL)
+	str("SENTO_EXTENSIONS_URL", &c.Extensions.URL)
 	str("SENTO_PROWLARR_URL", &c.Prowlarr.URL)
 	str("SENTO_PROWLARR_API_KEY", &c.Prowlarr.APIKey)
 	str("SENTO_QBITTORRENT_URL", &c.QBittorrent.URL)

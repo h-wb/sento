@@ -360,12 +360,12 @@ func (s *Server) streamSearch(w http.ResponseWriter, r *http.Request, id int64, 
 	}
 }
 
-// --- source-host endpoints (binding fix-ups) ---
+// --- extensions endpoints (binding fix-ups) ---
 
 func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 	host := s.conns.Host()
 	if host == nil {
-		writeErr(w, apperr.Unavailablef("no source host is configured"))
+		writeErr(w, apperr.Unavailablef("no extensions sidecar is configured"))
 		return
 	}
 	sources, err := host.Sources(r.Context())
@@ -381,7 +381,7 @@ func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 	host := s.conns.Host()
 	if host == nil {
-		writeErr(w, apperr.Unavailablef("no source host is configured"))
+		writeErr(w, apperr.Unavailablef("no extensions sidecar is configured"))
 		return
 	}
 	q := r.URL.Query().Get("q")

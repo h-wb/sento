@@ -7,7 +7,7 @@ clean CBZ library for Komga/Kavita.
 **Status: early development — core loop works end-to-end.** Working today:
 MangaBaka-backed library (series + collections + dual volume/chapter
 ledgers), chapter search/download/import from Tachiyomi/Mihon extensions
-through the bundled `sento-host` sidecar, a Torznab + qBittorrent volume
+through the bundled `sento-extensions` sidecar, a Torznab + qBittorrent volume
 path with a scored decision funnel and release profiles, regression-tested
 release parser, background automation loops, existing-library import, and a
 Mantine web UI.
@@ -25,8 +25,8 @@ Tooling is pinned with [mise](https://mise.jdx.dev):
 mise install        # Go, Node, Java, Gradle, vendir, linters — all pinned
 mise run build      # build bin/sento
 mise run run        # run the backend (http://localhost:8484)
-mise run host:build # build the extension sidecar (JVM; needed for sources)
-mise run host:run   # run it on :8901, where the dev backend expects it
+mise run extensions:build # build the extension sidecar (JVM; needed for sources)
+mise run extensions:run   # run it on :8901, where the dev backend expects it
 mise run web:dev    # web UI dev server (proxies /api to :8484)
 mise run web:build  # build web UI into web/dist (served by the binary)
 mise run test       # go test ./...
@@ -48,7 +48,7 @@ mise run vuln       # govulncheck + npm audit (also runs nightly)
 ```
 
 `mise run e2e` boots `cmd/e2estub` — deterministic stand-ins for MangaBaka,
-the source host, Prowlarr and qBittorrent — alongside a real `sento`, so the
+the extensions sidecar, Prowlarr and qBittorrent — alongside a real `sento`, so the
 browser exercises the whole Go stack without touching the network.
 
 Two suites deliberately sit outside `go test ./...` because they depend on
@@ -58,15 +58,15 @@ the next green night closes it:
 
 ```sh
 mise run test:contract   # the live MangaBaka API still matches our decoding
-mise run host:contract   # the sidecar builds and serves its contract
+mise run extensions:contract   # the sidecar builds and serves its contract
 ```
 
-Renovate bumps the vendored Suwayomi pin in `host/vendir.yml`. Because that
-tree is what the extension sidecar is built on, any change under `host/`
+Renovate bumps the vendored Suwayomi pin in `extensions/vendir.yml`. Because that
+tree is what the extension sidecar is built on, any change under `extensions/`
 triggers [`.github/workflows/sidecar.yml`](.github/workflows/sidecar.yml),
-which builds the sidecar and runs `host:contract` against it — so a bump PR
+which builds the sidecar and runs `extensions:contract` against it — so a bump PR
 arrives already knowing whether it works. Re-sync the vendored tree after a
-pin change with `mise run host:vendor`.
+pin change with `mise run extensions:vendor`.
 
 ## Deployment
 
@@ -75,7 +75,7 @@ cd deploy && docker compose up -d   # http://localhost:8484
 ```
 
 [`deploy/docker-compose.yml`](deploy/docker-compose.yml) runs Sento and the
-`sento-host` extension sidecar. Torrent indexers (Torznab endpoints from
+`sento-extensions` extension sidecar. Torrent indexers (Torznab endpoints from
 Prowlarr or Jackett) and qBittorrent are services you already run: add them
 on the Indexers and Connections pages. No extension repos ship with either image —
 add a Mihon-compatible repo URL on the Connections page, then add sources
@@ -107,12 +107,12 @@ Published to the GitHub Container Registry on every push to `main` and on
 
 ```sh
 docker pull ghcr.io/h-wb/sento:latest        # the server
-docker pull ghcr.io/h-wb/sento-host:latest   # the extension sidecar
+docker pull ghcr.io/h-wb/sento-extensions:latest   # the extension sidecar
 ```
 
 Tags: `latest` (main), `<major>.<minor>.<patch>` and `<major>.<minor>` for
 releases, plus the full commit sha. Build them locally with
-`mise run image:build` and `mise run image:build:host`.
+`mise run image:build` and `mise run image:build:extensions`.
 
 A package published from a private repository is private, and GHCR only
 accepts a **classic** personal access token (with `read:packages`) for
@@ -126,3 +126,14 @@ kubectl create secret docker-registry ghcr \
 Making the packages public instead (package settings, independent of the
 repository's visibility) drops the secret entirely: public images pull
 anonymously.
+
+## Credits
+
+Extension sources run in the `sento-extensions` sidecar, which is built
+on [Suwayomi-Server](https://github.com/Suwayomi/Suwayomi-Server)
+(MPL-2.0): its fake Android runtime and extension loader are what make
+Tachiyomi/[Mihon](https://github.com/mihonapp/mihon) extensions run
+outside Android. What is used and under which terms is in
+[`extensions/NOTICE.md`](extensions/NOTICE.md).
+
+Series and book metadata comes from [MangaBaka](https://mangabaka.org).

@@ -20,7 +20,7 @@ services:
       TZ: Etc/UTC
       # Seeds the connection settings on first start; once saved in the UI,
       # the stored settings win and these are ignored.
-      SENTO_SOURCE_HOST_URL: http://sento-host:8901
+      SENTO_EXTENSIONS_URL: http://sento-extensions:8901
       # SENTO_QBITTORRENT_URL: http://qbittorrent:8080
       # SENTO_QBITTORRENT_USERNAME: admin
       # SENTO_QBITTORRENT_PASSWORD: ...
@@ -35,24 +35,24 @@ services:
       - ./downloads:/downloads
       # - /path/to/qbittorrent/downloads:/torrents
     depends_on:
-      - sento-host
+      - sento-extensions
     restart: unless-stopped
 
   # Runs Tachiyomi/Mihon extensions for chapter sources. Ships with no
   # extensions and no repos: add a repo URL in Sento (Connections page),
   # then add sources on the Indexers page — Sento installs what they need.
-  sento-host:
-    image: ghcr.io/h-wb/sento-host:latest
+  sento-extensions:
+    image: ghcr.io/h-wb/sento-extensions:latest
     # build:
     #   context: ../host
     environment:
       TZ: Etc/UTC
       # For sources behind Cloudflare:
-      # SENTO_HOST_FLARESOLVERR_URL: http://flaresolverr:8191
+      # SENTO_EXTENSIONS_FLARESOLVERR_URL: http://flaresolverr:8191
     volumes:
       # Optional: the host is stateless (Sento reconciles extensions and
       # source logins onto it), this only spares the re-install on restart.
-      - sento-host-data:/data
+      - sento-extensions-data:/data
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8901"]
       interval: 30s
@@ -65,4 +65,4 @@ services:
 
 volumes:
   sento-config:
-  sento-host-data:
+  sento-extensions-data:

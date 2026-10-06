@@ -1,4 +1,4 @@
-// Package sourcehost defines the protocol-adapter contract for extension
+// Package extensions defines the protocol-adapter contract for extension
 // sources: the host knows how to talk to manga sites (search, chapter
 // lists, page images); Sento owns everything stateful around it (queueing,
 // pacing, CBZ assembly, import). The Kotlin sidecar (host/) implements
@@ -6,7 +6,7 @@
 //
 // All identifiers below sourceID are opaque keys minted by the host —
 // Sento persists them (bindings, queue items) but never interprets them.
-package sourcehost
+package extensions
 
 import (
 	"context"
@@ -59,7 +59,7 @@ type ExtensionInfo struct {
 	Sources []Source `json:"sources,omitempty"`
 }
 
-// ExtensionManager is an optional host capability: the sento-host sidecar
+// ExtensionManager is an optional host capability: the sento-extensions sidecar
 // is stateless cattle whose installed extensions Sento reconciles from
 // the desired list it stores.
 type ExtensionManager interface {

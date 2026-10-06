@@ -343,7 +343,7 @@ export interface Binding {
   id: number /* int64 */;
   seriesId: number /* int64 */;
   sourceId: string;
-  sourceMangaKey: string; // opaque, minted by the source host
+  sourceMangaKey: string; // opaque, minted by the extensions sidecar
   sourceName: string;
   mangaTitle: string;
   state: string;

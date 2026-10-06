@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/h-wb/sento/internal/apperr"
+	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/match"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/provider"
-	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -162,11 +162,11 @@ func (s *SearchService) resolveBindings(ctx context.Context, resolver provider.M
 	defer cancel()
 
 	type scored struct {
-		ref   sourcehost.Manga
+		ref   extensions.Manga
 		score float64
 	}
 	var matches []scored
-	bestScore, bestRef := 0.0, sourcehost.Manga{}
+	bestScore, bestRef := 0.0, extensions.Manga{}
 	for i, query := range resolveQueries(titles) {
 		refs, err := resolver.ResolveManga(resolveCtx, st.entryID, query)
 		if err != nil {

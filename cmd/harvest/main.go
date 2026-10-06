@@ -1,6 +1,6 @@
 //go:build harvest
 
-// Command harvest pulls real chapter names from the running sento-host
+// Command harvest pulls real chapter names from the running sento-extensions
 // sidecar and runs them through internal/parse, flagging cases worth
 // turning into corpus fixtures. Manual tool — never built by CI.
 //
@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/parse"
-	"github.com/h-wb/sento/internal/sourcehost"
 )
 
 const hostURL = "http://localhost:8901"
@@ -53,7 +53,7 @@ func rngs(rs []parse.Range) [][2]int {
 }
 
 func main() {
-	c := sourcehost.NewClient(hostURL)
+	c := extensions.NewClient(hostURL)
 	ctx := context.Background()
 
 	srcs, err := c.Sources(ctx)
@@ -63,7 +63,7 @@ func main() {
 	}
 	// One source per (name,lang) to spread coverage; skip nsfw.
 	seen := map[string]bool{}
-	var pick []sourcehost.Source
+	var pick []extensions.Source
 	for _, s := range srcs {
 		if s.NSFW {
 			continue

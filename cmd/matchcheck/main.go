@@ -1,7 +1,7 @@
 //go:build matchcheck
 
 // Command matchcheck pulls a broad pool of real manga titles from the
-// running sento-host sidecar, builds a match.Index treating each distinct
+// running sento-extensions sidecar, builds a match.Index treating each distinct
 // title as a library series, and stress-tests internal/match:
 //
 //   - collisions: distinct real series that score >= AutoThreshold against
@@ -24,9 +24,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/match"
 	"github.com/h-wb/sento/internal/parse"
-	"github.com/h-wb/sento/internal/sourcehost"
 )
 
 const hostURL = "http://localhost:8901"
@@ -41,7 +41,7 @@ var queries = []string{
 }
 
 func main() {
-	c := sourcehost.NewClient(hostURL)
+	c := extensions.NewClient(hostURL)
 	ctx := context.Background()
 
 	srcs, err := c.Sources(ctx)
@@ -51,7 +51,7 @@ func main() {
 	}
 	// One reliable MangaDex source per language + Weeb Central.
 	wantLang := map[string]bool{"en": true, "es": true, "fr": true, "ja": true, "it": true, "pt-BR": true}
-	var pick []sourcehost.Source
+	var pick []extensions.Source
 	seen := map[string]bool{}
 	for _, s := range srcs {
 		if s.Name == "Weeb Central" {

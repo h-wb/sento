@@ -228,6 +228,25 @@ export default function SystemPage() {
           No scheduler is running.
         </Text>
       )}
+
+      <Title order={4} mt="xl" mb="xs">
+        Acknowledgements
+      </Title>
+      <Text size="sm" c="dimmed" maw={900}>
+        Extension sources run in the sento-extensions sidecar, built on{' '}
+        <Anchor href="https://github.com/Suwayomi/Suwayomi-Server" target="_blank" rel="noopener noreferrer">
+          Suwayomi-Server
+        </Anchor>{' '}
+        (MPL-2.0) and the Tachiyomi/
+        <Anchor href="https://github.com/mihonapp/mihon" target="_blank" rel="noopener noreferrer">
+          Mihon
+        </Anchor>{' '}
+        extension API. Series and book metadata comes from{' '}
+        <Anchor href="https://mangabaka.org" target="_blank" rel="noopener noreferrer">
+          MangaBaka
+        </Anchor>
+        .
+      </Text>
     </>
   )
 }

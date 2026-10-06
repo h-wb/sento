@@ -184,7 +184,7 @@ Covered in detail so far:
       year/chapter collision noted at `reYear` + parser.md §9; bare-number
       coverage-inertness commented in `resolveBare` + parser.md §9.
 - [x] Live-harvest corpus expansion: built `cmd/harvest` (build-tagged)
-      to pull real chapter names off the running sento-host sidecar
+      to pull real chapter names off the running sento-extensions sidecar
       (~110 sources / ~14 langs / 497 records), ran them through the real
       parser, and compared against each source's own `number` field. Found
       + fixed a real bug (bare alpha sub-chapters `1150a` → nothing) and a

@@ -113,7 +113,7 @@
       ]
     },
     {
-      "description": "The vendored Suwayomi source tree (host/vendir.yml). A bump here changes the fake-Android runtime the extension sidecar is built on, so it is reviewed on its own and gated by the sidecar contract tests in CI.",
+      "description": "The vendored Suwayomi source tree (extensions/vendir.yml). A bump here changes the fake-Android runtime the extension sidecar is built on, so it is reviewed on its own and gated by the sidecar contract tests in CI.",
       "matchManagers": [
         "vendir"
       ],
@@ -123,7 +123,7 @@
       ]
     },
     {
-      "description": "vendir is pinned twice (mise.toml for local builds, host/Dockerfile for the image); bump both together.",
+      "description": "vendir is pinned twice (mise.toml for local builds, extensions/Dockerfile for the image); bump both together.",
       "groupName": "vendir",
       "matchDepNames": [
         "vendir",
@@ -154,10 +154,10 @@
   ],
   "customManagers": [
     {
-      "description": "The vendir release host/Dockerfile downloads to sync the vendored Suwayomi tree. mise.toml pins the same tool for local builds; both move in the one \"vendir\" PR.",
+      "description": "The vendir release extensions/Dockerfile downloads to sync the vendored Suwayomi tree. mise.toml pins the same tool for local builds; both move in the one \"vendir\" PR.",
       "customType": "regex",
       "managerFilePatterns": [
-        "/^host/Dockerfile$/"
+        "/^extensions/Dockerfile$/"
       ],
       "matchStrings": [
         "ARG VENDIR_VERSION=(?<currentValue>\\S+)"

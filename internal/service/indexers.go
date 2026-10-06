@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/h-wb/sento/internal/apperr"
+	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/prowlarr"
-	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
 	"github.com/h-wb/sento/internal/torznab"
 )
@@ -114,7 +114,7 @@ func ValidateIndexer(ix store.Indexer) error {
 
 // TestIndexer probes one entry: torznab caps, or source presence on the
 // host.
-func TestIndexer(ctx context.Context, ix store.Indexer, host sourcehost.Host) error {
+func TestIndexer(ctx context.Context, ix store.Indexer, host extensions.Host) error {
 	e, err := parseEntry(ix)
 	if err != nil {
 		return err
@@ -127,7 +127,7 @@ func TestIndexer(ctx context.Context, ix store.Indexer, host sourcehost.Host) er
 		return nil
 	case store.IndexerSource:
 		if host == nil {
-			return apperr.Unavailablef("no source host is configured")
+			return apperr.Unavailablef("no extensions sidecar is configured")
 		}
 		sources, err := host.Sources(ctx)
 		if err != nil {

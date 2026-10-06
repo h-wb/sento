@@ -14,17 +14,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/h-wb/sento/internal/sourcehost"
+	"github.com/h-wb/sento/internal/extensions"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 )
 
-// SourceProvider adapts any sourcehost.Host: binding-scoped search over
+// SourceProvider adapts any extensions.Host: binding-scoped search over
 // extension sources, downloads done by Sento itself (page fetch → CBZ in
 // a staging dir). The host is a stateless protocol adapter; all download
 // state lives here.
 type SourceProvider struct {
-	host       sourcehost.Host
+	host       extensions.Host
 	stagingDir string
 	entries    func(ctx context.Context) ([]IndexerEntry, error)
 	pageConc   int     // max pages fetched in parallel per chapter
@@ -45,7 +45,7 @@ type DownloadConfig struct {
 
 // NewSource returns nil (interface) when no host is configured, so it can
 // feed NewRegistry directly.
-func NewSource(host sourcehost.Host, stagingDir string, dl DownloadConfig,
+func NewSource(host extensions.Host, stagingDir string, dl DownloadConfig,
 	entries func(ctx context.Context) ([]IndexerEntry, error),
 ) Provider {
 	if host == nil {
@@ -122,7 +122,7 @@ func (p *SourceProvider) Sites(ctx context.Context) ([]Site, error) {
 	if err != nil {
 		return nil, err
 	}
-	available := map[string]sourcehost.Source{}
+	available := map[string]extensions.Source{}
 	if sources, err := p.host.Sources(ctx); err == nil {
 		for _, s := range sources {
 			available[s.ID] = s
@@ -211,7 +211,7 @@ func (p *SourceProvider) Search(ctx context.Context, req SearchRequest) ([]Candi
 
 // ResolveManga searches an entry's source for series candidates
 // (auto-binding). siteID is the indexer entry id.
-func (p *SourceProvider) ResolveManga(ctx context.Context, siteID, query string) ([]sourcehost.Manga, error) {
+func (p *SourceProvider) ResolveManga(ctx context.Context, siteID, query string) ([]extensions.Manga, error) {
 	e, err := p.entry(ctx, siteID)
 	if err != nil {
 		return nil, err

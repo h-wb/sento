@@ -3,7 +3,7 @@
 package suwayomi.tachidesk.server.generated
 
 object BuildConfig {
-    const val NAME = "Sento-Host"
+    const val NAME = "Sento-Extensions"
     const val VERSION = "v1.0.0"
     const val REVISION = "r0"
 }

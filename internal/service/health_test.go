@@ -67,7 +67,7 @@ func TestHealthChecks(t *testing.T) {
 	want := map[string]string{
 		"Indexer Broken is unavailable":                                              HealthError,
 		"No download client is configured, so torrent releases cannot be downloaded": HealthWarning,
-		"No source host is configured, so source indexers cannot be searched":        HealthWarning,
+		"No extensions sidecar is configured, so source indexers cannot be searched": HealthWarning,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("issues = %+v", report.Issues)

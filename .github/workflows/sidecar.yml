@@ -1,5 +1,5 @@
-# The sento-host sidecar is built from a vendored Suwayomi tree pinned in
-# host/vendir.yml, which Renovate bumps. Building it is a long JVM job, so
+# The sento-extensions sidecar is built from a vendored Suwayomi tree pinned in
+# extensions/vendir.yml, which Renovate bumps. Building it is a long JVM job, so
 # it runs only when something that could break it changes — which includes
 # Renovate's own vendir pull requests.
 name: Sidecar
@@ -9,14 +9,14 @@ on:
     branches: [main]
     # Repeated verbatim below: GitHub Actions does not support YAML anchors.
     paths:
-      - 'host/**'
-      - 'internal/sourcehost/**'
+      - 'extensions/**'
+      - 'internal/extensions/**'
       - '.github/workflows/sidecar.yml'
       - 'mise.toml'
   pull_request:
     paths:
-      - 'host/**'
-      - 'internal/sourcehost/**'
+      - 'extensions/**'
+      - 'internal/extensions/**'
       - '.github/workflows/sidecar.yml'
       - 'mise.toml'
   workflow_dispatch:
@@ -55,7 +55,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
       - name: Build the sidecar and run the contract tests
-        run: mise run host:contract
+        run: mise run extensions:contract
         env:
           # Set these as repository variables to unlock the tier that
           # installs a real extension and drives a live source; without

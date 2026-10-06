@@ -72,7 +72,7 @@ export default defineConfig({
         SENTO_DOWNLOADS_DIR: path.join(runDir, 'downloads'),
         SENTO_STATIC_DIR: path.join(webDir, 'dist'),
         SENTO_MANGABAKA_BASE_URL: `${stub}/mangabaka/v1`,
-        SENTO_SOURCE_HOST_URL: `${stub}/host`,
+        SENTO_EXTENSIONS_URL: `${stub}/host`,
         SENTO_PROWLARR_URL: `${stub}/prowlarr`,
         SENTO_PROWLARR_API_KEY: 'stub-key',
         SENTO_QBITTORRENT_URL: `${stub}/qbit`,

@@ -19,8 +19,8 @@ CGO_ENABLED = "0"
 # which is gitignored — e.g. SENTO_QBITTORRENT_URL, SENTO_PROWLARR_API_KEY).
 SENTO_DB_PATH = "data/sento.db"
 SENTO_LIBRARY_PATH = "data/library"
-# Dev default: sento-host sidecar on its default port (mise run host:run).
-SENTO_SOURCE_HOST_URL = "http://localhost:8901"
+# Dev default: sento-extensions sidecar on its default port (mise run extensions:run).
+SENTO_EXTENSIONS_URL = "http://localhost:8901"
 
 [tasks.build]
 description = "Build the sento binary"
@@ -61,20 +61,20 @@ description = "Build the web UI"
 dir = "web"
 run = "npm run build"
 
-[tasks."host:vendor"]
-description = "Sync vendored Suwayomi pieces (pinned in host/vendir.lock.yml)"
-dir = "host"
+[tasks."extensions:vendor"]
+description = "Sync vendored Suwayomi pieces (pinned in extensions/vendir.lock.yml)"
+dir = "extensions"
 run = "vendir sync"
 
-[tasks."host:build"]
-description = "Build the sento-host sidecar (JVM)"
-dir = "host"
-depends = ["host:vendor"]
+[tasks."extensions:build"]
+description = "Build the sento-extensions sidecar (JVM)"
+dir = "extensions"
+depends = ["extensions:vendor"]
 run = "gradle :app:installDist"
 
-[tasks."host:run"]
-description = "Run the sento-host sidecar"
-dir = "host"
+[tasks."extensions:run"]
+description = "Run the sento-extensions sidecar"
+dir = "extensions"
 run = "./app/build/install/app/bin/app"
 
 [tasks.gen]
@@ -159,21 +159,21 @@ run = "npm run e2e:ui"
 
 # --- sidecar (JVM; vendored Suwayomi pieces) ---
 
-[tasks."host:contract"]
-description = "Build the sidecar, start it, and run internal/sourcehost contract tests"
-depends = ["host:build"]
+[tasks."extensions:contract"]
+description = "Build the sidecar, start it, and run internal/extensions contract tests"
+depends = ["extensions:build"]
 run = """
 set -e
 DATA=$(mktemp -d)
 trap 'kill ${HOST_PID:-} 2>/dev/null || true; rm -rf "$DATA"' EXIT
-SENTO_HOST_PORT=8902 SENTO_HOST_DATA="$DATA" host/app/build/install/app/bin/app &
+SENTO_EXTENSIONS_PORT=8902 SENTO_EXTENSIONS_DATA="$DATA" extensions/app/build/install/app/bin/app &
 HOST_PID=$!
 # `if` keeps a failing probe from tripping `set -e` while the JVM boots.
 for _ in $(seq 1 60); do
   if curl -fsS http://127.0.0.1:8902/health >/dev/null 2>&1; then break; fi
   sleep 2
 done
-SENTO_SOURCE_HOST_URL=http://127.0.0.1:8902 go test -tags contract -count=1 -v ./internal/sourcehost
+SENTO_EXTENSIONS_URL=http://127.0.0.1:8902 go test -tags contract -count=1 -v ./internal/extensions
 """
 
 # --- container image ---
@@ -189,9 +189,9 @@ docker build \
   -t sento:dev .
 """
 
-[tasks."image:build:host"]
-description = "Build the sento-host sidecar image locally"
-run = "docker build -t sento-host:dev host"
+[tasks."image:build:extensions"]
+description = "Build the sento-extensions sidecar image locally"
+run = "docker build -t sento-extensions:dev extensions"
 
 [tasks."image:run"]
 description = "Run the locally built image against ./data"

@@ -46,7 +46,7 @@ graph TD
         provider[provider<br/>Candidate + download lifecycle]
         torznab[torznab client]
         qbittorrent[qbittorrent client]
-        sourcehost[sourcehost<br/>sidecar contract + client]
+        extensions[extensions<br/>sidecar contract + client]
         prowlarr[prowlarr<br/>browse assist]
     end
 
@@ -89,7 +89,7 @@ graph TD
     service --> prowlarr
     service --> torznab
     service --> qbittorrent
-    service --> sourcehost
+    service --> extensions
 
     ledger --> store
     store --> metadata
@@ -97,7 +97,7 @@ graph TD
 
     provider --> torznab
     provider --> qbittorrent
-    provider --> sourcehost
+    provider --> extensions
 
     mangabaka --> metadata
 ```
@@ -117,7 +117,7 @@ Sizes are non-test lines, June 2026 — a proxy for where the complexity is.
 | `internal/parse` | 1160 | Pure release/file/chapter-name parser (spec/parser.md); no I/O, regression corpus |
 | `internal/provider` | 872 | Abstraction over release sources + download clients. `TorrentProvider` (torznab + qBittorrent) and `SourceProvider` (extension sources; Sento assembles CBZs itself) |
 | `internal/mediafile` | 396 | CBZ import (atomic), ComicInfo.xml merge, naming templates, hardlink-or-copy |
-| `internal/sourcehost` | 343 | Protocol-adapter contract for extension sources + HTTP client for the Kotlin sidecar (`host/`). Host keys are opaque; Sento owns all state |
+| `internal/extensions` | 343 | Protocol-adapter contract for extension sources + HTTP client for the Kotlin sidecar (`extensions/`). Host keys are opaque; Sento owns all state |
 | `internal/metadata/mangabaka` | 334 | The one `metadata.Provider` implementation |
 | `internal/scheduler` | 280 | Background loops, crash-isolated; observable via System → Tasks |
 | `internal/qbittorrent` | 218 | qBittorrent WebUI API client |

@@ -11,11 +11,11 @@ import (
 	"strings"
 
 	"github.com/h-wb/sento/internal/apperr"
-	"github.com/h-wb/sento/internal/sourcehost"
+	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/store"
 )
 
-// Sento owns the desired extension list; the sento-host sidecar is
+// Sento owns the desired extension list; the sento-extensions sidecar is
 // stateless cattle. Installing through the UI records the package here
 // and Reconcile re-installs anything a fresh/replaced host is missing —
 // on startup, after connection changes, and periodically.
@@ -31,7 +31,7 @@ type storedPrefs map[string]map[string]json.RawMessage
 // ExtensionView is one host extension; Desired means an indexer entry
 // references it (the entry is what makes an extension wanted).
 type ExtensionView struct {
-	sourcehost.ExtensionInfo `tstype:",extends"`
+	extensions.ExtensionInfo `tstype:",extends"`
 	Desired                  bool `json:"desired"`
 }
 
@@ -40,17 +40,17 @@ type ExtensionView struct {
 // backend at runtime.
 type ExtensionService struct {
 	store *store.Store
-	host  func() sourcehost.Host
+	host  func() extensions.Host
 }
 
-func NewExtensionService(st *store.Store, host func() sourcehost.Host) *ExtensionService {
+func NewExtensionService(st *store.Store, host func() extensions.Host) *ExtensionService {
 	return &ExtensionService{store: st, host: host}
 }
 
 // manager returns the current host's management capability, nil when the
 // backend doesn't support it (none configured).
-func (e *ExtensionService) manager() sourcehost.ExtensionManager {
-	mgr, _ := e.host().(sourcehost.ExtensionManager)
+func (e *ExtensionService) manager() extensions.ExtensionManager {
+	mgr, _ := e.host().(extensions.ExtensionManager)
 	return mgr
 }
 
@@ -105,15 +105,15 @@ func (e *ExtensionService) Repos(ctx context.Context) []string {
 // from it. The stored list is the truth for *which* repos exist; when the
 // host cannot be asked, each is reported with that reason rather than
 // dropped.
-func (e *ExtensionService) RepoStatus(ctx context.Context) []sourcehost.RepoStatus {
+func (e *ExtensionService) RepoStatus(ctx context.Context) []extensions.RepoStatus {
 	urls := e.Repos(ctx)
-	out := make([]sourcehost.RepoStatus, 0, len(urls))
-	known := map[string]sourcehost.RepoStatus{}
+	out := make([]extensions.RepoStatus, 0, len(urls))
+	known := map[string]extensions.RepoStatus{}
 	hostErr := ""
 	if mgr := e.manager(); mgr == nil {
-		hostErr = "no source host is configured"
+		hostErr = "no extensions sidecar is configured"
 	} else if statuses, err := mgr.RepoStatus(ctx); err != nil {
-		hostErr = "the source host did not answer: " + err.Error()
+		hostErr = "the extensions sidecar did not answer: " + err.Error()
 	} else {
 		for _, s := range statuses {
 			known[s.URL] = s
@@ -123,9 +123,9 @@ func (e *ExtensionService) RepoStatus(ctx context.Context) []sourcehost.RepoStat
 		s, ok := known[u]
 		switch {
 		case hostErr != "":
-			s = sourcehost.RepoStatus{URL: u, Error: hostErr}
+			s = extensions.RepoStatus{URL: u, Error: hostErr}
 		case !ok:
-			s = sourcehost.RepoStatus{URL: u, Error: "not loaded on the host yet"}
+			s = extensions.RepoStatus{URL: u, Error: "not loaded on the host yet"}
 		}
 		out = append(out, s)
 	}
@@ -165,7 +165,7 @@ func (e *ExtensionService) SetRepos(ctx context.Context, urls []string) error {
 
 // reconcileRepos pushes the stored repo list when the host differs (a
 // fresh host knows only its env-provided extras).
-func (e *ExtensionService) reconcileRepos(ctx context.Context, mgr sourcehost.ExtensionManager) error {
+func (e *ExtensionService) reconcileRepos(ctx context.Context, mgr extensions.ExtensionManager) error {
 	want := e.repoURLs(ctx)
 	if len(want) == 0 {
 		return nil
@@ -224,7 +224,7 @@ func (e *ExtensionService) Install(ctx context.Context, pkgName string) error {
 
 // Sources lists the sources one installed extension provides (the Add
 // Indexer picker).
-func (e *ExtensionService) Sources(ctx context.Context, pkgName string) ([]sourcehost.Source, error) {
+func (e *ExtensionService) Sources(ctx context.Context, pkgName string) ([]extensions.Source, error) {
 	mgr := e.manager()
 	if mgr == nil {
 		return nil, apperr.Unavailablef("the configured source backend does not manage extensions")
@@ -347,8 +347,8 @@ func (e *ExtensionService) desiredSet(ctx context.Context) (map[string]bool, boo
 
 // --- source preferences (ConfigurableSource) ---
 
-func (e *ExtensionService) prefManager() sourcehost.PreferenceManager {
-	mgr, _ := e.host().(sourcehost.PreferenceManager)
+func (e *ExtensionService) prefManager() extensions.PreferenceManager {
+	mgr, _ := e.host().(extensions.PreferenceManager)
 	return mgr
 }
 
@@ -361,7 +361,7 @@ func (e *ExtensionService) storedSourcePrefs(ctx context.Context) storedPrefs {
 }
 
 // Preferences proxies the host's preference form for one source.
-func (e *ExtensionService) Preferences(ctx context.Context, sourceID string) ([]sourcehost.Preference, error) {
+func (e *ExtensionService) Preferences(ctx context.Context, sourceID string) ([]extensions.Preference, error) {
 	mgr := e.prefManager()
 	if mgr == nil {
 		return nil, apperr.Unavailablef("the configured source backend does not manage source preferences")

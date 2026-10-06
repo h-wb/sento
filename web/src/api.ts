@@ -57,7 +57,7 @@ import type {
   Series,
 } from './types/store'
 import type { TaskStatus } from './types/scheduler'
-import type { Manga as SourceManga, Preference, Source } from './types/sourcehost'
+import type { Manga as SourceManga, Preference, Source } from './types/extensions'
 import type { Condition, Format, Profile } from './types/profile'
 import type { ProfileDoc } from './types/service'
 

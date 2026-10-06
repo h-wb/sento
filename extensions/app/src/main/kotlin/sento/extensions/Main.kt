@@ -1,4 +1,4 @@
-package sento.host
+package sento.extensions
 
 import android.app.Application
 import eu.kanade.tachiyomi.network.JavaScriptEngine
@@ -23,7 +23,7 @@ private val logger = KotlinLogging.logger {}
 fun main() {
     // The AndroidCompat config tree roots itself here (shared_prefs,
     // fake app dirs); extensions and their jars live under it too.
-    System.setProperty("suwayomi.tachidesk.config.server.rootDir", HostConfig.dataRoot)
+    System.setProperty("suwayomi.tachidesk.config.server.rootDir", SidecarConfig.dataRoot)
 
     val applicationDirs = ApplicationDirs()
     listOf(applicationDirs.dataRoot, applicationDirs.extensionsRoot).forEach { File(it).mkdirs() }
@@ -56,8 +56,8 @@ fun main() {
 
     ExtensionManager.loadInstalled()
     logger.info {
-        "sento-host: ${ExtensionManager.installedExtensions.size} extensions, data at ${HostConfig.dataRoot}"
+        "sento-extensions: ${ExtensionManager.installedExtensions.size} extensions, data at ${SidecarConfig.dataRoot}"
     }
 
-    buildApi().start(HostConfig.port)
+    buildApi().start(SidecarConfig.port)
 }

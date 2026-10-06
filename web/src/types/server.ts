@@ -3,7 +3,7 @@
 import type { ChapterSlot, VolumeSlot } from "./ledger"
 import type { ScanResult, SearchResult, TargetSlot } from "./service"
 import type { Collection, Series } from "./store"
-import type { RepoStatus } from "./sourcehost"
+import type { RepoStatus } from "./extensions"
 
 //////////
 // source: api.go

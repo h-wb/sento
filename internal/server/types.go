@@ -3,9 +3,9 @@ package server
 import (
 	"encoding/json"
 
+	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/service"
-	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -199,5 +199,5 @@ type ExtensionRepos struct {
 	URLs []string `json:"urls"`
 	// Repos is the same list with what each repo currently yields on the
 	// host (response only).
-	Repos []sourcehost.RepoStatus `json:"repos,omitempty"`
+	Repos []extensions.RepoStatus `json:"repos,omitempty"`
 }

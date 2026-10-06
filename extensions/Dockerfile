@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# The sento-host sidecar: the JVM extension runtime Sento talks to for
-# Tachiyomi/Mihon sources. Build context is this directory (host/).
+# The sento-extensions sidecar: the JVM extension runtime Sento talks to for
+# Tachiyomi/Mihon sources. Build context is this directory (extensions/).
 #
 # The build output is JVM bytecode, identical for every architecture, so
 # the build stage runs once on the build platform and only the JRE layer
@@ -27,12 +27,19 @@ RUN --mount=type=cache,target=/home/gradle/.gradle/caches \
 
 # --- runtime ---
 FROM eclipse-temurin:21-jre
-COPY --from=build /src/app/build/install/app /opt/sento-host
+COPY --from=build /src/app/build/install/app /opt/sento-extensions
+# The image contains compiled Suwayomi-Server code (MPL-2.0): its license
+# and where its source lives travel with the binary.
+COPY --from=build /src/vendor/suwayomi/LICENSE /opt/sento-extensions/licenses/Suwayomi-Server-MPL-2.0.txt
+COPY NOTICE.md /opt/sento-extensions/NOTICE.md
+LABEL org.opencontainers.image.title="sento-extensions" \
+      org.opencontainers.image.description="Runs Tachiyomi/Mihon extensions for Sento. Built on Suwayomi-Server (MPL-2.0); see /opt/sento-extensions/NOTICE.md." \
+      org.opencontainers.image.source="https://github.com/h-wb/sento"
 # Stateless by design: Sento re-installs extensions and replays source
 # settings onto a fresh host. The volume only saves that work on restart.
-ENV SENTO_HOST_PORT=8901 \
-    SENTO_HOST_DATA=/data \
+ENV SENTO_EXTENSIONS_PORT=8901 \
+    SENTO_EXTENSIONS_DATA=/data \
     JAVA_TOOL_OPTIONS=-Djava.awt.headless=true
 VOLUME /data
 EXPOSE 8901
-ENTRYPOINT ["/opt/sento-host/bin/app"]
+ENTRYPOINT ["/opt/sento-extensions/bin/app"]

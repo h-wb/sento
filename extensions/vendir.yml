@@ -1,5 +1,5 @@
 # Vendored Suwayomi-Server pieces (MPL-2.0; files keep their headers and
-# license). `vendir sync` (mise run host:vendor) materializes them into
+# license). `vendir sync` (mise run extensions:vendor) materializes them into
 # vendor/ — gitignored, pinned by vendir.lock.yml. Two layers come in:
 #
 # - AndroidCompat (+ Config): the fake Android runtime. A standalone
@@ -11,7 +11,7 @@
 #   database/local-source are excluded — extend the stand-ins instead of
 #   patching vendored files.
 #
-# To pick up upstream fixes: bump ref, `mise run host:vendor`, fix what
+# To pick up upstream fixes: bump ref, `mise run extensions:vendor`, fix what
 # moved.
 apiVersion: vendir.k14s.io/v1alpha1
 kind: Config
@@ -47,7 +47,7 @@ directories:
           - server/src/main/kotlin/suwayomi/tachidesk/manga/model/dataclass/ExtensionStore.kt
         excludePaths:
           # Suwayomi's filesystem-manga source and app bootstrap (ours
-          # lives in app/src/main/kotlin/sento/host).
+          # lives in app/src/main/kotlin/sento/extensions).
           - server/src/main/kotlin/eu/kanade/tachiyomi/source/local/**
           - server/src/main/kotlin/eu/kanade/tachiyomi/App.kt
           - server/src/main/kotlin/eu/kanade/tachiyomi/AppModule.kt

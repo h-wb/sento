@@ -1,4 +1,4 @@
-package sento.host
+package sento.extensions
 
 // Source preferences (ConfigurableSource): the extension declares a
 // PreferenceScreen; we serialize it to a typed JSON form and write

@@ -15,12 +15,12 @@ func TestConnectionSettings(t *testing.T) {
 	ctx := context.Background()
 
 	cfg := config.Default()
-	cfg.SourceHost.URL = "http://host.example"
+	cfg.Extensions.URL = "http://host.example"
 	conns := NewConnections(st, cfg)
 
 	// Seeded from config, nothing in the DB yet.
 	cs := conns.Load(ctx)
-	if cs.SourceHost.URL != "http://host.example" {
+	if cs.Extensions.URL != "http://host.example" {
 		t.Fatalf("seed = %+v", cs)
 	}
 
@@ -38,7 +38,7 @@ func TestConnectionSettings(t *testing.T) {
 	}
 
 	// Saving prowlarr (browse-assist creds) + a new host URL persists.
-	cs.SourceHost.URL = "http://host2.example"
+	cs.Extensions.URL = "http://host2.example"
 	cs.Prowlarr = ProwlarrConn{URL: "http://prowlarr.example", APIKey: "k"}
 	if err := conns.Save(ctx, cs); err != nil {
 		t.Fatal(err)
@@ -46,12 +46,12 @@ func TestConnectionSettings(t *testing.T) {
 
 	// A fresh service sees the saved settings, not the config seed.
 	again := NewConnections(st, cfg).Load(ctx)
-	if again.SourceHost.URL != "http://host2.example" || again.Prowlarr.URL != "http://prowlarr.example" {
+	if again.Extensions.URL != "http://host2.example" || again.Prowlarr.URL != "http://prowlarr.example" {
 		t.Fatalf("reload = %+v", again)
 	}
 
 	// Clearing the host URL disables the source provider.
-	cs.SourceHost.URL = ""
+	cs.Extensions.URL = ""
 	if err := conns.Save(ctx, cs); err != nil {
 		t.Fatal(err)
 	}
@@ -62,5 +62,26 @@ func TestConnectionSettings(t *testing.T) {
 	if err := conns.Save(ctx, ConnectionSettings{
 		Prowlarr: ProwlarrConn{URL: "prowlarr.example"}}); err == nil {
 		t.Fatal("want validation error for scheme-less url")
+	}
+}
+
+// Connections saved under the sidecar's old name still load.
+func TestConnectionSettingsLegacyKey(t *testing.T) {
+	_, st := setup(t)
+	ctx := context.Background()
+	if err := st.PutSetting(ctx, connectionsKey, []byte(`{"sourceHost":{"url":"http://old.example"},"qbittorrent":{"url":"http://qb.example"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	conns := NewConnections(st, config.Default())
+	cs := conns.Load(ctx)
+	if cs.Extensions.URL != "http://old.example" || cs.QBittorrent.URL != "http://qb.example" {
+		t.Fatalf("legacy settings = %+v", cs)
+	}
+	// Saved again, they move to the new key and stay readable.
+	if err := conns.Save(ctx, cs); err != nil {
+		t.Fatal(err)
+	}
+	if again := conns.Load(ctx); again.Extensions.URL != "http://old.example" {
+		t.Fatalf("after re-save = %+v", again)
 	}
 }

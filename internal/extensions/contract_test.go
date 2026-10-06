@@ -1,22 +1,22 @@
 //go:build contract
 
-// Contract tests against a live sento-host sidecar. Their job is to fail
+// Contract tests against a live sento-extensions sidecar. Their job is to fail
 // loudly when a Suwayomi bump (host/vendir.yml) breaks the vendored fake
 // Android runtime or the APK loading path — the parts of host/ Sento does
 // not own and cannot unit-test. Network- and JVM-bound, so never part of
 // `go test ./...`:
 //
-//	mise run host:contract
+//	mise run extensions:contract
 //
 // Env:
 //
-//	SENTO_SOURCE_HOST_URL       sidecar base URL (default http://localhost:8901)
+//	SENTO_EXTENSIONS_URL       sidecar base URL (default http://localhost:8901)
 //	SENTO_TEST_EXTENSION_REPO   Mihon-compatible repo index URL; unlocks the
 //	                            install/search/pages tier (skipped if unset)
 //	SENTO_TEST_EXTENSION_PKG    pkgName to install (default: first with a
 //	                            source in the repo's language)
 //	SENTO_TEST_SEARCH_QUERY     search term for the live source (default "one piece")
-package sourcehost
+package extensions
 
 import (
 	"context"
@@ -28,7 +28,7 @@ import (
 )
 
 func hostURL() string {
-	if u := os.Getenv("SENTO_SOURCE_HOST_URL"); u != "" {
+	if u := os.Getenv("SENTO_EXTENSIONS_URL"); u != "" {
 		return u
 	}
 	return "http://localhost:8901"
@@ -42,7 +42,7 @@ func requireHost(t *testing.T) (*Client, context.Context) {
 	base := hostURL()
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Get(base + "/health")
 	if err != nil {
-		t.Fatalf("sidecar unreachable at %s: %v (start it with: mise run host:run)", base, err)
+		t.Fatalf("sidecar unreachable at %s: %v (start it with: mise run extensions:run)", base, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {

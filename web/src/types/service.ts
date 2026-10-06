@@ -3,7 +3,7 @@
 import type { SeriesRef } from "./metadata"
 import type { Result, Step } from "./parse"
 import type { Condition, LedgerRules } from "./profile"
-import type { ExtensionInfo } from "./sourcehost"
+import type { ExtensionInfo } from "./extensions"
 import type { Work, ExpectedSlot, DownloadTarget, Binding, Indexer, SiteOverride } from "./store"
 
 //////////
@@ -44,16 +44,16 @@ export interface QBittorrentConn {
   category: string;
 }
 /**
- * SourceHostConn points at a sento-host sidecar (host/), the extension
+ * ExtensionsConn points at a sento-extensions sidecar (extensions/), the extension
  * runtime. Empty URL = no extension sources.
  */
-export interface SourceHostConn {
+export interface ExtensionsConn {
   url: string;
 }
 export interface ConnectionSettings {
   prowlarr: ProwlarrConn;
   qbittorrent: QBittorrentConn;
-  sourceHost: SourceHostConn;
+  extensions: ExtensionsConn;
 }
 /**
  * Connections owns the live service clients: it loads settings, builds
@@ -152,7 +152,7 @@ export interface HealthReport {
 }
 /**
  * HealthService probes what Sento depends on — the library folder, the
- * download client, the source host and every enabled indexer — and keeps
+ * download client, the extensions sidecar and every enabled indexer — and keeps
  * the last report. Probing is remote I/O, so reads are served from that
  * report until it is invalidated or re-run.
  */

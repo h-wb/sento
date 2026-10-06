@@ -37,8 +37,8 @@ packages:
     frontmatter: |
       /* eslint-disable */
 
-  - path: "github.com/h-wb/sento/internal/sourcehost"
-    output_path: "web/src/types/sourcehost.ts"
+  - path: "github.com/h-wb/sento/internal/extensions"
+    output_path: "web/src/types/extensions.ts"
     frontmatter: |
       /* eslint-disable */
 
@@ -54,7 +54,7 @@ packages:
       import type { SeriesRef } from "./metadata"
       import type { Result, Step } from "./parse"
       import type { Condition, LedgerRules } from "./profile"
-      import type { ExtensionInfo } from "./sourcehost"
+      import type { ExtensionInfo } from "./extensions"
       import type { Work, ExpectedSlot, DownloadTarget, Binding, Indexer, SiteOverride } from "./store"
     type_mappings:
       profile.Condition: "Condition"
@@ -68,7 +68,7 @@ packages:
       store.Indexer: "Indexer"
       store.SiteOverride: "SiteOverride"
       metadata.SeriesRef: "SeriesRef"
-      sourcehost.ExtensionInfo: "ExtensionInfo"
+      extensions.ExtensionInfo: "ExtensionInfo"
 
   - path: "github.com/h-wb/sento/internal/server"
     output_path: "web/src/types/server.ts"
@@ -77,9 +77,9 @@ packages:
       import type { ChapterSlot, VolumeSlot } from "./ledger"
       import type { ScanResult, SearchResult, TargetSlot } from "./service"
       import type { Collection, Series } from "./store"
-      import type { RepoStatus } from "./sourcehost"
+      import type { RepoStatus } from "./extensions"
     type_mappings:
-      sourcehost.RepoStatus: "RepoStatus"
+      extensions.RepoStatus: "RepoStatus"
       ledger.VolumeSlot: "VolumeSlot"
       ledger.ChapterSlot: "ChapterSlot"
       service.TargetSlot: "TargetSlot"

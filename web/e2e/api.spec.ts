@@ -26,7 +26,7 @@ test.describe('API', () => {
     expect(results[0]).toMatchObject({ title: expect.any(String), mangabakaId: expect.any(Number) })
   })
 
-  test('sources come from the configured source host', async ({ request }) => {
+  test('sources come from the configured extensions sidecar', async ({ request }) => {
     const res = await request.get('/api/v1/sources')
     expect(res.ok()).toBeTruthy()
     const sources = await res.json()

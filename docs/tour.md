@@ -32,7 +32,7 @@ with its vocabulary already in place.
 - [ ] **3 — Persistence**: `internal/db`, `internal/store`
       → domain doc `domain/persistence.md`
 - [ ] **4 — Providers & clients**: `internal/provider`, `internal/torznab`,
-      `internal/qbittorrent`, `internal/sourcehost`, `internal/prowlarr`
+      `internal/qbittorrent`, `internal/extensions`, `internal/prowlarr`
       → flow `07-source-download.md`
 - [ ] **5 — Metadata & the library side**: `internal/metadata`(+`mangabaka`),
       `internal/mediafile`, service: library, scan, bulkimport, mediasettings

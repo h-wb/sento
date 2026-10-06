@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/qbittorrent"
-	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
 	"github.com/h-wb/sento/internal/torznab"
 )
@@ -44,7 +44,7 @@ type HealthReport struct {
 const probeTimeout = 10 * time.Second
 
 // HealthService probes what Sento depends on — the library folder, the
-// download client, the source host and every enabled indexer — and keeps
+// download client, the extensions sidecar and every enabled indexer — and keeps
 // the last report. Probing is remote I/O, so reads are served from that
 // report until it is invalidated or re-run.
 type HealthService struct {
@@ -206,24 +206,24 @@ func checkDownloadClient(ctx context.Context, qb QBittorrentConn, needed bool) [
 	return nil
 }
 
-// checkSources verifies the source host answers and still carries the
+// checkSources verifies the extensions sidecar answers and still carries the
 // source behind every enabled source indexer. A host that is down raises
 // one issue, not one per indexer.
-func checkSources(ctx context.Context, host sourcehost.Host, indexers []store.Indexer) []HealthIssue {
+func checkSources(ctx context.Context, host extensions.Host, indexers []store.Indexer) []HealthIssue {
 	if host == nil {
 		if len(indexers) == 0 {
 			return nil
 		}
 		return []HealthIssue{{
-			Source: "source-host", Level: HealthWarning, Link: "/connections",
-			Message: "No source host is configured, so source indexers cannot be searched",
+			Source: "extensions", Level: HealthWarning, Link: "/connections",
+			Message: "No extensions sidecar is configured, so source indexers cannot be searched",
 		}}
 	}
 	sources, err := host.Sources(ctx)
 	if err != nil {
 		return []HealthIssue{{
-			Source: "source-host", Level: HealthError, Link: "/connections",
-			Message: "The source host is unavailable", Detail: err.Error(),
+			Source: "extensions", Level: HealthError, Link: "/connections",
+			Message: "The extensions sidecar is unavailable", Detail: err.Error(),
 		}}
 	}
 	present := map[string]bool{}

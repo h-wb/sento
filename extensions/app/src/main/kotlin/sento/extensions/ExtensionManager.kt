@@ -1,4 +1,4 @@
-package sento.host
+package sento.extensions
 
 /*
  * Install/uninstall logic adapted from Suwayomi-Server's Extension.kt
@@ -142,7 +142,7 @@ object ExtensionManager {
     @Volatile
     private var pushedRepos: List<String> = emptyList()
 
-    fun repos(): List<String> = (HostConfig.repos + pushedRepos).distinct()
+    fun repos(): List<String> = (SidecarConfig.repos + pushedRepos).distinct()
 
     fun setRepos(urls: List<String>) {
         pushedRepos = urls

@@ -1,4 +1,4 @@
-package sourcehost
+package extensions
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Client talks to a sento-host sidecar (host/), the native implementation
+// Client talks to a sento-extensions sidecar (host/), the native implementation
 // of this package's contract. All keys pass through opaquely.
 type Client struct {
 	baseURL string

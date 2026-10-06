@@ -17,14 +17,14 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, type ConnectionSettings, type ConnectionTest } from '../api'
-import type { RepoStatus } from '../types/sourcehost'
+import type { RepoStatus } from '../types/extensions'
 import { notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { useUnsavedChanges } from '../useUnsavedChanges'
 
 // The services Sento connects to — one per download path: qBittorrent for
-// torrents, the sento-host sidecar for extension sources. What gets
+// torrents, the sento-extensions sidecar for extension sources. What gets
 // searched lives on the Indexers page; this page is only the plumbing.
 // Stored server-side; the yaml/env config only seeds the very first run.
 export default function ConnectionsPage() {
@@ -56,7 +56,7 @@ export default function ConnectionsPage() {
     queryClient.invalidateQueries({ queryKey: ['extensions'] })
     queryClient.invalidateQueries({ queryKey: ['extension-repos'] })
   }
-  const nothingSet = saved.qbittorrent.url === '' && saved.sourceHost.url === ''
+  const nothingSet = saved.qbittorrent.url === '' && saved.extensions.url === ''
 
   return (
     <>
@@ -70,7 +70,7 @@ export default function ConnectionsPage() {
           <Alert color="blue" title="Nothing is connected yet">
             <List size="sm" type="ordered" spacing={2}>
               <List.Item>
-                Connect qBittorrent for torrents or the source host for extension sources.
+                Connect qBittorrent for torrents or the extensions sidecar for extension sources.
               </List.Item>
               <List.Item>For extension sources, add a repository below.</List.Item>
               <List.Item>
@@ -132,28 +132,28 @@ export default function ConnectionsPage() {
 
         <ServiceCard
           section="Extension sources"
-          title="Source host"
+          title="Extensions sidecar"
           blurb="Runs Mihon-compatible extensions so Sento can find and download chapters from their sources."
-          service="sourceHost"
+          service="extensions"
           saved={saved}
-          live={live('sourceHost')}
+          live={live('extensions')}
           probing={status.isFetching}
           onSaved={onSaved}
-          isSet={(c) => c.sourceHost.url !== ''}
-          same={(a, b) => a.sourceHost.url === b.sourceHost.url}
-          only={(c) => ({ ...blank, sourceHost: c.sourceHost })}
-          merge={(base, form) => ({ ...base, sourceHost: form.sourceHost })}
+          isSet={(c) => c.extensions.url !== ''}
+          same={(a, b) => a.extensions.url === b.extensions.url}
+          only={(c) => ({ ...blank, extensions: c.extensions })}
+          merge={(base, form) => ({ ...base, extensions: form.extensions })}
           fields={(form, set) => (
             <TextInput
               label="URL"
               placeholder="http://localhost:8901"
               description="Leave empty to disable extension sources"
-              value={form.sourceHost.url}
-              onChange={(e) => set({ sourceHost: { url: e.currentTarget.value } })}
+              value={form.extensions.url}
+              onChange={(e) => set({ extensions: { url: e.currentTarget.value } })}
             />
           )}
         >
-          {saved.sourceHost.url !== '' && (
+          {saved.extensions.url !== '' && (
             <>
               <Divider my="md" />
               <Repos />
@@ -168,7 +168,7 @@ export default function ConnectionsPage() {
 const blank: ConnectionSettings = {
   prowlarr: { url: '', apiKey: '' },
   qbittorrent: { url: '', username: '', password: '', category: '' },
-  sourceHost: { url: '' },
+  extensions: { url: '' },
 }
 
 // StatusBadge renders one probe result. `draft` marks a test of unsaved

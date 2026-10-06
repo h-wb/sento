@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/h-wb/sento/internal/sourcehost"
+	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -20,11 +20,11 @@ type fakeExtHost struct {
 }
 
 func (f *fakeExtHost) Name() string                                         { return "fake" }
-func (f *fakeExtHost) Sources(context.Context) ([]sourcehost.Source, error) { return nil, nil }
-func (f *fakeExtHost) Search(context.Context, string, string) ([]sourcehost.Manga, error) {
+func (f *fakeExtHost) Sources(context.Context) ([]extensions.Source, error) { return nil, nil }
+func (f *fakeExtHost) Search(context.Context, string, string) ([]extensions.Manga, error) {
 	return nil, nil
 }
-func (f *fakeExtHost) Chapters(context.Context, string, string) ([]sourcehost.Chapter, error) {
+func (f *fakeExtHost) Chapters(context.Context, string, string) ([]extensions.Chapter, error) {
 	return nil, nil
 }
 func (f *fakeExtHost) Pages(context.Context, string, string) ([]string, error) { return nil, nil }
@@ -32,10 +32,10 @@ func (f *fakeExtHost) Page(context.Context, string, string) (io.ReadCloser, erro
 	return nil, nil
 }
 
-func (f *fakeExtHost) Extensions(context.Context) ([]sourcehost.ExtensionInfo, error) {
-	out := make([]sourcehost.ExtensionInfo, 0, len(f.catalog))
+func (f *fakeExtHost) Extensions(context.Context) ([]extensions.ExtensionInfo, error) {
+	out := make([]extensions.ExtensionInfo, 0, len(f.catalog))
 	for _, pkg := range f.catalog {
-		info := sourcehost.ExtensionInfo{PkgName: pkg, AvailableVersion: "1.0"}
+		info := extensions.ExtensionInfo{PkgName: pkg, AvailableVersion: "1.0"}
 		if f.installed[pkg] {
 			info.InstalledVersion = "1.0"
 		}
@@ -55,16 +55,16 @@ func (f *fakeExtHost) UninstallExtension(_ context.Context, pkg string) error {
 	return nil
 }
 
-func (f *fakeExtHost) ExtensionSources(_ context.Context, pkg string) ([]sourcehost.Source, error) {
-	return []sourcehost.Source{{ID: "src-" + pkg, Name: pkg}}, nil
+func (f *fakeExtHost) ExtensionSources(_ context.Context, pkg string) ([]extensions.Source, error) {
+	return []extensions.Source{{ID: "src-" + pkg, Name: pkg}}, nil
 }
 
 func (f *fakeExtHost) Repos(context.Context) ([]string, error) { return f.repos, nil }
 
-func (f *fakeExtHost) RepoStatus(context.Context) ([]sourcehost.RepoStatus, error) {
-	out := make([]sourcehost.RepoStatus, 0, len(f.repos))
+func (f *fakeExtHost) RepoStatus(context.Context) ([]extensions.RepoStatus, error) {
+	out := make([]extensions.RepoStatus, 0, len(f.repos))
 	for _, u := range f.repos {
-		out = append(out, sourcehost.RepoStatus{URL: u, Name: "Fake Repo", Extensions: len(f.catalog)})
+		out = append(out, extensions.RepoStatus{URL: u, Name: "Fake Repo", Extensions: len(f.catalog)})
 	}
 	return out, nil
 }
@@ -98,7 +98,7 @@ func TestExtensionReconcile(t *testing.T) {
 		catalog:   []string{"ext.a", "ext.b", "ext.c"},
 		installed: map[string]bool{},
 	}
-	svc := NewExtensionService(st, func() sourcehost.Host { return host })
+	svc := NewExtensionService(st, func() extensions.Host { return host })
 
 	// The repo list is user-added (nothing ships by default) and pushed
 	// to the host on set.
@@ -179,7 +179,7 @@ func TestExtensionReconcile(t *testing.T) {
 // unavailable.
 func TestExtensionsNoManager(t *testing.T) {
 	_, st := setup(t)
-	svc := NewExtensionService(st, func() sourcehost.Host { return nil })
+	svc := NewExtensionService(st, func() extensions.Host { return nil })
 	if svc.HasManager() {
 		t.Fatal("nil host should have no manager")
 	}
@@ -198,10 +198,10 @@ type fakePrefHost struct {
 	pushes []string
 }
 
-func (f *fakePrefHost) SourcePreferences(_ context.Context, sid string) ([]sourcehost.Preference, error) {
-	var out []sourcehost.Preference
+func (f *fakePrefHost) SourcePreferences(_ context.Context, sid string) ([]extensions.Preference, error) {
+	var out []extensions.Preference
 	for key, cur := range f.prefs[sid] {
-		out = append(out, sourcehost.Preference{Key: key, ValueType: "String", Current: cur})
+		out = append(out, extensions.Preference{Key: key, ValueType: "String", Current: cur})
 	}
 	return out, nil
 }
@@ -224,7 +224,7 @@ func TestPreferenceReconcile(t *testing.T) {
 	host := &fakePrefHost{prefs: map[string]map[string]json.RawMessage{
 		"42": {"username": json.RawMessage(`"old"`)},
 	}}
-	svc := NewExtensionService(st, func() sourcehost.Host { return host })
+	svc := NewExtensionService(st, func() extensions.Host { return host })
 
 	if err := svc.SetPreference(ctx, "42", "username", json.RawMessage(`"hugo"`)); err != nil {
 		t.Fatal(err)
@@ -258,7 +258,7 @@ func TestRepoStatus(t *testing.T) {
 	ctx := context.Background()
 	_, st := setup(t)
 	host := &fakeExtHost{catalog: []string{"ext.a", "ext.b"}, installed: map[string]bool{}}
-	svc := NewExtensionService(st, func() sourcehost.Host { return host })
+	svc := NewExtensionService(st, func() extensions.Host { return host })
 
 	if got := svc.RepoStatus(ctx); len(got) != 0 {
 		t.Fatalf("no repos stored, got %+v", got)
@@ -279,7 +279,7 @@ func TestRepoStatus(t *testing.T) {
 	}
 
 	// No host at all: still listed, with the reason.
-	none := NewExtensionService(st, func() sourcehost.Host { return nil })
+	none := NewExtensionService(st, func() extensions.Host { return nil })
 	if got := none.RepoStatus(ctx); len(got) != 1 || got[0].URL != url || got[0].Error == "" {
 		t.Fatalf("status without a host = %+v, want the repo listed with an error", got)
 	}

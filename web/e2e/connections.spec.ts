@@ -12,7 +12,7 @@ test('both services are shown with their live status', async ({ page }) => {
   // Probed on load — nobody pressed Test.
   await expect(qbit.getByText(/^Connected/)).toBeVisible()
 
-  const host = page.getByRole('region', { name: 'Source host' })
+  const host = page.getByRole('region', { name: 'Extensions sidecar' })
   await expect(host.getByRole('textbox', { name: 'URL', exact: true })).toHaveValue(/\/host$/)
   await expect(host.getByText(/^Connected · \d+ sources?/)).toBeVisible()
 })
@@ -24,7 +24,7 @@ test('the old /sources address still lands on the page', async ({ page }) => {
 })
 
 // Each service tests and saves on its own: a wrong qBittorrent URL is
-// reported on that card, and the source host is not touched by it.
+// reported on that card, and the extensions sidecar is not touched by it.
 test('a service is tested on its own before saving', async ({ page }) => {
   await page.goto('/connections')
   const qbit = page.getByRole('region', { name: 'qBittorrent' })
@@ -46,7 +46,7 @@ test('a service is tested on its own before saving', async ({ page }) => {
 // whose only symptom was an empty extension list somewhere else.
 test('a failing extension repo is reported on its row', async ({ page }) => {
   await page.goto('/connections')
-  const host = page.getByRole('region', { name: 'Source host' })
+  const host = page.getByRole('region', { name: 'Extensions sidecar' })
   await expect(host.getByText(/Add a repository to see available sources/)).toBeVisible()
 
   await host.getByRole('textbox', { name: 'Extension repo URL' }).fill('https://broken.example/index.min.json')

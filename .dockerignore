@@ -24,7 +24,7 @@ web/blob-report/
 web/.playwright/
 
 # sidecar (not part of the sento image)
-host/
+extensions/
 
 # docs and tooling
 docs/

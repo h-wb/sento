@@ -10,9 +10,9 @@ import (
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/config"
+	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/qbittorrent"
-	"github.com/h-wb/sento/internal/sourcehost"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -36,16 +36,16 @@ type QBittorrentConn struct {
 	Category string `json:"category"`
 }
 
-// SourceHostConn points at a sento-host sidecar (host/), the extension
+// ExtensionsConn points at a sento-extensions sidecar (extensions/), the extension
 // runtime. Empty URL = no extension sources.
-type SourceHostConn struct {
+type ExtensionsConn struct {
 	URL string `json:"url"`
 }
 
 type ConnectionSettings struct {
 	Prowlarr    ProwlarrConn    `json:"prowlarr"`
 	QBittorrent QBittorrentConn `json:"qbittorrent"`
-	SourceHost  SourceHostConn  `json:"sourceHost"`
+	Extensions  ExtensionsConn  `json:"extensions"`
 }
 
 // DefaultConnections seeds settings from the file/env config.
@@ -56,14 +56,14 @@ func DefaultConnections(cfg config.Config) ConnectionSettings {
 			URL: cfg.QBittorrent.URL, Username: cfg.QBittorrent.Username,
 			Password: cfg.QBittorrent.Password, Category: cfg.QBittorrent.Category,
 		},
-		SourceHost: SourceHostConn{URL: cfg.SourceHost.URL},
+		Extensions: ExtensionsConn{URL: cfg.Extensions.URL},
 	}
 }
 
 func ValidateConnections(cs ConnectionSettings) error {
 	for name, u := range map[string]string{
 		"prowlarr": cs.Prowlarr.URL, "qbittorrent": cs.QBittorrent.URL,
-		"sourceHost": cs.SourceHost.URL,
+		"extensions": cs.Extensions.URL,
 	} {
 		if u != "" && !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
 			return apperr.Invalidf("%s url must start with http:// or https://", name)
@@ -81,7 +81,7 @@ type Connections struct {
 	registry *provider.Registry
 
 	mu   sync.RWMutex
-	host sourcehost.Host // nil when no source backend is configured
+	host extensions.Host // nil when no source backend is configured
 }
 
 func NewConnections(st *store.Store, cfg config.Config) *Connections {
@@ -91,7 +91,7 @@ func NewConnections(st *store.Store, cfg config.Config) *Connections {
 func (c *Connections) Registry() *provider.Registry { return c.registry }
 
 // Host is the current source backend (binding endpoints).
-func (c *Connections) Host() sourcehost.Host {
+func (c *Connections) Host() extensions.Host {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.host
@@ -102,6 +102,14 @@ func (c *Connections) Load(ctx context.Context) ConnectionSettings {
 	if raw, err := c.store.GetSetting(ctx, connectionsKey); err == nil {
 		var cs ConnectionSettings
 		if json.Unmarshal(raw, &cs) == nil {
+			// Settings saved before the sidecar was renamed keep it under
+			// "sourceHost".
+			var legacy struct {
+				SourceHost ExtensionsConn `json:"sourceHost"`
+			}
+			if cs.Extensions.URL == "" && json.Unmarshal(raw, &legacy) == nil {
+				cs.Extensions = legacy.SourceHost
+			}
 			return cs
 		}
 	}
@@ -147,11 +155,11 @@ func (c *Connections) Apply(cs ConnectionSettings) {
 	c.mu.Unlock()
 }
 
-func buildHost(cs ConnectionSettings) sourcehost.Host {
-	if cs.SourceHost.URL == "" {
+func buildHost(cs ConnectionSettings) extensions.Host {
+	if cs.Extensions.URL == "" {
 		return nil
 	}
-	return sourcehost.NewClient(cs.SourceHost.URL)
+	return extensions.NewClient(cs.Extensions.URL)
 }
 
 // ConnectionTest reports one service check ("" error = healthy).
@@ -179,9 +187,9 @@ func TestConnections(ctx context.Context, cs ConnectionSettings) []ConnectionTes
 			return qb.Version(ctx)
 		}})
 	}
-	if cs.SourceHost.URL != "" {
-		hc := sourcehost.NewClient(cs.SourceHost.URL)
-		probes = append(probes, probe{"sourceHost", func() (string, error) {
+	if cs.Extensions.URL != "" {
+		hc := extensions.NewClient(cs.Extensions.URL)
+		probes = append(probes, probe{"extensions", func() (string, error) {
 			sources, err := hc.Sources(ctx)
 			detail := fmt.Sprintf("%d sources", len(sources))
 			if len(sources) == 1 {

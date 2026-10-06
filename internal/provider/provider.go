@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/h-wb/sento/internal/sourcehost"
+	"github.com/h-wb/sento/internal/extensions"
 )
 
 const (
@@ -101,7 +101,7 @@ type TorrentRef struct {
 }
 
 // SourceRef carries extension-source handles. ChapterKey is opaque,
-// minted by the source host.
+// minted by the extensions sidecar.
 type SourceRef struct {
 	ChapterKey    string  `json:"chapterKey"`
 	ChapterNumber float64 `json:"-"` // the source's own recognition (corroboration)
@@ -205,7 +205,7 @@ type Progresser interface {
 // series→manga identity mapping before they can be searched (extension
 // sources). Used by the auto-binding resolver.
 type MangaResolver interface {
-	ResolveManga(ctx context.Context, siteID, query string) ([]sourcehost.Manga, error)
+	ResolveManga(ctx context.Context, siteID, query string) ([]extensions.Manga, error)
 }
 
 // Registry holds the configured providers. It is mutable: connection

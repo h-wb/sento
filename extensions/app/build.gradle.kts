@@ -26,5 +26,5 @@ dependencies {
 }
 
 application {
-    mainClass.set("sento.host.MainKt")
+    mainClass.set("sento.extensions.MainKt")
 }

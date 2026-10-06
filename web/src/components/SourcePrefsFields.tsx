@@ -11,7 +11,7 @@ import {
 } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
-import type { Preference } from '../types/sourcehost'
+import type { Preference } from '../types/extensions'
 
 // Embeds a source's ConfigurableSource preference screen (logins,
 // mirrors, quality…) as form fields. Controlled: edits land in `values`

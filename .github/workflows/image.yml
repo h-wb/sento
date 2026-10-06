@@ -4,7 +4,7 @@
 # them.
 #
 #   ghcr.io/<owner>/sento        the server (Dockerfile)
-#   ghcr.io/<owner>/sento-host   the extension sidecar (host/Dockerfile)
+#   ghcr.io/<owner>/sento-extensions   the extension sidecar (extensions/Dockerfile)
 name: Image
 
 on:
@@ -36,7 +36,7 @@ jobs:
           - name: sento
             context: .
             image: ghcr.io/${{ github.repository }}
-          - name: sento-host
+          - name: sento-extensions
             context: host
             image: ghcr.io/${{ github.repository }}-host
     steps:
