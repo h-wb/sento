@@ -126,9 +126,14 @@ func pathID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
 	return id, true
 }
 
+// maxBodyBytes caps request bodies. The largest legitimate one is a
+// profile import document; nothing comes near a megabyte.
+const maxBodyBytes = 1 << 20
+
 // decodeBody parses the JSON body into v; on failure it writes the 400 and
 // returns false so handlers can one-line their decoding.
 func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid body: "+err.Error())
 		return false
@@ -139,7 +144,7 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 // respondList writes a list (never null: empty becomes []) or the error.
 func respondList[T any](w http.ResponseWriter, list []T, err error) {
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, err)
 		return
 	}
 	if list == nil {

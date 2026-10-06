@@ -5,6 +5,10 @@ import type { ScanResult, SearchResult, TargetSlot } from "./service"
 import type { Collection, Series } from "./store"
 
 //////////
+// source: api.go
+
+
+//////////
 // source: server.go
 /*
 Package server wires the HTTP API and serves the web UI.

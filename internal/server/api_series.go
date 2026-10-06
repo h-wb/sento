@@ -66,8 +66,8 @@ func (s *Server) handleAddSeries(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &req) {
 		return
 	}
-	// Metadata fetch (3+ calls, rate-limited) can be slow; don't tie it to
-	// the handler's 60s middleware timeout budget more than needed.
+	// Metadata fetch (3+ calls, rate-limited, retried when throttled) can be
+	// slow; give up with a clean error before the router's timeout does.
 	ctx, cancel := context.WithTimeout(r.Context(), 55*time.Second)
 	defer cancel()
 

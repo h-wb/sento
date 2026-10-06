@@ -107,15 +107,15 @@ func (l *Library) Refresh(ctx context.Context, seriesID int64) error {
 	}
 	series, err := l.provider.GetSeries(ctx, existing.MangaBakaID)
 	if err != nil {
-		return err
+		return apperr.Upstreamf("fetching series %d: %w", existing.MangaBakaID, err)
 	}
 	collections, err := l.provider.GetCollections(ctx, series.MangaBakaID)
 	if err != nil {
-		return err
+		return apperr.Upstreamf("fetching collections: %w", err)
 	}
 	works, err := l.provider.GetWorks(ctx, series.MangaBakaID)
 	if err != nil {
-		return err
+		return apperr.Upstreamf("fetching works: %w", err)
 	}
 	return l.store.ReconcileMetadata(ctx, seriesID, series, collections, works)
 }

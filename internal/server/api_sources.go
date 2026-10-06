@@ -310,10 +310,12 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case body.DryRun:
 	case body.Grab != "":
+		found := false
 		for _, c := range result.Candidates {
 			if c.GUID != body.Grab {
 				continue
 			}
+			found = true
 			qid, err := s.search.Grab(r.Context(), id, body.Ledger, c, body.Force)
 			if err != nil {
 				writeErr(w, err)
@@ -321,6 +323,13 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			}
 			queued = append(queued, qid)
 			break
+		}
+		if !found {
+			// The grab re-runs the search; the release can have dropped off
+			// the indexer since the user saw it. Say so instead of
+			// answering 200 with nothing queued.
+			writeErr(w, apperr.NotFoundf("release is no longer listed by its indexer; search again"))
+			return
 		}
 	default:
 		queued = s.search.GrabBest(r.Context(), id, body.Ledger, result.Candidates)

@@ -89,3 +89,26 @@ func TestValidate(t *testing.T) {
 		t.Errorf("flag value should be case-insensitive: %v", err)
 	}
 }
+
+// Patterns are compiled once and cached — including the ones that do not
+// compile, which must keep matching nothing on every later call.
+func TestRegexConditionsAreCachedSafely(t *testing.T) {
+	in := Input{Title: "One Piece v01 (Digital) (1r0n)"}
+	good := Format{Conditions: []Condition{{Type: CondTitle, Value: `\b1r0n\b`}}}
+	bad := Format{Conditions: []Condition{{Type: CondTitle, Value: `(unclosed`}}}
+	for range 3 {
+		if !good.Matches(in) {
+			t.Fatal("valid pattern stopped matching")
+		}
+		if bad.Matches(in) {
+			t.Fatal("invalid pattern matched")
+		}
+	}
+	// Case-insensitive, and distinct patterns do not share a cache slot.
+	if !(Format{Conditions: []Condition{{Type: CondTitle, Value: `DIGITAL`}}}).Matches(in) {
+		t.Fatal("patterns must match case-insensitively")
+	}
+	if (Format{Conditions: []Condition{{Type: CondTitle, Value: `omnibus`}}}).Matches(in) {
+		t.Fatal("unrelated pattern matched")
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Condition types.
@@ -107,9 +108,21 @@ func (c Condition) test(in Input) bool {
 	return false
 }
 
+// regexCache memoizes compiled condition patterns (nil = does not
+// compile). A search scores every candidate against every format, so the
+// same handful of user patterns would otherwise be recompiled thousands of
+// times per search. Patterns only change when a format is edited; the set
+// stays small enough that entries are never evicted.
+var regexCache sync.Map // pattern → *regexp.Regexp
+
 func matchRegexp(pattern, s string) bool {
-	re, err := regexp.Compile("(?i)" + pattern)
-	return err == nil && re.MatchString(s)
+	cached, ok := regexCache.Load(pattern)
+	if !ok {
+		re, _ := regexp.Compile("(?i)" + pattern) // nil on error: cached too
+		cached, _ = regexCache.LoadOrStore(pattern, re)
+	}
+	re := cached.(*regexp.Regexp)
+	return re != nil && re.MatchString(s)
 }
 
 func baseLang(lang string) string {

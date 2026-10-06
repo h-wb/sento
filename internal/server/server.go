@@ -92,8 +92,6 @@ func (s *Server) reconcileExtensions() {
 	}()
 }
 
-// Volumes exposes the volume searcher for background loops.
-
 // Importer exposes the queue importer for background loops.
 func (s *Server) Importer() *service.Importer { return s.importer }
 
@@ -156,10 +154,19 @@ func (s *Server) mountStatic(r chi.Router) {
 		}
 		path := filepath.Join(dir, filepath.Clean("/"+req.URL.Path))
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			// Vite fingerprints everything under assets/, so those can be
+			// cached forever; the rest (index.html, favicon) must revalidate
+			// or a browser keeps running the previous release's bundle.
+			if strings.HasPrefix(req.URL.Path, "/assets/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				w.Header().Set("Cache-Control", "no-cache")
+			}
 			fileServer.ServeHTTP(w, req)
 			return
 		}
 		if _, err := os.Stat(index); err == nil {
+			w.Header().Set("Cache-Control", "no-cache")
 			http.ServeFile(w, req, index)
 			return
 		}
