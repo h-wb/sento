@@ -132,3 +132,15 @@ func TestPanickingTaskIsContained(t *testing.T) {
 		t.Fatalf("task still marked running after a panic: %+v", ts)
 	}
 }
+
+// A series on hiatus resumes without notice: it keeps the daily refresh
+// and the chapter search that a finished series does not get.
+func TestActiveSeries(t *testing.T) {
+	for status, want := range map[string]bool{
+		"releasing": true, "hiatus": true, "completed": false, "cancelled": false, "upcoming": false, "": false,
+	} {
+		if got := active(store.Series{Status: status}); got != want {
+			t.Errorf("active(%q) = %v, want %v", status, got, want)
+		}
+	}
+}

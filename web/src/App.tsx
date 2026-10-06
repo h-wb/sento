@@ -210,10 +210,12 @@ export default function App() {
   ]
 
   const healthIssues = health.data?.issues ?? []
+  const healthSummary = `${healthIssues.length} health ${healthIssues.length === 1 ? 'issue' : 'issues'}`
+  // The count is announced as a description so the link keeps its name.
   const healthBadge =
     healthIssues.length > 0 ? (
-      <Tooltip label={`${healthIssues.length} health ${healthIssues.length === 1 ? 'issue' : 'issues'}`}>
-        <Badge size="xs" circle color={healthIssues.some((i) => i.level === 'error') ? 'red' : 'yellow'}>
+      <Tooltip label={healthSummary}>
+        <Badge aria-hidden size="xs" circle color={healthIssues.some((i) => i.level === 'error') ? 'red' : 'yellow'}>
           {healthIssues.length}
         </Badge>
       </Tooltip>
@@ -236,6 +238,7 @@ export default function App() {
           healthBadge
         ) : undefined
       }
+      aria-description={l.to === '/system' && healthIssues.length > 0 ? healthSummary : undefined}
       active={isActive(l.to)}
       onClick={closeNav}
     />

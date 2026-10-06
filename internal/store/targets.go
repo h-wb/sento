@@ -339,8 +339,9 @@ func (f *AssetFacts) Scan(src any) error {
 }
 
 func (s *Store) BulkMonitor(ctx context.Context, sid, tid int64, ids []int64, monitored bool) error {
-	if len(ids) == 0 || len(ids) > 500 {
-		return apperr.Invalidf("select between 1 and 500 books")
+	// 10,000 is the most books an edition can hold (inferred chapters cap).
+	if len(ids) == 0 || len(ids) > 10000 {
+		return apperr.Invalidf("select between 1 and 10,000 books")
 	}
 	t, err := s.GetTarget(ctx, tid)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/h-wb/sento/internal/qbittorrent"
@@ -19,6 +20,49 @@ type TorrentProvider struct {
 	entries  func(ctx context.Context) ([]IndexerEntry, error)
 	qbit     *qbittorrent.Client // nil = no grabs
 	category string
+	// sections caches each indexer's category names by endpoint URL: they
+	// only change when the indexer is reconfigured upstream.
+	sections sync.Map // string → map[int]string
+}
+
+// sectionNames returns an indexer's category names, fetched once. A
+// failure costs only the language hint, never the search.
+func (p *TorrentProvider) sectionNames(ctx context.Context, e IndexerEntry) map[int]string {
+	if cached, ok := p.sections.Load(e.URL); ok {
+		return cached.(map[int]string)
+	}
+	names, err := torznab.New(e.URL, e.APIKey).Categories(ctx)
+	if err != nil {
+		return nil
+	}
+	p.sections.Store(e.URL, names)
+	return names
+}
+
+// categoryLanguage reads a release language off the indexer sections it
+// is filed under: Nyaa-style "English-translated" and "Raw". Sections
+// that say nothing about language ("Non-English-translated", "Comics")
+// yield none.
+func categoryLanguage(categories []int, names map[int]string) string {
+	found := ""
+	for _, id := range categories {
+		name := strings.ToLower(names[id])
+		lang := ""
+		switch {
+		case strings.Contains(name, "non-english"):
+		case strings.Contains(name, "english"):
+			lang = "en"
+		case strings.Contains(name, "raw"):
+			lang = "ja"
+		}
+		if lang != "" && found != "" && lang != found {
+			return "" // sections disagree
+		}
+		if lang != "" {
+			found = lang
+		}
+	}
+	return found
 }
 
 func NewTorrent(entries func(ctx context.Context) ([]IndexerEntry, error),
@@ -64,11 +108,15 @@ func (p *TorrentProvider) Search(ctx context.Context, req SearchRequest) ([]Cand
 		}
 		active++
 		go func(e IndexerEntry) {
-			releases, err := torznab.New(e.URL, e.APIKey).Search(ctx, req.Query)
+			// Books only: unrestricted, a general tracker fills its result
+			// cap with films and games of the same name and the actual
+			// volumes never arrive.
+			releases, err := torznab.New(e.URL, e.APIKey).Search(ctx, req.Query, torznab.CategoryBooks)
 			if err != nil {
 				ch <- res{err: fmt.Errorf("%s: %w", e.Name, err)}
 				return
 			}
+			names := p.sectionNames(ctx, e)
 			cands := make([]Candidate, 0, len(releases))
 			for _, rel := range releases {
 				cands = append(cands, Candidate{
@@ -85,6 +133,9 @@ func (p *TorrentProvider) Search(ctx context.Context, req SearchRequest) ([]Cand
 						DownloadURL: rel.DownloadURL,
 						Size:        rel.Size,
 						Seeders:     rel.Seeders,
+
+						CategoryLanguage: categoryLanguage(rel.Categories, names),
+						DefaultLanguage:  e.Language,
 					},
 				})
 			}

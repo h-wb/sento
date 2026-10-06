@@ -44,6 +44,19 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 		if cand.Source != nil && rc.Parse.Language == "" {
 			rc.Parse.Language = cand.Source.Lang
 		}
+		// A torrent name that states no language still has evidence around
+		// it, strongest first: the indexer section it is filed under, an
+		// English-language publisher's tag, the indexer's own language.
+		if cand.Torrent != nil && rc.Parse.Language == "" {
+			switch {
+			case cand.Torrent.CategoryLanguage != "":
+				rc.Parse.Language, rc.languageSource = cand.Torrent.CategoryLanguage, "indexer category"
+			case englishPublisher(rc.Parse.Edition.Names):
+				rc.Parse.Language, rc.languageSource = "en", "publisher"
+			case cand.Torrent.DefaultLanguage != "":
+				rc.Parse.Language, rc.languageSource = cand.Torrent.DefaultLanguage, "indexer default"
+			}
+		}
 
 		ranges := s.coverageRanges(run.ledger, &rc)
 		// Keep number-less candidates only as potential whole-series packs
@@ -101,6 +114,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 						scoped.target.WorkID = run.target.WorkID
 						scoped.target.Number = run.target.Number
 						scoped.target.All = run.target.All
+						scoped.target.AllBooks = run.target.AllBooks
 					}
 					scoped.wanted = map[int64]map[int64]bool{t.CollectionID: {}}
 					for _, w := range run.units[t.CollectionID] {
@@ -118,7 +132,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					cp.Rejections = nil
 					cp.Covered = nil
 					cp.Coverage = nil
-					if (evidence != 0 && evidence != col.ID) || !editionCompatibleWithEvidence(cp.Parse, *col, evidence) || (evidence == 0 && ambiguousEdition(cp.Parse, run.collections, run.ledger)) {
+					if (evidence != 0 && evidence != col.ID) || !editionCompatibleWithEvidence(cp.Parse, *col, evidence) {
 						if !languageCompatible(cp.Parse, col.Language) {
 							cp.Rejections = append(cp.Rejections, "rejected.language")
 						} else {
@@ -126,6 +140,12 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 						}
 					} else {
 						s.funnel(&scoped, &cp, ranges)
+						// The release fits this edition but not only this one.
+						// That is a question for the user, not a contradiction:
+						// never grabbed automatically, downloadable after review.
+						if evidence == 0 && run.ambiguousEdition(cp.Parse, *col) {
+							cp.Rejections = append(cp.Rejections, "rejected.edition_ambiguous")
+						}
 					}
 					if t.RequiredGroup != "" {
 						group := cp.Parse.Group
@@ -545,23 +565,82 @@ func editionCompatible(p parse.Result, c store.Collection) bool {
 			return false
 		}
 	}
-	if p.Quality.Digital && c.Medium != "" && c.Medium != "digital" {
-		return false
-	}
-	if p.Quality.Scan && c.Medium == "digital" {
-		return false
-	}
+	// Medium is deliberately not checked: "(Digital)" says how a file was
+	// produced, not which book it is. It only breaks ties (preferByMedium).
 	return true
 }
 
-func ambiguousEdition(p parse.Result, cols []store.Collection, kind string) bool {
-	count := 0
-	for _, c := range cols {
-		if c.Type == kind && c.SyncState != "stale" && c.SyncState != "superseded" && editionCompatible(p, c) {
-			count++
+// Publishers that only release in English: their rip tag is language
+// evidence. Publishers that also print in Japanese (Kodansha, Shonen Jump,
+// Square Enix) and multilingual platforms are left out.
+var englishPublishers = []string{"viz", "seven seas", "seven seas siren", "yen press", "dark horse", "j-novel club", "vertical", "ize press", "udon"}
+
+func englishPublisher(names []string) bool {
+	for _, n := range names {
+		if slices.Contains(englishPublishers, n) {
+			return true
 		}
 	}
-	return count > 1
+	return false
+}
+
+// preferByMedium narrows editions a release fits by how the file was
+// produced: a digital rip belongs to the digital edition and a scan to the
+// printed one, when both are in play. With no such evidence, or no edition
+// of that medium, every edition stays. Medium never chooses between
+// languages: a digital rip in an unstated language is not thereby English.
+func preferByMedium(p parse.Result, cols []store.Collection) []store.Collection {
+	for _, c := range cols {
+		if baseLang(c.Language) != baseLang(cols[0].Language) {
+			return cols
+		}
+	}
+	var fits func(store.Collection) bool
+	switch {
+	case p.Quality.Digital:
+		fits = func(c store.Collection) bool { return c.Medium == "digital" }
+	case p.Quality.Scan:
+		fits = func(c store.Collection) bool { return c.Medium != "" && c.Medium != "digital" }
+	default:
+		return cols
+	}
+	var out []store.Collection
+	for _, c := range cols {
+		if fits(c) {
+			out = append(out, c)
+		}
+	}
+	if len(out) == 0 {
+		return cols
+	}
+	return out
+}
+
+// ambiguousEdition reports whether a release that fits col fits another
+// edition the user collects at least as well. Catalog editions nobody
+// collects do not compete: the user already chose against them.
+func (run *searchRun) ambiguousEdition(p parse.Result, col store.Collection) bool {
+	fits := []store.Collection{col}
+	otherLanguage := false
+	for _, c := range run.collections {
+		if c.ID == col.ID || c.Type != col.Type || c.SyncState == "stale" || c.SyncState == "superseded" {
+			continue
+		}
+		collected := false
+		for _, t := range run.targets {
+			collected = collected || (t.CollectionID == c.ID && t.Monitored)
+		}
+		if !collected || !editionCompatible(p, c) {
+			continue
+		}
+		if baseLang(c.Language) != baseLang(col.Language) {
+			otherLanguage = true
+			continue
+		}
+		fits = append(fits, c)
+	}
+	best := preferByMedium(p, fits)
+	return otherLanguage || len(best) != 1 || best[0].ID != col.ID
 }
 
 func candidateFlags(c ReleaseCandidate) map[string]bool {

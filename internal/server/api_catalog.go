@@ -342,7 +342,7 @@ func (s *Server) handleEditionOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, data)
 }
-func (s *Server) handleUnitPage(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTargetBooks(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
@@ -351,13 +351,8 @@ func (s *Server) handleUnitPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	data, err := s.library.TargetPage(r.Context(), id, tid, page, r.URL.Query().Get("filter"))
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, data)
+	data, err := s.library.TargetBooks(r.Context(), id, tid)
+	respondList(w, data, err)
 }
 func (s *Server) handleBulkMonitor(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
@@ -407,6 +402,35 @@ func (s *Server) handleFileFacts(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// handlePlanOrganize previews what organising a series' files would
+// rename and re-tag under the current media settings.
+func (s *Server) handlePlanOrganize(w http.ResponseWriter, r *http.Request) {
+	sid, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	changes, err := s.importer.PlanOrganize(r.Context(), sid)
+	respondList(w, changes, err)
+}
+
+func (s *Server) handleOrganize(w http.ResponseWriter, r *http.Request) {
+	sid, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body OrganizeBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	res, err := s.importer.Organize(r.Context(), sid, body.Rename, body.Retag)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
 func (s *Server) handleCheckFiles(w http.ResponseWriter, r *http.Request) {
 	sid, ok := pathID(w, r, "id")
 	if !ok {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/h-wb/sento/internal/metadata"
@@ -348,10 +349,18 @@ func TestModelAtomicInstallCannotClobber(t *testing.T) {
 	if string(got) != "retained" {
 		t.Fatal("retained asset overwritten")
 	}
-	a := assetPath(dir, "book.cbz", hash, store.ExpectedSlot{CollectionID: 1, TargetID: 1})
-	b := assetPath(dir, "book.cbz", hash, store.ExpectedSlot{CollectionID: 2, TargetID: 1})
-	if a == b {
-		t.Fatal("different edition namespaces collide")
+	// A free path is used as named; one held by a different book gets the
+	// fingerprint instead of being replaced; the setting forces it always.
+	free, err := placeAsset(dir, "book.cbz", hash, false)
+	if err != nil || filepath.Base(free) != "book.cbz" {
+		t.Fatalf("free path = %q, %v", free, err)
+	}
+	taken, err := placeAsset(dir, filepath.Base(dst), hash, false)
+	if err != nil || taken == dst || !strings.Contains(filepath.Base(taken), "["+hash+"]") {
+		t.Fatalf("occupied path = %q, %v", taken, err)
+	}
+	if always, _ := placeAsset(dir, "book.cbz", hash, true); !strings.Contains(always, "["+hash+"]") {
+		t.Fatalf("fingerprint missing from %q", always)
 	}
 }
 
@@ -423,9 +432,7 @@ func TestModelPackStaysOneAssetAcrossUnitsAndVersions(t *testing.T) {
 	raw, _ := json.Marshal(slots)
 	dir := t.TempDir()
 	name := "ONE PIECE v01-v02 (Digital).cbz"
-	if err = os.WriteFile(filepath.Join(dir, name), []byte("one unsplit pack"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeCBZ(t, filepath.Join(dir, name), "one unsplit pack")
 	im := NewImporter(st, nil, t.TempDir(), nil)
 	if err = im.importFiles(ctx, store.QueueItem{SeriesID: id, Protocol: "torrent", ExpectedSlots: raw}, dir, []string{name}); err != nil {
 		t.Fatal(err)
@@ -438,9 +445,13 @@ func TestModelPackStaysOneAssetAcrossUnitsAndVersions(t *testing.T) {
 	if err != nil || len(cv) != 4 {
 		t.Fatalf("pack coverage lost: %+v %v", cv, err)
 	}
-	got, err := os.ReadFile(fs[0].Path)
-	if err != nil || string(got) != "one unsplit pack" {
-		t.Fatal("pack bytes changed")
+	// Still one archive with the same pages; tagged at series level only,
+	// since no single number describes two volumes.
+	if want, _ := fileHash(filepath.Join(dir, name)); fs[0].Hash != want {
+		t.Fatal("pack pages changed")
+	}
+	if _, info := readBook(t, fs[0].Path); info == nil || info.Series != "ONE PIECE" || info.Number != "" || info.Volume != "" {
+		t.Fatalf("pack ComicInfo = %+v", info)
 	}
 }
 

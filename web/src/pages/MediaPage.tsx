@@ -5,6 +5,7 @@ import {
   Code,
   Accordion,
   Group,
+  Select,
   Stack,
   Switch,
   Table,
@@ -32,6 +33,19 @@ const tokens: [string, string][] = [
   ['{group}', 'release/scanlation group'],
   ['{isbn}', 'ISBN when known'],
   ['{year}', '1997'],
+  ['{publisher}', 'edition publisher (folders)'],
+  ['{medium}', 'paperback, digital… (folders)'],
+  ['{type}', 'Volumes or Chapters (folders)'],
+  ['{version}', 'name of an additional copy; empty for the default one (folders)'],
+  ['{collectionId} {versionId}', 'internal ids that never change (folders)'],
+]
+
+// Folder layout presets; the templates mirror the backend's constants.
+const layouts = [
+  { value: 'edition', label: 'By edition — Standard Edition [en]', template: '{edition} [{lang}] ({version})' },
+  { value: 'type', label: 'By type, then edition — Volumes/Standard Edition [en]', template: '{type}/{edition} [{lang}] ({version})' },
+  { value: 'flat', label: 'Flat — everything in the series folder', template: '' },
+  { value: 'ids', label: 'By internal id — collections/42/versions/81', template: 'collections/{collectionId}/versions/{versionId}' },
 ]
 
 export default function MediaPage() {
@@ -102,11 +116,67 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
             preview={preview.data?.chapterFile}
             onChange={(v) => set({ chapterFile: v })}
           />
-          <TextInput
-            label="Chapter subfolder"
-            description="Chapters land in this folder inside the series folder; empty = alongside volumes"
-            value={form.chapterDir}
-            onChange={(e) => set({ chapterDir: e.currentTarget.value })}
+
+          <Title order={5} mt="sm">
+            Folder layout
+          </Title>
+          <Group grow align="flex-start">
+            <TextInput
+              label="Volumes top folder"
+              placeholder="None"
+              description="Optional folder above the series, e.g. Volumes."
+              value={form.volumesRoot}
+              onChange={(e) => set({ volumesRoot: e.currentTarget.value })}
+            />
+            <TextInput
+              label="Chapters top folder"
+              placeholder="None"
+              description="Give it a different name, e.g. Chapters, to keep chapters in their own tree."
+              value={form.chaptersRoot}
+              onChange={(e) => set({ chaptersRoot: e.currentTarget.value })}
+            />
+          </Group>
+          <Select
+            label="Folders inside a series"
+            description="How editions and extra copies are separated. Applies to new imports."
+            allowDeselect={false}
+            value={layouts.find((l) => l.template === form.bookFolder)?.value ?? 'custom'}
+            onChange={(v) => {
+              const layout = layouts.find((l) => l.value === v)
+              if (layout) set({ bookFolder: layout.template, hashInName: layout.value === 'ids' })
+            }}
+            data={[...layouts.map(({ value, label }) => ({ value, label })), { value: 'custom', label: 'Custom' }]}
+          />
+          <TemplateInput
+            label="Book folder"
+            value={form.bookFolder}
+            preview={
+              preview.data ? preview.data.bookFolder || '(directly in the series folder)' : undefined
+            }
+            onChange={(v) => set({ bookFolder: v })}
+          />
+          <div>
+            <Text size="xs" c="dimmed">
+              A volume lands at
+            </Text>
+            <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+              {preview.data?.volumePath ?? 'Loading…'}
+            </Text>
+            <Text size="xs" c="dimmed" mt={4}>
+              A chapter lands at
+            </Text>
+            <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+              {preview.data?.chapterPath ?? 'Loading…'}
+            </Text>
+            <Text size="xs" c="dimmed" mt={6}>
+              Existing files move when you run “Organize files” on a series.
+            </Text>
+          </div>
+          <Switch
+            label="Add the content fingerprint to file names"
+            description="Off, it is only added when two different books would get the same path."
+            checked={form.hashInName}
+            onChange={(e) => set({ hashInName: e.currentTarget.checked })}
           />
 
           <Title order={5} mt="sm">
@@ -119,16 +189,17 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
             onChange={(e) => set({ renameImports: e.currentTarget.checked })}
           />
           <Switch
-            label="Copy instead of hardlink"
-            description="Use a full copy if hardlinks are not supported by your filesystem"
-            checked={form.alwaysCopy}
-            onChange={(e) => set({ alwaysCopy: e.currentTarget.checked })}
-          />
-          <Switch
-            label="Write ComicInfo.xml"
-            description="Add metadata to source downloads for compatible manga readers"
+            label="Embed metadata in books"
+            description="Every import becomes a clean CBZ with a full ComicInfo.xml (series, number, credits, summary, dates, language). Torrent downloads are copied so the original keeps seeding, which uses extra disk space while it seeds."
             checked={form.writeComicInfo}
             onChange={(e) => set({ writeComicInfo: e.currentTarget.checked })}
+          />
+          <Switch
+            label="Copy instead of hardlink"
+            description="Only when metadata is not embedded: use a full copy if your filesystem does not support hardlinks."
+            checked={form.alwaysCopy}
+            disabled={form.writeComicInfo}
+            onChange={(e) => set({ alwaysCopy: e.currentTarget.checked })}
           />
 
           <Group mt="sm">

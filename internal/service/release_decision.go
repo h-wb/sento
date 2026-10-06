@@ -34,6 +34,9 @@ func (c *ReleaseCandidate) explain() {
 		if c.cand.Source != nil && c.cand.Source.Lang == c.Parse.Language && !hasLanguageTrace(c.Parse) {
 			d.LanguageSource = "source listing"
 		}
+		if c.languageSource != "" {
+			d.LanguageSource = c.languageSource
+		}
 	}
 	switch {
 	case len(c.Parse.Volumes) > 0:
@@ -67,22 +70,23 @@ func (c *ReleaseCandidate) explain() {
 		d.Warnings = append(d.Warnings, "Release quality is unspecified.")
 	}
 	labels := map[string]string{
-		"rejected.content_type":     "Classified as " + string(c.Parse.ContentType) + ", not manga.",
-		"rejected.series_match":     "The release name does not identify this series unambiguously.",
-		"rejected.edition_routing":  "The publication cannot be matched to this edition without ambiguity.",
-		"rejected.no_coverage":      "No books in this release need a download in the current selection.",
-		"rejected.numbers_unknown":  "No confirmed volume or chapter numbers were found.",
-		"rejected.pack_unverified":  "A date range alone cannot confirm a complete series pack.",
-		"rejected.blocklisted":      "This release is on your blocklist.",
-		"rejected.language":         "The stated language does not match this edition.",
-		"rejected.language_unknown": "This version requires a confirmed language.",
-		"rejected.unit_ambiguous":   "Several books share this number. Search from the specific book to disambiguate.",
-		"rejected.target_group":     "The release group does not match this copy’s required group.",
-		"rejected.no_upgrade":       "This release does not improve the existing copy enough.",
-		"rejected.format_score":     "The release does not meet the profile’s minimum format score.",
-		"rejected.pack_threshold":   fmt.Sprintf("Only %d of %d represented books are wanted; automatic packs require at least half.", len(c.Coverage), c.RepresentedUnits),
-		"rejected.size":             "The estimated size per book is outside the profile’s limits.",
-		"rejected.seeders":          "The torrent has fewer seeders than the profile requires.",
+		"rejected.content_type":      "Classified as " + string(c.Parse.ContentType) + ", not manga.",
+		"rejected.series_match":      "The release name does not identify this series unambiguously.",
+		"rejected.edition_routing":   "The release states a different edition than this one.",
+		"rejected.edition_ambiguous": "This release also fits another edition you collect. Confirm it belongs to this one.",
+		"rejected.no_coverage":       "No books in this release need a download in the current selection.",
+		"rejected.numbers_unknown":   "No confirmed volume or chapter numbers were found.",
+		"rejected.pack_unverified":   "A date range alone cannot confirm a complete series pack.",
+		"rejected.blocklisted":       "This release is on your blocklist.",
+		"rejected.language":          "The stated language does not match this edition.",
+		"rejected.language_unknown":  "This version requires a confirmed language.",
+		"rejected.unit_ambiguous":    "Several books share this number. Search from the specific book to disambiguate.",
+		"rejected.target_group":      "The release group does not match this copy’s required group.",
+		"rejected.no_upgrade":        "This release does not improve the existing copy enough.",
+		"rejected.format_score":      "The release does not meet the profile’s minimum format score.",
+		"rejected.pack_threshold":    fmt.Sprintf("Only %d of %d represented books are wanted; automatic packs require at least half.", len(c.Coverage), c.RepresentedUnits),
+		"rejected.size":              "The estimated size per book is outside the profile’s limits.",
+		"rejected.seeders":           "The torrent has fewer seeders than the profile requires.",
 	}
 	hard := false
 	seen := map[string]bool{}

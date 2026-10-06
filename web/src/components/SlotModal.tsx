@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Badge, Button, Card, Group, Loader, Modal, Stack, Tabs, Text } from '@mantine/core'
+import {
+  Badge,
+  Button,
+  Card,
+  Group,
+  Loader,
+  Modal,
+  SegmentedControl,
+  Stack,
+  Tabs,
+  Text,
+} from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { IconFile, IconListSearch, IconRefresh, IconSearch, IconTrash } from '@tabler/icons-react'
 import { api, fmtNum, fmtSize, type ReleaseCandidate, type SeriesFile } from '../api'
@@ -35,6 +46,16 @@ type StreamResult = {
   errors: string[]
   done: boolean
   stopped?: boolean
+}
+
+// "host/Japscan (fr): binding 9 (Japscan (fr)): host: Cloudflare…" reads
+// as "Japscan (fr): Cloudflare…": the routing detail is for logs.
+function tidyProblem(message: string): string {
+  return message
+    .replace(/^(host|torrent)\//, '')
+    .split(': ')
+    .filter((part) => part !== 'host' && !/^binding \d+ \(/.test(part))
+    .join(': ')
 }
 
 export default function SlotModal({
@@ -88,6 +109,8 @@ function Inner({
   const [busy, setBusy] = useState(false)
   const [searching, setSearching] = useState(false)
   const [result, setResult] = useState<StreamResult | null>(null)
+  // Edition-wide searches cover the wanted books unless widened to all.
+  const [allBooks, setAllBooks] = useState(false)
   // Search buttons land on Search; a quiet row click lands on Files when
   // there's a file to look at.
   const [tab, setTab] = useState<string | null>(
@@ -97,17 +120,18 @@ function Inner({
 
   // Streaming search: each provider's batch renders as soon as it lands,
   // so fast extension sources show up while torrent indexers still load.
-  const interactiveSearch = async () => {
+  const slotRef = (everyBook: boolean) => ({
+    collectionId: sel.collectionId ?? 0,
+    number: sel.number,
+    targetId: sel.targetId,
+    workId: sel.workId,
+    all: sel.all,
+    allBooks: editionWide && everyBook ? true : undefined,
+  })
+  const interactiveSearch = async (everyBook = allBooks) => {
     if (searching || busy) return
     const controller = new AbortController()
     searchController.current = controller
-    const slotRef = {
-      collectionId: sel.collectionId ?? 0,
-      number: sel.number,
-      targetId: sel.targetId,
-      workId: sel.workId,
-      all: sel.all,
-    }
     setSearching(true)
     setResult({
       searched: [],
@@ -121,7 +145,7 @@ function Inner({
     try {
       await api.searchStream(
         seriesID,
-        { ledger: sel.ledger, slot: slotRef },
+        { ledger: sel.ledger, slot: slotRef(everyBook) },
         (ev) => {
           setResult((prev) => {
             if (!prev) return prev
@@ -185,8 +209,16 @@ function Inner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Source failures are secondary to the results: one line, opened on
+  // demand, or straight away when they are all there is to show.
+  const problems = [...new Set([...(result?.notes ?? []), ...(result?.errors ?? [])])].map(
+    tidyProblem,
+  )
+  const [problemsOpen, setProblemsOpen] = useState<boolean | null>(null)
+  const showProblems = problemsOpen ?? (!!result?.done && result.candidates.length === 0)
+
   const label = editionWide
-    ? `${sel.collectionName ?? 'Collection'} — wanted ${sel.ledger}s`
+    ? `${sel.collectionName ?? 'Collection'} — ${allBooks ? 'all' : 'wanted'} ${sel.ledger}s`
     : `${sel.ledger === 'volume' ? 'Volume' : 'Chapter'} ${sel.label ?? fmtNum(sel.number)}`
 
   const grab = async (c: ReleaseCandidate, force: boolean) => {
@@ -198,13 +230,7 @@ function Inner({
         grabProvider: c.provider,
         grabTargetId: c.targetId,
         force,
-        slot: {
-          collectionId: sel.collectionId ?? 0,
-          number: sel.number,
-          targetId: sel.targetId,
-          workId: sel.workId,
-          all: sel.all,
-        },
+        slot: slotRef(allBooks),
       })
       onChanged()
       notify.ok('Release queued for download')
@@ -226,10 +252,29 @@ function Inner({
     >
       <Stack gap="sm">
         {editionWide ? (
-          <Text size="sm" c="dimmed">
-            Browse releases for the wanted {sel.ledger}s in this collection. Packs can include
-            several {sel.ledger}s.
-          </Text>
+          <Group justify="space-between" gap="xs">
+            <Text size="sm" c="dimmed">
+              {allBooks
+                ? `Releases for every ${sel.ledger} of this edition, including ones you already have or paused.`
+                : `Releases for the ${sel.ledger}s this edition still wants.`}{' '}
+              Packs can include several {sel.ledger}s.
+            </Text>
+            <SegmentedControl
+              size="xs"
+              aria-label="Books to search for"
+              value={allBooks ? 'all' : 'wanted'}
+              disabled={searching || busy}
+              onChange={(v) => {
+                setAllBooks(v === 'all')
+                // The results on screen answer the other question: search again.
+                if (result) void interactiveSearch(v === 'all')
+              }}
+              data={[
+                { value: 'wanted', label: 'Wanted books' },
+                { value: 'all', label: 'All books' },
+              ]}
+            />
+          </Group>
         ) : (
           <Group gap={6}>
             {sel.collectionName && <Badge variant="light">{sel.collectionName}</Badge>}
@@ -268,14 +313,46 @@ function Inner({
                   size="xs"
                   leftSection={<IconSearch size={14} />}
                   style={{ alignSelf: 'flex-start' }}
-                  onClick={interactiveSearch}
+                  onClick={() => void interactiveSearch()}
                 >
                   Search releases for this {editionWide ? 'edition' : sel.ledger}
                 </Button>
               )}
-              {(searching || (result?.pending.length ?? 0) > 0 || result?.done) && (
-                <Group gap={6}>
-                  {searching && (
+              {result && (
+                <Group justify="space-between" gap="xs">
+                  <Group gap={6}>
+                    <Text size="sm" role="status">
+                      {searching
+                        ? `Searching ${result.pending.length || ''} of ${result.searched.length || '…'} sources…`
+                        : result.stopped
+                          ? 'Search stopped. Results already received are still available.'
+                          : `Searched ${result.searched.length} ${result.searched.length === 1 ? 'source' : 'sources'}`}
+                    </Text>
+                    {result.pending.map((p) => (
+                      <Badge
+                        key={p}
+                        size="sm"
+                        variant="light"
+                        color="gray"
+                        leftSection={<Loader size={10} />}
+                      >
+                        {p.split('/')[1] ?? p}
+                      </Badge>
+                    ))}
+                    {problems.length > 0 && (
+                      <Button
+                        size="compact-xs"
+                        variant="subtle"
+                        color="orange"
+                        aria-expanded={showProblems}
+                        onClick={() => setProblemsOpen(!showProblems)}
+                      >
+                        {problems.length} {problems.length === 1 ? 'source' : 'sources'} had
+                        problems
+                      </Button>
+                    )}
+                  </Group>
+                  {searching ? (
                     <Button
                       size="compact-xs"
                       variant="default"
@@ -283,59 +360,41 @@ function Inner({
                     >
                       Stop search
                     </Button>
-                  )}
-                  {result?.done && (
+                  ) : (
                     <Button
                       size="compact-xs"
                       variant="default"
                       leftSection={<IconRefresh size={12} />}
-                      onClick={interactiveSearch}
+                      onClick={() => void interactiveSearch()}
                       disabled={busy}
                     >
                       Search again
                     </Button>
                   )}
-                  {result?.pending.map((p) => (
-                    <Badge
-                      key={p}
-                      size="sm"
-                      variant="light"
-                      color="gray"
-                      leftSection={<Loader size={10} />}
-                    >
-                      {p.split('/')[1] ?? p}
-                    </Badge>
-                  ))}
                 </Group>
-              )}
-
-              {result?.stopped && (
-                <Text size="sm" c="dimmed" role="status">
-                  Search stopped. Results already received are still available.
-                </Text>
-              )}
-              {searching && (
-                <Text size="xs" c="dimmed" role="status">
-                  Searching {result?.pending.length || ''}{' '}
-                  {result?.pending.length === 1 ? 'source' : 'sources'}…
-                </Text>
               )}
               {result && (
                 <Stack gap={4}>
-                  {result.notes.map((n) => (
-                    <Text key={n} size="xs" c="dimmed">
-                      {n}
-                    </Text>
-                  ))}
-                  {result.errors.map((e) => (
-                    <Alert key={e} color="orange" p="xs" style={{ overflowWrap: 'anywhere' }}>
-                      {e}
-                    </Alert>
-                  ))}
+                  {showProblems && (
+                    <Stack
+                      gap={2}
+                      p="xs"
+                      style={{
+                        borderLeft: '3px solid var(--mantine-color-orange-6)',
+                        background: 'var(--mantine-color-orange-light)',
+                        borderRadius: 'var(--mantine-radius-sm)',
+                      }}
+                    >
+                      {problems.map((p) => (
+                        <Text key={p} size="xs" style={{ overflowWrap: 'anywhere' }}>
+                          {p}
+                        </Text>
+                      ))}
+                    </Stack>
+                  )}
                   {result.done &&
                     !result.stopped &&
-                    result.errors.length === 0 &&
-                    result.notes.length === 0 &&
+                    problems.length === 0 &&
                     result.candidates.length === 0 && (
                       <Text size="sm" c="dimmed">
                         No releases found. Check that this series has an enabled indexer for{' '}
@@ -349,6 +408,7 @@ function Inner({
                       onGrab={grab}
                       busy={busy}
                       searching={searching}
+                      editionWide={editionWide}
                     />
                   )}
                 </Stack>

@@ -102,9 +102,12 @@ type Series struct {
 	CoverURL      string `json:"coverUrl,omitempty"`
 	Monitored     bool   `json:"monitored"`
 	Path          string `json:"path,omitempty"`
-	ProfileID     int64  `json:"profileId,omitempty" db:"profile_id"` // 0 = instance default
-	AddedAt       string `json:"addedAt"`
-	RefreshedAt   string `json:"refreshedAt,omitempty"`
+	// ChapterPath is where the series' chapters live when they are kept
+	// apart from its volumes; empty = under Path.
+	ChapterPath string `json:"chapterPath,omitempty"`
+	ProfileID   int64  `json:"profileId,omitempty" db:"profile_id"` // 0 = instance default
+	AddedAt     string `json:"addedAt"`
+	RefreshedAt string `json:"refreshedAt,omitempty"`
 }
 
 type Collection struct {
@@ -194,7 +197,8 @@ const seriesColumns = `
 	COALESCE(total_chapters,0) AS total_chapters,
 	COALESCE(final_volume,0) AS final_volume,
 	COALESCE(description,'') AS description, COALESCE(cover_url,'') AS cover_url,
-	monitored, COALESCE(path,'') AS path, COALESCE(profile_id,0) AS profile_id, added_at,
+	monitored, COALESCE(path,'') AS path, COALESCE(chapter_path,'') AS chapter_path,
+	COALESCE(profile_id,0) AS profile_id, added_at,
 	COALESCE(refreshed_at,'') AS refreshed_at`
 
 func (s *Store) ListSeries(ctx context.Context) ([]Series, error) {

@@ -37,6 +37,12 @@ export const ContentNovel: ContentType = "novel";
 export const ContentAudiobook: ContentType = "audiobook";
 export const ContentArtbook: ContentType = "artbook";
 export const ContentAnime: ContentType = "anime";
+/**
+ * Not reading material at all: a general tracker answers a title
+ * search with films, episodes and games of the same name.
+ */
+export const ContentVideo: ContentType = "video";
+export const ContentSoftware: ContentType = "software";
 export interface EditionHints {
   omnibus?: boolean;
   deluxe?: boolean;

@@ -1,0 +1,20 @@
+.rows { border: 1px solid var(--mantine-color-default-border); border-radius: var(--mantine-radius-md); overflow: hidden; }
+.row { padding: 8px 12px; border-top: 1px solid var(--mantine-color-default-border); border-left: 3px solid transparent; }
+.row:first-child { border-top: 0; }
+.row[data-status='ready'] { border-left-color: var(--mantine-color-green-6); }
+.row[data-status='review'] { border-left-color: var(--mantine-color-orange-6); }
+.row[data-status='queued'] { border-left-color: var(--mantine-color-blue-6); }
+.summary { flex: 1; min-width: 0; border-radius: var(--mantine-radius-sm); }
+.summary:focus-visible { outline: 2px solid var(--mantine-primary-color-filled); outline-offset: 2px; }
+.chevron { flex: none; margin-top: 4px; color: var(--mantine-color-dimmed); }
+.reasonBadge { flex: none; }
+.details { margin: 8px 0 4px 20px; padding-top: 8px; border-top: 1px solid var(--mantine-color-default-border); }
+.empty { padding: 16px; border: 1px dashed var(--mantine-color-default-border); border-radius: var(--mantine-radius-md); }
+.filters { flex: 1; min-width: 0; }
+.rowMain { flex-wrap: nowrap; }
+@media (max-width: 48em) {
+  .filters { flex-basis: 100%; justify-content: flex-start; }
+  .rowMain { flex-wrap: wrap; }
+  .summary { flex-basis: 100%; }
+}
+.books { flex: none; }

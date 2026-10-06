@@ -40,6 +40,9 @@ type Release struct {
 	InfoHash    string
 	Size        int64
 	Seeders     int
+	// Categories are the indexer's category ids for the release: Newznab
+	// standard ones and the indexer's own (ids from 100000).
+	Categories []int
 }
 
 type feed struct {
@@ -98,9 +101,22 @@ func (c *Client) call(ctx context.Context, params url.Values) ([]byte, error) {
 	return raw, nil
 }
 
-// Search runs a free-text query (t=search).
-func (c *Client) Search(ctx context.Context, query string) ([]Release, error) {
-	raw, err := c.call(ctx, url.Values{"t": {"search"}, "q": {query}})
+// CategoryBooks is the Newznab parent category for reading material; it
+// covers its subcategories (7010 magazines, 7020 ebooks, 7030 comics).
+const CategoryBooks = 7000
+
+// Search runs a free-text query (t=search) restricted to the given
+// Newznab categories (none = everything the indexer has).
+func (c *Client) Search(ctx context.Context, query string, categories ...int) ([]Release, error) {
+	params := url.Values{"t": {"search"}, "q": {query}}
+	if len(categories) > 0 {
+		ids := make([]string, len(categories))
+		for i, id := range categories {
+			ids[i] = strconv.Itoa(id)
+		}
+		params.Set("cat", strings.Join(ids, ","))
+	}
+	raw, err := c.call(ctx, params)
 	if err != nil {
 		return nil, err
 	}
@@ -130,6 +146,10 @@ func (c *Client) Search(ctx context.Context, query string) ([]Release, error) {
 		}
 		for _, a := range it.Attrs {
 			switch a.Name {
+			case "category":
+				if id, err := strconv.Atoi(a.Value); err == nil {
+					rel.Categories = append(rel.Categories, id)
+				}
 			case "seeders":
 				rel.Seeders, _ = strconv.Atoi(a.Value)
 			case "infohash":
@@ -150,6 +170,37 @@ func (c *Client) Search(ctx context.Context, query string) ([]Release, error) {
 			rel.GUID = rel.Title
 		}
 		out = append(out, rel)
+	}
+	return out, nil
+}
+
+// Categories returns the indexer's category names by id, subcategories
+// included (caps request). Indexers describe their own sections there,
+// e.g. "Literature - English-translated".
+func (c *Client) Categories(ctx context.Context) (map[int]string, error) {
+	raw, err := c.call(ctx, url.Values{"t": {"caps"}})
+	if err != nil {
+		return nil, err
+	}
+	type category struct {
+		ID   int    `xml:"id,attr"`
+		Name string `xml:"name,attr"`
+	}
+	var caps struct {
+		Categories []struct {
+			category
+			Subcats []category `xml:"subcat"`
+		} `xml:"categories>category"`
+	}
+	if err := xml.Unmarshal(raw, &caps); err != nil {
+		return nil, fmt.Errorf("torznab: decoding capabilities: %w", err)
+	}
+	out := map[int]string{}
+	for _, c := range caps.Categories {
+		out[c.ID] = c.Name
+		for _, s := range c.Subcats {
+			out[s.ID] = s.Name
+		}
 	}
 	return out, nil
 }

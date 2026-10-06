@@ -261,3 +261,22 @@ test('series interactions work with keyboard and fit a mobile viewport', async (
     animations: 'disabled',
   })
 })
+
+test('media settings preview the folder layout, including a split by type', async ({ page }, testInfo) => {
+  await page.goto('/media')
+  // Default: one folder per series, editions inside it.
+  await expect(
+    page.getByText('ONE PIECE [mangabaka-377]/Standard Edition [en]/ONE PIECE v112 [Standard Edition][en].cbz', { exact: true }),
+  ).toBeVisible()
+  await page.getByRole('textbox', { name: 'Volumes top folder' }).fill('Volumes')
+  await page.getByRole('textbox', { name: 'Chapters top folder' }).fill('Chapters')
+  await expect(page.getByText(/^Volumes\/ONE PIECE \[mangabaka-377\]\/Standard Edition \[en\]\/ONE PIECE v112/)).toBeVisible()
+  await expect(page.getByText(/^Chapters\/ONE PIECE \[mangabaka-377\]\/Standard Edition \[en\]\/ONE PIECE c1102\.5/)).toBeVisible()
+  // The type can go inside the series instead.
+  await page.getByRole('textbox', { name: 'Volumes top folder' }).fill('')
+  await page.getByRole('textbox', { name: 'Chapters top folder' }).fill('')
+  await page.getByLabel('Folders inside a series').first().click()
+  await page.getByRole('option', { name: /By type, then edition/ }).click()
+  await expect(page.getByText(/^ONE PIECE \[mangabaka-377\]\/Chapters\/Standard Edition \[en\]\/ONE PIECE c1102\.5/)).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('media-layout.png'), fullPage: true })
+})

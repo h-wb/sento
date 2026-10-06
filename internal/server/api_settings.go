@@ -65,6 +65,8 @@ func (s *Server) handlePreviewMediaSettings(w http.ResponseWriter, r *http.Reque
 	}
 	p := service.PreviewMediaSettings(m)
 	writeJSON(w, http.StatusOK, NamingPreview{
+		VolumePath: p["volumePath"], ChapterPath: p["chapterPath"],
+		BookFolder:   p["bookFolder"],
 		SeriesFolder: p["seriesFolder"], VolumeFile: p["volumeFile"], ChapterFile: p["chapterFile"],
 	})
 }

@@ -37,9 +37,29 @@ type NameTokens struct {
 	Group       string
 	ISBN        string
 	Year        int
+	// Folder-layout tokens: what tells two copies of a book apart.
+	Publisher    string
+	Medium       string
+	Version      string // collected version name; empty for the default one
+	Type         string // "Volumes" or "Chapters"
+	CollectionID int64
+	VersionID    int64
 }
 
 var tokenRe = regexp.MustCompile(`\{([A-Za-z ]+?)(?::(0+))?\}`)
+
+// RenderFolder fills a folder template that may nest with "/" and returns
+// its clean path segments. Segments that render empty are dropped, so an
+// empty template is the series folder itself.
+func RenderFolder(template string, t NameTokens) []string {
+	var out []string
+	for _, segment := range strings.Split(template, "/") {
+		if s := Sanitize(Render(segment, t)); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
 
 // Render fills a template; empty values collapse their bracket/paren wrapper
 // ("[{group}]" with no group disappears).
@@ -66,6 +86,18 @@ func Render(template string, t NameTokens) string {
 			return sanitize(t.Group)
 		case "isbn":
 			return sanitize(t.ISBN)
+		case "publisher":
+			return sanitize(t.Publisher)
+		case "medium":
+			return sanitize(t.Medium)
+		case "version":
+			return sanitize(t.Version)
+		case "type":
+			return sanitize(t.Type)
+		case "collectionid":
+			return fmt.Sprintf("%d", t.CollectionID)
+		case "versionid":
+			return fmt.Sprintf("%d", t.VersionID)
 		case "year":
 			if t.Year == 0 {
 				return ""

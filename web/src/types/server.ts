@@ -180,9 +180,24 @@ export interface OverridePatch {
  * posted MediaSettings rendered against a fixed sample series.
  */
 export interface NamingPreview {
+  /**
+   * VolumePath and ChapterPath are whole example paths under the
+   * library root: top folder, series folder, book folder, file.
+   */
+  volumePath: string;
+  chapterPath: string;
+  bookFolder: string;
   seriesFolder: string;
   volumeFile: string;
   chapterFile: string;
+}
+/**
+ * OrganizeBody is POST /series/{id}/files/organize: which of the
+ * previewed changes to apply.
+ */
+export interface OrganizeBody {
+  rename: boolean;
+  retag: boolean;
 }
 /**
  * BindingPatch is PUT /series/{id}/bindings/{bid}.

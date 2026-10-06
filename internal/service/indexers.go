@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/h-wb/sento/internal/apperr"
@@ -20,6 +21,9 @@ import (
 type TorznabSettings struct {
 	URL    string `json:"url"`
 	APIKey string `json:"apiKey"`
+	// Language is the language of this indexer's releases when a release
+	// does not state one ("fr" for a French tracker). Empty = mixed.
+	Language string `json:"language,omitempty"`
 }
 
 // SourceSettings configures one extension-source indexer entry. PkgName
@@ -38,7 +42,7 @@ func parseEntry(ix store.Indexer) (provider.IndexerEntry, error) {
 		if err := json.Unmarshal(ix.Settings, &ts); err != nil {
 			return e, fmt.Errorf("indexer %d settings: %w", ix.ID, err)
 		}
-		e.URL, e.APIKey = ts.URL, ts.APIKey
+		e.URL, e.APIKey, e.Language = ts.URL, ts.APIKey, strings.ToLower(strings.TrimSpace(ts.Language))
 	case store.IndexerSource:
 		var ss SourceSettings
 		if err := json.Unmarshal(ix.Settings, &ss); err != nil {
@@ -75,6 +79,8 @@ func IndexerEntries(st *store.Store, protocol string) func(ctx context.Context) 
 	}
 }
 
+var reLanguageCode = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z]{2,4})?$`)
+
 // ValidateIndexer checks an entry before save.
 func ValidateIndexer(ix store.Indexer) error {
 	if strings.TrimSpace(ix.Name) == "" {
@@ -88,6 +94,9 @@ func ValidateIndexer(ix store.Indexer) error {
 		}
 		if !strings.HasPrefix(ts.URL, "http://") && !strings.HasPrefix(ts.URL, "https://") {
 			return apperr.Invalidf("torznab url must start with http:// or https://")
+		}
+		if lang := strings.TrimSpace(ts.Language); lang != "" && !reLanguageCode.MatchString(lang) {
+			return apperr.Invalidf("default language must be a language code such as en, fr or pt-BR")
 		}
 	case store.IndexerSource:
 		var ss SourceSettings

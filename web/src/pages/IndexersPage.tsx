@@ -221,7 +221,7 @@ export default function IndexersPage() {
   )
 }
 
-type TorznabForm = { url: string; apiKey: string }
+type TorznabForm = { url: string; apiKey: string; language?: string }
 type SourceForm = { sourceId: string; pkgName?: string }
 
 function IndexerModal({
@@ -243,6 +243,7 @@ function IndexerModal({
   const [torznab, setTorznab] = useState<TorznabForm>({
     url: init?.url ?? '',
     apiKey: init?.apiKey ?? '',
+    language: init?.language ?? '',
   })
   const [source, setSource] = useState<SourceForm>({
     sourceId: init?.sourceId ?? '',
@@ -427,6 +428,14 @@ function IndexerModal({
               value={torznab.apiKey}
               onChange={(e) => setTorznab({ ...torznab, apiKey: e.currentTarget.value })}
             />
+            <TextInput
+              label="Default language"
+              placeholder="Mixed"
+              description="Language of this indexer's releases when a release name doesn't state one, e.g. fr for a French tracker. Leave empty for indexers that mix languages."
+              maw={320}
+              value={torznab.language ?? ''}
+              onChange={(e) => setTorznab({ ...torznab, language: e.currentTarget.value.trim() })}
+            />
             {!browse && (
               <Button
                 variant="subtle"
@@ -478,7 +487,7 @@ function IndexerModal({
                     onChange={(url) => {
                       const pick = found.find((f) => f.url === url)
                       if (!pick) return
-                      setTorznab({ url: pick.url, apiKey: browse.apiKey })
+                      setTorznab({ ...torznab, url: pick.url, apiKey: browse.apiKey })
                       suggestName(pick.name)
                     }}
                   />

@@ -43,6 +43,9 @@ type IndexerEntry struct {
 	// Torznab entries.
 	URL    string
 	APIKey string
+	// Language is what the indexer's releases are in when nothing more
+	// specific says so ("fr" for a French tracker); empty = mixed.
+	Language string
 	// Source entries: the host-side source id.
 	SourceID string
 }
@@ -91,6 +94,10 @@ type TorrentRef struct {
 	DownloadURL string `json:"-"`
 	Size        int64  `json:"size,omitempty"`
 	Seeders     int    `json:"seeders,omitempty"`
+	// Language evidence from outside the release name: the indexer
+	// section the release is filed under, and the indexer's default.
+	CategoryLanguage string `json:"-"`
+	DefaultLanguage  string `json:"-"`
 }
 
 // SourceRef carries extension-source handles. ChapterKey is opaque,

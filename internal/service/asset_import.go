@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/h-wb/sento/internal/mediafile"
@@ -12,23 +10,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
-func fileHash(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = f.Close() }()
-	h := sha256.New()
-	if _, err = io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-func assetPath(root, name, hash string, sl store.ExpectedSlot) string {
+// fileHash identifies a book by its pages (mediafile.Fingerprint), so a
+// download and its processed, tagged library copy are the same asset.
+func fileHash(path string) (string, error) { return mediafile.Fingerprint(path) }
+
+// assetPath is dir/name with an unsafe or overlong name tamed and, when
+// hash is given, " [hash]" before the extension.
+func assetPath(dir, name, hash string) string {
 	ext := filepath.Ext(name)
 	base := mediafile.Sanitize(strings.TrimSuffix(filepath.Base(name), ext))
 	for len([]byte(base)) > 120 {
@@ -38,7 +29,10 @@ func assetPath(root, name, hash string, sl store.ExpectedSlot) string {
 	if base == "" {
 		base = "unit"
 	}
-	return filepath.Join(root, "collections", strconv.FormatInt(sl.CollectionID, 10), "versions", strconv.FormatInt(sl.TargetID, 10), base+" ["+hash+"]"+ext)
+	if hash != "" {
+		base += " [" + hash + "]"
+	}
+	return filepath.Join(dir, base+ext)
 }
 func verifyDestination(path, hash string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -210,7 +204,7 @@ func (im *Importer) importReviewFile(ctx context.Context, item store.QueueItem, 
 	if err != nil {
 		return err
 	}
-	dest := assetPath(filepath.Join(root, "review"), filepath.Base(src), hash, store.ExpectedSlot{})
+	dest := assetPath(filepath.Join(root, "review"), filepath.Base(src), hash)
 	if err = installAsset(src, dest, hash, copy); err != nil {
 		return err
 	}

@@ -158,9 +158,18 @@ func TestBulkMonitoringRollsBackForeignBook(t *testing.T) {
 	if err = st.BulkMonitor(ctx, id, target.ID, []int64{ws[0].ID, ws[1].ID}, false); err != nil {
 		t.Fatal(err)
 	}
-	page, err := lib.TargetPage(ctx, id, target.ID, 999, "unmonitored")
-	if err != nil || page.Page != 1 || page.Total != 2 {
-		t.Fatalf("filtered pagination: %+v %v", page, err)
+	books, err := lib.TargetBooks(ctx, id, target.ID)
+	paused := 0
+	for _, b := range books {
+		if b.State == "unmonitored" {
+			paused++
+		}
+	}
+	if err != nil || paused != 2 {
+		t.Fatalf("paused books: %d of %d, %v", paused, len(books), err)
+	}
+	if _, err = lib.TargetBooks(ctx, id, target.ID+999); err == nil {
+		t.Fatal("books of an unknown version should not be found")
 	}
 }
 

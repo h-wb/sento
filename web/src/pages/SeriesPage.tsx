@@ -1,12 +1,13 @@
-import EditionManager from '../components/EditionManager'
-import { EditorModal } from '../components/EditionDialogs'
+import EditionManager, { type EditionSection } from '../components/EditionManager'
+import { EditorModal, Relationships } from '../components/EditionDialogs'
+import SourceMappings from '../components/SourceMappings'
+import OrganizeFiles from '../components/OrganizeFiles'
 import { useCallback, useState } from 'react'
 import {
   Anchor,
   ActionIcon,
   Badge,
   Button,
-  Card,
   Group,
   Image,
   Menu,
@@ -38,7 +39,7 @@ import {
 } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, fmtSize, type Collection, type SeriesIndexerView } from '../api'
+import { api, type Collection, type SeriesIndexerView } from '../api'
 import SlotModal, { type SlotSelection } from '../components/SlotModal'
 import { fmtWhen, notify, usePageTitle } from '../ui'
 import { QueryFeedback } from '../components/QueryFeedback'
@@ -56,12 +57,29 @@ export default function SeriesPage() {
   const [slotSel, setSlotSel] = useState<SlotSelection | null>(null)
   const [fullDesc, setFullDesc] = useState(false)
   const [addCollection, setAddCollection] = useState(false)
-  const [tab, setTab] = useState<string | null>('editions')
+  // ?view=review is the deep link the global review inbox uses.
+  const [tab, setTab] = useState<string | null>(
+    new URLSearchParams(window.location.search).get('view') === 'review' ? 'review' : 'editions',
+  )
+  const [relationships, setRelationships] = useState(false)
+  const [organize, setOrganize] = useState(false)
 
   const queryClient = useQueryClient()
   const detail = useQuery({
     queryKey: ['series', seriesID],
     queryFn: () => api.getSeries(seriesID),
+  })
+  // Same key as the review inbox, so the tab count and the list agree.
+  const review = useQuery({
+    queryKey: ['review', seriesID],
+    queryFn: () => api.review(seriesID),
+    refetchInterval: 15000,
+  })
+  const reviewCount = review.data?.length ?? 0
+  const allSlots = useQuery({
+    queryKey: ['series', seriesID, 'target-slots'],
+    queryFn: () => api.targetSlots(seriesID),
+    enabled: relationships,
   })
   const slotsQuery = useQuery({
     queryKey: ['series', seriesID, 'edition-overview'],
@@ -83,6 +101,19 @@ export default function SeriesPage() {
     void queryClient.invalidateQueries({ queryKey: ['queue'] })
     return queryClient.invalidateQueries({ queryKey: ['series'] })
   }, [queryClient])
+
+  // Editions, Review and Files are three views of the same manager: they
+  // share its book, version and file-mapping dialogs.
+  const editionManager = (section: EditionSection) => (
+    <EditionManager
+      section={section}
+      seriesID={seriesID}
+      collections={collections}
+      files={files}
+      onSlot={setSlotSel}
+      onAddEdition={() => setAddCollection(true)}
+    />
+  )
 
   const run = async (fn: () => Promise<unknown>, doneMsg?: string) => {
     setBusy(true)
@@ -283,6 +314,8 @@ export default function SeriesPage() {
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
+              <Menu.Item onClick={() => setRelationships(true)}>Content relationships</Menu.Item>
+              <Menu.Divider />
               <Menu.Item
                 color="red"
                 leftSection={<IconTrash size={15} />}
@@ -326,24 +359,37 @@ export default function SeriesPage() {
       <Tabs value={tab} onChange={setTab} keepMounted={false}>
         <Tabs.List>
           <Tabs.Tab value="editions">Editions</Tabs.Tab>
-          <Tabs.Tab value="indexers">Indexers</Tabs.Tab>
           <Tabs.Tab value="files">Files ({files.length})</Tabs.Tab>
+          <Tabs.Tab
+            value="review"
+            aria-description={reviewCount > 0 ? `${reviewCount} to review` : undefined}
+            rightSection={
+              reviewCount > 0 ? (
+                <Badge aria-hidden size="xs" circle color="yellow">
+                  {reviewCount}
+                </Badge>
+              ) : undefined
+            }
+          >
+            Review
+          </Tabs.Tab>
+          <Tabs.Tab value="indexers">Indexers</Tabs.Tab>
           <Tabs.Tab value="history">History</Tabs.Tab>
         </Tabs.List>
         <QueryFeedback error={slotsQuery.error} onRetry={() => void slotsQuery.refetch()} />
         <QueryFeedback error={filesQuery.error} onRetry={() => void filesQuery.refetch()} />
 
         <Tabs.Panel value="editions" pt="md">
-          <EditionManager
-            seriesID={seriesID}
-            collections={collections}
-            files={files}
-            onSlot={setSlotSel}
-            onAddEdition={() => setAddCollection(true)}
-          />
+          {editionManager('editions')}
+        </Tabs.Panel>
+        <Tabs.Panel value="review" pt="md">
+          {editionManager('review')}
         </Tabs.Panel>
         <Tabs.Panel value="indexers" pt="md">
-          <IndexersTab seriesID={seriesID} seriesTitle={series.title} run={run} busy={busy} />
+          <Stack gap="lg">
+            <IndexersTab seriesID={seriesID} seriesTitle={series.title} run={run} busy={busy} />
+            <SourceMappings seriesID={seriesID} collections={collections} />
+          </Stack>
         </Tabs.Panel>
 
         <Tabs.Panel value="files" pt="md">
@@ -367,24 +413,13 @@ export default function SeriesPage() {
               >
                 Scan for files
               </Button>
+              <Tooltip label="Move, rename and re-tag existing files to match the current Media settings.">
+                <Button size="xs" variant="default" disabled={files.length === 0} onClick={() => setOrganize(true)}>
+                  Organize files
+                </Button>
+              </Tooltip>
             </Group>
-            {files.map((f) => (
-              <Card key={f.id} withBorder padding="xs">
-                <Group justify="space-between" wrap="nowrap">
-                  <Text size="xs" style={{ wordBreak: 'break-all' }}>
-                    {f.path}
-                  </Text>
-                  <Group gap={6} wrap="nowrap">
-                    <Badge size="xs" variant="outline">
-                      {f.provenance}
-                    </Badge>
-                    <Text size="xs" c="dimmed">
-                      {fmtSize(f.size)}
-                    </Text>
-                  </Group>
-                </Group>
-              </Card>
-            ))}
+            {editionManager('files')}
             {filesQuery.isPending && <QueryFeedback pending />}
             {!filesQuery.isPending && !filesQuery.error && files.length === 0 && (
               <EmptyState
@@ -399,6 +434,15 @@ export default function SeriesPage() {
         </Tabs.Panel>
       </Tabs>
 
+      {organize && <OrganizeFiles seriesID={seriesID} onClose={() => setOrganize(false)} />}
+      {relationships && (
+        <Relationships
+          seriesID={seriesID}
+          units={Object.values(allSlots.data ?? {}).flat()}
+          collections={collections}
+          close={() => setRelationships(false)}
+        />
+      )}
       <SlotModal
         seriesID={seriesID}
         sel={slotSel}

@@ -5,7 +5,6 @@ import {
   EditionEditor,
   CatalogLink,
   MappingEditor,
-  Relationships,
 } from './EditionDialogs'
 import ReviewInbox from './ReviewInbox'
 import EditionBooks from './EditionBooks'
@@ -16,19 +15,18 @@ import {
   Badge,
   Button,
   Card,
-  Checkbox,
   Group,
   Menu,
   Pagination,
   Select,
   Stack,
   Switch,
-  SegmentedControl,
   Text,
   TextInput,
 } from '@mantine/core'
+import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api'
+import { api, fmtSize } from '../api'
 import type { Collection, DownloadTarget, Work, File as SeriesFile } from '../types/store'
 import type { SlotSelection } from './SlotModal'
 import { QueryFeedback } from './QueryFeedback'
@@ -36,7 +34,11 @@ import { useConfirmAction } from './ConfirmAction'
 
 const editionLabel = (c: Collection) =>
   [c.language, c.editionName, c.publisher, c.medium].filter(Boolean).join(' · ')
+// The series page shows one section per tab. They share this component
+// because all three open the same book, version and file-mapping dialogs.
+export type EditionSection = 'editions' | 'review' | 'files'
 type Props = {
+  section: EditionSection
   seriesID: number
   collections: Collection[]
   files: SeriesFile[]
@@ -44,6 +46,7 @@ type Props = {
   onAddEdition: () => void
 }
 export default function EditionManager({
+  section,
   seriesID,
   collections,
   files,
@@ -60,10 +63,6 @@ export default function EditionManager({
     queryKey: ['series', seriesID, 'edition-overview'],
     queryFn: () => api.editionOverview(seriesID),
   })
-  const bindings = useQuery({
-    queryKey: ['series', seriesID, 'bindings'],
-    queryFn: () => api.bindings(seriesID),
-  })
   const coverage = useQuery({
     queryKey: ['series', seriesID, 'coverage'],
     queryFn: () => api.coverage(seriesID),
@@ -74,8 +73,6 @@ export default function EditionManager({
   const [edition, setEdition] = useState<Collection | null>(null)
   const [link, setLink] = useState<Collection | null>(null)
   const [file, setFile] = useState<SeriesFile | null>(null)
-  const [relationships, setRelationships] = useState(false)
-  const [showFiles, setShowFiles] = useState(false)
   const [fileFilter, setFileFilter] = useState('')
   const [filePage, setFilePage] = useState(1)
   const [error, setError] = useState('')
@@ -112,46 +109,25 @@ export default function EditionManager({
   const details = useQuery({
     queryKey: ['series', seriesID, 'target-slots'],
     queryFn: () => api.targetSlots(seriesID),
-    enabled: !!file || relationships,
+    enabled: !!file,
   })
   const allUnits = Object.values(details.data ?? {}).flat()
   const [otherEditions, setOtherEditions] = useState(false)
   const [language, setLanguage] = useState<string | null>(null)
   const [layout, setLayout] = useState<string | null>(null)
-  const [section, setSection] = useState(
-    new URLSearchParams(window.location.search).get('view') === 'review' ? 'review' : 'editions',
-  )
   const summary = (id: number) => slots.data?.targets.find((t) => t.targetId === id)
   const isYours = (c: Collection) =>
     (c.custom && c.numberingSource === 'manual') ||
     allTargets.some(
       (t) => t.collectionId === c.id && (t.monitored || (summary(t.id)?.onDisk ?? 0) > 0),
     )
+  const yours = visible.filter(isYours)
   const others = visible.filter((c) => !isYours(c))
 
   return (
     <Stack gap="lg">
-      <SegmentedControl
-        value={section}
-        onChange={setSection}
-        data={[
-          { value: 'editions', label: 'Your editions' },
-          { value: 'review', label: 'Review' },
-          { value: 'settings', label: 'Advanced' },
-        ]}
-      />
       {section === 'editions' && (
         <>
-          <Group justify="space-between">
-            <Text size="sm" c="dimmed">
-              Choose the editions you want to collect.
-            </Text>
-            <Group>
-              <Button size="xs" onClick={onAddEdition}>
-                Add edition
-              </Button>
-            </Group>
-          </Group>
           <QueryFeedback
             pending={pending}
             error={targets.error || slots.error}
@@ -161,8 +137,14 @@ export default function EditionManager({
             }}
           />
           {error && <Alert color="red">{error}</Alert>}
+          {!pending && yours.length === 0 && (
+            <Text size="sm" c="dimmed">
+              No edition is being collected yet. Pick one from the other editions below, or add your
+              own.
+            </Text>
+          )}
           {!pending &&
-            visible.filter(isYours).map((c) => {
+            yours.map((c) => {
               const versions = allTargets.filter((t) => t.collectionId === c.id)
               const t =
                 versions.find((t) => String(t.id) === chosen[c.id]) ??
@@ -171,35 +153,50 @@ export default function EditionManager({
               const stats = t ? summary(t.id) : undefined
               const owned = stats?.owned ?? 0
               const total = stats?.total ?? 0
-              const show = expanded[c.id] ?? false
+              const noun = c.type === 'chapter' ? 'chapters' : 'volumes'
+              // With one or two editions there is nothing to scan past.
+              const show = expanded[c.id] ?? yours.length <= 2
+              const profile = `${stats?.profileName || 'Default profile'} · ${
+                stats?.profileSource === 'this version'
+                  ? 'custom profile'
+                  : `inherited from ${stats?.profileSource ?? 'series'}`
+              }`
+              const findMissing = () =>
+                t &&
+                onSlot({
+                  ledger: c.type === 'chapter' ? 'chapter' : 'volume',
+                  collectionId: c.id,
+                  targetId: t.id,
+                  all: true,
+                  number: 0,
+                  collectionName: `${editionLabel(c)} · ${t.name}`,
+                  monitored: t.monitored,
+                  wanted: true,
+                  fileIds: [],
+                  autoSearch: true,
+                })
               return (
                 <Card key={c.id} padding="md" withBorder>
                   <Stack gap="sm">
-                    <Group justify="space-between" align="flex-start">
+                    <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
                       <div style={{ minWidth: 0 }}>
-                        <Text fw={600} style={{ overflowWrap: 'anywhere' }}>
-                          {c.editionName}
-                        </Text>
-                        <Text size="xs" c="dimmed" mt={4}>
-                          {[c.language, c.publisher, c.medium].filter(Boolean).join(' · ')}
-                        </Text>
-                        <Group gap="xs" mt={4}>
-                          <Badge size="xs" variant="outline">
-                            {c.type}
-                          </Badge>
-                          <Badge size="xs" color={c.syncState === 'stale' ? 'orange' : 'gray'}>
-                            {c.syncState === 'stale'
-                              ? 'Catalog entry missing'
-                              : c.custom
-                                ? 'Local edition'
-                                : 'MangaBaka'}
-                          </Badge>
-                          <Text size="xs" c="dimmed">
-                            {owned}/{total} owned
+                        <Group gap="xs">
+                          <Text fw={600} style={{ overflowWrap: 'anywhere' }}>
+                            {c.editionName}
                           </Text>
+                          {(c.custom || c.syncState === 'stale') && (
+                            <Badge size="xs" color={c.syncState === 'stale' ? 'orange' : 'gray'}>
+                              {c.syncState === 'stale' ? 'Catalog entry missing' : 'Local edition'}
+                            </Badge>
+                          )}
                         </Group>
+                        <Text size="xs" c="dimmed" mt={2}>
+                          {[c.language, c.publisher, c.medium, t && profile]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </Text>
                       </div>
-                      <Group gap="xs">
+                      <Group gap="xs" wrap="nowrap">
                         {c.syncState === 'stale' && (
                           <Button
                             size="compact-xs"
@@ -223,6 +220,26 @@ export default function EditionManager({
                             Continue locally
                           </Button>
                         )}
+                        {t && (
+                          <Button
+                            variant="default"
+                            size="xs"
+                            visibleFrom="sm"
+                            onClick={() => setTarget(t)}
+                          >
+                            Collection settings
+                          </Button>
+                        )}
+                        {t && (
+                          <Button
+                            variant="default"
+                            size="xs"
+                            visibleFrom="sm"
+                            onClick={findMissing}
+                          >
+                            Search releases
+                          </Button>
+                        )}
                         <EditionActions
                           seriesID={seriesID}
                           collection={c}
@@ -231,6 +248,16 @@ export default function EditionManager({
                             await run(fn)
                           }}
                         >
+                          {t && (
+                            <Menu.Item hiddenFrom="sm" onClick={() => setTarget(t)}>
+                              Collection settings
+                            </Menu.Item>
+                          )}
+                          {t && (
+                            <Menu.Item hiddenFrom="sm" onClick={findMissing}>
+                              Search releases
+                            </Menu.Item>
+                          )}
                           <Menu.Item onClick={() => setEdition(c)}>Edit edition</Menu.Item>
                           {t && (
                             <Menu.Item
@@ -291,28 +318,49 @@ export default function EditionManager({
                       </Group>
                     </Group>
                     {t && (
-                      <Group align="flex-end">
-                        {versions.length > 1 && (
-                          <Select
-                            label="Collected version"
-                            data={versions.map((v) => ({
-                              value: String(v.id),
-                              label: v.name,
-                            }))}
-                            value={String(t.id)}
-                            onChange={(v) => {
-                              if (v) setChosen({ ...chosen, [c.id]: v })
-                            }}
-                            style={{ minWidth: 170, flex: 1, maxWidth: 300 }}
-                          />
-                        )}
-                        <Text size="xs" c="dimmed">
-                          {stats?.profileName || 'Default profile'} ·{' '}
-                          {stats?.profileSource === 'this version'
-                            ? 'custom profile'
-                            : `inherited from ${stats?.profileSource ?? 'series'}`}
-                        </Text>
+                      <Group justify="space-between" gap="sm">
+                        <Group gap="sm">
+                          {total > 0 ? (
+                            <Button
+                              variant="subtle"
+                              size="compact-sm"
+                              px={4}
+                              leftSection={
+                                show ? (
+                                  <IconChevronDown size={14} />
+                                ) : (
+                                  <IconChevronRight size={14} />
+                                )
+                              }
+                              aria-expanded={show}
+                              aria-label={`${show ? 'Hide' : 'Show'} ${noun} (${total})`}
+                              onClick={() => setExpanded({ ...expanded, [c.id]: !show })}
+                            >
+                              {total} {noun} · {owned} owned
+                            </Button>
+                          ) : (
+                            <Text size="sm" c="dimmed">
+                              No {noun} yet
+                            </Text>
+                          )}
+                          {versions.length > 1 && (
+                            <Select
+                              aria-label="Collected version"
+                              size="xs"
+                              data={versions.map((v) => ({
+                                value: String(v.id),
+                                label: v.name,
+                              }))}
+                              value={String(t.id)}
+                              onChange={(v) => {
+                                if (v) setChosen({ ...chosen, [c.id]: v })
+                              }}
+                              w={190}
+                            />
+                          )}
+                        </Group>
                         <Switch
+                          size="sm"
                           label={versions.length > 1 ? 'Collect this version' : 'Collect'}
                           checked={t.monitored}
                           disabled={busy}
@@ -325,41 +373,7 @@ export default function EditionManager({
                             )
                           }
                         />
-                        <Button variant="default" size="xs" onClick={() => setTarget(t)}>
-                          Collection settings
-                        </Button>
-                        <Button
-                          variant="default"
-                          size="xs"
-                          onClick={() =>
-                            onSlot({
-                              ledger: c.type === 'chapter' ? 'chapter' : 'volume',
-                              collectionId: c.id,
-                              targetId: t.id,
-                              all: true,
-                              number: 0,
-                              collectionName: `${editionLabel(c)} · ${t.name}`,
-                              monitored: t.monitored,
-                              wanted: true,
-                              fileIds: [],
-                              autoSearch: true,
-                            })
-                          }
-                        >
-                          Find missing releases
-                        </Button>
                       </Group>
-                    )}
-                    {total > 0 && (
-                      <Button
-                        variant="subtle"
-                        size="compact-xs"
-                        aria-expanded={show}
-                        onClick={() => setExpanded({ ...expanded, [c.id]: !show })}
-                      >
-                        {show ? 'Hide' : 'Show'} {c.type === 'chapter' ? 'chapters' : 'volumes'} (
-                        {total})
-                      </Button>
                     )}
                     {show && t && (
                       <EditionBooks
@@ -380,13 +394,22 @@ export default function EditionManager({
                 </Card>
               )
             })}
-          <Button
-            variant="subtle"
-            onClick={() => setOtherEditions(!otherEditions)}
-            aria-expanded={otherEditions}
-          >
-            Other editions ({others.length})
-          </Button>
+          <Group justify="space-between">
+            <Button
+              variant="subtle"
+              size="compact-sm"
+              leftSection={
+                otherEditions ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />
+              }
+              onClick={() => setOtherEditions(!otherEditions)}
+              aria-expanded={otherEditions}
+            >
+              Other editions ({others.length})
+            </Button>
+            <Button size="xs" variant="default" onClick={onAddEdition}>
+              Add edition
+            </Button>
+          </Group>
           {otherEditions && (
             <Stack gap="sm">
               <Group>
@@ -438,150 +461,82 @@ export default function EditionManager({
           )}
         </>
       )}
-      {section === 'settings' && (
-        <>
-          <Button size="xs" variant="default" onClick={() => setRelationships(true)}>
-            Content relationships
-          </Button>
-          {(bindings.data ?? []).some((b) => b.state === 'active') && (
-            <Card withBorder>
-              <Text fw={600}>Source edition mappings</Text>
-              <Text size="sm" c="dimmed" mb="sm">
-                Use verified listing identity to distinguish editions. A selected download version
-                alone is not evidence.
-              </Text>
-              <Stack>
-                {bindings.data
-                  ?.filter((b) => b.state === 'active')
-                  .map((b) => (
-                    <Group key={b.id}>
-                      <Text size="sm" style={{ minWidth: 0, flex: 1 }}>
-                        {b.sourceName} · {b.mangaTitle}
-                      </Text>
-                      <Select
-                        aria-label={`Edition for ${b.mangaTitle}`}
-                        placeholder="Edition not verified"
-                        clearable
-                        data={visible.map((c) => ({
-                          value: String(c.id),
-                          label: editionLabel(c),
-                        }))}
-                        value={b.collectionId ? String(b.collectionId) : null}
-                        disabled={busy}
-                        onChange={(v) =>
-                          void run(() => api.setBindingEdition(seriesID, b.id, Number(v) || 0))
-                        }
-                        style={{ minWidth: 180, flex: 1 }}
-                      />
-                      {collections.find((c) => c.id === b.collectionId)?.type === 'chapter' && (
-                        <Checkbox
-                          label="Trust new chapters from this listing"
-                          description="Add observed chapters automatically when chapter discovery is enabled for this edition."
-                          checked={b.trustChapters}
-                          onChange={(e) =>
-                            void run(() =>
-                              api.trustBinding(seriesID, b.id, e.currentTarget.checked),
-                            )
-                          }
-                        />
-                      )}
-                    </Group>
-                  ))}
-              </Stack>
-            </Card>
-          )}
-        </>
-      )}
       {section === 'review' && (
-        <>
-          <ReviewInbox
-            seriesID={seriesID}
-            onFile={(id) => {
-              const f = files.find((f) => f.id === id)
-              if (f) setFile(f)
+        <ReviewInbox
+          seriesID={seriesID}
+          onFile={(id) => {
+            const f = files.find((f) => f.id === id)
+            if (f) setFile(f)
+          }}
+        />
+      )}
+      {section === 'files' && files.length > 0 && (
+        <Stack gap="sm">
+          {error && <Alert color="red">{error}</Alert>}
+          <TextInput
+            placeholder="Find a file"
+            aria-label="Find a file"
+            size="xs"
+            maw={320}
+            value={fileFilter}
+            onChange={(e) => {
+              setFileFilter(e.currentTarget.value)
+              setFilePage(1)
             }}
           />
-          {files.length > 0 && (
-            <Card withBorder>
-              <Stack gap="sm">
-                <Group justify="space-between">
-                  <Text fw={600}>Files and coverage</Text>
-                  <Button
-                    size="compact-xs"
-                    variant="subtle"
-                    onClick={() => {
-                      setShowFiles(!showFiles)
-                      setFilePage(1)
-                    }}
-                  >
-                    {showFiles ? 'Show review only' : 'Manage all files'}
-                  </Button>
-                </Group>
-                {showFiles && (
-                  <TextInput
-                    placeholder="Find a file"
-                    aria-label="Find a file"
-                    value={fileFilter}
-                    onChange={(e) => {
-                      setFileFilter(e.currentTarget.value)
-                      setFilePage(1)
-                    }}
+          {(() => {
+            const review = (f: SeriesFile) =>
+              f.needsReview ||
+              f.unrequested ||
+              coverage.data?.some((a) => a.fileId === f.id && !a.verified)
+            const list = files
+              .filter((f) => f.path.toLowerCase().includes(fileFilter.toLowerCase()))
+              .sort((a, b) => Number(!!review(b)) - Number(!!review(a)))
+            return (
+              <>
+                {list.length === 0 && (
+                  <Text size="sm" c="dimmed">
+                    No files match.
+                  </Text>
+                )}
+                {list.slice((filePage - 1) * 20, filePage * 20).map((f) => (
+                  <Group key={f.id} justify="space-between" wrap="nowrap">
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <Text size="sm" title={f.path} style={{ overflowWrap: 'anywhere' }}>
+                        {f.path
+                          .split(/[\\/]/)
+                          .pop()
+                          ?.replace(/ \[[a-f0-9]{64}\](?=\.[^.]+$)/i, '')}
+                      </Text>
+                      <Text size="xs" c={review(f) ? 'yellow' : 'dimmed'}>
+                        {[
+                          review(f) ? 'Needs review' : 'Confirmed coverage',
+                          f.facts?.language || 'Language unknown',
+                          f.facts?.group,
+                          f.provenance,
+                          fmtSize(f.size),
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </Text>
+                    </div>
+                    <Button size="xs" variant="default" onClick={() => setFile(f)}>
+                      {review(f) ? 'Match file' : 'Edit mappings'}
+                    </Button>
+                  </Group>
+                ))}
+                {list.length > 20 && (
+                  <Pagination
+                    size="sm"
+                    total={Math.ceil(list.length / 20)}
+                    value={filePage}
+                    onChange={setFilePage}
                   />
                 )}
-                {(() => {
-                  const review = (f: SeriesFile) =>
-                    f.needsReview ||
-                    f.unrequested ||
-                    coverage.data?.some((a) => a.fileId === f.id && !a.verified)
-                  const list = files
-                    .filter(
-                      (f) =>
-                        (showFiles || review(f)) &&
-                        f.path.toLowerCase().includes(fileFilter.toLowerCase()),
-                    )
-                    .sort((a, b) => Number(!!review(b)) - Number(!!review(a)))
-                  return (
-                    <>
-                      {list.length === 0 && (
-                        <Text size="sm" c="dimmed">
-                          No files need review.
-                        </Text>
-                      )}
-                      {list.slice((filePage - 1) * 20, filePage * 20).map((f) => (
-                        <Group key={f.id} justify="space-between">
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <Text size="sm" title={f.path} style={{ overflowWrap: 'anywhere' }}>
-                              {f.path
-                                .split(/[\\/]/)
-                                .pop()
-                                ?.replace(/ \[[a-f0-9]{64}\](?=\.[^.]+$)/i, '')}
-                            </Text>
-                            <Text size="xs" c="dimmed">
-                              {review(f) ? 'Needs review' : 'Confirmed coverage'} ·{' '}
-                              {f.facts?.language || 'Language unknown'}
-                              {f.facts?.group ? ` · ${f.facts.group}` : ''}
-                            </Text>
-                          </div>
-                          <Button size="xs" variant="default" onClick={() => setFile(f)}>
-                            {review(f) ? 'Match file' : 'Edit mappings'}
-                          </Button>
-                        </Group>
-                      ))}
-                      {list.length > 20 && (
-                        <Pagination
-                          size="sm"
-                          total={Math.ceil(list.length / 20)}
-                          value={filePage}
-                          onChange={setFilePage}
-                        />
-                      )}
-                    </>
-                  )
-                })()}
-              </Stack>
-            </Card>
-          )}
-        </>
+              </>
+            )
+          })()}
+        </Stack>
       )}
       {target && (
         <TargetEditor
@@ -691,14 +646,6 @@ export default function EditionManager({
             setFile(null)
           }}
           close={() => setFile(null)}
-        />
-      )}
-      {relationships && (
-        <Relationships
-          seriesID={seriesID}
-          units={allUnits}
-          collections={collections}
-          close={() => setRelationships(false)}
         />
       )}
       {confirmation}

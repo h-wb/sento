@@ -347,6 +347,9 @@ func (s *SearchService) prepareTargets(ctx context.Context, run *searchRun) erro
 		run.ownedScores[t.ID] = map[int64]int{}
 		for _, sl := range view.Slots[t.ID] {
 			selected := sl.Wanted
+			if run.target != nil && run.target.AllBooks && run.target.WorkID == 0 && run.target.Number == 0 {
+				selected = sl.State != "storage_unavailable" && sl.State != "needs_review" && sl.State != "pending"
+			}
 			if run.target != nil && (run.target.WorkID != 0 || run.target.Number != 0) {
 				selected = run.target.WorkID == sl.Work.ID || (run.target.WorkID == 0 && sl.Work.NumberKnown && run.target.Number == sl.Work.SequenceNum)
 				if selected {

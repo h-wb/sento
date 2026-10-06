@@ -325,8 +325,9 @@ func (s *Scheduler) tickQueue(ctx context.Context) error {
 	return err
 }
 
-// tickRefresh refreshes series whose metadata is stale: releasing every
-// RefreshReleasing, everything else every RefreshEnded (spec.md §5.2).
+// tickRefresh refreshes series whose metadata is stale: active ones
+// (releasing or on hiatus) every RefreshReleasing, everything else every
+// RefreshEnded (spec.md §5.2).
 func (s *Scheduler) tickRefresh(ctx context.Context) error {
 	series, err := s.store.ListSeries(ctx)
 	if err != nil {
@@ -338,7 +339,7 @@ func (s *Scheduler) tickRefresh(ctx context.Context) error {
 			return ctx.Err()
 		}
 		maxAge := s.intervals.RefreshEnded
-		if sr.Status == "releasing" {
+		if active(sr) {
 			maxAge = s.intervals.RefreshReleasing
 		}
 		refreshed := parseDBTime(sr.RefreshedAt)
@@ -352,11 +353,18 @@ func (s *Scheduler) tickRefresh(ctx context.Context) error {
 	return nil
 }
 
-// tickChapters runs the automatic chapter search for releasing, monitored
+// active reports whether a series can still get new books. A hiatus
+// counts: it ends without notice, and the status only changes on the next
+// refresh, so waiting for "releasing" would miss the return.
+func active(sr store.Series) bool {
+	return sr.Status == "releasing" || sr.Status == "hiatus"
+}
+
+// tickChapters runs the automatic chapter search for active, monitored
 // series.
 func (s *Scheduler) tickChapters(ctx context.Context) error {
 	return s.sweep(ctx, service.LedgerChapter, func(sr store.Series) bool {
-		return sr.Monitored && sr.Status == "releasing"
+		return sr.Monitored && active(sr)
 	})
 }
 

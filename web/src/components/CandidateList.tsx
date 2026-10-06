@@ -4,16 +4,19 @@ import {
   Anchor,
   Badge,
   Button,
-  Card,
+  Chip,
   Group,
   Pagination,
+  SegmentedControl,
   Select,
   SimpleGrid,
   Stack,
   Text,
   TextInput,
+  UnstyledButton,
 } from '@mantine/core'
-import { IconChevronDown, IconChevronUp, IconSearch } from '@tabler/icons-react'
+import { IconChevronDown, IconChevronRight, IconSearch } from '@tabler/icons-react'
+import classes from './CandidateList.module.css'
 import { useConfirmAction } from './ConfirmAction'
 import { fmtNum, fmtSize, type ReleaseCandidate } from '../api'
 
@@ -26,18 +29,58 @@ const status = (c: ReleaseCandidate) =>
   c.decision?.status ?? (c.rejections?.length ? 'blocked' : 'ready')
 const rank = { ready: 0, review: 1, blocked: 2 }
 
+const PAGE_SIZE = 25
+
+// A pack carries several books: by what it would collect here, or by the
+// span its name states.
+const spans = (ranges?: [number, number][]) =>
+  (ranges ?? []).reduce((n, [from, to]) => n + Math.max(1, Math.floor(to - from) + 1), 0)
+const isPack = (c: ReleaseCandidate) =>
+  (c.coverage?.length ?? c.covered?.length ?? 0) > 1 ||
+  !!c.parse.complete ||
+  spans(c.parse.volumes) > 1 ||
+  (!c.parse.volumes?.length && spans(c.parse.chapters) > 1)
+const firstNumber = (c: ReleaseCandidate) =>
+  c.parse.volumes?.[0]?.[0] ?? c.parse.chapters?.[0]?.[0] ?? Number.MAX_SAFE_INTEGER
+
+// Short names for why a release was ruled out, used to group the blocked
+// results. The full sentence stays on each row.
+const reasonNames: Record<string, string> = {
+  'rejected.series_match': 'Different series',
+  'rejected.edition_routing': 'Different edition',
+  'rejected.edition_ambiguous': 'Fits several editions',
+  'rejected.language': 'Wrong language',
+  'rejected.language_unknown': 'Language not confirmed',
+  'rejected.content_type': 'Not manga',
+  'rejected.numbers_unknown': 'No book number',
+  'rejected.pack_unverified': 'Unverified pack',
+  'rejected.no_coverage': 'Not needed',
+  'rejected.unit_ambiguous': 'Ambiguous book',
+  'rejected.blocklisted': 'On your blocklist',
+  'rejected.target_group': 'Other release group',
+}
+const reasonCode = (c: ReleaseCandidate) => c.decision?.reasons[0]?.code ?? c.rejections?.[0] ?? ''
+const reasonName = (code: string) => {
+  const fallback = code.replace(/^rejected\./, '').replace(/_/g, ' ')
+  return reasonNames[code] ?? fallback.charAt(0).toUpperCase() + fallback.slice(1)
+}
+
 export default function CandidateList({
   candidates,
   dropped = 0,
   onGrab,
   busy = false,
   searching = false,
+  editionWide = false,
 }: {
   candidates: ReleaseCandidate[]
   dropped?: number
   onGrab?: (c: ReleaseCandidate, force: boolean) => void | Promise<void>
   busy?: boolean
   searching?: boolean
+  // A whole-edition search mixes packs with single books: offer to
+  // separate them and show what each release covers up front.
+  editionWide?: boolean
 }) {
   const { confirm, confirmation } = useConfirmAction()
   const [queued, setQueued] = useState<Set<string>>(new Set())
@@ -45,19 +88,31 @@ export default function CandidateList({
   const [active, setActive] = useState('')
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('')
-  const [state, setState] = useState('all')
+  // Matches are what the user came for; ruled-out results are one click away.
+  const [state, setState] = useState<'matches' | 'blocked' | 'all'>('matches')
+  const [reason, setReason] = useState<string | null>(null)
+  const [kind, setKind] = useState<'any' | 'packs' | 'singles'>('any')
   const [site, setSite] = useState<string | null>(null)
-  const [protocol, setProtocol] = useState<string | null>(null)
   const [sort, setSort] = useState('best')
   const [page, setPage] = useState(1)
   const unique = [...new Map(candidates.map((c) => [releaseKey(c), c])).values()]
-  const ready = unique.filter((c) => status(c) === 'ready').length
-  const review = unique.filter((c) => status(c) === 'review').length
-  const blocked = unique.length - ready - review
+  const matches = unique.filter((c) => status(c) !== 'blocked')
+  const blocked = unique.filter((c) => status(c) === 'blocked')
+  const reasonCounts = new Map<string, number>()
+  for (const c of blocked)
+    reasonCounts.set(reasonCode(c), (reasonCounts.get(reasonCode(c)) ?? 0) + 1)
+  const reasons = [...reasonCounts]
+    .map(([code, count]) => ({ code, count }))
+    .sort((a, b) => b.count - a.count)
   const resetPage = (fn: () => void) => {
     fn()
     setPage(1)
   }
+  const showBlocked = (code: string | null) =>
+    resetPage(() => {
+      setState('blocked')
+      setReason(code)
+    })
   const shown = unique
     .filter((c) => {
       const text = [
@@ -73,14 +128,16 @@ export default function CandidateList({
         .toLowerCase()
       return (
         (!filter.trim() || text.includes(filter.trim().toLowerCase())) &&
-        (state === 'all' || status(c) === state) &&
+        (state === 'all' || (state === 'blocked') === (status(c) === 'blocked')) &&
+        (state !== 'blocked' || !reason || reasonCode(c) === reason) &&
         (!site || c.site === site) &&
-        (!protocol || c.protocol === protocol)
+        (kind === 'any' || (kind === 'packs') === isPack(c))
       )
     })
     .sort((a, b) => {
       // Preserve arrival order while streaming so a result cannot move under a click.
       if (searching) return 0
+      if (sort === 'number') return firstNumber(a) - firstNumber(b) || b.score - a.score
       if (sort === 'size') return (a.size ?? 0) - (b.size ?? 0)
       if (sort === 'seeders') return (b.seeders ?? -1) - (a.seeders ?? -1)
       if (sort === 'quality') return (b.formatScore ?? 0) - (a.formatScore ?? 0)
@@ -91,8 +148,9 @@ export default function CandidateList({
         releaseKey(a).localeCompare(releaseKey(b))
       )
     })
-  const pages = Math.max(1, Math.ceil(shown.length / 12))
+  const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE))
   const currentPage = Math.min(page, pages)
+  const filtered = !!filter.trim() || !!site || kind !== 'any' || (state === 'blocked' && !!reason)
   const download = async (c: ReleaseCandidate, force: boolean) => {
     if (!onGrab || busy || downloading.current || queued.has(releaseKey(c))) return
     downloading.current = true
@@ -122,68 +180,94 @@ export default function CandidateList({
   return (
     <Stack gap="sm">
       <Group justify="space-between" gap="xs">
-        <Text size="sm" role="status">
-          {ready} ready · {review} need review · {blocked} blocked
-        </Text>
-        {dropped > 0 && (
-          <Text size="xs" c="dimmed">
-            {dropped} results for the other book type excluded
-          </Text>
-        )}
-      </Group>
-      <TextInput
-        aria-label="Filter releases"
-        placeholder="Filter by title, group, language, or site"
-        leftSection={<IconSearch size={15} />}
-        value={filter}
-        onChange={(e) => resetPage(() => setFilter(e.currentTarget.value))}
-      />
-      <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
-        <Select
+        <SegmentedControl
+          size="xs"
           aria-label="Release status"
           value={state}
-          onChange={(v) => resetPage(() => setState(v ?? 'all'))}
+          onChange={(v) =>
+            resetPage(() => {
+              setState(v as typeof state)
+              setReason(null)
+            })
+          }
           data={[
-            { value: 'all', label: 'All results' },
-            { value: 'ready', label: `Ready (${ready})` },
-            { value: 'review', label: `Needs review (${review})` },
-            { value: 'blocked', label: `Blocked (${blocked})` },
-          ]}
-          allowDeselect={false}
-        />
-        <Select
-          aria-label="Release site"
-          placeholder="All sites"
-          clearable
-          value={site}
-          onChange={(v) => resetPage(() => setSite(v))}
-          data={[...new Set(unique.map((c) => c.site))].sort()}
-        />
-        <Select
-          aria-label="Release protocol"
-          placeholder="All download types"
-          clearable
-          value={protocol}
-          onChange={(v) => resetPage(() => setProtocol(v))}
-          data={[
-            { value: 'torrent', label: 'Torrent' },
-            { value: 'source', label: 'Direct download' },
+            { value: 'matches', label: `Matches ${matches.length}` },
+            { value: 'blocked', label: `Ruled out ${blocked.length}` },
+            { value: 'all', label: `All ${unique.length}` },
           ]}
         />
-        <Select
-          aria-label="Sort releases"
-          value={sort}
-          onChange={(v) => resetPage(() => setSort(v ?? 'best'))}
-          disabled={searching}
-          allowDeselect={false}
-          data={[
-            { value: 'best', label: 'Best match first' },
-            { value: 'quality', label: 'Format score' },
-            { value: 'seeders', label: 'Most seeders' },
-            { value: 'size', label: 'Smallest download' },
-          ]}
-        />
-      </SimpleGrid>
+        <Group gap="xs" className={classes.filters} justify="flex-end">
+          <TextInput
+            aria-label="Filter releases"
+            placeholder="Filter by title, group, language…"
+            size="xs"
+            leftSection={<IconSearch size={14} />}
+            value={filter}
+            onChange={(e) => resetPage(() => setFilter(e.currentTarget.value))}
+            style={{ flex: 1, minWidth: 140, maxWidth: 320 }}
+          />
+          <Select
+            aria-label="Release site"
+            placeholder="All sites"
+            size="xs"
+            w={150}
+            clearable
+            value={site}
+            onChange={(v) => resetPage(() => setSite(v))}
+            data={[...new Set(unique.map((c) => c.site))].sort()}
+          />
+          <Select
+            aria-label="Sort releases"
+            size="xs"
+            w={150}
+            value={sort}
+            onChange={(v) => resetPage(() => setSort(v ?? 'best'))}
+            disabled={searching}
+            allowDeselect={false}
+            data={[
+              { value: 'best', label: 'Best match' },
+              ...(editionWide ? [{ value: 'number', label: 'Book number' }] : []),
+              { value: 'quality', label: 'Format score' },
+              { value: 'seeders', label: 'Most seeders' },
+              { value: 'size', label: 'Smallest' },
+            ]}
+          />
+        </Group>
+      </Group>
+      {editionWide && state !== 'blocked' && (
+        <Chip.Group value={kind} onChange={(v) => resetPage(() => setKind(v as typeof kind))}>
+          <Group gap={6}>
+            <Chip value="any" size="xs" variant="light">
+              Packs and singles
+            </Chip>
+            <Chip value="packs" size="xs" variant="light">
+              Packs {matches.filter(isPack).length}
+            </Chip>
+            <Chip value="singles" size="xs" variant="light">
+              Single books {matches.filter((c) => !isPack(c)).length}
+            </Chip>
+          </Group>
+        </Chip.Group>
+      )}
+      {state === 'blocked' && reasons.length > 1 && (
+        <Chip.Group
+          value={reason ?? 'any'}
+          onChange={(v) =>
+            resetPage(() => setReason(v === 'any' || typeof v !== 'string' ? null : v))
+          }
+        >
+          <Group gap={6}>
+            <Chip value="any" size="xs" variant="light">
+              Any reason {blocked.length}
+            </Chip>
+            {reasons.map((r) => (
+              <Chip key={r.code} value={r.code} size="xs" variant="light">
+                {reasonName(r.code)} {r.count}
+              </Chip>
+            ))}
+          </Group>
+        </Chip.Group>
+      )}
       {error && (
         <Alert
           color="red"
@@ -193,45 +277,74 @@ export default function CandidateList({
           {error}
         </Alert>
       )}
-      {shown.length === 0 && (
-        <Card withBorder>
-          <Stack gap="xs">
-            <Text size="sm">No releases match these filters.</Text>
-            <Button
-              variant="subtle"
-              size="xs"
-              onClick={() => {
-                setFilter('')
-                setState('all')
-                setSite(null)
-                setProtocol(null)
-                setPage(1)
-              }}
-              style={{ alignSelf: 'flex-start' }}
-            >
-              Clear filters
-            </Button>
-          </Stack>
-        </Card>
-      )}
-      {shown.slice((currentPage - 1) * 12, currentPage * 12).map((c) => (
-        <ReleaseRow
-          key={releaseKey(c)}
-          c={c}
-          queued={queued.has(releaseKey(c))}
-          busy={busy || !!active}
-          loading={active === releaseKey(c)}
-          onGrab={onGrab ? requestDownload : undefined}
-        />
-      ))}
-      {pages > 1 && (
-        <Group justify="space-between">
-          <Text size="xs" c="dimmed">
-            {shown.length} releases
+      {shown.length === 0 && state === 'matches' && !filtered && (
+        <div className={classes.empty}>
+          <Text size="sm" fw={600}>
+            {searching ? 'No matching release yet…' : 'No release matches this selection.'}
           </Text>
-          <Pagination size="sm" total={pages} value={currentPage} onChange={setPage} />
-        </Group>
+          {blocked.length > 0 && (
+            <>
+              <Text size="sm" c="dimmed" mt={4}>
+                {blocked.length} {blocked.length === 1 ? 'result was' : 'results were'} ruled out:
+              </Text>
+              <Group gap={6} mt="xs">
+                {reasons.map((r) => (
+                  <Button
+                    key={r.code}
+                    size="compact-xs"
+                    variant="default"
+                    onClick={() => showBlocked(r.code)}
+                  >
+                    {reasonName(r.code)} · {r.count}
+                  </Button>
+                ))}
+              </Group>
+            </>
+          )}
+        </div>
       )}
+      {shown.length === 0 && (state !== 'matches' || filtered) && (
+        <div className={classes.empty}>
+          <Text size="sm">No releases match these filters.</Text>
+          <Button
+            variant="subtle"
+            size="compact-xs"
+            mt="xs"
+            onClick={() => {
+              setFilter('')
+              setSite(null)
+              setKind('any')
+              setReason(null)
+              setPage(1)
+            }}
+          >
+            Clear filters
+          </Button>
+        </div>
+      )}
+      {shown.length > 0 && (
+        <div className={classes.rows}>
+          {shown.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map((c) => (
+            <ReleaseRow
+              key={releaseKey(c)}
+              c={c}
+              queued={queued.has(releaseKey(c))}
+              busy={busy || !!active}
+              showBooks={editionWide}
+              loading={active === releaseKey(c)}
+              onGrab={onGrab ? requestDownload : undefined}
+            />
+          ))}
+        </div>
+      )}
+      <Group justify="space-between">
+        <Text size="xs" c="dimmed">
+          {shown.length > 0 && `${shown.length} ${shown.length === 1 ? 'release' : 'releases'}`}
+          {shown.length > 0 && dropped > 0 && ' · '}
+          {dropped > 0 && `${dropped} results for the other book type not shown`}
+        </Text>
+        {pages > 1 && <Pagination size="sm" total={pages} value={currentPage} onChange={setPage} />}
+      </Group>
       {confirmation}
     </Stack>
   )
@@ -240,12 +353,14 @@ export default function CandidateList({
 function ReleaseRow({
   c,
   queued,
+  showBooks = false,
   busy,
   loading,
   onGrab,
 }: {
   c: ReleaseCandidate
   queued: boolean
+  showBooks?: boolean
   busy: boolean
   loading: boolean
   onGrab?: (c: ReleaseCandidate, force: boolean) => void
@@ -255,9 +370,11 @@ function ReleaseRow({
   const state = status(c)
   const volume = rangeLabel('Vol.', c.parse.volumes)
   const chapter = rangeLabel('Ch.', c.parse.chapters)
+  // Edition-wide, what a release covers is the first thing to compare.
+  const books = showBooks ? [volume, chapter].filter(Boolean).join(' · ') : ''
   const facts = [
-    volume,
-    chapter,
+    !books && volume,
+    !books && chapter,
     c.parse.languages?.length
       ? c.parse.languages.map((l) => l.toUpperCase()).join('/')
       : c.parse.language?.toUpperCase() || 'Language unknown',
@@ -273,184 +390,177 @@ function ReleaseRow({
     c.parse.version && `Revision ${c.parse.version}`,
   ].filter(Boolean)
   const reason = decision?.reasons[0]?.message
+  const more = (decision?.reasons.length ?? 1) - 1
   const matched = c.coverage?.length ?? c.covered?.length ?? 0
   return (
-    <Card withBorder padding="md" data-testid="release-row">
-      <Stack gap="xs">
-        <Group justify="space-between" align="flex-start">
-          <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere', flex: 1, minWidth: 0 }}>
-            {c.site} · {c.protocol === 'torrent' ? 'Torrent' : 'Direct download'}
-            {c.protocol === 'torrent' &&
-              ` · ${c.size ? fmtSize(c.size) : 'Size unknown'} · ${c.seeders ?? 0} seeders`}
-          </Text>
-          <Badge
-            variant="light"
-            color={
-              queued ? 'blue' : state === 'ready' ? 'green' : state === 'review' ? 'orange' : 'gray'
-            }
-          >
-            {queued
-              ? 'Queued'
-              : state === 'ready'
-                ? 'Ready'
-                : state === 'review'
-                  ? 'Needs review'
-                  : 'Blocked'}
-          </Badge>
-        </Group>
-        <Text
-          fw={600}
-          size="sm"
-          lineClamp={expanded ? undefined : 2}
-          style={{ overflowWrap: 'anywhere' }}
+    <div className={classes.row} data-testid="release-row" data-status={queued ? 'queued' : state}>
+      <Group gap="sm" align="flex-start" className={classes.rowMain}>
+        <UnstyledButton
+          className={classes.summary}
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
         >
-          {c.title}
-        </Text>
-        <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-          {facts.join(' · ')}
-        </Text>
-        {c.editionSnapshot && (
-          <Text size="xs" c="dimmed">
-            {c.editionSnapshot.editionName}
-            {c.targetSnapshot && !c.targetSnapshot.isDefault ? ` · ${c.targetSnapshot.name}` : ''}
-          </Text>
-        )}
-        {reason && (
-          <Text
-            size="sm"
-            c={state === 'review' ? 'orange' : 'dimmed'}
-            style={{ overflowWrap: 'anywhere' }}
-          >
-            {reason}
-            {(decision?.reasons.length ?? 0) > 1 && ` (+${decision!.reasons.length - 1} more)`}
-          </Text>
-        )}
-        <Group justify="space-between" align="center">
-          <Group gap="xs">
-            <Button
-              size="compact-xs"
-              variant="subtle"
-              aria-expanded={expanded}
-              onClick={() => setExpanded(!expanded)}
-              rightSection={expanded ? <IconChevronUp size={12} /> : <IconChevronDown size={12} />}
-            >
-              {expanded ? 'Hide details' : 'Details'}
-            </Button>
-            <Text size="xs" c="dimmed">
-              {matched > 0
-                ? `${matched} wanted ${matched === 1 ? 'book' : 'books'}`
-                : decision?.kind || 'Unclassified'}
-              {state === 'ready' && ` · Rank score ${c.score}`}
-            </Text>
-          </Group>
-          {onGrab && state !== 'blocked' && (
-            <Button
-              size="xs"
-              variant={state === 'review' ? 'light' : 'filled'}
-              color={state === 'review' ? 'orange' : 'brand'}
-              disabled={busy || queued || !(decision?.canDownload || decision?.canForce)}
-              loading={loading}
-              onClick={() => onGrab(c, state === 'review')}
-            >
-              {queued ? 'Queued' : state === 'review' ? 'Review & download' : 'Download'}
-            </Button>
-          )}
-        </Group>
-        {expanded && (
-          <Stack
-            gap="sm"
-            pt="sm"
-            style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}
-          >
-            {!!decision?.reasons.length && (
-              <Stack gap={4}>
-                {decision.reasons.map((r) => (
-                  <Text key={r.code} size="sm" style={{ overflowWrap: 'anywhere' }}>
-                    {r.message}{' '}
-                    <Text span size="xs" c="dimmed">
-                      {r.override
-                        ? 'Can be overridden for this download.'
-                        : 'Cannot be overridden.'}
-                    </Text>
-                  </Text>
-                ))}
-              </Stack>
+          <Group gap={6} wrap="nowrap" align="flex-start">
+            {expanded ? (
+              <IconChevronDown size={14} className={classes.chevron} />
+            ) : (
+              <IconChevronRight size={14} className={classes.chevron} />
             )}
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
-              <Text size="xs">
-                Classification: {decision?.kind ?? 'Unknown'}
-                {c.parse.complete ? ' · complete pack claim' : ''}
-              </Text>
-              <Text size="xs">Language evidence: {decision?.languageSource ?? 'unknown'}</Text>
-              <Text size="xs">Number evidence: {decision?.numberSource ?? 'unknown'}</Text>
-              <Text size="xs">Profile: {c.policySnapshot?.name ?? 'Built-in defaults'}</Text>
-            </SimpleGrid>
-            {!!c.coverage?.length && (
-              <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
-                Will collect:{' '}
-                {c.coverage
-                  .slice(0, 30)
-                  .map((s) => `${s.ledger === 'chapter' ? 'Ch.' : 'Vol.'} ${fmtNum(s.number)}`)
-                  .join(', ')}
-                {c.coverage.length > 30 ? ` and ${c.coverage.length - 30} more` : ''}
-              </Text>
-            )}
-            {!!decision?.warnings.length && (
-              <Stack gap={3}>
-                {decision.warnings.map((w) => (
-                  <Text size="xs" c="dimmed" key={w}>
-                    {w}
-                  </Text>
-                ))}
-              </Stack>
-            )}
-            {!!c.scoreParts?.length && (
-              <Stack gap={2}>
-                <Text size="xs" fw={600}>
-                  Ranking
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <Group gap={6} wrap="nowrap" align="baseline">
+                {books && (
+                  <Badge variant="light" color="gray" className={classes.books}>
+                    {books}
+                  </Badge>
+                )}
+                <Text
+                  fw={600}
+                  size="sm"
+                  lineClamp={expanded ? undefined : 1}
+                  style={{ overflowWrap: 'anywhere' }}
+                >
+                  {c.title}
                 </Text>
-                {c.scoreParts.map((p, i) => (
-                  <Group justify="space-between" key={`${p.label}-${i}`}>
-                    <Text size="xs">{p.label}</Text>
-                    <Text size="xs">
-                      {p.value > 0 ? '+' : ''}
-                      {p.value}
-                    </Text>
-                  </Group>
-                ))}
-              </Stack>
-            )}
-            {!!c.formats?.length && (
-              <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
-                Matched formats:{' '}
-                {c.formats
-                  .map((f) => `${f.name} (${f.score > 0 ? '+' : ''}${f.score})`)
+              </Group>
+              <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                {[
+                  c.site,
+                  c.protocol === 'torrent' ? 'Torrent' : 'Direct download',
+                  c.protocol === 'torrent' && (c.size ? fmtSize(c.size) : 'Size unknown'),
+                  c.protocol === 'torrent' && `${c.seeders ?? 0} seeders`,
+                  ...facts,
+                ]
+                  .filter(Boolean)
                   .join(' · ')}
               </Text>
-            )}
-            {c.url && (
-              <Anchor href={c.url} target="_blank" rel="noopener noreferrer" size="xs">
-                Open original release
-              </Anchor>
-            )}
-            {!!c.parseTrace?.length && (
-              <details>
-                <summary style={{ fontSize: 'var(--mantine-font-size-xs)', cursor: 'pointer' }}>
-                  Parsing details
-                </summary>
-                <Stack gap={3} mt="xs">
-                  {c.parseTrace.map((p, i) => (
-                    <Text key={i} size="xs" style={{ overflowWrap: 'anywhere' }}>
-                      {p.rule}
-                      {p.text ? `: ${p.text}` : ''}
-                    </Text>
-                  ))}
-                </Stack>
-              </details>
-            )}
-          </Stack>
+              {state === 'blocked' ? (
+                <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                  {reason ?? 'Ruled out'}
+                  {more > 0 && ` (+${more} more)`}
+                </Text>
+              ) : (
+                <Text size="xs" c={state === 'review' ? 'orange' : 'dimmed'}>
+                  {state === 'review' && `${reason}${more > 0 ? ` (+${more} more)` : ''} · `}
+                  {matched > 0
+                    ? `${matched} wanted ${matched === 1 ? 'book' : 'books'}`
+                    : decision?.kind || 'Unclassified'}
+                  {state === 'ready' && ` · Rank score ${c.score}`}
+                  {c.editionSnapshot && ` · ${c.editionSnapshot.editionName}`}
+                  {c.targetSnapshot && !c.targetSnapshot.isDefault && ` · ${c.targetSnapshot.name}`}
+                </Text>
+              )}
+            </div>
+          </Group>
+        </UnstyledButton>
+        {queued ? (
+          <Badge variant="light" color="blue">
+            Queued
+          </Badge>
+        ) : onGrab && state !== 'blocked' ? (
+          <Button
+            size="xs"
+            variant={state === 'review' ? 'light' : 'filled'}
+            color={state === 'review' ? 'orange' : 'brand'}
+            disabled={busy || !(decision?.canDownload || decision?.canForce)}
+            loading={loading}
+            onClick={() => onGrab(c, state === 'review')}
+          >
+            {state === 'review' ? 'Review & download' : 'Download'}
+          </Button>
+        ) : (
+          state === 'blocked' && (
+            <Badge variant="light" color="gray" className={classes.reasonBadge}>
+              {reasonName(reasonCode(c))}
+            </Badge>
+          )
         )}
-      </Stack>
-    </Card>
+      </Group>
+      {expanded && (
+        <Stack gap="sm" className={classes.details}>
+          {!!decision?.reasons.length && (
+            <Stack gap={4}>
+              {decision.reasons.map((r) => (
+                <Text key={r.code} size="sm" style={{ overflowWrap: 'anywhere' }}>
+                  {r.message}{' '}
+                  <Text span size="xs" c="dimmed">
+                    {r.override ? 'Can be overridden for this download.' : 'Cannot be overridden.'}
+                  </Text>
+                </Text>
+              ))}
+            </Stack>
+          )}
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+            <Text size="xs">
+              Classification: {decision?.kind ?? 'Unknown'}
+              {c.parse.complete ? ' · complete pack claim' : ''}
+            </Text>
+            <Text size="xs">Language evidence: {decision?.languageSource ?? 'unknown'}</Text>
+            <Text size="xs">Number evidence: {decision?.numberSource ?? 'unknown'}</Text>
+            <Text size="xs">Profile: {c.policySnapshot?.name ?? 'Built-in defaults'}</Text>
+          </SimpleGrid>
+          {!!c.coverage?.length && (
+            <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
+              Will collect:{' '}
+              {c.coverage
+                .slice(0, 30)
+                .map((s) => `${s.ledger === 'chapter' ? 'Ch.' : 'Vol.'} ${fmtNum(s.number)}`)
+                .join(', ')}
+              {c.coverage.length > 30 ? ` and ${c.coverage.length - 30} more` : ''}
+            </Text>
+          )}
+          {!!decision?.warnings.length && (
+            <Stack gap={3}>
+              {decision.warnings.map((w) => (
+                <Text size="xs" c="dimmed" key={w}>
+                  {w}
+                </Text>
+              ))}
+            </Stack>
+          )}
+          {!!c.scoreParts?.length && (
+            <Stack gap={2}>
+              <Text size="xs" fw={600}>
+                Ranking
+              </Text>
+              {c.scoreParts.map((p, i) => (
+                <Group justify="space-between" key={`${p.label}-${i}`}>
+                  <Text size="xs">{p.label}</Text>
+                  <Text size="xs">
+                    {p.value > 0 ? '+' : ''}
+                    {p.value}
+                  </Text>
+                </Group>
+              ))}
+            </Stack>
+          )}
+          {!!c.formats?.length && (
+            <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
+              Matched formats:{' '}
+              {c.formats.map((f) => `${f.name} (${f.score > 0 ? '+' : ''}${f.score})`).join(' · ')}
+            </Text>
+          )}
+          {c.url && (
+            <Anchor href={c.url} target="_blank" rel="noopener noreferrer" size="xs">
+              Open original release
+            </Anchor>
+          )}
+          {!!c.parseTrace?.length && (
+            <details>
+              <summary style={{ fontSize: 'var(--mantine-font-size-xs)', cursor: 'pointer' }}>
+                Parsing details
+              </summary>
+              <Stack gap={3} mt="xs">
+                {c.parseTrace.map((p, i) => (
+                  <Text key={i} size="xs" style={{ overflowWrap: 'anywhere' }}>
+                    {p.rule}
+                    {p.text ? `: ${p.text}` : ''}
+                  </Text>
+                ))}
+              </Stack>
+            </details>
+          )}
+        </Stack>
+      )}
+    </div>
   )
 }

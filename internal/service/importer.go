@@ -239,19 +239,13 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 		editionName, lang = col.EditionName, col.Language
 	}
 
-	seriesDir, err := im.seriesDir(ctx, series, naming)
+	seriesDir, err := im.seriesDir(ctx, series, ms, first.Ledger)
 	if err != nil {
 		return err
 	}
 
 	var destPath string
-	info := mediafile.ComicInfo{
-		Series:      series.Title,
-		Summary:     series.Description,
-		Web:         fmt.Sprintf("https://mangabaka.org/%d", series.MangaBakaID),
-		LanguageISO: lang,
-		Notes:       fmt.Sprintf("mangabaka:%d sento:v1", series.MangaBakaID),
-	}
+	info := im.bookInfo(ctx, series, first, item.Title, releaseGroup(item))
 	if isVolume {
 		fileName := mediafile.Render(naming.VolumeFile, mediafile.NameTokens{
 			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
@@ -261,10 +255,6 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 			fileName = mediafile.Sanitize(item.Title) + ".cbz"
 		}
 		destPath = filepath.Join(seriesDir, fileName)
-		info.Volume = mediafile.RenderPlainNum(first.Number)
-		// Also set Number: the merge would otherwise preserve whatever the
-		// source's ComicInfo guessed (often a year mis-parse).
-		info.Number = info.Volume
 	} else {
 		fileName := mediafile.Render(naming.ChapterFile, mediafile.NameTokens{
 			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
@@ -278,7 +268,6 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 			destPath = filepath.Join(destPath, naming.ChapterDir)
 		}
 		destPath = filepath.Join(destPath, fileName)
-		info.Number = mediafile.RenderPlainNum(first.Number)
 	}
 
 	writeInfo := &info
@@ -302,8 +291,8 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	if err != nil {
 		return err
 	}
-	destPath = assetPath(seriesDir, filepath.Base(destPath), hash, first)
-	if err = verifyDestination(destPath, hash); err != nil {
+	destPath, err = placeAsset(im.bookDir(ctx, ms, seriesDir, series, first), filepath.Base(destPath), hash, ms.HashInName)
+	if err != nil {
 		return err
 	}
 	if err = os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
@@ -317,8 +306,9 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 }
 
 // importFiles imports a directory payload (torrents): every archive is
-// parsed and hardlinked into the library for each expected slot it covers.
-// Payload data is never moved (seeding, spec.md §7).
+// parsed and installed into the library for each expected slot it covers —
+// as a tagged CBZ copy, or a hardlink when metadata embedding is off.
+// Payload data is never moved or modified (seeding, spec.md §7).
 func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir string, files []string) error {
 	ms := LoadMediaSettings(ctx, im.store)
 	naming := ms.Naming()
@@ -334,7 +324,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	if err != nil {
 		return err
 	}
-	seriesDir, err := im.seriesDir(ctx, series, naming)
+	seriesDir, err := im.seriesDir(ctx, series, ms, expected[0].Ledger)
 	if err != nil {
 		return err
 	}
@@ -451,11 +441,26 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 		// Identical bytes can serve several confirmed versions. Keep one
 		// archive with all coverage links; different releases get different
 		// hashes and can never replace this pathname.
-		dest := assetPath(seriesDir, name, hash, covered[0])
-		if e = verifyDestination(dest, hash); e != nil {
+		// With metadata embedding on, the library gets its own tagged CBZ
+		// and the payload stays untouched for seeding; off, the payload is
+		// hardlinked as it is.
+		if ms.WriteComicInfo {
+			name = strings.TrimSuffix(name, filepath.Ext(name)) + ".cbz"
+		}
+		dest, e := placeAsset(im.bookDir(ctx, ms, seriesDir, series, covered[0]), name, hash, ms.HashInName)
+		if e != nil {
 			return e
 		}
-		if e = installAsset(src, dest, hash, ms.AlwaysCopy); e != nil {
+		if ms.WriteComicInfo {
+			info := im.packInfo(ctx, series, covered, item.Title, res.Group)
+			if len(covered) == 1 {
+				info = im.bookInfo(ctx, series, covered[0], item.Title, res.Group)
+			}
+			e = installProcessed(src, dest, hash, info)
+		} else {
+			e = installAsset(src, dest, hash, ms.AlwaysCopy)
+		}
+		if e != nil {
 			return e
 		}
 		if e = im.recordAsset(ctx, item, dest, covered, res); e != nil {
@@ -471,17 +476,30 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	return nil
 }
 
-func (im *Importer) seriesDir(ctx context.Context, series *store.Series, naming mediafile.NamingConfig) (string, error) {
-	if series.Path != "" {
-		return series.Path, nil
+// seriesDir returns the folder for a series' books of the given type
+// under the current settings, recording it on the series.
+func (im *Importer) seriesDir(ctx context.Context, series *store.Series, ms MediaSettings, ledger string) (string, error) {
+	volumes, chapters := seriesFolders(im.libraryRoot, series, ms)
+	if series.Path != volumes {
+		if err := im.store.SetSeriesPath(ctx, series.ID, volumes); err != nil {
+			return "", err
+		}
+		series.Path = volumes
 	}
-	dir := filepath.Join(im.libraryRoot, mediafile.Render(naming.SeriesFolder, mediafile.NameTokens{
-		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1,
-	}))
-	if err := im.store.SetSeriesPath(ctx, series.ID, dir); err != nil {
-		return "", err
+	separate := ""
+	if chapters != volumes {
+		separate = chapters
 	}
-	return dir, nil
+	if series.ChapterPath != separate {
+		if err := im.store.SetSeriesChapterPath(ctx, series.ID, separate); err != nil {
+			return "", err
+		}
+		series.ChapterPath = separate
+	}
+	if ledger == "chapter" {
+		return chapters, nil
+	}
+	return volumes, nil
 }
 
 func parseTime(s string) time.Time {

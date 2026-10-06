@@ -127,6 +127,13 @@ func (s *Store) PendingSlotKeys(ctx context.Context, seriesID int64) (map[string
 	return out, nil
 }
 
+// SetSeriesChapterPath records the separate chapter folder ("" = chapters
+// share the series folder).
+func (s *Store) SetSeriesChapterPath(ctx context.Context, seriesID int64, path string) error {
+	_, err := s.db.ExecContext(ctx, s.q(`UPDATE series SET chapter_path = ? WHERE id = ?`), path, seriesID)
+	return err
+}
+
 func (s *Store) SetSeriesPath(ctx context.Context, seriesID int64, path string) error {
 	_, err := s.db.ExecContext(ctx, s.q(`UPDATE series SET path = ? WHERE id = ?`), path, seriesID)
 	return err

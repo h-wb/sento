@@ -205,6 +205,9 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 		res.step("implicit-pack", "no numbers + year range → whole series")
 	}
 
+	if ch == ChannelTorrent {
+		detectMedia(cleaned, res)
+	}
 	scoreConfidence(res, infos)
 }
 

@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -50,14 +49,19 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 	if err != nil {
 		return nil, err
 	}
+	// Default: everywhere the series lives — its folder, plus the separate
+	// chapter folder when chapters are kept apart.
+	dirs := []string{dir}
 	if dir == "" {
 		dir = series.Path
-	}
-	if dir == "" {
-		naming := LoadMediaSettings(ctx, sc.store).Naming()
-		dir = filepath.Join(sc.libraryRoot, mediafile.Render(naming.SeriesFolder, mediafile.NameTokens{
-			SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1,
-		}))
+		dirs = []string{dir}
+		if dir == "" {
+			dir, _ = seriesFolders(sc.libraryRoot, series, LoadMediaSettings(ctx, sc.store))
+			dirs = []string{dir}
+		}
+		if series.ChapterPath != "" && series.ChapterPath != dir {
+			dirs = append(dirs, series.ChapterPath)
+		}
 	}
 
 	// Adopt the folder as the series path if none was set.
@@ -97,7 +101,7 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 	}
 
 	res := &ScanResult{}
-	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	err = walkDirs(dirs, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // unreadable subtree: skip, keep scanning
 		}
@@ -176,6 +180,7 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 				matches = append(matches, c)
 			}
 		}
+		matches = preferByMedium(parsed, matches)
 		if len(matches) != 1 {
 			continue
 		}
@@ -263,4 +268,15 @@ func (sc *Scanner) ScanAndAdoptCutoff(ctx context.Context, seriesID int64, dir s
 		}
 	}
 	return result, nil
+}
+
+// walkDirs walks several roots with one visitor, stopping at the first
+// error the visitor returns.
+func walkDirs(dirs []string, fn fs.WalkDirFunc) error {
+	for _, dir := range dirs {
+		if err := filepath.WalkDir(dir, fn); err != nil {
+			return err
+		}
+	}
+	return nil
 }

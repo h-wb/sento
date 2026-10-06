@@ -267,6 +267,11 @@ export interface Series {
   coverUrl?: string;
   monitored: boolean;
   path?: string;
+  /**
+   * ChapterPath is where the series' chapters live when they are kept
+   * apart from its volumes; empty = under Path.
+   */
+  chapterPath?: string;
   profileId?: number /* int64 */; // 0 = instance default
   addedAt: string;
   refreshedAt?: string;

@@ -198,3 +198,19 @@ func TestSiteConfigFiltering(t *testing.T) {
 		t.Fatalf("override should re-enable the entry: got %d candidates", len(result.Candidates))
 	}
 }
+
+// Trackers index release names, which spell symbols out: the query must
+// too, or "HUNTER×HUNTER" finds nothing where "hunter x hunter" does.
+func TestTextQuery(t *testing.T) {
+	for title, want := range map[string]string{
+		"HUNTER×HUNTER": "hunter x hunter",
+		"Re:ZERO -Starting Life in Another World-": "re zero starting life in another world",
+		"ONE PIECE": "one piece",
+		"ハンター×ハンター": "ハンター x ハンター",
+		"!!!":       "!!!",
+	} {
+		if got := textQuery(title); got != want {
+			t.Errorf("textQuery(%q) = %q, want %q", title, got, want)
+		}
+	}
+}

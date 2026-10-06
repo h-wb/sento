@@ -23,6 +23,10 @@ export interface ImportProposal {
 }
 
 //////////
+// source: comicinfo.go
+
+
+//////////
 // source: connections.go
 
 /**
@@ -87,12 +91,6 @@ export interface EditionOverview {
   booksOnDisk: number /* int */;
   wantedCopies: number /* int */;
   reviewFiles: number /* int */;
-}
-export interface UnitPage {
-  items: UnitSlot[];
-  total: number /* int */;
-  page: number /* int */;
-  pages: number /* int */;
 }
 
 //////////
@@ -182,6 +180,11 @@ export interface Importer {
 export interface TorznabSettings {
   url: string;
   apiKey: string;
+  /**
+   * Language is the language of this indexer's releases when a release
+   * does not state one ("fr" for a French tracker). Empty = mixed.
+   */
+  language?: string;
 }
 /**
  * SourceSettings configures one extension-source indexer entry. PkgName
@@ -264,9 +267,72 @@ export interface MediaSettings {
   volumeFile: string;
   chapterFile: string;
   chapterDir: string; // "" = no chapter subfolder
+  /**
+   * VolumesRoot and ChaptersRoot are optional top folders under the
+   * library root, above the series folder: "Volumes" and "Chapters"
+   * give Volumes/<series>/… and Chapters/<series>/…. Equal (both empty
+   * by default) keeps one folder per series.
+   */
+  volumesRoot: string;
+  chaptersRoot: string;
+  /**
+   * BookFolder is the folder layout inside a series folder, one level
+   * per "/" ("" = every book directly in the series folder).
+   */
+  bookFolder: string;
+  /**
+   * HashInName appends the book's content fingerprint to its file name.
+   * Off, the fingerprint is only added when two different books would
+   * otherwise share a path.
+   */
+  hashInName: boolean;
   renameImports: boolean;
   alwaysCopy: boolean; // copy even when a hardlink would work
   writeComicInfo: boolean;
+}
+/**
+ * "Standard Edition [en]", plus "(Group copy)" for an additional version.
+ */
+export const BookFolderByEdition = "{edition} [{lang}] ({version})";
+/**
+ * Folder layout presets offered by the UI; any template works.
+ */
+export const BookFolderFlat = "";
+/**
+ * "Volumes/Standard Edition [en]": the type split inside the series.
+ */
+export const BookFolderByType = "{type}/{edition} [{lang}] ({version})";
+/**
+ * Stable internal ids: paths never change when an edition is renamed.
+ */
+export const BookFolderByID = "collections/{collectionId}/versions/{versionId}";
+
+//////////
+// source: organize.go
+
+/**
+ * FileChange is what organising would do to one library file: move it to
+ * where the current naming and layout settings put it, and bring its
+ * embedded metadata up to date. Paths are relative to the library root.
+ */
+export interface FileChange {
+  fileId: number /* int64 */;
+  from: string;
+  to: string;
+  rename: boolean;
+  retag: boolean;
+  /**
+   * Skip says why a file is left alone (not matched to a book, missing).
+   */
+  skip?: string;
+}
+/**
+ * OrganizeResult summarises an applied organise run.
+ */
+export interface OrganizeResult {
+  renamed: number /* int */;
+  retagged: number /* int */;
+  errors: string[];
 }
 
 //////////
@@ -364,6 +430,12 @@ export interface TargetSlot {
   targetId?: number /* int64 */;
   workId?: number /* int64 */;
   all?: boolean;
+  /**
+   * AllBooks widens an edition-wide search from the wanted books to
+   * every book of the version, owned and paused ones included: looking
+   * for a better copy, or at what exists before collecting.
+   */
+  allBooks?: boolean;
   collectionId: number /* int64 */;
   number: number /* int64 */; // hundredths; 0 = whole collection
 }

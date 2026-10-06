@@ -140,9 +140,21 @@ type OverridePatch struct {
 // NamingPreview is POST /settings/media/preview: the templates of the
 // posted MediaSettings rendered against a fixed sample series.
 type NamingPreview struct {
+	// VolumePath and ChapterPath are whole example paths under the
+	// library root: top folder, series folder, book folder, file.
+	VolumePath   string `json:"volumePath"`
+	ChapterPath  string `json:"chapterPath"`
+	BookFolder   string `json:"bookFolder"`
 	SeriesFolder string `json:"seriesFolder"`
 	VolumeFile   string `json:"volumeFile"`
 	ChapterFile  string `json:"chapterFile"`
+}
+
+// OrganizeBody is POST /series/{id}/files/organize: which of the
+// previewed changes to apply.
+type OrganizeBody struct {
+	Rename bool `json:"rename"`
+	Retag  bool `json:"retag"`
 }
 
 // BindingPatch is PUT /series/{id}/bindings/{bid}.

@@ -46,9 +46,13 @@ func (s *SearchService) HasSourceProvider() bool {
 // (volume or chapter type). Number 0 widens it to every wanted slot of the
 // collection — the per-collection search, where packs shine.
 type TargetSlot struct {
-	TargetID     int64 `json:"targetId,omitempty"`
-	WorkID       int64 `json:"workId,omitempty"`
-	All          bool  `json:"all,omitempty"`
+	TargetID int64 `json:"targetId,omitempty"`
+	WorkID   int64 `json:"workId,omitempty"`
+	All      bool  `json:"all,omitempty"`
+	// AllBooks widens an edition-wide search from the wanted books to
+	// every book of the version, owned and paused ones included: looking
+	// for a better copy, or at what exists before collecting.
+	AllBooks     bool  `json:"allBooks,omitempty"`
 	CollectionID int64 `json:"collectionId"`
 	Number       int64 `json:"number"` // hundredths; 0 = whole collection
 }
@@ -56,6 +60,10 @@ type TargetSlot struct {
 // ReleaseCandidate is one candidate run through the funnel, for either
 // ledger.
 type ReleaseCandidate struct {
+	// languageSource names where an inferred Parse.Language came from
+	// when the release name did not state it.
+	languageSource string
+
 	Decision         ReleaseDecision       `json:"decision"`
 	ScoreParts       []ScorePart           `json:"scoreParts,omitempty"`
 	ParseTrace       []parse.Step          `json:"parseTrace,omitempty"`
@@ -254,6 +262,15 @@ func resolveQueries(titles []string) []string {
 	return out
 }
 
+// textQuery is the title as trackers index it: release names spell
+// "HUNTER×HUNTER" as "Hunter x Hunter", and symbols match nothing.
+func textQuery(title string) string {
+	if q := match.Normalize(title); q != "" {
+		return q
+	}
+	return title
+}
+
 func hasLatin(s string) bool {
 	for _, r := range s {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
@@ -359,7 +376,7 @@ func (s *SearchService) searchOnce(ctx context.Context, p provider.Provider, run
 ) SearchEvent {
 	ev := SearchEvent{Type: "batch", Provider: p.ID(), Sites: siteNames}
 	cands, err := p.Search(ctx, provider.SearchRequest{
-		SeriesID: run.seriesID, Query: run.titles[0], Titles: run.titles,
+		SeriesID: run.seriesID, Query: textQuery(run.titles[0]), Titles: run.titles,
 		Allowed: allowed, Bindings: bindings,
 	})
 	if err != nil {

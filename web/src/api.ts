@@ -1,5 +1,5 @@
 import type { ReviewItem } from './types/store'
-import type { EditionOverview, HealthReport, UnitPage } from './types/service'
+import type { EditionOverview, FileChange, HealthReport, OrganizeResult } from './types/service'
 import type {
   DownloadTarget,
   Work,
@@ -145,12 +145,25 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
+  planOrganize: (id: number) => request<FileChange[]>(`/series/${id}/files/organize`),
+  organize: (id: number, body: { rename: boolean; retag: boolean }) =>
+    request<OrganizeResult>(`/series/${id}/files/organize`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   checkFiles: (id: number) => request<void>(`/series/${id}/check-files`, { method: 'POST' }),
   editionOverview: (id: number) => request<EditionOverview>(`/series/${id}/edition-overview`),
-  targetPage: (id: number, target: number, page: number, filter: string) =>
-    request<UnitPage>(
-      `/series/${id}/targets/${target}/books?page=${page}&filter=${encodeURIComponent(filter)}`,
-    ),
+  // Older servers answered this route with a paged object. Say so instead
+  // of letting the page fail on a shape it cannot read.
+  targetBooks: async (id: number, target: number) => {
+    const books = await request<UnitSlot[]>(`/series/${id}/targets/${target}/books`)
+    if (!Array.isArray(books)) {
+      throw new Error(
+        'The Sento server is older than this page and returned books in an outdated format. Restart or update the server, then reload.',
+      )
+    }
+    return books.map((b) => ({ ...b, fileIds: b.fileIds ?? [], onDiskFileIds: b.onDiskFileIds ?? [] }))
+  },
   bulkMonitor: (id: number, target: number, workIds: number[], monitored: boolean) =>
     request<void>(`/series/${id}/targets/${target}/monitor`, {
       method: 'POST',

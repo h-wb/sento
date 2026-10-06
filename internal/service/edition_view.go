@@ -80,14 +80,11 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 	return out, nil
 }
 
-type UnitPage struct {
-	Items []UnitSlot `json:"items"`
-	Total int        `json:"total"`
-	Page  int        `json:"page"`
-	Pages int        `json:"pages"`
-}
-
-func (l *Library) TargetPage(ctx context.Context, sid, tid int64, page int, filter string) (*UnitPage, error) {
+// TargetBooks lists every book of one collected version with its ledger
+// state. The list is not paged: the ledger is evaluated whole either way,
+// and the Editions view needs all of it to draw the overview grid, count
+// each state and select ranges.
+func (l *Library) TargetBooks(ctx context.Context, sid, tid int64) ([]UnitSlot, error) {
 	v, err := loadLedger(ctx, l.store, sid)
 	if err != nil {
 		return nil, err
@@ -96,16 +93,5 @@ func (l *Library) TargetPage(ctx context.Context, sid, tid int64, page int, filt
 	if !ok {
 		return nil, apperr.NotFoundf("collected version not found")
 	}
-	filtered := []UnitSlot{}
-	for _, sl := range slots {
-		match := filter == "" || filter == "all" || filter == sl.State || filter == "wanted" && sl.Wanted || filter == "on_disk" && len(sl.OnDiskFileIDs) > 0 || filter == "review" && (sl.State == "needs_review" || sl.State == "storage_unavailable" || sl.State == "unsatisfactory")
-		if match {
-			filtered = append(filtered, sl)
-		}
-	}
-	pages := max(1, (len(filtered)+24)/25)
-	page = max(1, min(page, pages))
-	start := (page - 1) * 25
-	end := min(start+25, len(filtered))
-	return &UnitPage{Items: filtered[start:end], Total: len(filtered), Page: page, Pages: pages}, nil
+	return slots, nil
 }

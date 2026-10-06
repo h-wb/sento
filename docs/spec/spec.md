@@ -135,7 +135,7 @@ semi-stable and everything edition-related as **unstable surface**:
 - **Database mode** (v1.x): weekly DB dump mirrored locally for search and
   refresh without rate limits. Schema kept compatible from day one (we store
   raw MangaBaka JSON per series alongside extracted columns).
-- Refresh cadence `[default]`: releasing series every 24h; completed/cancelled
+- Refresh cadence `[default]`: releasing and on-hiatus series every 24h; completed/cancelled
   every 7d; manual refresh button. Works re-paged only when collection
   `count_main` or `updated_at` changes.
 - `merged_with` handling: if a series was merged, follow the pointer,
@@ -235,9 +235,9 @@ Reuses one internal cron/queue system (Go, persisted jobs):
 
 | Task | Default cadence |
 |------|-----------------|
-| Metadata refresh (releasing) | 24h |
+| Metadata refresh (releasing or hiatus) | 24h |
 | Metadata refresh (ended) | 7d |
-| New-chapter check per series (verified bindings propose individual observations for review or configured trust) | 2h, releasing only |
+| New-chapter check per series (verified bindings propose individual observations for review or configured trust) | 2h, releasing or hiatus only |
 | Wanted/missing automatic search (volumes + chapters), with per-slot exponential backoff (new releases searched immediately, old misses decay to weekly) | 12h sweep |
 | Volume release-date trigger (search on/after `release_date`) | daily |
 | Queue/import processing | event-driven + 1m poll |

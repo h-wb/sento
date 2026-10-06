@@ -1,0 +1,50 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 4px;
+}
+.cell {
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--mantine-color-default);
+  color: var(--mantine-color-text);
+}
+.cell:hover { filter: brightness(0.95); }
+.cell:focus-visible { outline: 2px solid var(--mantine-primary-color-filled); outline-offset: 1px; }
+.cell[data-tone='disk'] { background: var(--mantine-color-green-light); color: var(--mantine-color-green-light-color); }
+.cell[data-tone='wanted'] { background: var(--mantine-color-red-light); color: var(--mantine-color-red-light-color); }
+.cell[data-tone='pending'] { background: var(--mantine-color-blue-light); color: var(--mantine-color-blue-light-color); }
+.cell[data-tone='review'] { background: var(--mantine-color-yellow-light); color: var(--mantine-color-yellow-light-color); }
+.cell[data-tone='upcoming'] { background: transparent; border: 1px dashed var(--mantine-color-default-border); color: var(--mantine-color-dimmed); }
+.cell[data-tone='paused'] { background: var(--mantine-color-default); border-color: var(--mantine-color-default-border); color: var(--mantine-color-dimmed); }
+.cell[data-selected='true'],
+.row[data-selected='true'] { outline: 2px solid var(--mantine-primary-color-filled); outline-offset: -1px; }
+.cell[data-flash='true'],
+.row[data-flash='true'] { box-shadow: 0 0 0 3px var(--mantine-primary-color-light-hover); outline: 2px solid var(--mantine-primary-color-filled); }
+
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--mantine-color-gray-5); }
+.dot[data-tone='disk'] { background: var(--mantine-color-green-6); }
+.dot[data-tone='wanted'] { background: var(--mantine-color-red-6); }
+.dot[data-tone='pending'] { background: var(--mantine-color-blue-6); }
+.dot[data-tone='review'] { background: var(--mantine-color-yellow-6); }
+.dot[data-tone='upcoming'] { background: transparent; border: 1px dashed var(--mantine-color-dimmed); }
+
+.rows { border: 1px solid var(--mantine-color-default-border); border-radius: var(--mantine-radius-md); overflow: hidden; }
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 2px 8px;
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+.row:first-child { border-top: 0; }
+.rowDetail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

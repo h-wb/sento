@@ -17,6 +17,10 @@ const (
 	ContentAudiobook ContentType = "audiobook"
 	ContentArtbook   ContentType = "artbook"
 	ContentAnime     ContentType = "anime"
+	// Not reading material at all: a general tracker answers a title
+	// search with films, episodes and games of the same name.
+	ContentVideo    ContentType = "video"
+	ContentSoftware ContentType = "software"
 )
 
 type EditionHints struct {

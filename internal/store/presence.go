@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // CheckFilePresence runs during scans and before acquisition, never ordinary ledger reads.
@@ -19,7 +20,12 @@ func (s *Store) CheckFilePresence(ctx context.Context, seriesID int64) error {
 	}
 	roots := map[string]error{}
 	for _, f := range files {
+		// A file answers to the folder it lives under: an unreachable
+		// chapter folder says nothing about the volumes.
 		root := series.Path
+		if series.ChapterPath != "" && strings.HasPrefix(f.Path, series.ChapterPath+string(filepath.Separator)) {
+			root = series.ChapterPath
+		}
 		if root == "" {
 			root = filepath.Dir(f.Path)
 		}
