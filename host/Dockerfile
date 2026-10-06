@@ -8,7 +8,7 @@
 # differs per target.
 
 # --- build ---
-FROM --platform=$BUILDPLATFORM gradle:9.5.1-jdk21 AS build
+FROM --platform=$BUILDPLATFORM gradle:9.8.0-jdk21 AS build
 ARG BUILDARCH
 # Keep in step with the vendir pin in mise.toml (Renovate bumps both).
 ARG VENDIR_VERSION=0.46.2
