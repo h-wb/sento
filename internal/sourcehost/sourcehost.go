@@ -75,6 +75,18 @@ type ExtensionManager interface {
 	// repo URLs.
 	Repos(ctx context.Context) ([]string, error)
 	SetRepos(ctx context.Context, urls []string) error
+	// RepoStatus reports what each configured repo currently yields.
+	RepoStatus(ctx context.Context) ([]RepoStatus, error)
+}
+
+// RepoStatus is one configured extension repo as the host sees it right
+// now: the repo's own name and how many usable extensions it lists, or
+// the reason it lists none.
+type RepoStatus struct {
+	URL        string `json:"url"`
+	Name       string `json:"name,omitempty"`
+	Extensions int    `json:"extensions"`
+	Error      string `json:"error,omitempty"`
 }
 
 // Preference is one ConfigurableSource setting (login, mirror, quality…)

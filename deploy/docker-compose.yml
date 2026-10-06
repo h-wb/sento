@@ -39,7 +39,7 @@ services:
     restart: unless-stopped
 
   # Runs Tachiyomi/Mihon extensions for chapter sources. Ships with no
-  # extensions and no repos: add a repo URL in Sento (Settings → Sources),
+  # extensions and no repos: add a repo URL in Sento (Connections page),
   # then add sources on the Indexers page — Sento installs what they need.
   sento-host:
     image: ghcr.io/h-wb/sento-host:latest

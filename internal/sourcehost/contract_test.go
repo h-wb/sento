@@ -98,6 +98,16 @@ func TestContractRepoRoundTrip(t *testing.T) {
 	if len(got) != 1 || got[0] != probe {
 		t.Fatalf("Repos round-trip = %v, want [%s]", got, probe)
 	}
+
+	// A repo that cannot be loaded is reported with its reason, not
+	// silently counted as empty.
+	statuses, err := c.RepoStatus(ctx)
+	if err != nil {
+		t.Fatalf("RepoStatus: %v", err)
+	}
+	if len(statuses) != 1 || statuses[0].URL != probe || statuses[0].Error == "" {
+		t.Fatalf("RepoStatus for an unreachable repo = %+v, want one entry carrying an error", statuses)
+	}
 }
 
 // TestContractExtensionLifecycle is the real proof that the vendored APK
@@ -125,6 +135,18 @@ func TestContractExtensionLifecycle(t *testing.T) {
 	}
 	if len(exts) == 0 {
 		t.Fatalf("no extensions listed from %s — the repo index format or ExtensionGithubApi changed", repo)
+	}
+
+	// The same answer per repo, which is what the Connections page shows.
+	statuses, err := c.RepoStatus(ctx)
+	if err != nil {
+		t.Fatalf("RepoStatus: %v", err)
+	}
+	if len(statuses) != 1 || statuses[0].URL != repo {
+		t.Fatalf("RepoStatus = %+v, want exactly %s", statuses, repo)
+	}
+	if st := statuses[0]; st.Error != "" || st.Extensions == 0 || st.Name == "" {
+		t.Errorf("RepoStatus for a working repo = %+v, want a name, a count and no error", st)
 	}
 
 	pkg := os.Getenv("SENTO_TEST_EXTENSION_PKG")

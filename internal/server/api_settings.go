@@ -98,7 +98,14 @@ func (s *Server) handleExtensionSources(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleGetExtensionRepos(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, ExtensionRepos{URLs: s.extensions.Repos(r.Context())})
+	writeJSON(w, http.StatusOK, s.extensionRepos(r))
+}
+
+func (s *Server) extensionRepos(r *http.Request) ExtensionRepos {
+	return ExtensionRepos{
+		URLs:  s.extensions.Repos(r.Context()),
+		Repos: s.extensions.RepoStatus(r.Context()),
+	}
 }
 
 func (s *Server) handleSetExtensionRepos(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +117,7 @@ func (s *Server) handleSetExtensionRepos(w http.ResponseWriter, r *http.Request)
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, ExtensionRepos{URLs: s.extensions.Repos(r.Context())})
+	writeJSON(w, http.StatusOK, s.extensionRepos(r))
 }
 
 // Preference routes address the host source id directly (not the entry

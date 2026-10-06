@@ -176,14 +176,18 @@ func TestConnections(ctx context.Context, cs ConnectionSettings) []ConnectionTes
 	if cs.QBittorrent.URL != "" {
 		qb := qbittorrent.New(cs.QBittorrent.URL, cs.QBittorrent.Username, cs.QBittorrent.Password)
 		probes = append(probes, probe{"qbittorrent", func() (string, error) {
-			return "", qb.Ping(ctx)
+			return qb.Version(ctx)
 		}})
 	}
 	if cs.SourceHost.URL != "" {
 		hc := sourcehost.NewClient(cs.SourceHost.URL)
 		probes = append(probes, probe{"sourceHost", func() (string, error) {
 			sources, err := hc.Sources(ctx)
-			return fmt.Sprintf("%d sources", len(sources)), err
+			detail := fmt.Sprintf("%d sources", len(sources))
+			if len(sources) == 1 {
+				detail = "1 source"
+			}
+			return detail, err
 		}})
 	}
 

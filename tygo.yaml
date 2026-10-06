@@ -69,7 +69,9 @@ packages:
       import type { ChapterSlot, VolumeSlot } from "./ledger"
       import type { ScanResult, SearchResult, TargetSlot } from "./service"
       import type { Collection, Series } from "./store"
+      import type { RepoStatus } from "./sourcehost"
     type_mappings:
+      sourcehost.RepoStatus: "RepoStatus"
       ledger.VolumeSlot: "VolumeSlot"
       ledger.ChapterSlot: "ChapterSlot"
       service.TargetSlot: "TargetSlot"

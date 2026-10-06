@@ -227,6 +227,13 @@ func (c *Client) Files(ctx context.Context, hash string) ([]string, error) {
 }
 
 func (c *Client) Ping(ctx context.Context) error {
-	_, err := c.do(ctx, http.MethodGet, "/api/v2/app/version", nil)
+	_, err := c.Version(ctx)
 	return err
+}
+
+// Version returns the client's version string ("v5.1.0"); answering at
+// all proves the URL and credentials.
+func (c *Client) Version(ctx context.Context) (string, error) {
+	data, err := c.do(ctx, http.MethodGet, "/api/v2/app/version", nil)
+	return strings.TrimSpace(string(data)), err
 }

@@ -4,6 +4,25 @@ const LAZY = 'eu.kanade.tachiyomi.extension.all.lazysource'
 
 type Ext = { pkgName: string; installedVersion?: string; sources?: { id: string }[] }
 
+// With no repo configured there is nothing to pick. The dialog says why
+// and takes the repo URL right there, instead of sending the user to the
+// Connections page and back. (Later tests rely on the repo added here.)
+test('an empty catalog offers to add a repo in place', async ({ page }) => {
+  await page.goto('/indexers')
+  await page.getByRole('button', { name: 'Add indexer' }).click()
+  const modal = page.getByRole('dialog')
+  await modal.getByText('Extension source').click()
+
+  await expect(modal.getByText('No extensions to choose from yet')).toBeVisible()
+  await modal.getByRole('textbox', { name: 'Extension repo URL' }).fill('https://repo.example/index.min.json')
+  await modal.getByRole('button', { name: 'Add repo' }).click()
+
+  // The catalog loads and the picker replaces the prompt.
+  await expect(modal.getByPlaceholder('Search extensions…')).toBeVisible()
+  await expect(modal.getByText('No extensions to choose from yet')).toBeHidden()
+  await expect(modal.getByText(/2 extensions from your repos/)).toBeVisible()
+})
+
 // Adding an extension source: the catalog already says which sources an
 // extension provides, so one can be picked before anything is installed on
 // the host. The install happens on Add, and the source's own settings —

@@ -77,8 +77,8 @@ cd deploy && docker compose up -d   # http://localhost:8484
 [`deploy/docker-compose.yml`](deploy/docker-compose.yml) runs Sento and the
 `sento-host` extension sidecar. Torrent indexers (Torznab endpoints from
 Prowlarr or Jackett) and qBittorrent are services you already run: add them
-under Settings and Indexers. No extension repos ship with either image —
-add a Mihon-compatible repo URL under Settings → Sources, then add sources
+on the Indexers and Connections pages. No extension repos ship with either image —
+add a Mihon-compatible repo URL on the Connections page, then add sources
 on the Indexers page; Sento installs the extensions they need.
 
 Things worth knowing before the first run:

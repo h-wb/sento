@@ -59,7 +59,7 @@ for standalone use — Sento normally pushes its configured repo list),
 sources).
 
 Point Sento at it with `SENTO_SOURCE_HOST_URL=http://localhost:8901` (or
-under Settings → Sources).
+on the Connections page).
 
 As a container: `mise run image:build:host` builds `host/Dockerfile`
 (published as `ghcr.io/h-wb/sento-host`); `deploy/docker-compose.yml` runs
@@ -70,6 +70,7 @@ it next to Sento.
 ```
 GET    /health
 GET/PUT /api/v1/repos
+GET    /api/v1/repos/status
 GET    /api/v1/sources
 GET    /api/v1/sources/{sid}/search?q=
 GET    /api/v1/sources/{sid}/chapters?manga={key}

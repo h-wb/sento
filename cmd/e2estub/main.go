@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -214,7 +215,11 @@ var hostState = struct {
 	sync.Mutex
 	repos     []string
 	installed map[string]bool
-}{installed: map[string]bool{"eu.kanade.tachiyomi.extension.en.stubsource": true}}
+}{installed: map[string]bool{}}
+
+// repoWorks reports whether a pushed repo URL yields a catalogue; any URL
+// containing "broken" stands for a repo that fails to load.
+func repoWorks(url string) bool { return !strings.Contains(url, "broken") }
 
 func mountSourceHost(mux *http.ServeMux) {
 	mux.HandleFunc("GET /host/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -278,16 +283,32 @@ func mountSourceHost(mux *http.ServeMux) {
 	mux.HandleFunc("GET /host/api/v1/repos", func(w http.ResponseWriter, _ *http.Request) {
 		hostState.Lock()
 		defer hostState.Unlock()
-		writeJSON(w, append([]string{}, hostState.repos...))
+		// Same envelope as the sidecar: {"urls": [...]}.
+		writeJSON(w, map[string]any{"urls": append([]string{}, hostState.repos...)})
+	})
+	mux.HandleFunc("GET /host/api/v1/repos/status", func(w http.ResponseWriter, _ *http.Request) {
+		hostState.Lock()
+		defer hostState.Unlock()
+		out := []map[string]any{}
+		for _, u := range hostState.repos {
+			st := map[string]any{"url": u, "name": "Stub Repo", "extensions": 2}
+			if !repoWorks(u) {
+				st = map[string]any{"url": u, "extensions": 0, "error": "fetch of " + u + " returned HTTP 404"}
+			}
+			out = append(out, st)
+		}
+		writeJSON(w, out)
 	})
 	mux.HandleFunc("PUT /host/api/v1/repos", func(w http.ResponseWriter, r *http.Request) {
-		var urls []string
-		if err := json.NewDecoder(r.Body).Decode(&urls); err != nil {
+		var body struct {
+			URLs []string `json:"urls"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		hostState.Lock()
-		hostState.repos = urls
+		hostState.repos = body.URLs
 		hostState.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -320,7 +341,17 @@ func mountSourceHost(mux *http.ServeMux) {
 		if hostState.installed[lazy] {
 			other["installedVersion"] = "1.4.2"
 		}
-		writeJSON(w, []map[string]any{ext, other})
+		// Like the sidecar: the catalogue is what the configured repos
+		// offer, plus whatever is installed. No working repo, nothing to
+		// offer.
+		offered := slices.ContainsFunc(hostState.repos, repoWorks)
+		out := []map[string]any{}
+		for _, e := range []map[string]any{ext, other} {
+			if offered || e["installedVersion"] != nil {
+				out = append(out, e)
+			}
+		}
+		writeJSON(w, out)
 	})
 	mux.HandleFunc("GET /host/api/v1/extensions/{pkg}/sources", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, []map[string]any{

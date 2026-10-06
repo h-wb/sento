@@ -61,6 +61,14 @@ func (f *fakeExtHost) ExtensionSources(_ context.Context, pkg string) ([]sourceh
 
 func (f *fakeExtHost) Repos(context.Context) ([]string, error) { return f.repos, nil }
 
+func (f *fakeExtHost) RepoStatus(context.Context) ([]sourcehost.RepoStatus, error) {
+	out := make([]sourcehost.RepoStatus, 0, len(f.repos))
+	for _, u := range f.repos {
+		out = append(out, sourcehost.RepoStatus{URL: u, Name: "Fake Repo", Extensions: len(f.catalog)})
+	}
+	return out, nil
+}
+
 func (f *fakeExtHost) SetRepos(_ context.Context, urls []string) error {
 	f.repos = urls
 	return nil
@@ -241,5 +249,38 @@ func TestPreferenceReconcile(t *testing.T) {
 	}
 	if len(host.pushes) != 0 {
 		t.Fatalf("re-pushed unchanged prefs: %v", host.pushes)
+	}
+}
+
+// Every stored repo is reported, with what the host gets from it — or,
+// when the host cannot be asked, with that reason instead of vanishing.
+func TestRepoStatus(t *testing.T) {
+	ctx := context.Background()
+	_, st := setup(t)
+	host := &fakeExtHost{catalog: []string{"ext.a", "ext.b"}, installed: map[string]bool{}}
+	svc := NewExtensionService(st, func() sourcehost.Host { return host })
+
+	if got := svc.RepoStatus(ctx); len(got) != 0 {
+		t.Fatalf("no repos stored, got %+v", got)
+	}
+	const url = "https://repo.example/index.min.json"
+	if err := svc.SetRepos(ctx, []string{url}); err != nil {
+		t.Fatal(err)
+	}
+	got := svc.RepoStatus(ctx)
+	if len(got) != 1 || got[0].URL != url || got[0].Name != "Fake Repo" || got[0].Extensions != 2 || got[0].Error != "" {
+		t.Fatalf("status = %+v, want the host's view of the repo", got)
+	}
+
+	// The host forgot the repo (fresh sidecar, not reconciled yet).
+	host.repos = nil
+	if got := svc.RepoStatus(ctx); len(got) != 1 || got[0].Error == "" {
+		t.Fatalf("status = %+v, want the stored repo reported as not loaded", got)
+	}
+
+	// No host at all: still listed, with the reason.
+	none := NewExtensionService(st, func() sourcehost.Host { return nil })
+	if got := none.RepoStatus(ctx); len(got) != 1 || got[0].URL != url || got[0].Error == "" {
+		t.Fatalf("status without a host = %+v, want the repo listed with an error", got)
 	}
 }

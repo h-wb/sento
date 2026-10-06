@@ -8,7 +8,7 @@ const PAGES = [
   { nav: 'Calendar', heading: 'Calendar', url: '/calendar' },
   { nav: 'Activity', heading: 'Activity', url: '/queue' },
   { nav: 'Indexers', heading: 'Indexers', url: '/indexers' },
-  { nav: 'Sources', heading: 'Sources', url: '/sources' },
+  { nav: 'Connections', heading: 'Connections', url: '/connections' },
   { nav: 'Profiles', heading: 'Profiles', url: '/profiles' },
   { nav: 'Media', heading: 'Media', url: '/media' },
   { nav: 'System', heading: 'System', url: '/system' },
@@ -72,7 +72,7 @@ test('the g-key sequence jumps to a page', async ({ page }) => {
   await page.goto('/')
   await page.keyboard.press('g')
   await page.keyboard.press('o')
-  await expect(page.getByRole('heading', { name: 'Sources', level: 2 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Connections', level: 2 })).toBeVisible()
 })
 
 test('the theme menu switches presets', async ({ page }) => {

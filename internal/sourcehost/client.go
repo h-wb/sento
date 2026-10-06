@@ -168,6 +168,12 @@ func (c *Client) Repos(ctx context.Context) ([]string, error) {
 	return out.URLs, err
 }
 
+func (c *Client) RepoStatus(ctx context.Context) ([]RepoStatus, error) {
+	var out []RepoStatus
+	err := c.get(ctx, "/api/v1/repos/status", nil, &out)
+	return out, err
+}
+
 func (c *Client) SetRepos(ctx context.Context, urls []string) error {
 	body, err := json.Marshal(repoList{URLs: urls})
 	if err != nil {

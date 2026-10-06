@@ -101,6 +101,37 @@ func (e *ExtensionService) Repos(ctx context.Context) []string {
 	return urls
 }
 
+// RepoStatus pairs every stored repo with what the host currently gets
+// from it. The stored list is the truth for *which* repos exist; when the
+// host cannot be asked, each is reported with that reason rather than
+// dropped.
+func (e *ExtensionService) RepoStatus(ctx context.Context) []sourcehost.RepoStatus {
+	urls := e.Repos(ctx)
+	out := make([]sourcehost.RepoStatus, 0, len(urls))
+	known := map[string]sourcehost.RepoStatus{}
+	hostErr := ""
+	if mgr := e.manager(); mgr == nil {
+		hostErr = "no source host is configured"
+	} else if statuses, err := mgr.RepoStatus(ctx); err != nil {
+		hostErr = "the source host did not answer: " + err.Error()
+	} else {
+		for _, s := range statuses {
+			known[s.URL] = s
+		}
+	}
+	for _, u := range urls {
+		s, ok := known[u]
+		switch {
+		case hostErr != "":
+			s = sourcehost.RepoStatus{URL: u, Error: hostErr}
+		case !ok:
+			s = sourcehost.RepoStatus{URL: u, Error: "not loaded on the host yet"}
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
 // SetRepos stores the repo list and pushes it to the host.
 func (e *ExtensionService) SetRepos(ctx context.Context, urls []string) error {
 	mgr := e.manager()

@@ -20,6 +20,7 @@ import {
 } from '@mantine/core'
 import { IconCopy, IconPencil, IconPlugConnected, IconTrash } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import {
   api,
   type IndexerBody,
@@ -227,6 +228,7 @@ function IndexerModal({
   onClose: () => void
   onSaved: () => void
 }) {
+  const queryClient = useQueryClient()
   const isEdit = !!initial && !asCopy
   const init = initial?.settings as Partial<TorznabForm & SourceForm> | undefined
   const [protocol, setProtocol] = useState<'torznab' | 'source'>(initial?.protocol ?? 'torznab')
@@ -251,6 +253,32 @@ function IndexerModal({
     queryKey: ['extensions'],
     queryFn: api.extensions,
     enabled: protocol === 'source' && !isEdit,
+  })
+  // Adding a repo from inside the dialog, for the case where the catalog
+  // is empty because there is none yet.
+  const [newRepo, setNewRepo] = useState('')
+  const [repoProblem, setRepoProblem] = useState('')
+  const addRepo = useMutation({
+    mutationFn: async () => {
+      const current = await api.extensionRepos()
+      return api.setExtensionRepos([...current.urls, newRepo.trim()])
+    },
+    onSuccess: (data) => {
+      const added = data.repos?.find((r) => r.url === newRepo.trim())
+      // Saved either way; say so when it yields nothing, since the
+      // catalog below will stay empty.
+      setRepoProblem(
+        added?.error
+          ? `Added, but it is failing: ${added.error}`
+          : added && added.extensions === 0
+            ? 'Added, but it lists no extension this host can run.'
+            : '',
+      )
+      setNewRepo('')
+      queryClient.invalidateQueries({ queryKey: ['extensions'] })
+      queryClient.invalidateQueries({ queryKey: ['extension-repos'] })
+    },
+    onError: notify.err,
   })
   const [pkg, setPkg] = useState(init?.pkgName ?? '')
   const [extSources, setExtSources] = useState<Source[] | null>(null)
@@ -463,7 +491,56 @@ function IndexerModal({
             {name} is added. Set what this source needs below, or close to keep its defaults.
           </Text>
         )}
-        {protocol === 'source' && !isEdit && !configuring && (
+        {protocol === 'source' && !isEdit && !configuring && extensions.error && (
+          // No host answering: nothing can be listed, and the fix is on
+          // another page.
+          <Alert color="yellow" title="Extension sources are not available">
+            <Text size="sm">{String(extensions.error)}</Text>
+            <Text size="sm" mt={4}>
+              Connect the source host on the{' '}
+              <Link to="/connections" onClick={onClose}>
+                Connections
+              </Link>{' '}
+              page first.
+            </Text>
+          </Alert>
+        )}
+        {protocol === 'source' && !isEdit && !configuring && extensions.data?.length === 0 && (
+          // A connected host with nothing to offer means no repo (or only
+          // failing ones). Adding one is a single field — do it here
+          // rather than sending the user to another page and back.
+          <Alert color="blue" title="No extensions to choose from yet">
+            <Text size="sm" mb="xs">
+              Extensions come from repos, and none ship with Sento. Add a Mihon-compatible repo
+              index URL to load its catalog.
+            </Text>
+            <Group gap={6} wrap="nowrap">
+              <TextInput
+                size="xs"
+                style={{ flex: 1 }}
+                aria-label="Extension repo URL"
+                placeholder="https://…/index.min.json"
+                value={newRepo}
+                onChange={(e) => setNewRepo(e.currentTarget.value)}
+              />
+              <Button
+                size="xs"
+                variant="default"
+                loading={addRepo.isPending}
+                disabled={!newRepo.trim()}
+                onClick={() => addRepo.mutate()}
+              >
+                Add repo
+              </Button>
+            </Group>
+            {repoProblem && (
+              <Text size="xs" c="red" mt={6}>
+                {repoProblem}
+              </Text>
+            )}
+          </Alert>
+        )}
+        {protocol === 'source' && !isEdit && !configuring && !extensions.error && extensions.data?.length !== 0 && (
           <>
             <Select
               label="Extension"
@@ -480,7 +557,7 @@ function IndexerModal({
               value={pkg || null}
               searchable
               limit={30}
-              nothingFoundMessage="No extension matches — check the repos on the Sources page"
+              nothingFoundMessage="No extension matches — repos are managed on the Connections page"
               onChange={(v) => {
                 if (!v) return
                 setPkg(v)

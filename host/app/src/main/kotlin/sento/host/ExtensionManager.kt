@@ -149,6 +149,25 @@ object ExtensionManager {
         availableCache = null
     }
 
+    // RepoStatus is what one configured repo currently yields: its own
+    // name and how many extensions this runtime can use from it, or why it
+    // yields nothing. A repo failing used to be visible only in this log.
+    data class RepoStatus(
+        val url: String,
+        val name: String? = null,
+        val extensions: Int = 0,
+        val error: String? = null,
+    )
+
+    @Volatile
+    private var repoStatusCache: List<RepoStatus> = emptyList()
+
+    suspend fun repoStatus(): List<RepoStatus> {
+        available()
+        val known = repoStatusCache.associateBy { it.url }
+        return repos().map { known[it] ?: RepoStatus(it) }
+    }
+
     // A repo index is ~1500 entries fetched from a raw URL; cache it
     // briefly — Sento's reconcile loop polls regularly.
     @Volatile
@@ -158,15 +177,28 @@ object ExtensionManager {
         availableCache?.let { (fetchedAt, list) ->
             if (System.currentTimeMillis() - fetchedAt < 5 * 60_000) return list
         }
+        val statuses = mutableListOf<RepoStatus>()
         val list =
             repos().flatMap { repo ->
                 runCatching { findExtensions(repo) }
-                    .onFailure { logger.warn(it) { "extension repo $repo failed" } }
+                    .onSuccess { statuses += RepoStatus(repo, it.name, it.extensions.size) }
+                    .onFailure {
+                        logger.warn(it) { "extension repo $repo failed" }
+                        statuses += RepoStatus(repo, error = it.message ?: it.javaClass.simpleName)
+                    }.map { it.extensions }
                     .getOrDefault(emptyList())
             }
+        repoStatusCache = statuses
         if (list.isNotEmpty()) availableCache = System.currentTimeMillis() to list
         return list
     }
+
+    // Catalogue is one repo's resolved index: the store's own name and
+    // its extensions.
+    private data class Catalogue(
+        val name: String,
+        val extensions: List<ExtensionInfo>,
+    )
 
     // A repo publishes a store document — protobuf (usually gzipped) or
     // JSON — carrying its extension list inline or behind
@@ -182,19 +214,22 @@ object ExtensionManager {
     // placeholder entries there ("Outdated App"), so taking it at face
     // value yields a catalogue of nothing; a repo that publishes nothing
     // else is reported as unsupported instead.
-    private suspend fun findExtensions(indexUrl: String): List<ExtensionInfo> {
-        val infos = resolveIndex(indexUrl, indexUrl, hops = 0)
+    private suspend fun findExtensions(indexUrl: String): Catalogue {
+        val catalogue = resolveIndex(indexUrl, indexUrl, hops = 0)
 
         // Extensions built against a lib version this runtime cannot load
         // would fail at install; drop them from the catalogue instead.
-        return infos.filter { info ->
-            val lib = info.extensionLib.toDoubleOrNull()
-            if (lib == null) {
-                false
-            } else {
-                lib in LIB_VERSION_MIN..LIB_VERSION_MAX
-            }
-        }
+        return catalogue.copy(
+            extensions =
+                catalogue.extensions.filter { info ->
+                    val lib = info.extensionLib.toDoubleOrNull()
+                    if (lib == null) {
+                        false
+                    } else {
+                        lib in LIB_VERSION_MIN..LIB_VERSION_MAX
+                    }
+                },
+        )
     }
 
     // configuredUrl is what the user entered and stays the store identity
@@ -204,7 +239,7 @@ object ExtensionManager {
         configuredUrl: String,
         url: String,
         hops: Int,
-    ): List<ExtensionInfo> {
+    ): Catalogue {
         check(hops <= MAX_INDEX_HOPS) { "extension repo $configuredUrl redirects through too many index documents" }
         val body = fetchBytes(url)
         return when (body.firstOrNull { !it.toInt().toChar().isWhitespace() }) {
@@ -236,7 +271,7 @@ object ExtensionManager {
     private suspend fun storeExtensions(
         configuredUrl: String,
         network: NetworkExtensionStore,
-    ): List<ExtensionInfo> {
+    ): Catalogue {
         val store = network.toExtensionStore(configuredUrl)
         // The list is either inline or behind a second URL, in either
         // encoding.
@@ -251,7 +286,7 @@ object ExtensionManager {
                     }
                 }
                 ?: NetworkExtensionStore.ExtensionList(emptyList())
-        return list.toExtensionInfos(store)
+        return Catalogue(network.name, list.toExtensionInfos(store))
     }
 
     // fetchBytes returns a document's bytes, gunzipped when it is served

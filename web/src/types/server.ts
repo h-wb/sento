@@ -3,6 +3,7 @@
 import type { ChapterSlot, VolumeSlot } from "./ledger"
 import type { ScanResult, SearchResult, TargetSlot } from "./service"
 import type { Collection, Series } from "./store"
+import type { RepoStatus } from "./sourcehost"
 
 //////////
 // source: api.go
@@ -209,4 +210,9 @@ export interface SetPreferenceBody {
  */
 export interface ExtensionRepos {
   urls: string[];
+  /**
+   * Repos is the same list with what each repo currently yields on the
+   * host (response only).
+   */
+  repos?: RepoStatus[];
 }

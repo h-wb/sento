@@ -43,7 +43,7 @@ import {
   IconWorldSearch,
 } from '@tabler/icons-react'
 import { useIsFetching, useQuery } from '@tanstack/react-query'
-import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api'
 import classes from './App.module.css'
 import { AddSeriesCtx } from './addSeries'
@@ -59,7 +59,7 @@ const SeriesPage = lazy(() => import('./pages/SeriesPage'))
 const CalendarPage = lazy(() => import('./pages/CalendarPage'))
 const QueuePage = lazy(() => import('./pages/QueuePage'))
 const IndexersPage = lazy(() => import('./pages/IndexersPage'))
-const SourcesPage = lazy(() => import('./pages/SourcesPage'))
+const ConnectionsPage = lazy(() => import('./pages/ConnectionsPage'))
 const MediaPage = lazy(() => import('./pages/MediaPage'))
 const ProfilesPage = lazy(() => import('./pages/ProfilesPage'))
 const SystemPage = lazy(() => import('./pages/SystemPage'))
@@ -74,7 +74,7 @@ const primaryLinks = [
 // quality decision → import.
 const configLinks = [
   { to: '/indexers', label: 'Indexers', icon: IconWorldSearch },
-  { to: '/sources', label: 'Sources', icon: IconPlug },
+  { to: '/connections', label: 'Connections', icon: IconPlug },
   { to: '/profiles', label: 'Profiles', icon: IconAdjustmentsHorizontal },
   { to: '/media', label: 'Media', icon: IconFiles },
 ]
@@ -93,7 +93,7 @@ const GO_TO: Record<string, string> = {
   c: '/calendar',
   a: '/queue',
   i: '/indexers',
-  o: '/sources',
+  o: '/connections',
   p: '/profiles',
   m: '/media',
   s: '/system',
@@ -105,7 +105,7 @@ const SHORTCUTS: [string, string][] = [
   ['g then c', 'Go to Calendar'],
   ['g then a', 'Go to Activity'],
   ['g then n', 'Add Series'],
-  ['g then i / o / p / m', 'Indexers / Sources / Profiles / Media'],
+  ['g then i / o / p / m', 'Indexers / Connections / Profiles / Media'],
   ['g then s', 'Go to System'],
   ['?', 'Show this help'],
 ]
@@ -345,7 +345,9 @@ export default function App() {
             <Route path="/series/:id" element={<SeriesPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/queue" element={<QueuePage />} />
-            <Route path="/sources" element={<SourcesPage />} />
+            <Route path="/connections" element={<ConnectionsPage />} />
+            {/* The page was called Sources; keep old bookmarks working. */}
+            <Route path="/sources" element={<Navigate to="/connections" replace />} />
             <Route path="/indexers" element={<IndexersPage />} />
             <Route path="/profiles" element={<ProfilesPage />} />
             <Route path="/media" element={<MediaPage />} />

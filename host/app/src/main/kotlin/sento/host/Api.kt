@@ -46,6 +46,14 @@ data class ChapterDto(
 )
 
 @Serializable
+data class RepoStatusDto(
+    val url: String,
+    val name: String? = null,
+    val extensions: Int = 0,
+    val error: String? = null,
+)
+
+@Serializable
 data class ExtensionDto(
     val pkgName: String,
     val name: String,
@@ -200,6 +208,14 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
 
     get("/api/v1/repos") { ctx ->
         ctx.respond(RepoListDto(ExtensionManager.repos()))
+    }
+
+    get("/api/v1/repos/status") { ctx ->
+        ctx.respond(
+            runBlocking { ExtensionManager.repoStatus() }.map {
+                RepoStatusDto(it.url, it.name, it.extensions, it.error)
+            },
+        )
     }
 
     put("/api/v1/repos") { ctx ->

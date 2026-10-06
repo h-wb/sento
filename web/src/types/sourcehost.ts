@@ -84,6 +84,17 @@ export interface ExtensionInfo {
  */
 export type ExtensionManager = any;
 /**
+ * RepoStatus is one configured extension repo as the host sees it right
+ * now: the repo's own name and how many usable extensions it lists, or
+ * the reason it lists none.
+ */
+export interface RepoStatus {
+  url: string;
+  name?: string;
+  extensions: number /* int */;
+  error?: string;
+}
+/**
  * Preference is one ConfigurableSource setting (login, mirror, quality…)
  * in the typed form the host serializes from the extension's preference
  * screen. Values are JSON: string, bool, or string array per ValueType.
