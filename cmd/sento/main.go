@@ -46,6 +46,11 @@ func run(configPath string) error {
 	}
 	defer func() { _ = database.Close() }()
 
+	if cfg.Server.APIKey != "" {
+		// Honest about a setting that reads like protection but isn't yet.
+		slog.Warn("server.api_key / SENTO_API_KEY is set but not enforced: the API has no authentication; restrict access at the network or reverse-proxy level")
+	}
+
 	provider := mangabaka.New(cfg.MangaBaka.BaseURL)
 	app := server.New(cfg, database, dialect, provider)
 
@@ -60,6 +65,10 @@ func run(configPath string) error {
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: app.Handler(),
+		// Bounds how long a client may take to send its request headers
+		// (slow-loris). Bodies and responses stay unbounded here: searches
+		// stream for minutes and are capped by the router's own timeout.
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
@@ -76,6 +85,7 @@ func run(configPath string) error {
 		return err
 	case sig := <-stop:
 		slog.Info("shutting down", "signal", sig.String())
+		stopSched() // no new sweeps while requests drain
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -4,6 +4,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -71,7 +72,18 @@ type Scheduler struct {
 	extensions *service.ExtensionService
 	intervals  Intervals
 	tasks      []*task
+
+	// startupGrace is the earliest an overdue task runs after Start, so a
+	// restart doesn't fire every sweep in the same instant as boot.
+	startupGrace time.Duration
+
+	mu  sync.Mutex      // guards ctx and the persisted state document
+	ctx context.Context // the Start context; manual runs stop with it too
 }
+
+// stateKey is the settings document holding each task's last run time
+// (slug → RFC3339), so cadences survive restarts.
+const stateKey = "scheduler"
 
 func New(st *store.Store, lib *service.Library, search *service.SearchService,
 	importer *service.Importer, extensions *service.ExtensionService, intervals Intervals,
@@ -79,6 +91,7 @@ func New(st *store.Store, lib *service.Library, search *service.SearchService,
 	s := &Scheduler{
 		store: st, libraries: lib, search: search,
 		importer: importer, extensions: extensions, intervals: intervals,
+		startupGrace: 30 * time.Second,
 	}
 	s.tasks = append(s.tasks, &task{
 		slug: "queue-process", name: "Process Download Queue",
@@ -111,30 +124,58 @@ func New(st *store.Store, lib *service.Library, search *service.SearchService,
 }
 
 // Start launches all loops; they stop when ctx is cancelled.
+//
+// Each task resumes its cadence from its persisted last run: a 12-hour
+// sweep that last ran 11 hours ago is due in one hour, not twelve. Without
+// that, an instance restarted more often than a task's interval (nightly
+// image updates are enough) would never run that task at all.
 func (s *Scheduler) Start(ctx context.Context) {
+	s.mu.Lock()
+	s.ctx = ctx
+	s.mu.Unlock()
+
+	last := s.loadState(ctx)
 	for _, t := range s.tasks {
+		t.mu.Lock()
+		t.lastRun = last[t.slug]
+		t.mu.Unlock()
 		go s.loop(ctx, t)
 	}
+}
+
+// firstDelay is how long a task waits after Start: the rest of its
+// interval when it has run before (at least startupGrace), a full
+// interval when it never has.
+func (s *Scheduler) firstDelay(t *task, now time.Time) time.Duration {
+	t.mu.Lock()
+	lastRun := t.lastRun
+	t.mu.Unlock()
+	if lastRun.IsZero() {
+		return t.interval
+	}
+	return min(max(lastRun.Add(t.interval).Sub(now), s.startupGrace), t.interval)
 }
 
 func (s *Scheduler) loop(ctx context.Context, t *task) {
 	if t.interval <= 0 {
 		return
 	}
+	delay := s.firstDelay(t, time.Now())
 	t.mu.Lock()
-	t.nextRun = time.Now().Add(t.interval)
+	t.nextRun = time.Now().Add(delay)
 	t.mu.Unlock()
-	ticker := time.NewTicker(t.interval)
-	defer ticker.Stop()
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			s.runTask(ctx, t)
 			t.mu.Lock()
 			t.nextRun = time.Now().Add(t.interval)
 			t.mu.Unlock()
+			timer.Reset(t.interval)
 		}
 	}
 }
@@ -151,7 +192,7 @@ func (s *Scheduler) runTask(ctx context.Context, t *task) {
 	t.mu.Unlock()
 
 	start := time.Now()
-	err := t.tick(ctx)
+	err := safeTick(ctx, t)
 
 	t.mu.Lock()
 	t.running = false
@@ -162,11 +203,73 @@ func (s *Scheduler) runTask(ctx context.Context, t *task) {
 		t.lastErr = err.Error()
 	}
 	t.mu.Unlock()
+	s.saveLastRun(t.slug, start)
 
 	if err != nil {
 		slog.Warn("scheduler tick failed", "loop", t.slug, "error", err)
 	} else {
 		slog.Debug("scheduler tick", "loop", t.slug, "took", time.Since(start).Round(time.Millisecond))
+	}
+}
+
+// safeTick runs one tick and turns a panic into its error: the loops are
+// crash-isolated, and an unrecovered panic in a goroutine would take the
+// whole process down with it.
+func safeTick(ctx context.Context, t *task) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return t.tick(ctx)
+}
+
+// loadState reads the persisted last-run times; anything unreadable is
+// treated as "never ran".
+func (s *Scheduler) loadState(ctx context.Context) map[string]time.Time {
+	out := map[string]time.Time{}
+	if s.store == nil {
+		return out
+	}
+	raw, err := s.store.GetSetting(ctx, stateKey)
+	if err != nil {
+		return out
+	}
+	var stored map[string]string
+	if json.Unmarshal(raw, &stored) != nil {
+		return out
+	}
+	for slug, v := range stored {
+		if ts, err := time.Parse(time.RFC3339, v); err == nil {
+			out[slug] = ts
+		}
+	}
+	return out
+}
+
+// saveLastRun records one task's run in the state document. Best effort:
+// a failed write only costs cadence accuracy after the next restart. It
+// deliberately ignores the run's context — the last tick before shutdown
+// is the one worth remembering.
+func (s *Scheduler) saveLastRun(slug string, at time.Time) {
+	if s.store == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stored := map[string]string{}
+	if raw, err := s.store.GetSetting(ctx, stateKey); err == nil {
+		_ = json.Unmarshal(raw, &stored)
+	}
+	stored[slug] = at.UTC().Format(time.RFC3339)
+	raw, err := json.Marshal(stored)
+	if err == nil {
+		err = s.store.PutSetting(ctx, stateKey, raw)
+	}
+	if err != nil {
+		slog.Warn("persisting scheduler state failed", "loop", slug, "error", err)
 	}
 }
 
@@ -196,9 +299,15 @@ func (s *Scheduler) Tasks() []TaskStatus {
 
 // Run triggers one loop now; the ticker cadence is unchanged.
 func (s *Scheduler) Run(slug string) error {
+	s.mu.Lock()
+	ctx := s.ctx
+	s.mu.Unlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	for _, t := range s.tasks {
 		if t.slug == slug {
-			go s.runTask(context.Background(), t)
+			go s.runTask(ctx, t)
 			return nil
 		}
 	}
@@ -219,6 +328,9 @@ func (s *Scheduler) tickRefresh(ctx context.Context) error {
 	}
 	now := time.Now()
 	for _, sr := range series {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		maxAge := s.intervals.RefreshEnded
 		if sr.Status == "releasing" {
 			maxAge = s.intervals.RefreshReleasing
@@ -255,6 +367,9 @@ func (s *Scheduler) sweep(ctx context.Context, searchLedger string, include func
 		return err
 	}
 	for _, sr := range series {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if !include(sr) {
 			continue
 		}
