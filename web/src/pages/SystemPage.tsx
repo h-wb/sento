@@ -1,7 +1,8 @@
-import { ActionIcon, Badge, Card, Group, Table, Text, Title, Tooltip } from '@mantine/core'
+import { ActionIcon, Anchor, Badge, Card, Group, Stack, Table, Text, ThemeIcon, Title, Tooltip } from '@mantine/core'
 import { BarChart } from '@mantine/charts'
-import { IconRefresh } from '@tabler/icons-react'
+import { IconAlertTriangle, IconCircleCheck, IconCircleX, IconRefresh } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { api, type TaskStatus } from '../api'
 import { fmtUntil, fmtWhen, notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
@@ -29,6 +30,17 @@ export default function SystemPage() {
     queryKey: ['tasks'],
     queryFn: api.systemTasks,
     refetchInterval: 10_000,
+  })
+
+  // Shared with the navigation badge, which keeps it polled.
+  const { data: health, error: healthError, isPending: healthPending, refetch: refetchHealth } = useQuery({
+    queryKey: ['health'],
+    queryFn: api.healthChecks,
+  })
+  const recheck = useMutation({
+    mutationFn: api.runHealthChecks,
+    onSuccess: (report) => queryClient.setQueryData(['health'], report),
+    onError: notify.err,
   })
 
   const runTask = useMutation({
@@ -62,6 +74,64 @@ export default function SystemPage() {
               {status.database.ok ? 'ok' : 'down'}
             </Badge>
           </Group>
+        </Card>
+      )}
+
+      <Group justify="space-between" maw={900} mb="xs">
+        <Title order={4}>Health</Title>
+        <Group gap="xs">
+          {health && (
+            <Text size="xs" c="dimmed" title={health.checkedAt}>
+              Checked {fmtWhen(health.checkedAt)}
+            </Text>
+          )}
+          <Tooltip label="Check again">
+            <ActionIcon
+              size="sm"
+              variant="subtle"
+              aria-label="Check health again"
+              loading={recheck.isPending}
+              onClick={() => recheck.mutate()}
+            >
+              <IconRefresh size={14} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
+      </Group>
+      <QueryFeedback pending={healthPending} error={healthError} onRetry={() => void refetchHealth()} />
+      {health && (
+        <Card withBorder maw={900} mb="lg">
+          {health.issues.length === 0 ? (
+            <Group gap="sm" wrap="nowrap">
+              <ThemeIcon variant="light" color="green" size="md" radius="xl">
+                <IconCircleCheck size={16} />
+              </ThemeIcon>
+              <Text size="sm">No issues found. Indexers, download services and the library folder are working.</Text>
+            </Group>
+          ) : (
+            <Stack gap="md">
+              {health.issues.map((issue) => (
+                <Group key={`${issue.source}:${issue.message}`} gap="sm" wrap="nowrap" align="flex-start">
+                  <ThemeIcon variant="light" color={issue.level === 'error' ? 'red' : 'yellow'} size="md" radius="xl">
+                    {issue.level === 'error' ? <IconCircleX size={16} /> : <IconAlertTriangle size={16} />}
+                  </ThemeIcon>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Text size="sm">{issue.message}</Text>
+                    {issue.detail && (
+                      <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                        {issue.detail}
+                      </Text>
+                    )}
+                  </div>
+                  {issue.link && issue.link !== '/system' && (
+                    <Anchor component={Link} to={issue.link} size="sm" style={{ whiteSpace: 'nowrap' }}>
+                      Fix
+                    </Anchor>
+                  )}
+                </Group>
+              ))}
+            </Stack>
+          )}
         </Card>
       )}
 

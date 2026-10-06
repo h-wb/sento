@@ -75,6 +75,11 @@ func (c *Client) call(ctx context.Context, params url.Values) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	// A reverse proxy that guards the endpoint with a login answers an API
+	// call by redirecting to its sign-in page, which then loads fine.
+	if final := resp.Request.URL; final.Host != req.URL.Host {
+		return nil, fmt.Errorf("torznab: %s redirected to %s instead of answering (is the endpoint behind a login proxy?)", req.URL.Host, final.Host)
+	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if err != nil {
 		return nil, err

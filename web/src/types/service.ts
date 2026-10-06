@@ -114,6 +114,54 @@ export interface ExtensionService {
 }
 
 //////////
+// source: health.go
+
+/**
+ * Health levels. An error stops something from working now; a warning is
+ * a gap in the setup.
+ */
+export const HealthWarning = "warning";
+/**
+ * Health levels. An error stops something from working now; a warning is
+ * a gap in the setup.
+ */
+export const HealthError = "error";
+/**
+ * HealthIssue is one problem found by a health check (System → Health).
+ */
+export interface HealthIssue {
+  /**
+   * Source names the check that raised it ("indexer", "download-client").
+   */
+  source: string;
+  level: 'warning' | 'error';
+  message: string;
+  /**
+   * Detail is the underlying error, when there is one.
+   */
+  detail?: string;
+  /**
+   * Link is the UI route where the issue is fixed.
+   */
+  link?: string;
+}
+/**
+ * HealthReport is the outcome of the last check run.
+ */
+export interface HealthReport {
+  checkedAt: string; // RFC3339
+  issues: HealthIssue[];
+}
+/**
+ * HealthService probes what Sento depends on — the library folder, the
+ * download client, the source host and every enabled indexer — and keeps
+ * the last report. Probing is remote I/O, so reads are served from that
+ * report until it is invalidated or re-run.
+ */
+export interface HealthService {
+}
+
+//////////
 // source: importer.go
 
 /**

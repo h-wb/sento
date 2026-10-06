@@ -38,6 +38,7 @@ type Server struct {
 	scanner    *service.Scanner
 	extensions *service.ExtensionService
 	profiles   *service.ProfileService
+	health     *service.HealthService
 	sched      *scheduler.Scheduler
 }
 
@@ -69,6 +70,7 @@ func New(cfg config.Config, db *sql.DB, dialect string, mdProvider metadata.Prov
 	s.importer = service.NewImporter(st, s.registry, cfg.Library.Path, cfg.Library.PathMappings)
 	s.extensions = service.NewExtensionService(st, s.conns.Host)
 	s.profiles = service.NewProfiles(st)
+	s.health = service.NewHealthService(st, s.conns, cfg.Library.Path)
 	if err := s.profiles.EnsureDefaults(context.Background()); err != nil {
 		slog.Warn("seeding default profile failed", "error", err)
 	}
@@ -100,6 +102,9 @@ func (s *Server) SearchSvc() *service.SearchService { return s.search }
 
 // ExtensionsSvc exposes extension reconciliation for background loops.
 func (s *Server) ExtensionsSvc() *service.ExtensionService { return s.extensions }
+
+// HealthSvc exposes the health checks for background loops.
+func (s *Server) HealthSvc() *service.HealthService { return s.health }
 
 // Store exposes the persistence layer for background loops.
 func (s *Server) Store() *store.Store { return s.store }

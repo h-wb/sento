@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/h-wb/sento/internal/config"
 	"github.com/h-wb/sento/internal/db/dbtest"
 	"github.com/h-wb/sento/internal/metadata"
+	"github.com/h-wb/sento/internal/service"
 )
 
 // noMetadata is a metadata provider that knows nothing.
@@ -132,5 +134,37 @@ func TestRequestBodiesAreCapped(t *testing.T) {
 	huge := `{"name":"` + strings.Repeat("a", maxBodyBytes) + `"}`
 	if rec := do(t, h, http.MethodPost, "/api/v1/profiles", huge); rec.Code != http.StatusBadRequest {
 		t.Errorf("oversized body = %d, want 400", rec.Code)
+	}
+}
+
+// The health report is served from cache and re-run once a change to what
+// it checks invalidates it.
+func TestHealthChecksEndpoint(t *testing.T) {
+	h, _ := testServer(t)
+	issues := func(method string) []service.HealthIssue {
+		t.Helper()
+		rec := do(t, h, method, "/api/v1/system/checks", "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s checks = %d: %s", method, rec.Code, rec.Body.String())
+		}
+		var report service.HealthReport
+		if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil || report.CheckedAt == "" {
+			t.Fatalf("report = %s (%v)", rec.Body.String(), err)
+		}
+		return report.Issues
+	}
+	if got := issues(http.MethodGet); len(got) != 1 || got[0].Source != "indexer" {
+		t.Fatalf("fresh install = %+v", got)
+	}
+	body := `{"name":"Dead","protocol":"torznab","enabled":true,"useVolumes":true,"settings":{"url":"http://127.0.0.1:1"}}`
+	if rec := do(t, h, http.MethodPost, "/api/v1/indexers", body); rec.Code != http.StatusCreated {
+		t.Fatalf("add indexer = %d: %s", rec.Code, rec.Body.String())
+	}
+	got := issues(http.MethodGet)
+	if len(got) != 2 || got[0].Level != service.HealthError || got[0].Message != "Indexer Dead is unavailable" {
+		t.Fatalf("after adding a dead indexer = %+v", got)
+	}
+	if got := issues(http.MethodPost); len(got) != 2 {
+		t.Fatalf("re-run = %+v", got)
 	}
 }

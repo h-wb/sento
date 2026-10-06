@@ -1,5 +1,5 @@
 import type { ReviewItem } from './types/store'
-import type { EditionOverview, UnitPage } from './types/service'
+import type { EditionOverview, HealthReport, UnitPage } from './types/service'
 import type {
   DownloadTarget,
   Work,
@@ -229,6 +229,8 @@ export const api = {
     }),
 
   status: () => request<SystemStatus>('/system/status'),
+  healthChecks: () => request<HealthReport>('/system/checks'),
+  runHealthChecks: () => request<HealthReport>('/system/checks', { method: 'POST' }),
   systemTasks: () => request<TaskStatus[]>('/system/tasks'),
   runTask: (slug: string) => request<void>(`/system/tasks/${slug}/run`, { method: 'POST' }),
   lookup: (q: string) => request<LookupResult[]>(`/lookup?q=${encodeURIComponent(q)}`),

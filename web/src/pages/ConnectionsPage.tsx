@@ -52,6 +52,7 @@ export default function ConnectionsPage() {
     // The provider set changed: site lists and status are stale.
     queryClient.invalidateQueries({ queryKey: ['indexer-settings'] })
     queryClient.invalidateQueries({ queryKey: ['status'] })
+    queryClient.invalidateQueries({ queryKey: ['health'] })
     queryClient.invalidateQueries({ queryKey: ['extensions'] })
     queryClient.invalidateQueries({ queryKey: ['extension-repos'] })
   }

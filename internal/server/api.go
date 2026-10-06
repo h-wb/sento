@@ -3,19 +3,25 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/scheduler"
+	"github.com/h-wb/sento/internal/service"
 )
 
 func (s *Server) mountAPI(r chi.Router) {
+	r.Use(s.invalidateHealth)
 	r.Get("/system/health", s.handleHealth)
 	r.Get("/system/status", s.handleStatus)
+	r.Get("/system/checks", s.handleHealthChecks)
+	r.Post("/system/checks", s.handleRunHealthChecks)
 	r.Get("/system/tasks", s.handleListTasks)
 	r.Post("/system/tasks/{slug}/run", s.handleRunTask)
 
@@ -110,6 +116,53 @@ func (s *Server) handleRunTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// handleHealthChecks reports the last health check run (System → Health),
+// plus scheduled tasks whose last run failed — those are live state, not
+// part of the cached report.
+func (s *Server) handleHealthChecks(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.withTaskFailures(s.health.Report(r.Context())))
+}
+
+func (s *Server) handleRunHealthChecks(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.withTaskFailures(s.health.Check(r.Context())))
+}
+
+func (s *Server) withTaskFailures(report service.HealthReport) service.HealthReport {
+	if s.sched == nil {
+		return report
+	}
+	issues := append([]service.HealthIssue{}, report.Issues...)
+	for _, t := range s.sched.Tasks() {
+		if t.LastError != "" {
+			issues = append(issues, service.HealthIssue{
+				Source: "task", Level: service.HealthWarning, Link: "/system",
+				Message: fmt.Sprintf("Scheduled task %s failed on its last run", t.Name), Detail: t.LastError,
+			})
+		}
+	}
+	report.Issues = issues
+	return report
+}
+
+// invalidateHealth marks the health report stale after a change to what
+// it checks, so a fixed connection clears its issue without waiting for
+// the next scheduled run.
+func (s *Server) invalidateHealth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+		if r.Method == http.MethodGet {
+			return
+		}
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1")
+		for _, prefix := range []string{"/indexers", "/settings/connections", "/extensions"} {
+			if strings.HasPrefix(path, prefix) {
+				s.health.Invalidate()
+				return
+			}
+		}
+	})
 }
 
 // --- lookup ---

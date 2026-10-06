@@ -123,6 +123,12 @@ func New(st *store.Store, lib *service.Library, search *service.SearchService,
 	return s
 }
 
+// Register adds a loop owned by another component (the health checks).
+// Call it before Start.
+func (s *Scheduler) Register(slug, name string, interval time.Duration, tick func(context.Context) error) {
+	s.tasks = append(s.tasks, &task{slug: slug, name: name, interval: interval, tick: tick})
+}
+
 // Start launches all loops; they stop when ctx is cancelled.
 //
 // Each task resumes its cadence from its persisted last run: a 12-hour

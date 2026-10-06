@@ -45,7 +45,10 @@ export default function IndexersPage() {
   const { data: indexers, error, isPending, refetch } = useQuery({ queryKey: ['indexers'], queryFn: api.indexers })
   const [editing, setEditing] = useState<IndexerView | 'new' | null>(null)
   const [duplicating, setDuplicating] = useState<IndexerView | null>(null)
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['indexers'] })
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['health'] })
+    return queryClient.invalidateQueries({ queryKey: ['indexers'] })
+  }
 
   const patch = useMutation({
     mutationFn: ({ id, p }: { id: number; p: Parameters<typeof api.patchIndexer>[1] }) =>

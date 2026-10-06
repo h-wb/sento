@@ -121,6 +121,7 @@ export default function App() {
 
   // Light background polling so the shell can hint at what's going on.
   const status = useQuery({ queryKey: ['status'], queryFn: api.status, refetchInterval: 60_000 })
+  const health = useQuery({ queryKey: ['health'], queryFn: api.healthChecks, refetchInterval: 60_000 })
   const queue = useQuery({
     queryKey: ['queue', 'active-count'],
     queryFn: () => api.queue(false),
@@ -208,6 +209,16 @@ export default function App() {
     ),
   ]
 
+  const healthIssues = health.data?.issues ?? []
+  const healthBadge =
+    healthIssues.length > 0 ? (
+      <Tooltip label={`${healthIssues.length} health ${healthIssues.length === 1 ? 'issue' : 'issues'}`}>
+        <Badge size="xs" circle color={healthIssues.some((i) => i.level === 'error') ? 'red' : 'yellow'}>
+          {healthIssues.length}
+        </Badge>
+      </Tooltip>
+    ) : undefined
+
   const renderLink = (l: NavItem) => (
     <NavLink
       key={l.to}
@@ -221,6 +232,8 @@ export default function App() {
           <Badge size="xs" circle color="brand">
             {active}
           </Badge>
+        ) : l.to === '/system' ? (
+          healthBadge
         ) : undefined
       }
       active={isActive(l.to)}
