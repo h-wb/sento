@@ -1,38 +1,68 @@
+# Sento plus its extension sidecar. Torrent indexers (Prowlarr/Jackett
+# Torznab endpoints) and qBittorrent are services you already run; point
+# Sento at them under Settings, or with the commented variables below.
+#
+#   docker compose up -d        # then open http://localhost:8484
+#
+# Sento has no authentication of its own yet: do not expose port 8484
+# beyond a network you trust without an authenticating reverse proxy.
 name: sento
 
 services:
   sento:
-    build:
-      context: ..
+    image: ghcr.io/h-wb/sento:latest
+    # To run your working tree instead of the published image:
+    # build:
+    #   context: ..
     ports:
       - "8484:8484"
     environment:
-      SENTO_SUWAYOMI_URL: http://suwayomi:4567
-      # SENTO_PROWLARR_URL: http://prowlarr:9696
-      # SENTO_PROWLARR_API_KEY: ...
+      TZ: Etc/UTC
+      # Seeds the connection settings on first start; once saved in the UI,
+      # the stored settings win and these are ignored.
+      SENTO_SOURCE_HOST_URL: http://sento-host:8901
+      # SENTO_QBITTORRENT_URL: http://qbittorrent:8080
+      # SENTO_QBITTORRENT_USERNAME: admin
+      # SENTO_QBITTORRENT_PASSWORD: ...
+      # qBittorrent reports paths as *it* sees them. If its download folder
+      # is mounted here under another path, map it ("remote=local", comma-
+      # separated). Imports hardlink, so keep downloads and the library on
+      # one filesystem to avoid a second copy of every volume.
+      # SENTO_PATH_MAPPINGS: /downloads=/torrents
     volumes:
       - sento-config:/config
       - ./library:/library
       - ./downloads:/downloads
+      # - /path/to/qbittorrent/downloads:/torrents
     depends_on:
-      - suwayomi
+      - sento-host
     restart: unless-stopped
 
-  # Extension engine + chapter downloader (docs/archive/suwayomi-adapter.md).
-  # Pinned to the version the adapter spec was validated against; bump
-  # deliberately, alongside adapter contract tests.
-  suwayomi:
-    image: ghcr.io/suwayomi/suwayomi-server:v2.2.2166
+  # Runs Tachiyomi/Mihon extensions for chapter sources. Ships with no
+  # extensions and no repos: add a repo URL in Sento (Settings → Sources),
+  # then add sources on the Indexers page — Sento installs what they need.
+  sento-host:
+    image: ghcr.io/h-wb/sento-host:latest
+    # build:
+    #   context: ../host
     environment:
-      DOWNLOAD_AS_CBZ: "true"
+      TZ: Etc/UTC
+      # For sources behind Cloudflare:
+      # SENTO_HOST_FLARESOLVERR_URL: http://flaresolverr:8191
     volumes:
-      - suwayomi-data:/home/suwayomi/.local/share/Tachidesk
+      # Optional: the host is stateless (Sento reconciles extensions and
+      # source logins onto it), this only spares the re-install on restart.
+      - sento-host-data:/data
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8901"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
     restart: unless-stopped
-    # Not exposed on the host by default: Sento talks to it on the
-    # compose network. Uncomment to reach its WebUI for extension setup.
-    # ports:
-    #   - "4567:4567"
+    # Not published on the host: only Sento talks to it, over the compose
+    # network.
 
 volumes:
   sento-config:
-  suwayomi-data:
+  sento-host-data:

@@ -46,8 +46,12 @@ for standalone use — Sento normally pushes its configured repo list),
 `SENTO_HOST_FLARESOLVERR_URL` (optional, for Cloudflare-protected
 sources).
 
-Point Sento at it with `SENTO_SOURCE_HOST_URL=http://localhost:8901`
-(takes precedence over Suwayomi).
+Point Sento at it with `SENTO_SOURCE_HOST_URL=http://localhost:8901` (or
+under Settings → Sources).
+
+As a container: `mise run image:build:host` builds `host/Dockerfile`
+(published as `ghcr.io/h-wb/sento-host`); `deploy/docker-compose.yml` runs
+it next to Sento.
 
 ## API
 
