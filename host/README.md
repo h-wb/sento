@@ -33,6 +33,18 @@ materialized into the gitignored `vendor/` by
 To pick up upstream fixes: bump the ref in `vendir.yml`, run
 `mise run host:vendor`, fix what moved.
 
+## Extension repos
+
+A repo is added by its index URL. The host reads the current store format
+— a protobuf (usually gzipped) or JSON document listing every extension
+with its APK URL — and follows the two addresses older repos still hand
+out, `index.min.json` and `repo.json`, to the store they now point at
+(`index_v2`). The old flat `index.min.json` list itself is not read: repos
+that moved on serve only "update your app" placeholders there.
+
+When a repo also publishes a ready-built jar per extension, it is used
+instead of converting the APK with dex2jar.
+
 ## Run
 
 ```sh

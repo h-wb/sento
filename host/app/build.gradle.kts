@@ -17,6 +17,9 @@ dependencies {
     // Extension runtime surface (okhttp is version-locked by extensions)
     implementation(libs.bundles.okhttp)
     implementation(libs.injekt)
+    // PackageTools (vendored) keeps its per-jar locks in a cache4k cache
+    // since Suwayomi v2.4.
+    implementation(libs.cache4k)
 
     // HTTP API
     implementation(libs.javalin.core)

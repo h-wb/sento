@@ -2,10 +2,10 @@ apiVersion: vendir.k14s.io/v1alpha1
 directories:
 - contents:
   - git:
-      commitTitle: Release v2.3.2243
-      sha: 1d583ca4a718646e17a4c62d23fe8e5edccaf774
+      commitTitle: Release v2.4.2366
+      sha: 40bc5da57820324ed0ae724cbbc020cc4673b594
       tags:
-      - v2.3.2243
+      - v2.4.2366
     path: .
   path: vendor/suwayomi
 kind: LockConfig
