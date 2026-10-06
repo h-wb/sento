@@ -17,14 +17,18 @@ import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.SourceFactory
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.protobuf.ProtoBuf
 import okhttp3.CacheControl
 import okio.buffer
+import okio.gzip
 import okio.sink
 import suwayomi.tachidesk.manga.impl.extension.github.NetworkExtensionStore
-import suwayomi.tachidesk.manga.impl.extension.github.NetworkLegacyExtension
-import suwayomi.tachidesk.manga.impl.extension.github.toExtensionInfo
+import suwayomi.tachidesk.manga.impl.extension.github.NetworkLegacyExtensionRepo
 import suwayomi.tachidesk.manga.impl.extension.github.toExtensionInfos
 import suwayomi.tachidesk.manga.impl.util.PackageTools
 import suwayomi.tachidesk.manga.impl.util.PackageTools.EXTENSION_FEATURE
@@ -37,9 +41,7 @@ import suwayomi.tachidesk.manga.impl.util.PackageTools.getPackageInfo
 import suwayomi.tachidesk.manga.impl.util.PackageTools.loadExtensionSources
 import suwayomi.tachidesk.manga.impl.util.network.await
 import suwayomi.tachidesk.manga.impl.util.source.GetSource
-import suwayomi.tachidesk.manga.model.dataclass.ContentWarning
 import suwayomi.tachidesk.manga.model.dataclass.ExtensionInfo
-import suwayomi.tachidesk.manga.model.dataclass.ExtensionStore
 import suwayomi.tachidesk.server.ApplicationDirs
 import uy.kohesive.injekt.injectLazy
 import java.io.File
@@ -79,6 +81,15 @@ object ExtensionManager {
         explicitNulls = false
         isLenient = true
     }
+
+    // The v2 index format is protobuf (same field numbers as the JSON one).
+    @OptIn(ExperimentalSerializationApi::class)
+    private val indexProto = ProtoBuf
+
+    private const val OLD_INDEX = "index.min.json"
+    private const val REPO_POINTER = "repo.json"
+    private const val GZIP_MAGIC = 0x1f8b
+    private const val MAX_INDEX_HOPS = 3
 
     private val indexFile get() = File(applicationDirs.extensionsRoot, "installed.json")
 
@@ -157,19 +168,22 @@ object ExtensionManager {
         return list
     }
 
-    // Repo indexes come in two shapes. The current one is a store object
-    // carrying an explicit apkUrl per extension; the legacy one is a flat
-    // array whose APK location is implied by convention. Suwayomi reads
-    // both, so Sento does too — but the fetching is ours, since upstream's
-    // lives behind its database layer.
+    // A repo publishes a store document — protobuf (usually gzipped) or
+    // JSON — carrying its extension list inline or behind
+    // extensionListUrl, with an explicit apkUrl per extension. The URL a
+    // user configured may not be that document itself: repos that predate
+    // the format keep their old index.min.json address alive and announce
+    // the store through a repo.json next to it ("index_v2"), so those two
+    // are followed to the store. (This mirrors Suwayomi's
+    // ExtensionStoreService, whose own fetching lives behind its database
+    // layer.)
+    //
+    // The old flat list itself is not read. Repos that moved on serve only
+    // placeholder entries there ("Outdated App"), so taking it at face
+    // value yields a catalogue of nothing; a repo that publishes nothing
+    // else is reported as unsupported instead.
     private suspend fun findExtensions(indexUrl: String): List<ExtensionInfo> {
-        val body = fetchText(indexUrl)
-        val infos =
-            runCatching { parseStore(indexUrl, body) }
-                .recoverCatching { storeError ->
-                    runCatching { parseLegacy(indexUrl, body) }
-                        .getOrElse { throw storeError }
-                }.getOrThrow()
+        val infos = resolveIndex(indexUrl, indexUrl, hops = 0)
 
         // Extensions built against a lib version this runtime cannot load
         // would fail at install; drop them from the catalogue instead.
@@ -183,46 +197,73 @@ object ExtensionManager {
         }
     }
 
-    private suspend fun parseStore(
-        indexUrl: String,
-        body: String,
+    // configuredUrl is what the user entered and stays the store identity
+    // however many documents the resolution walks through.
+    @OptIn(ExperimentalSerializationApi::class)
+    private suspend fun resolveIndex(
+        configuredUrl: String,
+        url: String,
+        hops: Int,
     ): List<ExtensionInfo> {
-        val network = indexJson.decodeFromString<NetworkExtensionStore>(body)
-        val store = network.toExtensionStore(indexUrl)
-        // The list is either inline or behind a second URL.
+        check(hops <= MAX_INDEX_HOPS) { "extension repo $configuredUrl redirects through too many index documents" }
+        val body = fetchBytes(url)
+        return when (body.firstOrNull { !it.toInt().toChar().isWhitespace() }) {
+            // The old flat list: only good for finding the repo.json beside it.
+            '['.code.toByte() -> {
+                check(url.endsWith("/$OLD_INDEX")) { "extension repo $configuredUrl is not a store index" }
+                resolveIndex(configuredUrl, url.removeSuffix(OLD_INDEX) + REPO_POINTER, hops + 1)
+            }
+
+            '{'.code.toByte() -> {
+                val text = body.decodeToString()
+                val pointer = runCatching { indexJson.decodeFromString<NetworkLegacyExtensionRepo>(text) }.getOrNull()
+                if (pointer == null) {
+                    storeExtensions(configuredUrl, indexJson.decodeFromString<NetworkExtensionStore>(text))
+                } else {
+                    val store =
+                        checkNotNull(pointer.indexV2) {
+                            "extension repo $configuredUrl only publishes the old index format, which is no longer supported"
+                        }
+                    resolveIndex(configuredUrl, store, hops + 1)
+                }
+            }
+
+            else -> storeExtensions(configuredUrl, indexProto.decodeFromByteArray<NetworkExtensionStore>(body))
+        }
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private suspend fun storeExtensions(
+        configuredUrl: String,
+        network: NetworkExtensionStore,
+    ): List<ExtensionInfo> {
+        val store = network.toExtensionStore(configuredUrl)
+        // The list is either inline or behind a second URL, in either
+        // encoding.
         val list =
             network.extensionList
-                ?: network.extensionListUrl?.let {
-                    indexJson.decodeFromString<NetworkExtensionStore.ExtensionList>(fetchText(it))
+                ?: network.extensionListUrl?.let { listUrl ->
+                    val body = fetchBytes(listUrl)
+                    if (body.firstOrNull() == '{'.code.toByte()) {
+                        indexJson.decodeFromString<NetworkExtensionStore.ExtensionList>(body.decodeToString())
+                    } else {
+                        indexProto.decodeFromByteArray<NetworkExtensionStore.ExtensionList>(body)
+                    }
                 }
                 ?: NetworkExtensionStore.ExtensionList(emptyList())
         return list.toExtensionInfos(store)
     }
 
-    private fun parseLegacy(
-        indexUrl: String,
-        body: String,
-    ): List<ExtensionInfo> {
-        val entries = indexJson.decodeFromString<List<NetworkLegacyExtension>>(body)
-        val baseUrl = indexUrl.substringBeforeLast('/')
-        val store =
-            ExtensionStore(
-                indexUrl = indexUrl,
-                name = baseUrl,
-                badgeLabel = "",
-                signingKey = "",
-                contact = ExtensionStore.Contact(website = baseUrl, discord = null),
-                isLegacy = true,
-                extensionListUrl = null,
-            )
-        return entries.map { it.toExtensionInfo(store, baseUrl) }
-    }
-
-    private suspend fun fetchText(url: String): String {
+    // fetchBytes returns a document's bytes, gunzipped when it is served
+    // compressed as a file (index.pb is; that is not HTTP content-encoding,
+    // which okhttp already undoes).
+    private suspend fun fetchBytes(url: String): ByteArray {
         val response = network.client.newCall(GET(url, cache = CacheControl.FORCE_NETWORK)).await()
         response.use {
             check(it.isSuccessful) { "fetch of $url returned HTTP ${it.code}" }
-            return it.body.string()
+            val source = it.body.source()
+            val gzipped = source.peek().use { head -> runCatching { head.readShort().toInt() == GZIP_MAGIC }.getOrDefault(false) }
+            return if (gzipped) source.gzip().buffer().readByteArray() else source.readByteArray()
         }
     }
 
@@ -239,7 +280,7 @@ object ExtensionManager {
         installed[ext.pkgName]?.let { uninstall(it.pkgName) }
 
         File(applicationDirs.extensionsRoot).mkdirs()
-        // v2.3 indexes state the APK URL outright; the file name is only
+        // Indexes state the APK URL outright; the file name is only
         // used to key the jar on disk.
         val apkName = apkNameOf(ext)
         val apkPath = "${applicationDirs.extensionsRoot}/$apkName"
@@ -341,7 +382,11 @@ object ExtensionManager {
         className: String,
     ): List<CatalogueSource> =
         className.split(';').filter { it.isNotEmpty() }.flatMap { name ->
-            when (val instance = loadExtensionSources(Path(jarFilePath), name)) {
+            // Suspending since Suwayomi v2.4: it takes a per-jar mutex that
+            // their extension updater can hold across an update. Nothing in
+            // this host holds it (installs are @Synchronized here), so the
+            // bridge never actually waits.
+            when (val instance = runBlocking { loadExtensionSources(Path(jarFilePath), name) }) {
                 is Source -> listOf(instance)
                 is SourceFactory -> instance.createSources()
                 else -> throw RuntimeException("unknown source class type ${instance.javaClass}")
@@ -390,18 +435,24 @@ object ExtensionManager {
         val tempJarFile = File("${jarFile.parent}/${jarFile.nameWithoutExtension}_temp.jar")
         ZipInputStream(jarFile.inputStream()).use { jarZipInputStream ->
             ZipOutputStream(FileOutputStream(tempJarFile)).use { jarZipOutputStream ->
+                // A publisher-built jar may already carry the APK's assets
+                // (dex2jar output never does). Its copy wins: a second
+                // entry of the same name is a ZipException, which used to
+                // fail the whole install.
+                val written = mutableSetOf<String>()
                 var zipEntry = jarZipInputStream.nextEntry
                 while (zipEntry != null) {
-                    if (!zipEntry.name.startsWith("META-INF/")) {
+                    if (!zipEntry.name.startsWith("META-INF/") && written.add(zipEntry.name)) {
                         jarZipOutputStream.putNextEntry(ZipEntry(zipEntry.name))
                         jarZipInputStream.copyTo(jarZipOutputStream)
                     }
                     zipEntry = jarZipInputStream.nextEntry
                 }
                 assetsFolder.walkTopDown().forEach { file ->
-                    if (file.isFile) {
+                    val name = file.relativeTo(assetsFolder).toString().replace("\\", "/")
+                    if (file.isFile && written.add(name)) {
                         jarZipOutputStream.putNextEntry(
-                            ZipEntry(file.relativeTo(assetsFolder).toString().replace("\\", "/")),
+                            ZipEntry(name),
                         )
                         file.inputStream().use { inputStream ->
                             inputStream.copyTo(jarZipOutputStream)
