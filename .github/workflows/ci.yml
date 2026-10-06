@@ -28,18 +28,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # mise.toml pins go, node, golangci-lint and the rest; the runner
       # image's own toolchains are never used. The full pinned set is
       # installed rather than a subset — cache: true makes that cheap after
       # the first run, and it keeps CI identical to a developer's machine.
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v5
         with:
           cache: true
 
       - name: Cache Go build and module caches
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build
@@ -48,7 +48,7 @@ jobs:
           restore-keys: go-${{ runner.os }}-
 
       - name: Cache npm downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
@@ -59,7 +59,7 @@ jobs:
 
       - name: Cache the Playwright browser
         id: playwright-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload the Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: web/playwright-report/
@@ -97,8 +97,8 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
-      - uses: jdx/mise-action@v3
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           cache: true
       - name: Run the Go suite against PostgreSQL

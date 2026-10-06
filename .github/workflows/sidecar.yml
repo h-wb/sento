@@ -20,9 +20,14 @@ on:
       - '.github/workflows/sidecar.yml'
       - 'mise.toml'
   workflow_dispatch:
+  # The nightly run reuses this job to catch drift on the extension side
+  # (repos and sites move without anything changing here).
+  workflow_call:
 
 concurrency:
-  group: sidecar-${{ github.ref }}
+  # github.workflow is the *caller's* name under workflow_call, so the
+  # nightly run and a push to main never cancel each other.
+  group: sidecar-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -41,13 +46,13 @@ jobs:
     # Gradle compiles the whole vendored Suwayomi tree from scratch.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v5
         with:
           cache: true
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Build the sidecar and run the contract tests
         run: mise run host:contract

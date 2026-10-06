@@ -98,7 +98,7 @@
       "groupName": "npm (non-major)"
     },
     {
-      "description": "Keep mise's own tool pins current (go, node, java, gradle, sqlc\u2026).",
+      "description": "Keep mise's own tool pins current (go, node, java, gradle, golangci-lint…).",
       "matchManagers": [
         "mise"
       ],
@@ -123,7 +123,22 @@
       ]
     },
     {
-      "description": "Majors are reviewed one at a time \u2014 they are the ones that break the build.",
+      "description": "vendir is pinned twice (mise.toml for local builds, host/Dockerfile for the image); bump both together.",
+      "matchPackageNames": [
+        "vendir",
+        "carvel-dev/vendir"
+      ],
+      "groupName": "vendir"
+    },
+    {
+      "description": "Gradle is pinned in mise.toml, the wrapper and the sidecar image's build stage.",
+      "matchPackageNames": [
+        "gradle"
+      ],
+      "groupName": "Gradle"
+    },
+    {
+      "description": "Majors are reviewed one at a time — they are the ones that break the build.",
       "matchUpdateTypes": [
         "major"
       ],
@@ -132,16 +147,17 @@
   ],
   "customManagers": [
     {
-      "description": "The Suwayomi preview image pinned in the compose file. Upstream publishes per-build image tags that have no matching git tag, so this is a separate dependency from the vendored source tree.",
+      "description": "The vendir release host/Dockerfile downloads to sync the vendored Suwayomi tree. mise.toml pins the same tool for local builds; both move in the one \"vendir\" PR.",
       "customType": "regex",
       "managerFilePatterns": [
-        "/^deploy/docker-compose\\.yml$/"
+        "/^host/Dockerfile$/"
       ],
       "matchStrings": [
-        "image:\\s*ghcr\\.io/suwayomi/suwayomi-server:(?<currentValue>\\S+)"
+        "ARG VENDIR_VERSION=(?<currentValue>\\S+)"
       ],
-      "depNameTemplate": "ghcr.io/suwayomi/suwayomi-server",
-      "datasourceTemplate": "docker"
+      "depNameTemplate": "carvel-dev/vendir",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
     }
   ],
   "vulnerabilityAlerts": {

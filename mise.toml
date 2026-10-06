@@ -1,17 +1,22 @@
+# Everything a check depends on is pinned, so a run is reproducible and a
+# tool upgrade arrives as a reviewable Renovate PR instead of as a surprise
+# red build. Only gopls floats: it is an editor language server no task
+# uses (CI skips it via MISE_DISABLE_TOOLS).
 [tools]
-go = "1.25"
+go = "1.27"
 node = "24"
 java = "temurin-21"
-vendir = "latest"
+vendir = "0.46.2"
 gradle = "9.5.1"
-sqlc = "latest"
-golangci-lint = "latest"
+golangci-lint = "2.14.0"
+actionlint = "1.7.12"
+shellcheck = "0.11.0" # actionlint runs it over every `run:` script
 "go:golang.org/x/tools/gopls" = "latest"
 
 [env]
 CGO_ENABLED = "0"
 # Dev defaults (override machine-specific values in mise.local.toml,
-# which is gitignored — e.g. SENTO_SUWAYOMI_URL, SENTO_PROWLARR_API_KEY).
+# which is gitignored — e.g. SENTO_QBITTORRENT_URL, SENTO_PROWLARR_API_KEY).
 SENTO_DB_PATH = "data/sento.db"
 SENTO_LIBRARY_PATH = "data/library"
 # Dev default: sento-host sidecar on its default port (mise run host:run).
@@ -28,6 +33,19 @@ run = "go run ./cmd/sento"
 [tasks.test]
 description = "Run Go tests"
 run = "go test ./..."
+
+[tasks."test:race"]
+description = "Run Go tests under the race detector"
+# The detector needs cgo, which the build itself keeps off (static binary).
+run = "go test -race ./..."
+env = { CGO_ENABLED = "1" }
+
+[tasks.vuln]
+description = "Report known vulnerabilities reachable from the code (Go) and in web dependencies"
+run = [
+  "go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...",
+  "npm --prefix web audit --audit-level=high",
+]
 
 [tasks.lint]
 description = "Lint Go code"
@@ -72,9 +90,10 @@ description = "Everything CI runs on a pull request"
 run = [
   "mise run web:install",
   "mise run lint",
+  "mise run lint:ci",
   "mise run lint:web",
   "mise run gen:check",
-  "mise run test",
+  "mise run test:race",
   "mise run e2e",
 ]
 
@@ -82,6 +101,10 @@ run = [
 description = "Install web dependencies from the lockfile"
 dir = "web"
 run = "npm ci"
+
+[tasks."lint:ci"]
+description = "Lint the GitHub Actions workflows"
+run = "actionlint"
 
 [tasks."lint:web"]
 description = "Lint the web UI"
@@ -165,6 +188,10 @@ docker build \
   --build-arg COMMIT="$(git rev-parse HEAD)" \
   -t sento:dev .
 """
+
+[tasks."image:build:host"]
+description = "Build the sento-host sidecar image locally"
+run = "docker build -t sento-host:dev host"
 
 [tasks."image:run"]
 description = "Run the locally built image against ./data"

@@ -1,8 +1,9 @@
-# Upstream drift detection. These checks depend on services Sento does not
-# control (the MangaBaka API, extension repos, the sites extensions scrape),
-# so they run nightly rather than on pull requests: a MangaBaka outage
-# should never red a PR about the parser.
-name: Upstream contract
+# Nightly drift detection. These checks depend on things Sento does not
+# control — the MangaBaka API, extension repos and the sites extensions
+# scrape, newly published security advisories — so they run on a schedule
+# rather than on pull requests: a MangaBaka outage should never red a PR
+# about the parser.
+name: Nightly
 
 on:
   schedule:
@@ -10,12 +11,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: upstream-contract
+  group: nightly
   cancel-in-progress: false
 
 permissions:
   contents: read
-  issues: write
 
 # gopls is an editor language server: no task here uses it, and resolving
 # its "latest" on every run is a network round-trip that has already timed
@@ -29,8 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
-      - uses: jdx/mise-action@v3
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           cache: true
       - name: Contract tests against the live API
@@ -38,73 +38,99 @@ jobs:
 
   sidecar:
     name: sento-host sidecar
+    uses: ./.github/workflows/sidecar.yml
+
+  vulnerabilities:
+    name: Known vulnerabilities
     runs-on: ubuntu-latest
-    # The gradle build compiles the vendored Suwayomi tree from scratch.
-    timeout-minutes: 60
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
-      - uses: jdx/mise-action@v3
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           cache: true
+      # govulncheck reports only advisories whose vulnerable code is
+      # actually reachable; npm audit reads the lockfile, no install needed.
+      - name: Go (reachable) and npm (high and above)
+        run: mise run vuln
 
-      - uses: gradle/actions/setup-gradle@v4
-
-      - name: Build the sidecar and run the contract tests
-        run: mise run host:contract
-        env:
-          # Set these as repository variables to unlock the tier that
-          # installs a real extension and drives a live source; without
-          # them only the boot/repo contract is checked.
-          SENTO_TEST_EXTENSION_REPO: ${{ vars.SENTO_TEST_EXTENSION_REPO }}
-          SENTO_TEST_EXTENSION_PKG: ${{ vars.SENTO_TEST_EXTENSION_PKG }}
-          SENTO_TEST_SEARCH_QUERY: ${{ vars.SENTO_TEST_SEARCH_QUERY }}
-
+  # One tracking issue, labelled upstream-drift: opened on the first red
+  # night, commented on while it stays red, closed by the first green one —
+  # so an open issue always means "still failing", never "failed once".
   report:
-    name: Report failures
+    name: Track the result
     runs-on: ubuntu-latest
-    needs: [mangabaka, sidecar]
-    if: failure() && github.event_name == 'schedule'
+    needs: [mangabaka, sidecar, vulnerabilities]
+    if: always() && github.event_name == 'schedule'
     permissions:
       issues: write
     steps:
-      - name: Open or update the drift issue
-        uses: actions/github-script@v7
+      - name: Open, update or close the tracking issue
+        uses: actions/github-script@v9
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         with:
           script: |
-            const title = 'Upstream contract tests are failing'
+            const label = 'upstream-drift'
             const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
-            const body = [
-              'The nightly upstream contract run failed.',
-              '',
-              `Run: ${url}`,
-              '',
-              'A failure here means an upstream changed, not that this repo regressed:',
-              '- **MangaBaka** — a response shape moved; fix `internal/metadata/mangabaka`.',
-              '- **sento-host** — the vendored Suwayomi tree or an extension broke; see `host/`.',
-              '',
-              'Reproduce locally with `mise run test:contract` / `mise run host:contract`.',
-            ].join('\n')
+            const hints = {
+              mangabaka: '**MangaBaka** — a response shape moved, or the API is down; see `internal/metadata/mangabaka` (`mise run test:contract`).',
+              sidecar: '**sento-host** — the vendored Suwayomi tree, an extension repo or a source site broke; see `host/` (`mise run host:contract`).',
+              vulnerabilities: '**Vulnerabilities** — a new advisory affects a dependency; bump it (`mise run vuln`).',
+            }
+            const needs = JSON.parse(process.env.NEEDS)
+            const failed = Object.keys(needs).filter((job) => needs[job].result !== 'success')
 
-            const { data: open } = await github.rest.issues.listForRepo({
+            const open = await github.paginate(github.rest.issues.listForRepo, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
-              labels: 'upstream-drift',
+              labels: label,
             })
-            const existing = open.find((i) => i.title === title)
-            if (existing) {
+            const issues = open.filter((i) => !i.pull_request)
+
+            if (failed.length === 0) {
+              for (const issue of issues) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: `Passing again — ${url}`,
+                })
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  state: 'closed',
+                  state_reason: 'completed',
+                })
+              }
+              return
+            }
+
+            const lines = failed.map((job) => `- ${hints[job] ?? job}`)
+            if (issues.length > 0) {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: existing.number,
-                body: `Still failing — ${url}`,
+                issue_number: issues[0].number,
+                body: [`Still failing — ${url}`, '', ...lines].join('\n'),
               })
-            } else {
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title,
-                body,
-                labels: ['upstream-drift'],
-              })
+              return
             }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Nightly checks are failing',
+              labels: [label],
+              body: [
+                'The nightly run failed.',
+                '',
+                `Run: ${url}`,
+                '',
+                'A failure here usually means something outside this repo changed, not that the repo regressed:',
+                ...lines,
+                '',
+                'This issue closes itself on the next green night.',
+              ].join('\n'),
+            })
