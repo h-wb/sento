@@ -150,6 +150,28 @@ func TestContractExtensionLifecycle(t *testing.T) {
 	}
 	sid := srcs[0].ID
 
+	// The catalogue declares an extension's sources before it is installed
+	// (the Add Indexer flow picks from them). What it declared must be
+	// what the installed extension really provides, or an indexer entry
+	// would point at a source that never appears.
+	have := map[string]bool{}
+	for _, s := range srcs {
+		have[s.ID] = true
+	}
+	for _, e := range exts {
+		if e.PkgName != pkg {
+			continue
+		}
+		if len(e.Sources) == 0 {
+			t.Logf("the index declares no sources for %s; nothing to cross-check", pkg)
+		}
+		for _, s := range e.Sources {
+			if !have[s.ID] {
+				t.Errorf("index declares source %s (%s, %s) but installed %s does not provide it", s.ID, s.Name, s.Lang, pkg)
+			}
+		}
+	}
+
 	// Installed sources must also show up in the global list Sento reads.
 	all, err := c.Sources(ctx)
 	if err != nil {
