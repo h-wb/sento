@@ -106,11 +106,11 @@
     },
     {
       "description": "The Go version in mise.toml, go.mod and the Dockerfile must move together.",
-      "matchPackageNames": [
+      "groupName": "Go toolchain",
+      "matchDepNames": [
         "go",
         "golang"
-      ],
-      "groupName": "Go toolchain"
+      ]
     },
     {
       "description": "The vendored Suwayomi source tree (host/vendir.yml). A bump here changes the fake-Android runtime the extension sidecar is built on, so it is reviewed on its own and gated by the sidecar contract tests in CI.",
@@ -124,18 +124,25 @@
     },
     {
       "description": "vendir is pinned twice (mise.toml for local builds, host/Dockerfile for the image); bump both together.",
-      "matchPackageNames": [
+      "groupName": "vendir",
+      "matchDepNames": [
         "vendir",
         "carvel-dev/vendir"
-      ],
-      "groupName": "vendir"
+      ]
     },
     {
-      "description": "Gradle is pinned in mise.toml, the wrapper and the sidecar image's build stage.",
-      "matchPackageNames": [
+      "description": "Gradle is pinned in mise.toml, the wrapper and the sidecar image's build stage. Matched by dependency name: the three managers resolve it through different packages.",
+      "groupName": "Gradle",
+      "matchDepNames": [
         "gradle"
+      ]
+    },
+    {
+      "description": "One lock file maintenance PR, not one per group above (the manager-wide groups would otherwise each claim their own).",
+      "matchUpdateTypes": [
+        "lockFileMaintenance"
       ],
-      "groupName": "Gradle"
+      "groupName": null
     },
     {
       "description": "Majors are reviewed one at a time — they are the ones that break the build.",
