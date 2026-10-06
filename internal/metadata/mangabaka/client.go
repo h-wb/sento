@@ -5,6 +5,7 @@ package mangabaka
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +27,9 @@ type Client struct {
 	// MangaBaka rate limits (spec.md §5.2): search 30/min, lookup 120/min.
 	searchLimit *rate.Limiter
 	lookupLimit *rate.Limiter
+	// backoff is the first retry delay (doubled per attempt) when the API
+	// throttles without saying for how long.
+	backoff time.Duration
 }
 
 func New(baseURL string) *Client {
@@ -37,6 +41,7 @@ func New(baseURL string) *Client {
 		http:        &http.Client{Timeout: 30 * time.Second},
 		searchLimit: rate.NewLimiter(rate.Every(2*time.Second), 5),
 		lookupLimit: rate.NewLimiter(rate.Every(500*time.Millisecond), 10),
+		backoff:     time.Second,
 	}
 }
 
@@ -53,7 +58,82 @@ type pagination struct {
 	Next  *string `json:"next"`
 }
 
+// maxAttempts bounds how often one request is tried before its error is
+// reported; maxRetryWait caps a single wait, however long the API asks for.
+const (
+	maxAttempts  = 4
+	maxRetryWait = 30 * time.Second
+)
+
+// get fetches one envelope, retrying when the API throttles (429) or is
+// briefly unavailable (502/503/504). The client-side limiters keep well
+// under the documented budgets, but the API also throttles bursts — a
+// paged works listing trips it — and one 429 used to fail a whole
+// add/refresh.
 func (c *Client) get(ctx context.Context, limiter *rate.Limiter, rawURL string) (*envelope, error) {
+	var lastErr error
+	for attempt := range maxAttempts {
+		if attempt > 0 {
+			if err := sleep(ctx, c.retryWait(attempt, lastErr)); err != nil {
+				return nil, err
+			}
+		}
+		env, err := c.getOnce(ctx, limiter, rawURL)
+		if err == nil {
+			return env, nil
+		}
+		var se *statusError
+		if !errors.As(err, &se) || !se.retryable() {
+			return nil, err
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
+// statusError is a non-200 answer, kept typed so get can decide on retries.
+type statusError struct {
+	url        string
+	status     int
+	retryAfter time.Duration // from the Retry-After header; 0 = not given
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("mangabaka: %s returned %d", e.url, e.status)
+}
+
+func (e *statusError) retryable() bool {
+	switch e.status {
+	case http.StatusTooManyRequests, http.StatusBadGateway,
+		http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+	return false
+}
+
+// retryWait honours the API's Retry-After when it sent one, else backs off
+// exponentially from c.backoff.
+func (c *Client) retryWait(attempt int, lastErr error) time.Duration {
+	wait := c.backoff << (attempt - 1)
+	var se *statusError
+	if errors.As(lastErr, &se) && se.retryAfter > 0 {
+		wait = se.retryAfter
+	}
+	return min(wait, maxRetryWait)
+}
+
+func sleep(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+func (c *Client) getOnce(ctx context.Context, limiter *rate.Limiter, rawURL string) (*envelope, error) {
 	if err := limiter.Wait(ctx); err != nil {
 		return nil, err
 	}
@@ -74,7 +154,11 @@ func (c *Client) get(ctx context.Context, limiter *rate.Limiter, rawURL string) 
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("mangabaka: %s returned %d", rawURL, resp.StatusCode)
+		se := &statusError{url: rawURL, status: resp.StatusCode}
+		if secs, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After"))); err == nil && secs > 0 {
+			se.retryAfter = time.Duration(secs) * time.Second
+		}
+		return nil, se
 	}
 	var env envelope
 	if err := json.Unmarshal(body, &env); err != nil {
@@ -186,7 +270,14 @@ func (c *Client) Search(ctx context.Context, query string) ([]metadata.SeriesRef
 	return refs, nil
 }
 
+// maxMergeHops bounds the merged_with chain GetSeries follows.
+const maxMergeHops = 5
+
 func (c *Client) GetSeries(ctx context.Context, id int64) (*metadata.Series, error) {
+	return c.getSeries(ctx, id, 0)
+}
+
+func (c *Client) getSeries(ctx context.Context, id int64, hops int) (*metadata.Series, error) {
 	u := fmt.Sprintf("%s/series/%d", c.baseURL, id)
 	env, err := c.get(ctx, c.lookupLimit, u)
 	if err != nil {
@@ -197,8 +288,12 @@ func (c *Client) GetSeries(ctx context.Context, id int64) (*metadata.Series, err
 		return nil, err
 	}
 	if s.MergedWith != nil && *s.MergedWith != 0 && *s.MergedWith != id {
-		// Follow merges transparently (spec.md §5.2).
-		return c.GetSeries(ctx, *s.MergedWith)
+		// Follow merges transparently (spec.md §5.2) — but not forever: two
+		// records merged into each other would otherwise recurse unbounded.
+		if hops >= maxMergeHops {
+			return nil, fmt.Errorf("mangabaka: series %d: merge chain longer than %d", id, maxMergeHops)
+		}
+		return c.getSeries(ctx, *s.MergedWith, hops+1)
 	}
 
 	out := &metadata.Series{
