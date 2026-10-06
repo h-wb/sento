@@ -9,6 +9,8 @@ links (spec.md §4.2). Slots are computed, never stored.
 */
 
 export interface VolumeSlot {
+  workId?: number /* int64 */;
+  availability: string;
   number: number /* int64 */; // hundredths
   sequenceStr: string;
   countType: string;
@@ -19,6 +21,8 @@ export interface VolumeSlot {
   wanted: boolean;
 }
 export interface ChapterSlot {
+  workId?: number /* int64 */;
+  sequenceStr?: string;
   number: number /* int64 */; // hundredths
   monitored: boolean;
   fileIds?: number /* int64 */[];

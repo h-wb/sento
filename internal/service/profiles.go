@@ -79,6 +79,9 @@ func (s *ProfileService) DeleteFormat(ctx context.Context, id int64) error {
 }
 
 func (s *ProfileService) validateProfile(ctx context.Context, p profile.Profile) error {
+	if p.MinUpgradeScore < 0 {
+		return apperr.Invalidf("minimum upgrade improvement cannot be negative")
+	}
 	if strings.TrimSpace(p.Name) == "" {
 		return apperr.Invalidf("profile needs a name")
 	}
@@ -214,11 +217,14 @@ func (s *ProfileService) EffectiveProfiles(ctx context.Context, seriesID int64) 
 // ProfileDoc is the self-contained export of one profile: format
 // definitions travel with their scores, so a doc imports anywhere.
 type ProfileDoc struct {
-	Name           string              `json:"name"`
-	MinFormatScore int                 `json:"minFormatScore"`
-	Volume         profile.LedgerRules `json:"volume"`
-	Chapter        profile.LedgerRules `json:"chapter"`
-	Formats        []FormatDoc         `json:"formats"`
+	UpgradesEnabled   bool                `json:"upgradesEnabled"`
+	UpgradeUntilScore int                 `json:"upgradeUntilScore"`
+	MinUpgradeScore   int                 `json:"minUpgradeScore"`
+	Name              string              `json:"name"`
+	MinFormatScore    int                 `json:"minFormatScore"`
+	Volume            profile.LedgerRules `json:"volume"`
+	Chapter           profile.LedgerRules `json:"chapter"`
+	Formats           []FormatDoc         `json:"formats"`
 }
 
 type FormatDoc struct {
@@ -237,6 +243,7 @@ func (s *ProfileService) ExportProfile(ctx context.Context, id int64) (*ProfileD
 		return nil, err
 	}
 	doc := &ProfileDoc{
+		UpgradesEnabled: p.UpgradesEnabled, UpgradeUntilScore: p.UpgradeUntilScore, MinUpgradeScore: p.MinUpgradeScore,
 		Name: p.Name, MinFormatScore: p.MinFormatScore,
 		Volume: p.Volume, Chapter: p.Chapter, Formats: []FormatDoc{},
 	}
@@ -287,6 +294,7 @@ func (s *ProfileService) ImportProfile(ctx context.Context, doc ProfileDoc) (*pr
 	}
 
 	p := profile.Profile{
+		UpgradesEnabled: doc.UpgradesEnabled, UpgradeUntilScore: doc.UpgradeUntilScore, MinUpgradeScore: doc.MinUpgradeScore,
 		Name: doc.Name, MinFormatScore: doc.MinFormatScore,
 		FormatScores: scores, Volume: doc.Volume, Chapter: doc.Chapter,
 	}

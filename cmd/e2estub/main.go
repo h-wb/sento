@@ -158,10 +158,10 @@ func mountMangaBaka(mux *http.ServeMux) {
 		writeJSON(w, envelope([]map[string]any{{
 			"id":          fmt.Sprintf("col-%d-en", id),
 			"publisher":   map[string]string{"name": "Stub Publishing"},
-			"edition":     map[string]string{"name": ""},
+			"edition":     map[string]string{"name": "Standard Edition"},
 			"language":    map[string]string{"iso": "en"},
-			"type":        "standard",
-			"medium":      "print",
+			"type":        "volume",
+			"medium":      "digital",
 			"count_main":  volumeCount(s),
 			"count_extra": 0,
 			"count_other": 0,

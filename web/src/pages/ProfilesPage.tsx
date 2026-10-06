@@ -63,12 +63,15 @@ const flagValues = [
 
 // condText renders a condition compactly: "title ~ \bLQ\b", "NOT flag:raw".
 function condText(c: Condition): string {
-  const body = c.type === 'flag' || c.type === 'protocol' ? `${c.type}:${c.value}` : `${c.type} ~ ${c.value}`
+  const body =
+    c.type === 'flag' || c.type === 'protocol' ? `${c.type}:${c.value}` : `${c.type} ~ ${c.value}`
   return `${c.negate ? 'NOT ' : ''}${body}${c.required ? ' (required)' : ''}`
 }
 
 function downloadJSON(name: string, data: unknown) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: 'application/json',
+  })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -81,9 +84,15 @@ export default function ProfilesPage() {
   usePageTitle('Profiles')
   const { confirm, confirmation } = useConfirmAction()
   const qc = useQueryClient()
-  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
+  const profiles = useQuery({
+    queryKey: ['profiles'],
+    queryFn: api.listProfiles,
+  })
   const formats = useQuery({ queryKey: ['formats'], queryFn: api.listFormats })
-  const defaultProfile = useQuery({ queryKey: ['default-profile'], queryFn: api.defaultProfile })
+  const defaultProfile = useQuery({
+    queryKey: ['default-profile'],
+    queryFn: api.defaultProfile,
+  })
 
   const [editProfile, setEditProfile] = useState<Profile | 'new' | null>(null)
   const [editFormat, setEditFormat] = useState<Format | 'new' | null>(null)
@@ -143,77 +152,108 @@ export default function ProfilesPage() {
         }
       />
 
-      <QueryFeedback pending={profiles.isPending} error={profiles.error || defaultProfile.error} onRetry={() => { void profiles.refetch(); void defaultProfile.refetch() }} />
-      <Table.ScrollContainer minWidth={560}><Table verticalSpacing="sm" highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th w={32} />
-            <Table.Th>Name</Table.Th>
-            <Table.Th>Min format score</Table.Th>
-            <Table.Th>Scored formats</Table.Th>
-            <Table.Th w={120} />
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {(profiles.data ?? []).map((p) => {
-            const isDefault = defaultProfile.data?.profileId === p.id
-            return (
-              <Table.Tr key={p.id}>
-                <Table.Td>
-                  <Tooltip label={isDefault ? 'Default profile' : 'Make default'}>
-                    <ActionIcon
-                      variant="subtle"
-                      color={isDefault ? 'yellow' : 'gray'}
-                      aria-label={isDefault ? `${p.name} is the default profile` : `Make ${p.name} default`}
-                      disabled={setDefault.isPending}
-                      onClick={() => !isDefault && setDefault.mutate(p.id)}
-                    >
-                      {isDefault ? <IconStarFilled size={16} /> : <IconStar size={16} />}
-                    </ActionIcon>
-                  </Tooltip>
-                </Table.Td>
-                <Table.Td>
-                  <Text size="sm" fw={500}>
-                    {p.name}
-                  </Text>
-                </Table.Td>
-                <Table.Td>
-                  <Text size="sm" c="dimmed">
-                    {p.minFormatScore <= MinScoreOff ? 'No minimum' : p.minFormatScore}
-                  </Text>
-                </Table.Td>
-                <Table.Td>
-                  <Text size="sm" c="dimmed">
-                    {Object.keys(p.formatScores ?? {}).length}
-                  </Text>
-                </Table.Td>
-                <Table.Td>
-                  <Group gap={4} justify="flex-end" wrap="nowrap">
-                    <Tooltip label="Export JSON">
-                      <ActionIcon variant="subtle" aria-label={`Export ${p.name}`} onClick={() => void exportOne(p).catch(notify.err)}>
-                        <IconDownload size={16} />
+      <QueryFeedback
+        pending={profiles.isPending}
+        error={profiles.error || defaultProfile.error}
+        onRetry={() => {
+          void profiles.refetch()
+          void defaultProfile.refetch()
+        }}
+      />
+      <Table.ScrollContainer minWidth={560}>
+        <Table verticalSpacing="sm" highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th w={32} />
+              <Table.Th>Name</Table.Th>
+              <Table.Th>Min format score</Table.Th>
+              <Table.Th>Scored formats</Table.Th>
+              <Table.Th w={120} />
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {(profiles.data ?? []).map((p) => {
+              const isDefault = defaultProfile.data?.profileId === p.id
+              return (
+                <Table.Tr key={p.id}>
+                  <Table.Td>
+                    <Tooltip label={isDefault ? 'Default profile' : 'Make default'}>
+                      <ActionIcon
+                        variant="subtle"
+                        color={isDefault ? 'yellow' : 'gray'}
+                        aria-label={
+                          isDefault ? `${p.name} is the default profile` : `Make ${p.name} default`
+                        }
+                        disabled={setDefault.isPending}
+                        onClick={() => !isDefault && setDefault.mutate(p.id)}
+                      >
+                        {isDefault ? <IconStarFilled size={16} /> : <IconStar size={16} />}
                       </ActionIcon>
                     </Tooltip>
-                    <ActionIcon variant="subtle" aria-label={`Edit ${p.name}`} onClick={() => setEditProfile(p)}>
-                      <IconPencil size={16} />
-                    </ActionIcon>
-                    <ActionIcon
-                      variant="subtle"
-                      color="red"
-                      disabled={isDefault}
-                      aria-label={`Delete ${p.name}`}
-                      onClick={() => confirm({ title: 'Delete profile?', message: `Delete “${p.name}”? Only unused profiles can be deleted. Reassign any series or collections using it first.`, label: 'Delete profile', onConfirm: () => deleteProfile.mutateAsync(p.id) })}
-                    >
-                      <IconTrash size={16} />
-                    </ActionIcon>
-                  </Group>
-                </Table.Td>
-              </Table.Tr>
-            )
-          })}
-        </Table.Tbody>
-      </Table></Table.ScrollContainer>
-      {profiles.data?.length === 0 && <EmptyState title="No profiles" description="Create a profile to choose which releases Sento prefers." />}
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm" fw={500}>
+                      {p.name}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm" c="dimmed">
+                      {p.minFormatScore <= MinScoreOff ? 'No minimum' : p.minFormatScore}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm" c="dimmed">
+                      {Object.keys(p.formatScores ?? {}).length}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Group gap={4} justify="flex-end" wrap="nowrap">
+                      <Tooltip label="Export JSON">
+                        <ActionIcon
+                          variant="subtle"
+                          aria-label={`Export ${p.name}`}
+                          onClick={() => void exportOne(p).catch(notify.err)}
+                        >
+                          <IconDownload size={16} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <ActionIcon
+                        variant="subtle"
+                        aria-label={`Edit ${p.name}`}
+                        onClick={() => setEditProfile(p)}
+                      >
+                        <IconPencil size={16} />
+                      </ActionIcon>
+                      <ActionIcon
+                        variant="subtle"
+                        color="red"
+                        disabled={isDefault}
+                        aria-label={`Delete ${p.name}`}
+                        onClick={() =>
+                          confirm({
+                            title: 'Delete profile?',
+                            message: `Delete “${p.name}”? Only unused profiles can be deleted. Reassign any series or collections using it first.`,
+                            label: 'Delete profile',
+                            onConfirm: () => deleteProfile.mutateAsync(p.id),
+                          })
+                        }
+                      >
+                        <IconTrash size={16} />
+                      </ActionIcon>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              )
+            })}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+      {profiles.data?.length === 0 && (
+        <EmptyState
+          title="No profiles"
+          description="Create a profile to choose which releases Sento prefers."
+        />
+      )}
 
       <Divider />
 
@@ -221,7 +261,8 @@ export default function ProfilesPage() {
         <div>
           <Title order={3}>Custom formats</Title>
           <Text c="dimmed" size="sm">
-            Match release details such as language, quality, or group. Profiles assign a score to each match.
+            Match release details such as language, quality, or group. Profiles assign a score to
+            each match.
           </Text>
         </div>
         <Button
@@ -234,53 +275,79 @@ export default function ProfilesPage() {
         </Button>
       </Group>
 
-      <QueryFeedback pending={formats.isPending} error={formats.error} onRetry={() => void formats.refetch()} />
-      <Table.ScrollContainer minWidth={520}><Table verticalSpacing="sm" highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th w={180}>Name</Table.Th>
-            <Table.Th>Conditions</Table.Th>
-            <Table.Th w={80} />
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {(formats.data ?? []).map((f) => (
-            <Table.Tr key={f.id}>
-              <Table.Td>
-                <Text size="sm" fw={500}>
-                  {f.name}
-                </Text>
-              </Table.Td>
-              <Table.Td>
-                <Group gap={4} wrap="wrap">
-                  {f.conditions.map((c, i) => (
-                    <Badge
-                      key={i}
-                      size="xs"
-                      variant="outline"
-                      color={c.negate ? 'red' : 'gray'}
-                      style={{ textTransform: 'none' }}
-                    >
-                      {condText(c)}
-                    </Badge>
-                  ))}
-                </Group>
-              </Table.Td>
-              <Table.Td>
-                <Group gap={4} justify="flex-end" wrap="nowrap">
-                  <ActionIcon variant="subtle" aria-label={`Edit format ${f.name}`} onClick={() => setEditFormat(f)}>
-                    <IconPencil size={16} />
-                  </ActionIcon>
-                  <ActionIcon variant="subtle" color="red" aria-label={`Delete format ${f.name}`} onClick={() => confirm({ title: 'Delete custom format?', message: `Delete “${f.name}”? Its scores will be removed from every profile.`, label: 'Delete format', onConfirm: () => deleteFormat.mutateAsync(f.id) })}>
-                    <IconTrash size={16} />
-                  </ActionIcon>
-                </Group>
-              </Table.Td>
+      <QueryFeedback
+        pending={formats.isPending}
+        error={formats.error}
+        onRetry={() => void formats.refetch()}
+      />
+      <Table.ScrollContainer minWidth={520}>
+        <Table verticalSpacing="sm" highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th w={180}>Name</Table.Th>
+              <Table.Th>Conditions</Table.Th>
+              <Table.Th w={80} />
             </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table></Table.ScrollContainer>
-      {formats.data?.length === 0 && <Text size="sm" c="dimmed">No custom formats. Add one to prefer or avoid specific release details.</Text>}
+          </Table.Thead>
+          <Table.Tbody>
+            {(formats.data ?? []).map((f) => (
+              <Table.Tr key={f.id}>
+                <Table.Td>
+                  <Text size="sm" fw={500}>
+                    {f.name}
+                  </Text>
+                </Table.Td>
+                <Table.Td>
+                  <Group gap={4} wrap="wrap">
+                    {f.conditions.map((c, i) => (
+                      <Badge
+                        key={i}
+                        size="xs"
+                        variant="outline"
+                        color={c.negate ? 'red' : 'gray'}
+                        style={{ textTransform: 'none' }}
+                      >
+                        {condText(c)}
+                      </Badge>
+                    ))}
+                  </Group>
+                </Table.Td>
+                <Table.Td>
+                  <Group gap={4} justify="flex-end" wrap="nowrap">
+                    <ActionIcon
+                      variant="subtle"
+                      aria-label={`Edit format ${f.name}`}
+                      onClick={() => setEditFormat(f)}
+                    >
+                      <IconPencil size={16} />
+                    </ActionIcon>
+                    <ActionIcon
+                      variant="subtle"
+                      color="red"
+                      aria-label={`Delete format ${f.name}`}
+                      onClick={() =>
+                        confirm({
+                          title: 'Delete custom format?',
+                          message: `Delete “${f.name}”? Its scores will be removed from every profile.`,
+                          label: 'Delete format',
+                          onConfirm: () => deleteFormat.mutateAsync(f.id),
+                        })
+                      }
+                    >
+                      <IconTrash size={16} />
+                    </ActionIcon>
+                  </Group>
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+      {formats.data?.length === 0 && (
+        <Text size="sm" c="dimmed">
+          No custom formats. Add one to prefer or avoid specific release details.
+        </Text>
+      )}
       {confirmation}
 
       {editProfile && (
@@ -317,13 +384,28 @@ function ProfileModal({
   onSaved: () => void
 }) {
   const [name, setName] = useState(profile?.name ?? '')
+  const [upgradesEnabled, setUpgradesEnabled] = useState(profile?.upgradesEnabled ?? false)
+  const [upgradeUntilScore, setUpgradeUntilScore] = useState(profile?.upgradeUntilScore ?? 0)
+  const [minUpgradeScore, setMinUpgradeScore] = useState(profile?.minUpgradeScore ?? 1)
   const [minScore, setMinScore] = useState<number>(profile?.minFormatScore ?? MinScoreOff)
-  const [scores, setScores] = useState<Record<number, number>>({ ...(profile?.formatScores ?? {}) })
+  const [scores, setScores] = useState<Record<number, number>>({
+    ...(profile?.formatScores ?? {}),
+  })
   const [volume, setVolume] = useState(
-    profile?.volume ?? { sizeMinMB: 20, sizeMaxMB: 1500, minSeeders: 1, preferredProtocol: 'torrent' },
+    profile?.volume ?? {
+      sizeMinMB: 20,
+      sizeMaxMB: 1500,
+      minSeeders: 1,
+      preferredProtocol: 'torrent',
+    },
   )
   const [chapter, setChapter] = useState(
-    profile?.chapter ?? { sizeMinMB: 2, sizeMaxMB: 200, minSeeders: 1, preferredProtocol: 'source' },
+    profile?.chapter ?? {
+      sizeMinMB: 2,
+      sizeMaxMB: 200,
+      minSeeders: 1,
+      preferredProtocol: 'source',
+    },
   )
 
   const save = useMutation({
@@ -331,6 +413,9 @@ function ProfileModal({
       const body = {
         name,
         minFormatScore: minScore,
+        upgradesEnabled,
+        upgradeUntilScore,
+        minUpgradeScore,
         formatScores: Object.fromEntries(Object.entries(scores).filter(([, v]) => v !== 0)),
         volume,
         chapter,
@@ -345,12 +430,55 @@ function ProfileModal({
   })
 
   return (
-    <Modal opened onClose={onClose} title={profile ? `Edit ${profile.name}` : 'Add profile'} size="lg">
+    <Modal
+      opened
+      onClose={onClose}
+      title={profile ? `Edit ${profile.name}` : 'Add profile'}
+      size="lg"
+    >
       <Stack gap="sm">
-        <TextInput label="Name" value={name} onChange={(e) => setName(e.currentTarget.value)} required />
-        <Switch label="Require a minimum format score" checked={minScore > MinScoreOff} onChange={(e) => setMinScore(e.currentTarget.checked ? 0 : MinScoreOff)} />
-        {minScore > MinScoreOff && <NumberInput label="Minimum format score" description="Releases with a lower score won't download automatically" value={minScore} onChange={(v) => setMinScore(Number(v) || 0)} />}
+        <TextInput
+          label="Name"
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+          required
+        />
+        <Switch
+          label="Require a minimum format score"
+          checked={minScore > MinScoreOff}
+          onChange={(e) => setMinScore(e.currentTarget.checked ? 0 : MinScoreOff)}
+        />
+        {minScore > MinScoreOff && (
+          <NumberInput
+            label="Minimum format score"
+            description="Releases with a lower score won't download automatically"
+            value={minScore}
+            onChange={(v) => setMinScore(Number(v) || 0)}
+          />
+        )}
 
+        <Switch
+          label="Download better releases automatically"
+          description="Previous copies stay on disk. Pinned copies are never upgraded."
+          checked={upgradesEnabled}
+          onChange={(e) => setUpgradesEnabled(e.currentTarget.checked)}
+        />
+        {upgradesEnabled && (
+          <Group grow>
+            <NumberInput
+              label="Minimum score improvement"
+              min={1}
+              value={minUpgradeScore}
+              onChange={(v) => setMinUpgradeScore(Number(v) || 1)}
+            />
+            <NumberInput
+              label="Stop upgrading at score"
+              description="0 keeps looking for improvements"
+              value={upgradeUntilScore}
+              onChange={(v) => setUpgradeUntilScore(Number(v) || 0)}
+            />
+          </Group>
+        )}
         <Divider label="Format scores" />
         <Table verticalSpacing={4}>
           <Table.Tbody>
@@ -407,7 +535,8 @@ function RulesFields({
       </Text>
       <Select
         size="xs"
-        label="Preferred download type" description="Adds 200 points to matching releases"
+        label="Preferred download type"
+        description="Adds 200 points to matching releases"
         data={[
           { value: 'torrent', label: 'Torrent' },
           { value: 'source', label: 'Source' },
@@ -455,7 +584,9 @@ function FormatModal({
 }) {
   const [name, setName] = useState(format?.name ?? '')
   const [conditions, setConditions] = useState<Condition[]>(
-    format?.conditions?.length ? format.conditions.map((c) => ({ ...c })) : [{ type: 'title', value: '' }],
+    format?.conditions?.length
+      ? format.conditions.map((c) => ({ ...c }))
+      : [{ type: 'title', value: '' }],
   )
 
   const setCond = (i: number, patch: Partial<Condition>) =>
@@ -474,9 +605,19 @@ function FormatModal({
   })
 
   return (
-    <Modal opened onClose={onClose} title={format ? `Edit ${format.name}` : 'Add custom format'} size="lg">
+    <Modal
+      opened
+      onClose={onClose}
+      title={format ? `Edit ${format.name}` : 'Add custom format'}
+      size="lg"
+    >
       <Stack gap="sm">
-        <TextInput label="Name" value={name} onChange={(e) => setName(e.currentTarget.value)} required />
+        <TextInput
+          label="Name"
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+          required
+        />
         <Text size="sm" fw={600}>
           Conditions
         </Text>
@@ -509,7 +650,9 @@ function FormatModal({
               <TextInput
                 size="xs"
                 style={{ flex: 1 }}
-                placeholder={c.type === 'resolution' ? '1600' : c.type === 'language' ? 'fr' : 'regex…'}
+                placeholder={
+                  c.type === 'resolution' ? '1600' : c.type === 'language' ? 'fr' : 'regex…'
+                }
                 value={c.value}
                 onChange={(e) => setCond(i, { value: e.currentTarget.value })}
               />
@@ -617,7 +760,11 @@ function ImportModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
           <Button variant="default" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={!doc} loading={importMut.isPending} onClick={() => doc && importMut.mutate(doc)}>
+          <Button
+            disabled={!doc}
+            loading={importMut.isPending}
+            onClick={() => doc && importMut.mutate(doc)}
+          >
             Import
           </Button>
         </Group>

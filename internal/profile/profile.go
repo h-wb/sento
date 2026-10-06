@@ -26,12 +26,15 @@ type LedgerRules struct {
 // format score is below MinFormatScore are soft-rejected (force-grab
 // still works); MinScoreOff disables the floor.
 type Profile struct {
-	ID             int64         `json:"id"`
-	Name           string        `json:"name"`
-	MinFormatScore int           `json:"minFormatScore"`
-	FormatScores   map[int64]int `json:"formatScores"`
-	Volume         LedgerRules   `json:"volume"`
-	Chapter        LedgerRules   `json:"chapter"`
+	UpgradesEnabled   bool          `json:"upgradesEnabled"`
+	UpgradeUntilScore int           `json:"upgradeUntilScore"`
+	MinUpgradeScore   int           `json:"minUpgradeScore"`
+	ID                int64         `json:"id"`
+	Name              string        `json:"name"`
+	MinFormatScore    int           `json:"minFormatScore"`
+	FormatScores      map[int64]int `json:"formatScores"`
+	Volume            LedgerRules   `json:"volume"`
+	Chapter           LedgerRules   `json:"chapter"`
 }
 
 // DefaultRules returns the funnel constants that applied before profiles

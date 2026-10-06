@@ -1,5 +1,8 @@
 # Sento — Specification (v1 draft)
 
+> The edition/version model supersedes the original number-only ownership, metadata-count-only chapter model, and no-upgrade assumptions below. See [the current domain model](../domain/collections.md) for identity, acquisition, migration, and compatibility rules.
+
+
 Sonarr/Radarr-style automation for manga: monitor series, find releases on
 torrent indexers and Tachiyomi/Mihon sources, download, rename, organize into a
 clean library for readers like Komga/Kavita.

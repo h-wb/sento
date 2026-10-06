@@ -41,7 +41,26 @@ func queueVolumes(t *testing.T, st *store.Store, seriesID, collectionID int64, h
 	t.Helper()
 	slots := make([]store.ExpectedSlot, 0, len(numbers))
 	for _, n := range numbers {
-		slots = append(slots, store.ExpectedSlot{Ledger: "volume", CollectionID: collectionID, Number: n})
+		targets, err := st.ListTargets(context.Background(), seriesID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		works, err := st.ListWorks(context.Background(), collectionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var targetID, workID int64
+		for _, target := range targets {
+			if target.CollectionID == collectionID && target.IsDefault {
+				targetID = target.ID
+			}
+		}
+		for _, work := range works {
+			if work.SequenceNum == n {
+				workID = work.ID
+			}
+		}
+		slots = append(slots, store.ExpectedSlot{Ledger: "volume", CollectionID: collectionID, Number: n, TargetID: targetID, WorkID: workID})
 	}
 	raw, _ := json.Marshal(slots)
 	id, err := st.AddQueueItem(context.Background(), store.QueueItem{

@@ -135,3 +135,43 @@ func TestGetSeriesFollowsMergesButNotInCircles(t *testing.T) {
 		t.Fatal("want an error for a merge cycle")
 	}
 }
+
+func TestCollectionsReadEveryPageOrRejectIncompleteSnapshot(t *testing.T) {
+	for _, broken := range []bool{false, true} {
+		t.Run(fmt.Sprint(broken), func(t *testing.T) {
+			var c *Client
+			c = testClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Query().Get("page") == "2" {
+					if broken {
+						_, _ = w.Write([]byte(`{"status":200,"data":[{"id":123}]}`))
+					} else {
+						_, _ = w.Write([]byte(`{"status":200,"data":[{"id":"second","edition":{"name":"Omnibus"},"language":{"iso":"en"},"type":"volume"}]}`))
+					}
+					return
+				}
+				_, _ = fmt.Fprintf(w, `{"status":200,"data":[{"id":"first","edition":{"name":"Standard"},"language":{"iso":"en"},"type":"volume"}],"pagination":{"next":%q}}`, c.baseURL+"/series/377/collections?page=2")
+			})
+			cols, err := c.GetCollections(context.Background(), 377)
+			if broken {
+				if err == nil || cols != nil {
+					t.Fatal("partial snapshot was accepted")
+				}
+			} else if err != nil || len(cols) != 2 {
+				t.Fatalf("pagination lost collections: %+v %v", cols, err)
+			}
+		})
+	}
+}
+
+func TestWorksKeepSharedReferencesAndExplicitZero(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"status":200,"data":[{"id":"shared","sequence_numeric":0,"count_type":"main","collections":[{"id":"standard"},{"id":"digital"}]},{"id":"special","sequence_string":"Artbook","count_type":"other","collections":[{"id":"standard"}]}]}`))
+	})
+	works, err := c.GetWorks(context.Background(), 377)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(works["standard"]) != 2 || len(works["digital"]) != 1 || works["digital"][0].ProviderID != "shared" || !works["digital"][0].NumberKnown || works["digital"][0].SequenceStr != "0" || works["standard"][1].NumberKnown {
+		t.Fatalf("bad work adaptation: %+v", works)
+	}
+}

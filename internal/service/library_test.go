@@ -203,7 +203,7 @@ func TestAddSeriesAndSlots(t *testing.T) {
 	_, err = st.AddFile(ctx, store.File{
 		SeriesID: id, Path: "/library/One Piece/One Piece v01.cbz", Size: 1,
 		Provenance: "torrent",
-	}, nil, []store.SlotLink{{Ledger: "volume", CollectionID: standard.ID, Number: 100}})
+	}, nil, fixtureLinks(t, st, id, standard.ID, 100))
 	if err != nil {
 		t.Fatal(err)
 	}

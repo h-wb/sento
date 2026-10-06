@@ -36,6 +36,9 @@ var scanExts = map[string]bool{".cbz": true, ".cbr": true, ".zip": true, ".pdf":
 // ScanSeriesFolder walks dir (default: the series folder, derived from the
 // naming template when unset) and links every archive it can identify.
 func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir string) (*ScanResult, error) {
+	if err := sc.store.EnsureModels(ctx, seriesID); err != nil {
+		return nil, err
+	}
 	series, err := sc.store.GetSeries(ctx, seriesID)
 	if err != nil {
 		return nil, err
@@ -71,10 +74,10 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 	// tracking — preferring monitored ones.
 	var monitored, chapterCols []store.Collection
 	for _, c := range collections {
-		switch {
-		case c.Type == "volume" && c.Monitored:
+		switch c.Type {
+		case "volume":
 			monitored = append(monitored, c)
-		case c.Type == "chapter":
+		case "chapter":
 			if c.Monitored {
 				chapterCols = append([]store.Collection{c}, chapterCols...)
 			} else {
@@ -110,21 +113,29 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 		res.Scanned++
 
 		parsed := parse.ParseAnchored(filepath.Base(path), parse.ChannelFile, titles)
-		links := sc.linksFor(parsed, monitored, chapterCols)
+		links := sc.linksFor(ctx, parsed, monitored, chapterCols)
 
 		info, ierr := d.Info()
 		size := int64(0)
 		if ierr == nil {
 			size = info.Size()
 		}
-		_, aerr := sc.store.AddFile(ctx, store.File{
+		fid, aerr := sc.store.AddFile(ctx, store.File{
 			SeriesID:    seriesID,
 			Path:        path,
 			Size:        size,
 			Provenance:  "library-import",
 			Unrequested: len(links) == 0,
+			NeedsReview: len(links) == 0,
 		}, parsed, links)
 		if aerr != nil {
+			return aerr
+		}
+		hash, herr := fileHash(path)
+		if herr != nil {
+			return herr
+		}
+		if aerr = sc.store.SetAssetFacts(ctx, fid, store.AssetFacts{Title: filepath.Base(path), Protocol: "torrent", FactsKnown: true, Flags: candidateFlags(ReleaseCandidate{Parse: parsed}), Language: parsed.Language, Group: parsed.Group, Format: strings.TrimPrefix(filepath.Ext(path), "."), Resolution: parsed.Quality.Resolution, Revision: parsed.Version, Digital: parsed.Quality.Digital}, hash); aerr != nil {
 			return aerr
 		}
 		if len(links) == 0 {
@@ -143,51 +154,52 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 // linksFor maps a parsed file onto slot links: volumes to the routed
 // volume collection, integer chapters to the first monitored chapter
 // collection (language-matched when the filename is tagged).
-func (sc *Scanner) linksFor(parsed parse.Result, monitored, chapterCols []store.Collection) []store.SlotLink {
-	var links []store.SlotLink
-
-	if len(parsed.Volumes) > 0 && len(monitored) > 0 {
-		col := monitored[0]
-		hintMatched := false
-		for _, c := range monitored {
-			name := strings.ToLower(c.EditionName)
-			switch {
-			case parsed.Edition.Omnibus && strings.Contains(name, "omnibus"),
-				parsed.Edition.BoxSet && strings.Contains(name, "box"),
-				parsed.Edition.Colored && strings.Contains(name, "color"),
-				parsed.Edition.Deluxe && strings.Contains(name, "deluxe"):
-				col = c
-				hintMatched = true
-			}
-		}
-		if !hintMatched {
-			// Plain files prefer the standard edition (R6 default).
-			for _, c := range monitored {
-				if strings.Contains(strings.ToLower(c.EditionName), "standard") {
-					col = c
-					break
-				}
-			}
-		}
-		for _, r := range parsed.Volumes {
-			for n := (int64(r.From) + 99) / 100 * 100; n <= int64(r.To); n += 100 {
-				links = append(links, store.SlotLink{Ledger: "volume", CollectionID: col.ID, Number: n})
-			}
-		}
+func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chapters []store.Collection) []store.SlotLink {
+	if parsed.ContentType != parse.ContentManga || !parsed.Anchored || parsed.TitleLeftover != "" {
+		return nil
 	}
-	if len(parsed.Chapters) > 0 && len(chapterCols) > 0 {
-		col := chapterCols[0]
-		if parsed.Language != "" && parsed.Language != "multi" {
-			for _, c := range chapterCols {
-				if baseLang(c.Language) == baseLang(parsed.Language) {
-					col = c
-					break
-				}
+	var links []store.SlotLink
+	for _, axis := range []struct {
+		kind   string
+		cols   []store.Collection
+		ranges []parse.Range
+	}{{"volume", vols, parsed.Volumes}, {"chapter", chapters, parsed.Chapters}} {
+		if len(axis.ranges) == 0 {
+			continue
+		}
+		var matches []store.Collection
+		for _, c := range axis.cols {
+			if editionCompatible(parsed, c) {
+				matches = append(matches, c)
 			}
 		}
-		for _, r := range parsed.Chapters {
-			for n := (int64(r.From) + 99) / 100 * 100; n <= int64(r.To); n += 100 {
-				links = append(links, store.SlotLink{Ledger: "chapter", CollectionID: col.ID, Number: n})
+		if len(matches) != 1 {
+			continue
+		}
+		col := matches[0]
+		targets, err := sc.store.ListTargets(ctx, col.SeriesID)
+		if err != nil {
+			continue
+		}
+		var targetID int64
+		for _, target := range targets {
+			if target.CollectionID == col.ID && target.IsDefault {
+				targetID = target.ID
+			}
+		}
+		works, err := sc.store.ListWorks(ctx, col.ID)
+		if err != nil {
+			continue
+		}
+		for _, w := range works {
+			if !w.NumberKnown {
+				continue
+			}
+			for _, r := range axis.ranges {
+				if w.SequenceNum >= int64(r.From) && w.SequenceNum <= int64(r.To) {
+					links = append(links, store.SlotLink{Ledger: axis.kind, CollectionID: col.ID, WorkID: w.ID, TargetID: targetID, Number: w.SequenceNum})
+					break
+				}
 			}
 		}
 	}

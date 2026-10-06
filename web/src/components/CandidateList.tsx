@@ -1,5 +1,17 @@
 import { useState } from 'react'
-import { Anchor, Badge, Button, Group, Stack, Switch, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core'
+import {
+  Anchor,
+  Badge,
+  Button,
+  Group,
+  Stack,
+  Switch,
+  Table,
+  Text,
+  TextInput,
+  Tooltip,
+  UnstyledButton,
+} from '@mantine/core'
 import { useConfirmAction } from './ConfirmAction'
 import { notify } from '../ui'
 import { IconSearch } from '@tabler/icons-react'
@@ -8,6 +20,11 @@ import type { Range } from '../types/parse'
 
 // Rejections force-grab cannot bypass (mirror of the backend's hard set).
 const hardRejections = new Set([
+  'rejected.language',
+  'rejected.language_unknown',
+  'rejected.unit_ambiguous',
+  'rejected.target_group',
+  'rejected.no_upgrade',
   'rejected.content_type',
   'rejected.series_match',
   'rejected.edition_routing',
@@ -23,6 +40,10 @@ const rejectionLabel: Record<string, string> = {
   'rejected.no_coverage': 'no wanted volumes or chapters',
   'rejected.blocklisted': 'blocked',
   'rejected.language': 'wrong language',
+  'rejected.unit_ambiguous': 'Several edition units share this number; select a specific unit',
+  'rejected.language_unknown': 'language needs verification',
+  'rejected.target_group': 'different release group',
+  'rejected.no_upgrade': 'no improvement over owned copy',
   'rejected.format_score': 'below minimum score',
   'rejected.pack_threshold': 'pack mostly already owned',
   'rejected.size': 'outside size limits',
@@ -66,7 +87,13 @@ export default function CandidateList({
     setQueued((prev) => new Set([...prev, c.guid]))
   }
   const requestDownload = (c: ReleaseCandidate, force: boolean) => {
-    if (force) confirm({ title: 'Download rejected release?', message: `“${c.title}” doesn't meet your rules: ${(c.rejections ?? []).map(friendly).join(', ')}. Download it anyway?`, label: 'Download anyway', onConfirm: () => download(c, true) })
+    if (force)
+      confirm({
+        title: 'Download rejected release?',
+        message: `“${c.title}” doesn't meet your rules: ${(c.rejections ?? []).map(friendly).join(', ')}. Download it anyway?`,
+        label: 'Download anyway',
+        onConfirm: () => download(c, true),
+      })
     else void download(c, false).catch(notify.err)
   }
   const [showRejected, setShowRejected] = useState(false)
@@ -83,7 +110,9 @@ export default function CandidateList({
     !filter.trim() || c.title.toLowerCase().includes(filter.trim().toLowerCase())
   const shown = [...ok, ...(revealRejected ? rejected : [])]
     .filter(match)
-    .sort((a, b) => (asc ? sortVal(a, sort) - sortVal(b, sort) : sortVal(b, sort) - sortVal(a, sort)))
+    .sort((a, b) =>
+      asc ? sortVal(a, sort) - sortVal(b, sort) : sortVal(b, sort) - sortVal(a, sort),
+    )
 
   const sortBy = (k: SortKey) => {
     if (sort === k) setAsc(!asc)
@@ -133,21 +162,43 @@ export default function CandidateList({
             <Table.Tr>
               <Table.Th w={130}>Site</Table.Th>
               <Table.Th>Release</Table.Th>
-              <Table.Th w={90} style={sortableTh} aria-sort={sort === 'size' ? (asc ? 'ascending' : 'descending') : 'none'}>
+              <Table.Th
+                w={90}
+                style={sortableTh}
+                aria-sort={sort === 'size' ? (asc ? 'ascending' : 'descending') : 'none'}
+              >
                 <UnstyledButton onClick={() => sortBy('size')}>Size{arrow('size')}</UnstyledButton>
               </Table.Th>
-              <Table.Th w={80} style={sortableTh} aria-sort={sort === 'seeders' ? (asc ? 'ascending' : 'descending') : 'none'}>
-                <UnstyledButton onClick={() => sortBy('seeders')}>Seeders{arrow('seeders')}</UnstyledButton>
+              <Table.Th
+                w={80}
+                style={sortableTh}
+                aria-sort={sort === 'seeders' ? (asc ? 'ascending' : 'descending') : 'none'}
+              >
+                <UnstyledButton onClick={() => sortBy('seeders')}>
+                  Seeders{arrow('seeders')}
+                </UnstyledButton>
               </Table.Th>
-              <Table.Th w={90} style={sortableTh} aria-sort={sort === 'score' ? (asc ? 'ascending' : 'descending') : 'none'}>
-                <UnstyledButton onClick={() => sortBy('score')}>Score{arrow('score')}</UnstyledButton>
+              <Table.Th
+                w={90}
+                style={sortableTh}
+                aria-sort={sort === 'score' ? (asc ? 'ascending' : 'descending') : 'none'}
+              >
+                <UnstyledButton onClick={() => sortBy('score')}>
+                  Score{arrow('score')}
+                </UnstyledButton>
               </Table.Th>
               {onGrab && <Table.Th w={70} />}
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {shown.map((c) => (
-              <CandidateRow key={c.guid} c={c} onGrab={onGrab ? requestDownload : undefined} busy={busy} queued={queued.has(c.guid)} />
+              <CandidateRow
+                key={c.guid}
+                c={c}
+                onGrab={onGrab ? requestDownload : undefined}
+                busy={busy}
+                queued={queued.has(c.guid)}
+              />
             ))}
           </Table.Tbody>
         </Table>
@@ -176,8 +227,7 @@ function CandidateRow({
   const rejections = c.rejections ?? []
   const rejected = rejections.length > 0
   const hard = rejections.some((r) => hardRejections.has(r))
-  const coverage =
-    fmtRanges('v', c.parse.volumes) ?? fmtRanges('c', c.parse.chapters) ?? null
+  const coverage = fmtRanges('v', c.parse.volumes) ?? fmtRanges('c', c.parse.chapters) ?? null
   const editions = [
     c.parse.edition?.omnibus && 'omnibus',
     c.parse.edition?.deluxe && 'deluxe',

@@ -89,6 +89,10 @@ func (s *Server) handleGetSeries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if err := s.store.EnsureModels(r.Context(), id); err != nil {
+		writeErr(w, err)
+		return
+	}
 	series, err := s.store.GetSeries(r.Context(), id)
 	if err != nil {
 		writeErr(w, err)
@@ -217,6 +221,15 @@ func (s *Server) handleMergeCollection(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Into == 0 || body.Into == cid {
 		writeError(w, http.StatusBadRequest, "merge target must be a different collection")
+		return
+	}
+	if r.URL.Query().Get("preview") == "1" {
+		data, err := s.store.PreviewMerge(r.Context(), id, cid, body.Into)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, data)
 		return
 	}
 	unmatched, err := s.store.MergeCollection(r.Context(), id, cid, body.Into)
@@ -362,6 +375,16 @@ func (s *Server) handleUpdateBinding(w http.ResponseWriter, r *http.Request) {
 	var patch BindingPatch
 	if !decodeBody(w, r, &patch) {
 		return
+	}
+	if patch.CollectionID != nil {
+		if err := s.store.SetBindingEdition(r.Context(), id, bid, *patch.CollectionID); err != nil {
+			writeErr(w, err)
+			return
+		}
+		if patch.State == "" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 	}
 	if patch.State != "active" && patch.State != "disabled" {
 		writeError(w, http.StatusBadRequest, "state must be active or disabled")

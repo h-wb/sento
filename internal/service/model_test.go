@@ -1,0 +1,718 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/h-wb/sento/internal/metadata"
+	"github.com/h-wb/sento/internal/parse"
+	"github.com/h-wb/sento/internal/profile"
+	"github.com/h-wb/sento/internal/store"
+)
+
+func modelFixture(t *testing.T) (*Library, *store.Store, int64, store.Collection, []store.Work, store.DownloadTarget) {
+	t.Helper()
+	lib, st := setup(t)
+	ctx := context.Background()
+	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, err := st.ListCollections(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := collectionByName(t, cs, "Standard Edition", "en")
+	ws, err := st.ListWorks(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts, err := st.ListTargets(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range ts {
+		if target.CollectionID == c.ID && target.IsDefault {
+			return lib, st, id, c, ws, target
+		}
+	}
+	t.Fatal("missing default target")
+	return nil, nil, 0, store.Collection{}, nil, store.DownloadTarget{}
+}
+func ownedModelFile(t *testing.T, st *store.Store, id int64, c store.Collection, w store.Work, target store.DownloadTarget) int64 {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ONE PIECE v01.cbz")
+	if err := os.WriteFile(path, []byte("test archive"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	fid, err := st.AddFile(context.Background(), store.File{SeriesID: id, Path: path, Size: 12}, nil, []store.SlotLink{{Ledger: c.Type, CollectionID: c.ID, Number: w.SequenceNum, TargetID: target.ID, WorkID: w.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fid
+}
+func modelSlot(c store.Collection, w store.Work, target store.DownloadTarget) store.ExpectedSlot {
+	return store.ExpectedSlot{Ledger: c.Type, CollectionID: c.ID, Number: w.SequenceNum, TargetID: target.ID, WorkID: w.ID}
+}
+
+func TestModelRefreshKeepsIdentityAndCoverage(t *testing.T) {
+	lib, st, id, c, ws, target := modelFixture(t)
+	ctx := context.Background()
+	fid := ownedModelFile(t, st, id, c, ws[0], target)
+	p := testProvider()
+	p.collections[0].EditionName = "Publisher renamed this"
+	p.works[c.ProviderID][0].SequenceNum = 150
+	p.works[c.ProviderID][0].SequenceStr = "1.5"
+	p.works[c.ProviderID] = append(p.works[c.ProviderID], metadata.Work{ProviderID: "same-number-new-isbn", SequenceNum: 150, SequenceStr: "1.5", CountType: "main", ISBN: "another", ReleaseDate: "2001-01-01"})
+	if err := st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
+		t.Fatal(err)
+	}
+	w, err := st.GetWork(ctx, ws[0].ID)
+	if err != nil || w.SequenceNum != 150 {
+		t.Fatalf("provider numbering correction lost identity: %+v %v", w, err)
+	}
+	current, err := st.GetCollection(ctx, c.ID)
+	if err != nil || current.EditionName != "Publisher renamed this" {
+		t.Fatalf("rename lost edition ID: %+v %v", current, err)
+	}
+	cv, err := st.Coverage(ctx, id)
+	if err != nil || len(cv) != 1 || cv[0].WorkID != ws[0].ID || cv[0].FileID != fid {
+		t.Fatalf("coverage changed: %+v %v", cv, err)
+	}
+	units, err := st.ListWorks(ctx, c.ID)
+	if err != nil || len(units) != 4 {
+		t.Fatalf("distinct provider works collapsed: %+v %v", units, err)
+	}
+	slots, err := lib.TargetSlots(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned := 0
+	for _, s := range slots[target.ID] {
+		if s.State == "owned" {
+			owned++
+			if s.Work.ID != ws[0].ID {
+				t.Fatal("ownership leaked to same-number revision")
+			}
+		}
+	}
+	if owned != 1 {
+		t.Fatal(slots)
+	}
+}
+
+func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
+	_, st, id, c, _, _ := modelFixture(t)
+	ctx := context.Background()
+	local, err := st.AddCustomCollection(ctx, store.Collection{SeriesID: id, EditionName: c.EditionName, Language: c.Language, Publisher: c.Publisher, Medium: c.Medium, Monitored: true}, c.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := testProvider()
+	if err = st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
+		t.Fatal(err)
+	}
+	lc, _ := st.GetCollection(ctx, local)
+	if lc.ProviderID != "" {
+		t.Fatal("refresh silently adopted local edition")
+	}
+	label := "My local publication"
+	if err = st.EditCollection(ctx, id, local, store.CollectionMetadataPatch{EditionName: &label}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := st.ListWorks(ctx, local)
+	preview, err := st.PreviewCatalogLink(ctx, id, local, c.ID)
+	if err != nil || len(preview.Mapping) != 3 {
+		t.Fatalf("bad link preview: %+v %v", preview, err)
+	}
+	if err = st.LinkCatalog(ctx, id, local, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
+		t.Fatal(err)
+	}
+	lc, _ = st.GetCollection(ctx, local)
+	after, _ := st.ListWorks(ctx, local)
+	if lc.EditionName != label || lc.ProviderID != c.ProviderID || after[0].ID != before[0].ID {
+		t.Fatalf("link changed local identity: %+v %+v", lc, after)
+	}
+	retired, _ := st.GetCollection(ctx, c.ID)
+	if retired.SyncState != "superseded" {
+		t.Fatal("duplicate catalog row not retired")
+	}
+}
+
+func TestModelTargetsReserveOnceAndFreezeCombinedPlan(t *testing.T) {
+	_, st, id, c, ws, target := modelFixture(t)
+	ctx := context.Background()
+	other := target
+	other.ID = 0
+	other.Name = "Another group"
+	other.RequiredGroup = "Other"
+	oid, err := st.SaveTarget(ctx, id, other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.ID = oid
+	q := store.QueueItem{SeriesID: id, Protocol: "torrent", ProviderID: "torrent", ReleaseKey: "same-offer", Title: "ONE PIECE v01", Snapshot: store.JSONText(`{"title":"original"}`)}
+	first, created, err := st.ReserveQueue(ctx, q, []store.ExpectedSlot{modelSlot(c, ws[0], target)})
+	if err != nil || !created {
+		t.Fatalf("first reservation: %v %v", created, err)
+	}
+	second, created, err := st.ReserveQueue(ctx, q, []store.ExpectedSlot{modelSlot(c, ws[0], other)})
+	if err != nil || created || second != first {
+		t.Fatalf("same offer did not share job: %d %v %v", second, created, err)
+	}
+	frozen, err := st.BeginImport(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan []store.ExpectedSlot
+	if json.Unmarshal(frozen.ExpectedSlots, &plan) != nil || len(plan) != 2 {
+		t.Fatalf("combined plan lost: %s", frozen.ExpectedSlots)
+	}
+	if _, _, err = st.ReserveQueue(ctx, q, []store.ExpectedSlot{modelSlot(c, ws[1], target)}); err == nil {
+		t.Fatal("importing plan must not change")
+	}
+	otherOffer := q
+	otherOffer.ReleaseKey = "another-offer"
+	if _, _, err = st.ReserveQueue(ctx, otherOffer, []store.ExpectedSlot{modelSlot(c, ws[0], target)}); err == nil {
+		t.Fatal("double reservation allowed")
+	}
+	if _, err = st.SaveWork(ctx, id, ws[0]); err == nil {
+		t.Fatal("changed unit while download pending")
+	}
+	if err = st.UpdateQueueItem(ctx, first, store.QueueFailed, "test failure"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = st.ReserveQueue(ctx, otherOffer, []store.ExpectedSlot{modelSlot(c, ws[0], target)}); err != nil {
+		t.Fatal("failed job did not release claims:", err)
+	}
+}
+
+func TestModelFractionalZeroExtrasAndUnknownDates(t *testing.T) {
+	_, st, id, c, _, target := modelFixture(t)
+	ctx := context.Background()
+	for _, w := range []store.Work{{SequenceStr: "0", SequenceNum: 0, NumberKnown: true, CountType: "main"}, {SequenceStr: "1.5", SequenceNum: 150, NumberKnown: true, CountType: "main"}, {SequenceStr: "Special", SequenceNum: 100, NumberKnown: true, CountType: "extra"}, {SequenceStr: "Artbook", NumberKnown: false, CountType: "other"}} {
+		w.CollectionID = c.ID
+		if _, err := st.SaveWork(ctx, id, w); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ws, _ := st.ListWorks(ctx, c.ID)
+	extra := store.Work{}
+	for _, w := range ws {
+		if w.SequenceStr == "Special" {
+			extra = w
+		}
+	}
+	if err := st.SetUnitMonitored(ctx, id, target.ID, extra.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	target.AcquireUnknown = false
+	if _, err := st.SaveTarget(ctx, id, target); err != nil {
+		t.Fatal(err)
+	}
+	slots, err := NewLibrary(st, nil).TargetSlots(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]UnitSlot{}
+	for _, s := range slots[target.ID] {
+		seen[s.Work.SequenceStr] = s
+	}
+	if !seen["0"].Monitored || seen["0"].Wanted || seen["0"].State != "unknown" || !seen["1.5"].Work.NumberKnown || !seen["Special"].Monitored || seen["Artbook"].Work.NumberKnown {
+		t.Fatalf("unit semantics: %+v", seen)
+	}
+}
+
+func TestModelCoverageReviewPinAndVersionDeletion(t *testing.T) {
+	_, st, id, c, ws, target := modelFixture(t)
+	ctx := context.Background()
+	fid := ownedModelFile(t, st, id, c, ws[0], target)
+	other := target
+	other.ID = 0
+	other.Name = "Retained"
+	tid, err := st.SaveTarget(ctx, id, other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.ID = tid
+	if err = st.MapFile(ctx, id, fid, []store.ExpectedSlot{modelSlot(c, ws[0], target), modelSlot(c, ws[1], other)}); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, TargetID: target.ID, WorkID: ws[0].ID, Pinned: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.DeleteFile(ctx, fid); err == nil {
+		t.Fatal("pinned copy deleted")
+	}
+	if err = st.DeleteTarget(ctx, id, other.ID); err != nil {
+		t.Fatal(err)
+	}
+	cv, _ := st.Coverage(ctx, id)
+	fs, _ := st.ListFiles(ctx, id)
+	if len(cv) != 1 || len(fs) != 1 {
+		t.Fatalf("target deletion lost shared file: %+v %+v", cv, fs)
+	}
+	if err = st.EnsureModels(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	cv, _ = st.Coverage(ctx, id)
+	if len(cv) != 1 {
+		t.Fatal("replaced coverage was unexpectedly restored")
+	}
+}
+
+func TestModelObservationReviewIsBoundedAndIdempotent(t *testing.T) {
+	_, st, id, _, _, _ := modelFixture(t)
+	ctx := context.Background()
+	cs, _ := st.ListCollections(ctx, id)
+	chapter := chapterCollection(t, cs)
+	before, _ := st.ListWorks(ctx, chapter.ID)
+	o := store.UnitObservation{CollectionID: chapter.ID, Source: "site", ExternalKey: "huge-number", Label: "99999.5", Number: 9999950}
+	for i := 0; i < 2; i++ {
+		if err := st.ObserveUnit(ctx, id, o); err != nil {
+			t.Fatal(err)
+		}
+	}
+	same, _ := st.ListWorks(ctx, chapter.ID)
+	if len(same) != len(before) {
+		t.Fatal("observation expanded library before review")
+	}
+	obs, _ := st.ListObservations(ctx, id)
+	if len(obs) != 1 {
+		t.Fatal("duplicate observations")
+	}
+	if err := st.ResolveObservation(ctx, id, obs[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ResolveObservation(ctx, id, obs[0].ID, true); err == nil {
+		t.Fatal("accepted observation twice")
+	}
+	after, _ := st.ListWorks(ctx, chapter.ID)
+	if len(after) != len(before)+1 {
+		t.Fatal("acceptance expanded gaps instead of adding one unit")
+	}
+}
+
+func TestModelSameOfferDifferentTargetOwnership(t *testing.T) {
+	_, st, id, c, ws, target := modelFixture(t)
+	ctx := context.Background()
+	other := target
+	other.ID = 0
+	other.Name = "Second"
+	tid, err := st.SaveTarget(ctx, id, other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.ID = tid
+	ownedModelFile(t, st, id, c, ws[0], target)
+	slots, err := NewLibrary(st, nil).TargetSlots(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slots[target.ID][0].State != "owned" || slots[other.ID][0].State != "missing" {
+		t.Fatal("first version satisfied second", slots)
+	}
+	target.Name = "Renamed default"
+	if _, err = st.SaveTarget(ctx, id, target); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.EnsureModels(ctx, id); err != nil {
+		t.Fatal("renaming default broke model:", err)
+	}
+}
+
+func TestModelAtomicInstallCannotClobber(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "incoming")
+	dst := filepath.Join(dir, "existing")
+	if err := os.WriteFile(src, []byte("new"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("retained"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := fileHash(src)
+	for _, copy := range []bool{false, true} {
+		if err := installAsset(src, dst, hash, copy); err == nil {
+			t.Fatal("different bytes accepted at occupied destination")
+		}
+	}
+	got, _ := os.ReadFile(dst)
+	if string(got) != "retained" {
+		t.Fatal("retained asset overwritten")
+	}
+	a := assetPath(dir, "book.cbz", hash, store.ExpectedSlot{CollectionID: 1, TargetID: 1})
+	b := assetPath(dir, "book.cbz", hash, store.ExpectedSlot{CollectionID: 2, TargetID: 1})
+	if a == b {
+		t.Fatal("different edition namespaces collide")
+	}
+}
+
+func TestModelUpgradeReevaluatesFactsAndRespectsPins(t *testing.T) {
+	_, st, id, c, ws, target := modelFixture(t)
+	ctx := context.Background()
+	fid := ownedModelFile(t, st, id, c, ws[0], target)
+	f := profile.Format{Name: "Preferred group", Conditions: []profile.Condition{{Type: profile.CondGroup, Value: "LuCaZ", Required: true}}}
+	formatID, err := st.AddFormat(ctx, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := profile.Profile{Name: "Upgrade test", UpgradesEnabled: true, UpgradeUntilScore: 100, FormatScores: map[int64]int{formatID: 100}}
+	pid, err := st.AddProfile(ctx, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target.ProfileID = pid
+	if _, err = st.SaveTarget(ctx, id, target); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.SetAssetFacts(ctx, fid, store.AssetFacts{Title: "ONE PIECE v01", Group: "LuCaZ", FactsKnown: true, FormatScore: -100, Protocol: "torrent"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewSearchService(st, torrentRegistry(st))
+	run, err := svc.prepare(ctx, id, LedgerVolume, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.targetWanted[target.ID][ws[0].ID] {
+		t.Fatal("stale stored score used instead of current profile")
+	}
+	p.FormatScores[formatID] = 50
+	p.ID = pid
+	if err = st.UpdateProfile(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	run, err = svc.prepare(ctx, id, LedgerVolume, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !run.targetWanted[target.ID][ws[0].ID] {
+		t.Fatal("eligible upgrade not searched")
+	}
+	if err = st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, TargetID: target.ID, WorkID: ws[0].ID, Pinned: true}); err != nil {
+		t.Fatal(err)
+	}
+	run, err = svc.prepare(ctx, id, LedgerVolume, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.targetWanted[target.ID][ws[0].ID] {
+		t.Fatal("pinned copy selected for upgrade")
+	}
+}
+
+func TestModelPackStaysOneAssetAcrossUnitsAndVersions(t *testing.T) {
+	_, st, id, c, ws, target := modelFixture(t)
+	ctx := context.Background()
+	other := target
+	other.ID = 0
+	other.Name = "Second version"
+	tid, err := st.SaveTarget(ctx, id, other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.ID = tid
+	slots := []store.ExpectedSlot{modelSlot(c, ws[0], target), modelSlot(c, ws[1], target), modelSlot(c, ws[0], other)}
+	raw, _ := json.Marshal(slots)
+	dir := t.TempDir()
+	name := "ONE PIECE v01-v02 (Digital).cbz"
+	if err = os.WriteFile(filepath.Join(dir, name), []byte("one unsplit pack"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	im := NewImporter(st, nil, t.TempDir(), nil)
+	if err = im.importFiles(ctx, store.QueueItem{SeriesID: id, Protocol: "torrent", ExpectedSlots: raw}, dir, []string{name}); err != nil {
+		t.Fatal(err)
+	}
+	fs, err := st.ListFiles(ctx, id)
+	if err != nil || len(fs) != 1 {
+		t.Fatalf("pack became multiple assets: %+v %v", fs, err)
+	}
+	cv, err := st.Coverage(ctx, id)
+	if err != nil || len(cv) != 3 {
+		t.Fatalf("pack coverage lost: %+v %v", cv, err)
+	}
+	got, err := os.ReadFile(fs[0].Path)
+	if err != nil || string(got) != "one unsplit pack" {
+		t.Fatal("pack bytes changed")
+	}
+}
+
+func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
+	_, st, id, c, _, _ := modelFixture(t)
+	ctx := context.Background()
+	duplicate, err := st.AddCustomCollection(ctx, store.Collection{SeriesID: id, EditionName: c.EditionName, Language: c.Language, Publisher: c.Publisher, Medium: c.Medium, Monitored: true}, c.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.EnsureModels(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	local, _ := st.GetCollection(ctx, duplicate)
+	ws, _ := st.ListWorks(ctx, duplicate)
+	ts, _ := st.ListTargets(ctx, id)
+	var target store.DownloadTarget
+	for _, v := range ts {
+		if v.CollectionID == duplicate && v.IsDefault {
+			target = v
+		}
+	}
+	target.RequiredGroup = "LuCaZ"
+	if _, err = st.SaveTarget(ctx, id, target); err != nil {
+		t.Fatal(err)
+	}
+	fid := ownedModelFile(t, st, id, *local, ws[0], target)
+	if err = st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, TargetID: target.ID, WorkID: ws[0].ID, Pinned: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.MergeCollection(ctx, id, duplicate, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := st.GetTarget(ctx, target.ID)
+	if err != nil || retained.CollectionID != c.ID || retained.RequiredGroup != "LuCaZ" || retained.IsDefault {
+		t.Fatalf("merge lost version policy: %+v %v", retained, err)
+	}
+	cv, err := st.Coverage(ctx, id)
+	if err != nil || len(cv) != 1 || cv[0].FileID != fid || !cv[0].Pinned {
+		t.Fatalf("merge lost coverage or pin: %+v %v", cv, err)
+	}
+	w, _ := st.GetWork(ctx, cv[0].WorkID)
+	if w.CollectionID != c.ID {
+		t.Fatal("ownership points to removed edition")
+	}
+}
+
+func TestModelLayoutSurvivesDisplayRenameAndRequiresEvidence(t *testing.T) {
+	_, st, id, _, _, _ := modelFixture(t)
+	ctx := context.Background()
+	cs, _ := st.ListCollections(ctx, id)
+	omni := collectionByName(t, cs, "Omnibus Edition", "en")
+	label := "My favorite books"
+	if err := st.EditCollection(ctx, id, omni.ID, store.CollectionMetadataPatch{EditionName: &label}); err != nil {
+		t.Fatal(err)
+	}
+	renamed, _ := st.GetCollection(ctx, omni.ID)
+	if renamed.EditionLayout != "omnibus" {
+		t.Fatal("layout lost when display name changed")
+	}
+	plain := parse.ParseAnchored("ONE PIECE v01 (Digital)", parse.ChannelTorrent, []string{"ONE PIECE"})
+	if editionCompatible(plain, *renamed) {
+		t.Fatal("plain standard release satisfied renamed omnibus")
+	}
+	if !editionCompatibleWithEvidence(plain, *renamed, omni.ID) {
+		t.Fatal("verified listing did not establish edition")
+	}
+	plain.Language = "fr"
+	if editionCompatibleWithEvidence(plain, *renamed, omni.ID) {
+		t.Fatal("listing evidence bypassed contradictory language")
+	}
+}
+
+func TestModelEditingOneUnitFieldDoesNotFreezeCatalogDates(t *testing.T) {
+	_, st, id, c, ws, _ := modelFixture(t)
+	ctx := context.Background()
+	w := ws[1]
+	w.SequenceStr = "Local label"
+	if _, err := st.SaveWork(ctx, id, w); err != nil {
+		t.Fatal(err)
+	}
+	p := testProvider()
+	p.works[c.ProviderID][1].ReleaseDate = "2020-02-01"
+	if err := st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
+		t.Fatal(err)
+	}
+	current, _ := st.GetWork(ctx, w.ID)
+	if current.SequenceStr != "Local label" || current.ReleaseDate != "2020-02-01" {
+		t.Fatalf("local edit froze unrelated provider fields: %+v", current)
+	}
+}
+
+func TestModelNewChapterEditionDoesNotBorrowSeriesNumbering(t *testing.T) {
+	lib, st, id, _, _, _ := modelFixture(t)
+	ctx := context.Background()
+	local, err := lib.CreateCollection(ctx, id, CreateCollectionParams{EditionName: "French chapters", Language: "fr", Type: "chapter", Monitored: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	works, err := st.ListWorks(ctx, local.ID)
+	if err != nil || len(works) != 0 {
+		t.Fatalf("new edition fabricated global chapter units: %d %v", len(works), err)
+	}
+	source := "series_count"
+	if err = st.EditCollection(ctx, id, local.ID, store.CollectionMetadataPatch{NumberingSource: &source}); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.EnsureModels(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	works, _ = st.ListWorks(ctx, local.ID)
+	if len(works) != 1184 {
+		t.Fatal("explicit count numbering not applied")
+	}
+}
+
+func TestModelFileReviewPreservesPinsInOtherVersions(t *testing.T) {
+	_, st, id, c, ws, target := modelFixture(t)
+	ctx := context.Background()
+	fid := ownedModelFile(t, st, id, c, ws[0], target)
+	if err := st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, TargetID: target.ID, WorkID: ws[0].ID, Pinned: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MapFile(ctx, id, fid, []store.ExpectedSlot{modelSlot(c, ws[0], target), modelSlot(c, ws[1], target)}); err != nil {
+		t.Fatal(err)
+	}
+	cv, _ := st.Coverage(ctx, id)
+	if len(cv) != 2 {
+		t.Fatal(cv)
+	}
+	for _, a := range cv {
+		if a.WorkID == ws[0].ID && !a.Pinned {
+			t.Fatal("review silently removed a retained pin")
+		}
+	}
+}
+
+func TestModelRelationshipsCanBeCorrectedWithoutOwnershipSideEffects(t *testing.T) {
+	_, st, id, _, ws, _ := modelFixture(t)
+	ctx := context.Background()
+	a := store.WorkRelation{FromID: ws[0].ID, ToID: ws[1].ID, Relation: "contains"}
+	if err := st.SetRelation(ctx, id, a); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRelation(ctx, id, store.WorkRelation{FromID: ws[1].ID, ToID: ws[0].ID, Relation: "contains"}); err == nil {
+		t.Fatal("containment cycle allowed")
+	}
+	cv, _ := st.Coverage(ctx, id)
+	if len(cv) != 0 {
+		t.Fatal("relationship fabricated ownership")
+	}
+	if err := st.DeleteRelation(ctx, id, a); err != nil {
+		t.Fatal(err)
+	}
+	relations, _ := st.Relations(ctx, id)
+	if len(relations) != 0 {
+		t.Fatal("relationship correction failed")
+	}
+}
+
+func TestCatalogIdentityCorrectionRequiresCoverageReview(t *testing.T) {
+	_, st, id, c, ws, target := modelFixture(t)
+	ctx := context.Background()
+	fid := ownedModelFile(t, st, id, c, ws[0], target)
+	p := testProvider()
+	for i := range p.collections {
+		if p.collections[i].ProviderID == c.ProviderID {
+			p.collections[i].Language = "fr"
+		}
+	}
+	if err := st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
+		t.Fatal(err)
+	}
+	coverage, err := st.Coverage(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range coverage {
+		if a.FileID == fid && a.Verified {
+			t.Fatal("language correction retained unreviewed ownership")
+		}
+	}
+	files, err := st.ListFiles(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if f.ID == fid && !f.NeedsReview {
+			t.Fatal("asset missing review flag")
+		}
+	}
+}
+
+func TestCatalogGenericRenameKeepsEditionLayout(t *testing.T) {
+	_, st, id, c, _, _ := modelFixture(t)
+	ctx := context.Background()
+	p := testProvider()
+	for i := range p.collections {
+		if p.collections[i].ProviderID == c.ProviderID {
+			p.collections[i].EditionName = "Omnibus Edition"
+		}
+	}
+	if err := st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
+		t.Fatal(err)
+	}
+	for i := range p.collections {
+		if p.collections[i].ProviderID == c.ProviderID {
+			p.collections[i].EditionName = "Publisher books"
+		}
+	}
+	if err := st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetCollection(ctx, c.ID)
+	if err != nil || got.EditionLayout != "omnibus" {
+		t.Fatalf("generic rename erased layout: %+v %v", got, err)
+	}
+}
+
+func TestCalendarSeparatesVersionsAndDuplicateNumbers(t *testing.T) {
+	_, st, id, c, ws, target := modelFixture(t)
+	ctx := context.Background()
+	ownedModelFile(t, st, id, c, ws[0], target)
+	other := store.DownloadTarget{CollectionID: c.ID, Name: "Another group", Monitored: true, AcquireUnknown: true}
+	if tid, err := st.SaveTarget(ctx, id, other); err != nil {
+		t.Fatal(err)
+	} else {
+		other.ID = tid
+	}
+	entries, err := st.Calendar(ctx, "1900-01-01", "2100-01-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundOwned, foundMissing := false, false
+	for _, e := range entries {
+		if e.WorkID != ws[0].ID {
+			continue
+		}
+		if e.TargetID == target.ID {
+			foundOwned = e.Owned
+		}
+		if e.TargetID == other.ID {
+			foundMissing = !e.Owned
+		}
+	}
+	if !foundOwned || !foundMissing {
+		t.Fatalf("calendar conflated versions: %+v", entries)
+	}
+}
+
+func fixtureLinks(t *testing.T, st *store.Store, sid, cid int64, numbers ...int64) []store.SlotLink {
+	t.Helper()
+	targets, err := st.ListTargets(context.Background(), sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	works, err := st.ListWorks(context.Background(), cid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tid int64
+	for _, target := range targets {
+		if target.CollectionID == cid && target.IsDefault {
+			tid = target.ID
+		}
+	}
+	var links []store.SlotLink
+	for _, n := range numbers {
+		for _, w := range works {
+			if w.SequenceNum == n {
+				links = append(links, store.SlotLink{Ledger: "volume", CollectionID: cid, Number: n, WorkID: w.ID, TargetID: tid})
+			}
+		}
+	}
+	return links
+}

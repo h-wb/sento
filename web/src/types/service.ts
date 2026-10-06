@@ -4,7 +4,7 @@ import type { SeriesRef } from "./metadata"
 import type { Result } from "./parse"
 import type { Condition, LedgerRules } from "./profile"
 import type { ExtensionInfo } from "./sourcehost"
-import type { Binding, Indexer, SiteOverride } from "./store"
+import type { Work, ExpectedSlot, DownloadTarget, Binding, Indexer, SiteOverride } from "./store"
 
 //////////
 // source: bulkimport.go
@@ -208,6 +208,9 @@ export interface ProfileService {
  * definitions travel with their scores, so a doc imports anywhere.
  */
 export interface ProfileDoc {
+  upgradesEnabled: boolean;
+  upgradeUntilScore: number /* int */;
+  minUpgradeScore: number /* int */;
   name: string;
   minFormatScore: number /* int */;
   volume: LedgerRules;
@@ -260,6 +263,9 @@ export interface SearchService {
  * collection — the per-collection search, where packs shine.
  */
 export interface TargetSlot {
+  targetId?: number /* int64 */;
+  workId?: number /* int64 */;
+  all?: boolean;
   collectionId: number /* int64 */;
   number: number /* int64 */; // hundredths; 0 = whole collection
 }
@@ -268,6 +274,14 @@ export interface TargetSlot {
  * ledger.
  */
 export interface ReleaseCandidate {
+  targetSnapshot?: DownloadTarget;
+  formatSnapshot?: any /* profile.Format */[];
+  policySnapshot?: any /* profile.Profile */;
+  editionSnapshot?: any /* store.Collection */;
+  representedUnits: number /* int */;
+  targetId?: number /* int64 */;
+  coverage?: ExpectedSlot[];
+  profileId?: number /* int64 */;
   guid: string;
   provider: string;
   protocol: string;
@@ -347,4 +361,17 @@ export interface IndexerView extends Indexer {
 export interface SeriesIndexerView extends IndexerView {
   override?: SiteOverride;
   bindings?: Binding[];
+}
+
+//////////
+// source: targets.go
+
+export interface UnitSlot {
+  work: Work;
+  targetId: number /* int64 */;
+  monitored: boolean;
+  availability: string;
+  state: string;
+  fileIds: number /* int64 */[];
+  wanted: boolean;
 }

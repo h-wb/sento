@@ -46,8 +46,8 @@ export interface Title {
   Primary: boolean;
 }
 /**
- * Collection is an edition: identity is the descriptor tuple, the provider
- * ID is a re-resolvable cache key (D13).
+ * Collection supplies edition facts. Sento owns local identity; provider
+ * references and descriptors are reconciliation evidence.
  */
 export interface Collection {
   ProviderID: string; // volatile
@@ -68,6 +68,8 @@ export interface Collection {
  */
 export interface Work {
   ProviderID: string;
+  NumberKnown: boolean;
+  Revision: string;
   SequenceNum: Num;
   SequenceStr: string;
   CountType: string; // main|extra|other

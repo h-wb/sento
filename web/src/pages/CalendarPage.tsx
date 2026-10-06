@@ -11,7 +11,12 @@ import { EmptyState } from '../components/EmptyState'
 // grouped by date — Sonarr's calendar, list-shaped.
 export default function CalendarPage() {
   usePageTitle('Calendar')
-  const { data: entries, error, isPending, refetch } = useQuery({
+  const {
+    data: entries,
+    error,
+    isPending,
+    refetch,
+  } = useQuery({
     queryKey: ['calendar'],
     queryFn: () => api.calendar(),
   })
@@ -27,58 +32,71 @@ export default function CalendarPage() {
 
   return (
     <>
-      <PageHeader
-        title="Calendar"
-        description="Release dates for the editions you monitor."
-      />
+      <PageHeader title="Calendar" description="Release dates for the editions you monitor." />
       <QueryFeedback pending={isPending} error={error} onRetry={() => void refetch()} />
-      {entries?.length === 0 && !error && <EmptyState title="No scheduled releases" description="Release dates appear here when they're available for your monitored editions." action={<Button component={Link} to="/" variant="default" size="sm">Browse library</Button>} />}
+      {entries?.length === 0 && !error && (
+        <EmptyState
+          title="No scheduled releases"
+          description="Release dates appear here when they're available for your monitored editions."
+          action={
+            <Button component={Link} to="/" variant="default" size="sm">
+              Browse library
+            </Button>
+          }
+        />
+      )}
       <Stack gap="md">
-        {[...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, list]) => (
-          <div key={date}>
-            <Group gap={8} mb={6}>
-              <Text fw={600} size="sm" title={date}>
-                {fmtDay(date)}
-              </Text>
-              {date === today && (
-                <Badge size="xs" color="indigo">
-                  today
-                </Badge>
-              )}
-              {date < today && (
-                <Badge size="xs" color="gray" variant="light">
-                  released
-                </Badge>
-              )}
-            </Group>
-            <Stack gap={6}>
-              {list.map((e) => (
-                <Card
-                  key={`${e.collectionId}-${e.sequenceNum}`}
-                  withBorder
-                  padding="xs"
-                  component={Link}
-                  to={`/series/${e.seriesId}`}
-                  style={{ textDecoration: 'none' }}
-                >
-                  <Group justify="space-between">
-                    <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
-                      {e.seriesTitle} — Volume {e.sequenceStr || fmtNum(e.sequenceNum)}
-                    </Text>
-                    <Group gap={6} wrap="nowrap">
-                      <Badge size="xs" variant="light">
-                        {e.editionName}
-                      </Badge>
-                      <Badge size="xs" color={e.owned ? 'green' : date <= today ? 'yellow' : 'gray'}>
-                        {e.owned ? 'owned' : date <= today ? 'wanted' : 'upcoming'}
-                      </Badge>
+        {[...byDate.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, list]) => (
+            <div key={date}>
+              <Group gap={8} mb={6}>
+                <Text fw={600} size="sm" title={date}>
+                  {fmtDay(date)}
+                </Text>
+                {date === today && (
+                  <Badge size="xs" color="indigo">
+                    today
+                  </Badge>
+                )}
+                {date < today && (
+                  <Badge size="xs" color="gray" variant="light">
+                    released
+                  </Badge>
+                )}
+              </Group>
+              <Stack gap={6}>
+                {list.map((e) => (
+                  <Card
+                    key={`${e.targetId}-${e.workId}`}
+                    withBorder
+                    padding="xs"
+                    component={Link}
+                    to={`/series/${e.seriesId}`}
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <Group justify="space-between">
+                      <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+                        {e.seriesTitle} — Volume {e.sequenceStr || fmtNum(e.sequenceNum)}
+                      </Text>
+                      <Group gap={6} wrap="nowrap">
+                        <Badge size="xs" variant="light">
+                          {e.editionName}
+                          {e.versionName !== 'Default' ? ` · ${e.versionName}` : ''}
+                        </Badge>
+                        <Badge
+                          size="xs"
+                          color={e.owned ? 'green' : date <= today ? 'yellow' : 'gray'}
+                        >
+                          {e.owned ? 'owned' : date <= today ? 'wanted' : 'upcoming'}
+                        </Badge>
+                      </Group>
                     </Group>
-                  </Group>
-                </Card>
-              ))}
-            </Stack>
-          </div>
-        ))}
+                  </Card>
+                ))}
+              </Stack>
+            </div>
+          ))}
       </Stack>
     </>
   )

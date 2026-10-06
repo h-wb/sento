@@ -5,9 +5,12 @@ package service
 // the searchRun inputs — no I/O happens here.
 
 import (
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
+	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/provider"
@@ -45,6 +48,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 		// Keep number-less candidates only as potential whole-series packs
 		// (volume ledger).
 		isPack := run.ledger == LedgerVolume && rc.Parse.Complete
+
 		if len(ranges) == 0 && !isPack {
 			dropped++
 			continue
@@ -52,6 +56,82 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 		if run.blocked[cand.Protocol+"/"+cand.ExternalKey()] {
 			rc.Rejections = append(rc.Rejections, "rejected.blocklisted") // hard
 		} else {
+			if len(run.targets) > 0 {
+				evidence := int64(0)
+				if cand.Source != nil {
+					evidence = run.sourceEditions[cand.Source.BindingID]
+				}
+				compatible := 0
+				for _, t := range run.targets {
+					col := collectionByID(run.collections, t.CollectionID)
+					if run.targetWanted[t.ID] != nil && col != nil && editionCompatibleWithEvidence(rc.Parse, *col, evidence) {
+						compatible++
+					}
+				}
+				rejectedShown := false
+				for _, t := range run.targets {
+					if run.targetWanted[t.ID] == nil {
+						continue
+					}
+					col := collectionByID(run.collections, t.CollectionID)
+					if col == nil {
+						continue
+					}
+					if !editionCompatibleWithEvidence(rc.Parse, *col, evidence) && run.target == nil {
+						if compatible > 0 || rejectedShown {
+							continue
+						}
+						rejectedShown = true
+					}
+					scoped := *run
+					scoped.target = &TargetSlot{CollectionID: t.CollectionID, TargetID: t.ID}
+					if run.target != nil {
+						scoped.target.WorkID = run.target.WorkID
+						scoped.target.Number = run.target.Number
+						scoped.target.All = run.target.All
+					}
+					scoped.wanted = map[int64]map[int64]bool{t.CollectionID: {}}
+					for _, w := range run.units[t.CollectionID] {
+						if run.targetWanted[t.ID][w.ID] {
+							scoped.wanted[t.CollectionID][w.SequenceNum] = true
+						}
+					}
+					cp := rc
+					cp.TargetID = t.ID
+					cp.TargetSnapshot = &t
+					cp.FormatSnapshot = run.formats
+					cp.Rejections = nil
+					cp.Covered = nil
+					cp.Coverage = nil
+					if (evidence != 0 && evidence != col.ID) || !editionCompatibleWithEvidence(cp.Parse, *col, evidence) || (evidence == 0 && ambiguousEdition(cp.Parse, run.collections, run.ledger)) {
+						if cp.Parse.Language != "" && cp.Parse.Language != "multi" && baseLang(cp.Parse.Language) != baseLang(col.Language) {
+							cp.Rejections = append(cp.Rejections, "rejected.language")
+						} else {
+							cp.Rejections = append(cp.Rejections, "rejected.edition_routing")
+						}
+					} else {
+						s.funnel(&scoped, &cp, ranges)
+					}
+					if t.RequiredGroup != "" {
+						group := cp.Parse.Group
+						if group == "" {
+							group = cp.Scanlator
+						}
+						if !matchGroup(t.RequiredGroup, group) {
+							cp.Rejections = append(cp.Rejections, "rejected.target_group")
+						}
+					}
+					if !t.AllowUnknown && cp.Parse.Language == "" {
+						cp.Rejections = append(cp.Rejections, "rejected.language_unknown")
+					}
+					if !t.IsDefault || compatible > 1 {
+						cp.GUID = rc.GUID + "@" + strconv.FormatInt(t.ID, 10)
+					}
+					cp.Score -= run.priorities[[2]string{cp.Provider, cp.SiteID}]
+					out = append(out, cp)
+				}
+				continue
+			}
 			s.funnel(run, &rc, ranges)
 		}
 		rc.Score -= run.priorities[[2]string{rc.Provider, rc.SiteID}]
@@ -119,6 +199,14 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	// The routed collection's profile decides scoring and health rules
 	// (collection override > series > instance default).
 	prof := run.profileFor(colID)
+	if p, ok := run.targetProfiles[c.TargetID]; ok {
+		prof = p
+	}
+	if prof != nil {
+		c.ProfileID = prof.ID
+	}
+	c.PolicySnapshot = prof
+	c.EditionSnapshot = collectionByID(collections, colID)
 	rules := ledgerRules(prof, searchLedger)
 
 	// R2 language gate (untagged passes). Soft: record and keep going so
@@ -128,26 +216,67 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		reject("rejected.language")
 	}
 
-	// R5 slot coverage. A whole-series pack covers everything wanted
-	// (volume ledger only).
-	if len(ranges) == 0 && searchLedger == LedgerVolume && c.Parse.Complete {
-		for n := range wanted[colID] {
-			c.Covered = append(c.Covered, n)
-		}
-	} else {
-		totalCovered := 0
+	if c.TargetID > 0 {
+		total := 0
 		for _, r := range ranges {
-			for n := (int64(r.From) + 99) / 100 * 100; n <= int64(r.To); n += 100 {
-				totalCovered++
-				if wanted[colID][n] {
-					c.Covered = append(c.Covered, n)
+			total += int((int64(r.To)-int64(r.From))/100) + 1
+		}
+		for _, w := range run.units[colID] {
+			if w.CountType != "main" && (target == nil || target.WorkID != w.ID) {
+				continue
+			}
+			hit := len(ranges) == 0 && searchLedger == LedgerVolume && c.Parse.Complete
+			for _, r := range ranges {
+				if w.NumberKnown && w.SequenceNum >= int64(r.From) && w.SequenceNum <= int64(r.To) {
+					hit = true
 				}
 			}
+			if !hit {
+				continue
+			}
+			if run.targetWanted[c.TargetID][w.ID] {
+				if target == nil || target.WorkID == 0 {
+					for _, other := range run.units[colID] {
+						if other.ID != w.ID && other.NumberKnown && w.NumberKnown && other.SequenceNum == w.SequenceNum && other.CountType == w.CountType {
+							reject("rejected.unit_ambiguous")
+							return
+						}
+					}
+				}
+				c.Covered = append(c.Covered, w.SequenceNum)
+				c.Coverage = append(c.Coverage, store.ExpectedSlot{Ledger: searchLedger, CollectionID: colID, TargetID: c.TargetID, WorkID: w.ID, Number: w.SequenceNum})
+			}
 		}
-		// D12 pack rule: ≥50% of covered slots must be wanted to auto-grab.
-		if totalCovered > 0 && len(c.Covered)*2 < totalCovered && len(c.Covered) > 0 {
+		if total == 0 {
+			total = len(c.Coverage)
+		}
+		c.RepresentedUnits = total
+		if total > 0 && len(c.Coverage) > 0 && len(c.Coverage)*2 < total {
 			reject("rejected.pack_threshold")
 		}
+	} else {
+		// R5 slot coverage. A whole-series pack covers everything wanted
+		// (volume ledger only).
+		if len(ranges) == 0 && searchLedger == LedgerVolume && c.Parse.Complete {
+			for n := range wanted[colID] {
+				c.Covered = append(c.Covered, n)
+			}
+		} else {
+			totalCovered := 0
+			for _, r := range ranges {
+				for n := (int64(r.From) + 99) / 100 * 100; n <= int64(r.To); n += 100 {
+					totalCovered++
+					if wanted[colID][n] {
+						c.Covered = append(c.Covered, n)
+					}
+				}
+			}
+			// D12 pack rule: ≥50% of covered slots must be wanted to auto-grab.
+			if totalCovered > 0 && len(c.Covered)*2 < totalCovered && len(c.Covered) > 0 {
+				reject("rejected.pack_threshold")
+			}
+		}
+
 	}
 	if len(c.Covered) == 0 {
 		reject("rejected.no_coverage")
@@ -158,6 +287,30 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	// Custom formats: matched on every routable candidate (rejected ones
 	// keep their chips), floor-gated softly so force-grab can override.
 	c.evalFormats(prof, run.formats)
+	if prof != nil && prof.UpgradesEnabled && c.TargetID > 0 && (run.target == nil || run.target.WorkID == 0) {
+		filtered := c.Coverage[:0]
+		numbers := []int64{}
+		for _, sl := range c.Coverage {
+			if old, ok := run.ownedScores[c.TargetID][sl.WorkID]; ok {
+				min := prof.MinUpgradeScore
+				if min < 1 {
+					min = 1
+				}
+				if c.FormatScore-old < min {
+					continue
+				}
+			}
+			filtered = append(filtered, sl)
+			numbers = append(numbers, sl.Number)
+		}
+		c.Coverage = filtered
+		c.Covered = numbers
+		if len(filtered) == 0 {
+			reject("rejected.no_upgrade")
+			return
+		}
+	}
+
 	if prof != nil && prof.MinFormatScore > profile.MinScoreOff &&
 		c.FormatScore < prof.MinFormatScore {
 		reject("rejected.format_score")
@@ -166,7 +319,11 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	// Torrent-only health checks (profile rules).
 	if c.Protocol == provider.ProtocolTorrent {
 		if c.Size > 0 && rules.SizeMaxMB > 0 {
-			perUnit := c.Size / int64(len(c.Covered))
+			count := c.RepresentedUnits
+			if count <= 0 {
+				count = len(c.Covered)
+			}
+			perUnit := c.Size / int64(count)
 			if perUnit < int64(rules.SizeMinMB)<<20 || perUnit > int64(rules.SizeMaxMB)<<20 {
 				reject("rejected.size")
 			}
@@ -224,14 +381,7 @@ func (c *ReleaseCandidate) evalFormats(prof *profile.Profile, formats []profile.
 	in := profile.Input{
 		Title: c.Title, Group: group, Language: c.Parse.Language,
 		Protocol: c.Protocol, Site: c.Site, Resolution: c.Parse.Quality.Resolution,
-		Flags: map[string]bool{
-			"digital": c.Parse.Quality.Digital, "scan": c.Parse.Quality.Scan,
-			"web": c.Parse.Quality.Web, "premium": c.Parse.Quality.Premium,
-			"colored": c.Parse.Edition.Colored, "omnibus": c.Parse.Edition.Omnibus,
-			"deluxe": c.Parse.Edition.Deluxe, "boxset": c.Parse.Edition.BoxSet,
-			"official": c.Parse.Edition.Official, "raw": c.Parse.Edition.Raw,
-			"complete": c.Parse.Complete,
-		},
+		Flags: candidateFlags(*c),
 	}
 	for _, f := range formats {
 		if !f.Matches(in) {
@@ -315,9 +465,109 @@ func routeCollection(p parse.Result, collections []store.Collection,
 
 // Rejections that survive a force-grab (decision-engine.md §7).
 var hardRejections = map[string]bool{
-	"rejected.content_type":    true,
-	"rejected.series_match":    true,
-	"rejected.edition_routing": true,
-	"rejected.no_coverage":     true,
-	"rejected.blocklisted":     true,
+	"rejected.language":         true,
+	"rejected.unit_ambiguous":   true,
+	"rejected.language_unknown": true,
+	"rejected.no_upgrade":       true,
+	"rejected.target_group":     true,
+	"rejected.content_type":     true,
+	"rejected.series_match":     true,
+	"rejected.edition_routing":  true,
+	"rejected.no_coverage":      true,
+	"rejected.blocklisted":      true,
+}
+
+func collectionByID(cols []store.Collection, id int64) *store.Collection {
+	for i := range cols {
+		if cols[i].ID == id {
+			return &cols[i]
+		}
+	}
+	return nil
+}
+func matchGroup(expr, value string) bool {
+	r, err := regexp.Compile("(?i)" + expr)
+	return err == nil && r.MatchString(value)
+}
+
+// Absence of evidence is never proof of a special edition. Source quality
+// and publication medium are different, but explicit digital/scan tags help
+// disambiguate the standard publisher runs.
+func editionCompatible(p parse.Result, c store.Collection) bool {
+	if p.Language != "" && p.Language != "multi" && baseLang(p.Language) != baseLang(c.Language) {
+		return false
+	}
+	layout := c.EditionLayout
+	if layout == "" {
+		layout = metadata.EditionLayout(c.EditionName)
+	}
+	variant := c.ContentVariant
+	if variant == "" {
+		variant = metadata.ContentVariant(c.EditionName)
+	}
+	if p.Edition.Colored != (variant == "colored") {
+		return false
+	}
+	switch {
+	case p.Edition.Omnibus:
+		if layout != "omnibus" {
+			return false
+		}
+	case p.Edition.BoxSet:
+		if layout != "boxset" {
+			return false
+		}
+	case p.Edition.Deluxe:
+		if layout != "deluxe" {
+			return false
+		}
+	default:
+		if layout != "standard" && layout != "custom" {
+			return false
+		}
+	}
+	if p.Quality.Digital && c.Medium != "" && c.Medium != "digital" {
+		return false
+	}
+	if p.Quality.Scan && c.Medium == "digital" {
+		return false
+	}
+	return true
+}
+
+func ambiguousEdition(p parse.Result, cols []store.Collection, kind string) bool {
+	count := 0
+	for _, c := range cols {
+		if c.Type == kind && c.SyncState != "stale" && c.SyncState != "superseded" && editionCompatible(p, c) {
+			count++
+		}
+	}
+	return count > 1
+}
+
+func candidateFlags(c ReleaseCandidate) map[string]bool {
+	return map[string]bool{"digital": c.Parse.Quality.Digital, "scan": c.Parse.Quality.Scan, "web": c.Parse.Quality.Web, "premium": c.Parse.Quality.Premium, "colored": c.Parse.Edition.Colored, "omnibus": c.Parse.Edition.Omnibus, "deluxe": c.Parse.Edition.Deluxe, "boxset": c.Parse.Edition.BoxSet, "official": c.Parse.Edition.Official, "raw": c.Parse.Edition.Raw, "complete": c.Parse.Complete}
+}
+
+func editionCompatibleWithEvidence(p parse.Result, c store.Collection, evidence int64) bool {
+	if evidence == 0 {
+		return editionCompatible(p, c)
+	}
+	if evidence != c.ID {
+		return false
+	}
+	// A verified listing establishes publication identity. It does not
+	// excuse explicit contradictory language or edition flags.
+	if p.Language != "" && p.Language != "multi" && baseLang(p.Language) != baseLang(c.Language) {
+		return false
+	}
+	layout := c.EditionLayout
+	if layout == "" {
+		layout = metadata.EditionLayout(c.EditionName)
+	}
+	variant := c.ContentVariant
+	if variant == "" {
+		variant = metadata.ContentVariant(c.EditionName)
+	}
+	return (!p.Edition.Omnibus || layout == "omnibus") && (!p.Edition.BoxSet || layout == "boxset") && (!p.Edition.Deluxe || layout == "deluxe") && (!p.Edition.Colored || variant == "colored")
 }

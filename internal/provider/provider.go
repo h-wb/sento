@@ -137,6 +137,9 @@ func (c Candidate) ExternalKey() string {
 		if c.Torrent.InfoHash != "" {
 			return strings.ToLower(c.Torrent.InfoHash)
 		}
+		if hash := magnetInfoHash(c.Torrent.MagnetURL); hash != "" {
+			return hash
+		}
 		return strings.ToLower(c.Torrent.GUID)
 	case c.Source != nil:
 		return sourceExternalID(c.Source.SourceID, c.Source.ChapterKey)

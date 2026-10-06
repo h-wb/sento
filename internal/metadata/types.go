@@ -3,7 +3,10 @@
 // leak past their adapter package (spec.md §5.1, D13).
 package metadata
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // Num is a fixed-point volume/chapter number in hundredths (parser convention):
 // volume 1 → 100, chapter 34.5 → 3450.
@@ -43,8 +46,8 @@ type Title struct {
 	Primary  bool
 }
 
-// Collection is an edition: identity is the descriptor tuple, the provider
-// ID is a re-resolvable cache key (D13).
+// Collection supplies edition facts. Sento owns local identity; provider
+// references and descriptors are reconciliation evidence.
 type Collection struct {
 	ProviderID  string // volatile
 	EditionName string
@@ -60,7 +63,7 @@ type Collection struct {
 	RawJSON     []byte
 }
 
-// Descriptor returns the stable identity tuple of the collection.
+// Descriptor returns a comparison tuple, not an identity key.
 func (c Collection) Descriptor() [5]string {
 	return [5]string{c.EditionName, c.Language, c.Publisher, c.Medium, c.Type}
 }
@@ -68,6 +71,8 @@ func (c Collection) Descriptor() [5]string {
 // Work is one released unit (volume) inside a collection.
 type Work struct {
 	ProviderID  string
+	NumberKnown bool
+	Revision    string
 	SequenceNum Num
 	SequenceStr string
 	CountType   string // main|extra|other
@@ -84,4 +89,25 @@ type Provider interface {
 	GetCollections(ctx context.Context, seriesID int64) ([]Collection, error)
 	// GetWorks returns all works of a series keyed by collection provider ID.
 	GetWorks(ctx context.Context, seriesID int64) (map[string][]Work, error)
+}
+
+func EditionLayout(name string) string {
+	n := strings.ToLower(name)
+	switch {
+	case strings.Contains(n, "omnibus"):
+		return "omnibus"
+	case strings.Contains(n, "box"):
+		return "boxset"
+	case strings.Contains(n, "deluxe"):
+		return "deluxe"
+	default:
+		return "standard"
+	}
+}
+func ContentVariant(name string) string {
+	n := strings.ToLower(name)
+	if strings.Contains(n, "color") || strings.Contains(n, "colour") {
+		return "colored"
+	}
+	return "original"
 }

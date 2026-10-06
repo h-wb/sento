@@ -106,26 +106,35 @@ type Series struct {
 }
 
 type Collection struct {
-	ID          int64  `json:"id"`
-	SeriesID    int64  `json:"seriesId"`
-	ProviderID  string `json:"-" db:"mb_collection_id"`
-	EditionName string `json:"editionName"`
-	Language    string `json:"language"`
-	Publisher   string `json:"publisher"`
-	Medium      string `json:"medium"`
-	Type        string `json:"type" db:"ctype"`
-	Monitored   bool   `json:"monitored"`
-	CountMain   int    `json:"countMain"`
-	CountExtra  int    `json:"countExtra"`
-	CountOther  int    `json:"countOther"`
-	StartDate   string `json:"startDate,omitempty"`
-	EndDate     string `json:"endDate,omitempty"`
-	Custom      bool   `json:"custom"`
-	ProfileID   int64  `json:"profileId,omitempty" db:"profile_id"` // 0 = inherit from series
-	CutoffNum   int64  `json:"cutoffNum" db:"cutoff_num"`           // chapter ctype: monitor from N onward (D6)
+	NumberingSource  string `json:"numberingSource"`
+	EditionLayout    string `json:"editionLayout"`
+	ContentVariant   string `json:"contentVariant"`
+	DiscoverChapters bool   `json:"discoverChapters"`
+	SyncState        string `json:"syncState"`
+	ID               int64  `json:"id"`
+	SeriesID         int64  `json:"seriesId"`
+	ProviderID       string `json:"-" db:"mb_collection_id"`
+	EditionName      string `json:"editionName"`
+	Language         string `json:"language"`
+	Publisher        string `json:"publisher"`
+	Medium           string `json:"medium"`
+	Type             string `json:"type" db:"ctype"`
+	Monitored        bool   `json:"monitored"`
+	CountMain        int    `json:"countMain"`
+	CountExtra       int    `json:"countExtra"`
+	CountOther       int    `json:"countOther"`
+	StartDate        string `json:"startDate,omitempty"`
+	EndDate          string `json:"endDate,omitempty"`
+	Custom           bool   `json:"custom"`
+	ProfileID        int64  `json:"profileId,omitempty" db:"profile_id"` // 0 = inherit from series
+	CutoffNum        int64  `json:"cutoffNum" db:"cutoff_num"`           // chapter ctype: monitor from N onward (D6)
 }
 
 type Work struct {
+	ProviderID   string `json:"providerId,omitempty"`
+	NumberKnown  bool   `json:"numberKnown"`
+	Revision     string `json:"revision,omitempty"`
+	SyncState    string `json:"syncState"`
 	ID           int64  `json:"id"`
 	CollectionID int64  `json:"collectionId"`
 	SequenceNum  int64  `json:"sequenceNum"` // hundredths
@@ -137,16 +146,21 @@ type Work struct {
 }
 
 type File struct {
-	ID          int64  `json:"id"`
-	SeriesID    int64  `json:"seriesId"`
-	Path        string `json:"path"`
-	Size        int64  `json:"size"`
-	Provenance  string `json:"provenance"`
-	Unrequested bool   `json:"unrequested"`
-	AddedAt     string `json:"addedAt"`
+	Facts       AssetFacts `json:"facts" db:"facts_json"`
+	NeedsReview bool       `json:"needsReview"`
+	Hash        string     `json:"hash,omitempty"`
+	ID          int64      `json:"id"`
+	SeriesID    int64      `json:"seriesId"`
+	Path        string     `json:"path"`
+	Size        int64      `json:"size"`
+	Provenance  string     `json:"provenance"`
+	Unrequested bool       `json:"unrequested"`
+	AddedAt     string     `json:"addedAt"`
 }
 
 type SlotLink struct {
+	TargetID     int64
+	WorkID       int64
 	FileID       int64
 	Ledger       string
 	CollectionID int64
@@ -154,6 +168,7 @@ type SlotLink struct {
 }
 
 type Binding struct {
+	CollectionID   int64  `json:"collectionId"`
 	ID             int64  `json:"id"`
 	SeriesID       int64  `json:"seriesId"`
 	SourceID       string `json:"sourceId"`
@@ -184,7 +199,26 @@ func (s *Store) GetSeries(ctx context.Context, id int64) (*Series, error) {
 }
 
 func (s *Store) DeleteSeries(ctx context.Context, id int64) error {
-	return s.touch(ctx, `DELETE FROM series WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='collection' AND local_id IN(SELECT id FROM collections WHERE series_id=?)) OR (kind='work' AND local_id IN(SELECT w.id FROM works w JOIN collections c ON c.id=w.collection_id WHERE c.series_id=?))`), id, id); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, s.q(`DELETE FROM series WHERE id=?`), id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit()
 }
 
 // SetSeriesMonitored gates all automatic searches for the series.
@@ -195,6 +229,7 @@ func (s *Store) SetSeriesMonitored(ctx context.Context, id int64, monitored bool
 // AddSeriesParams carries everything needed to create a library entry from
 // fetched metadata in one transaction.
 type AddSeriesParams struct {
+	MonitorNone   bool
 	Series        *metadata.Series
 	Collections   []metadata.Collection
 	Works         map[string][]metadata.Work // keyed by collection provider id
@@ -250,8 +285,8 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 		if err := tx.QueryRowContext(ctx, s.q(`
 			INSERT INTO collections (series_id, mb_collection_id, edition_name, language,
 				publisher, medium, ctype, monitored, count_main, count_extra, count_other,
-				start_date, end_date, raw_json, updated_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`),
+				start_date, end_date, raw_json, updated_at,numbering_source)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'catalog') RETURNING id`),
 			seriesID, col.ProviderID, col.EditionName, col.Language, col.Publisher,
 			col.Medium, col.Type, monitored, col.CountMain, col.CountExtra, col.CountOther,
 			col.StartDate, col.EndDate, string(col.RawJSON), utcNow()).Scan(&colID); err != nil {
@@ -261,23 +296,11 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 			chapterColID = colID
 		}
 		for _, w := range p.Works[col.ProviderID] {
-			// Upsert (same as refresh): MangaBaka sometimes lists two works
-			// with the same sequence/count_type in one collection.
-			if _, err := tx.ExecContext(ctx, s.q(`
-				INSERT INTO works (collection_id, mb_work_id, sequence_num, sequence_string,
-					count_type, release_date, isbn, pages, raw_json)
-				VALUES (?,?,?,?,?,?,?,?,?)
-				ON CONFLICT(collection_id, sequence_num, count_type) DO UPDATE SET
-					mb_work_id = excluded.mb_work_id,
-					release_date = excluded.release_date,
-					isbn = excluded.isbn,
-					pages = excluded.pages,
-					raw_json = excluded.raw_json`),
-				colID, w.ProviderID, int64(w.SequenceNum), w.SequenceStr, w.CountType,
-				w.ReleaseDate, w.ISBN, w.Pages, string(w.RawJSON)); err != nil {
-				return 0, fmt.Errorf("inserting work: %w", err)
+			if err := s.upsertWork(ctx, tx, colID, w); err != nil {
+				return 0, err
 			}
 		}
+
 	}
 
 	// The chapter ledger is a chapter-type collection: adopt the MangaBaka
@@ -288,15 +311,15 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 	}
 	if chapterColID != 0 {
 		if _, err := tx.ExecContext(ctx, s.q(`
-			UPDATE collections SET monitored = TRUE, cutoff_num = ? WHERE id = ?`),
-			cutoff, chapterColID); err != nil {
+			UPDATE collections SET monitored = ?, cutoff_num = ? WHERE id = ?`),
+			!p.MonitorNone, cutoff, chapterColID); err != nil {
 			return 0, fmt.Errorf("adopting chapter collection: %w", err)
 		}
 	} else if _, err := tx.ExecContext(ctx, s.q(`
 		INSERT INTO collections (series_id, edition_name, language, ctype, monitored,
-			custom, cutoff_num, updated_at)
-		VALUES (?,'Chapters',?,'chapter',TRUE,TRUE,?,?)`),
-		seriesID, lang, cutoff, utcNow()); err != nil {
+			custom, cutoff_num, updated_at,numbering_source)
+		VALUES (?,'Chapters',?,'chapter',?,TRUE,?,?,'series_count')`),
+		seriesID, lang, !p.MonitorNone, cutoff, utcNow()); err != nil {
 		return 0, fmt.Errorf("inserting chapter collection: %w", err)
 	}
 
@@ -311,7 +334,7 @@ const collectionColumns = `
 	COALESCE(count_main,0) AS count_main, COALESCE(count_extra,0) AS count_extra,
 	COALESCE(count_other,0) AS count_other,
 	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date, custom,
-	COALESCE(profile_id,0) AS profile_id, cutoff_num`
+	COALESCE(profile_id,0) AS profile_id, cutoff_num,sync_state,discover_chapters,edition_layout,content_variant,numbering_source`
 
 func (s *Store) ListCollections(ctx context.Context, seriesID int64) ([]Collection, error) {
 	return list[Collection](ctx, s, `SELECT `+collectionColumns+`
@@ -323,6 +346,16 @@ func (s *Store) GetCollection(ctx context.Context, id int64) (*Collection, error
 }
 
 func (s *Store) SetCollectionMonitored(ctx context.Context, seriesID, collectionID int64, monitored bool) error {
+	c, err := s.GetCollection(ctx, collectionID)
+	if err != nil {
+		return err
+	}
+	if c.SeriesID != seriesID {
+		return ErrNotFound
+	}
+	if _, err := s.db.ExecContext(ctx, s.q(`UPDATE download_targets SET monitored=? WHERE is_default=TRUE AND collection_id IN(SELECT id FROM collections WHERE id=? AND series_id=?)`), monitored, collectionID, seriesID); err != nil {
+		return err
+	}
 	return s.touch(ctx, `UPDATE collections SET monitored = ? WHERE id = ? AND series_id = ?`,
 		monitored, collectionID, seriesID)
 }
@@ -340,6 +373,13 @@ func (s *Store) AddCustomCollection(ctx context.Context, c Collection, basedOn i
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	var duplicate int
+	if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM collections WHERE series_id=? AND custom=TRUE AND edition_name=? AND language=? AND publisher=? AND medium=? AND ctype=?`), c.SeriesID, c.EditionName, c.Language, c.Publisher, c.Medium, orDefault(c.Type, "volume")).Scan(&duplicate); err != nil {
+		return 0, err
+	}
+	if duplicate > 0 {
+		return 0, apperr.Conflictf("a local edition with these details already exists; add a version instead")
+	}
 	ctype := orDefault(c.Type, "volume")
 	var colID int64
 	err = tx.QueryRowContext(ctx, s.q(`
@@ -354,20 +394,24 @@ func (s *Store) AddCustomCollection(ctx context.Context, c Collection, basedOn i
 		}
 		return 0, fmt.Errorf("inserting custom collection: %w", err)
 	}
-	if ctype == "chapter" {
-		return colID, tx.Commit()
-	}
 
 	if basedOn > 0 {
+		var sourceType string
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT ctype FROM collections WHERE id=? AND series_id=?`), basedOn, c.SeriesID).Scan(&sourceType); err != nil {
+			return 0, ErrNotFound
+		}
+		if sourceType != ctype {
+			return 0, apperr.Invalidf("clone must have the same unit type")
+		}
 		if _, err := tx.ExecContext(ctx, s.q(`
-			INSERT INTO works (collection_id, sequence_num, sequence_string, count_type)
-			SELECT ?, sequence_num, sequence_string, count_type
+			INSERT INTO works (collection_id, sequence_num, sequence_string, count_type, number_known, revision)
+			SELECT ?, sequence_num, sequence_string, count_type, number_known, revision
 			FROM works WHERE collection_id = ?
 			  AND collection_id IN (SELECT id FROM collections WHERE series_id = ?)`),
 			colID, basedOn, c.SeriesID); err != nil {
 			return 0, fmt.Errorf("cloning works: %w", err)
 		}
-	} else {
+	} else if ctype == "volume" {
 		for i := 1; i <= volumes; i++ {
 			if _, err := tx.ExecContext(ctx, s.q(`
 				INSERT INTO works (collection_id, sequence_num, sequence_string, count_type)
@@ -380,10 +424,8 @@ func (s *Store) AddCustomCollection(ctx context.Context, c Collection, basedOn i
 }
 
 // MergeCollection folds a custom edition into another collection of the
-// same series: file/override links re-point by volume number, monitoring
-// is OR-ed, the custom row is deleted (works cascade). Returns the slot
-// numbers that have no work in the target (links move anyway — files stay
-// owned — but those slots won't show on the target's grid).
+// same series with an unambiguous match for every unit. Acquisition versions
+// and their policies survive independently. Files stay in place.
 func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID int64) ([]int64, error) {
 	from, err := s.GetCollection(ctx, fromID)
 	if err != nil {
@@ -399,67 +441,97 @@ func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID in
 	if !from.Custom {
 		return nil, apperr.Invalidf("only custom collections can be merged away")
 	}
+	for _, id := range []int64{fromID, intoID} {
+		pending, e := s.CollectionPending(ctx, id)
+		if e != nil {
+			return nil, e
+		}
+		if pending {
+			return nil, apperr.Conflictf("collection has pending downloads")
+		}
+	}
+	if from.Language != into.Language || from.EditionName != into.EditionName || from.Publisher != into.Publisher || from.Medium != into.Medium || from.EditionLayout != into.EditionLayout || from.ContentVariant != into.ContentVariant {
+		return nil, apperr.Invalidf("only duplicate editions with matching identity can be merged; use explicit content relationships for different editions")
+	}
 	if from.Type != into.Type {
 		return nil, apperr.Invalidf("collections are of different types")
 	}
 
-	// Chapter slots derive from total_chapters (no works), so every link
-	// has a home in the target; only volume merges can strand links.
-	var unmatched []int64
-	if from.Type == "volume" {
-		unmatched, err = list[int64](ctx, s, `
-			SELECT DISTINCT number FROM file_slot_links
-			WHERE ledger = 'volume' AND collection_id = ?
-			  AND number NOT IN (SELECT sequence_num FROM works WHERE collection_id = ?)
-			ORDER BY number`, fromID, intoID)
-		if err != nil {
-			return nil, err
-		}
+	if fromID == intoID {
+		return nil, apperr.Invalidf("choose two different editions")
 	}
-
+	if err := s.EnsureModels(ctx, seriesID); err != nil {
+		return nil, err
+	}
+	fromWorks, err := s.ListWorks(ctx, fromID)
+	if err != nil {
+		return nil, err
+	}
+	intoWorks, err := s.ListWorks(ctx, intoID)
+	if err != nil {
+		return nil, err
+	}
+	mapping := map[int64]int64{}
+	used := map[int64]bool{}
+	for _, w := range fromWorks {
+		matches := []int64{}
+		for _, v := range intoWorks {
+			if w.SequenceStr == v.SequenceStr && w.NumberKnown == v.NumberKnown && w.CountType == v.CountType && w.Revision == v.Revision && (w.ISBN == "" || v.ISBN == "" || w.ISBN == v.ISBN) {
+				matches = append(matches, v.ID)
+			}
+		}
+		if len(matches) != 1 || used[matches[0]] {
+			return nil, apperr.Conflictf("every unit needs an unambiguous match before merging editions")
+		}
+		mapping[w.ID] = matches[0]
+		used[matches[0]] = true
+	}
+	targets, err := s.ListTargets(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-
-	// Re-point links/overrides unless the same slot already exists in the
-	// target; the trailing DELETE clears those collided leftovers.
-	moves := []string{
-		`UPDATE file_slot_links SET collection_id = ?
-		 WHERE ledger = ? AND collection_id = ?
-		   AND NOT EXISTS (SELECT 1 FROM file_slot_links t
-		                   WHERE t.file_id = file_slot_links.file_id
-		                     AND t.ledger = file_slot_links.ledger
-		                     AND t.collection_id = ?
-		                     AND t.number = file_slot_links.number)`,
-		`UPDATE slot_overrides SET collection_id = ?
-		 WHERE ledger = ? AND collection_id = ?
-		   AND NOT EXISTS (SELECT 1 FROM slot_overrides t
-		                   WHERE t.series_id = slot_overrides.series_id
-		                     AND t.ledger = slot_overrides.ledger
-		                     AND t.collection_id = ?
-		                     AND t.number = slot_overrides.number)`,
-	}
-	for i, table := range []string{"file_slot_links", "slot_overrides"} {
-		if _, err := tx.ExecContext(ctx, s.q(moves[i]),
-			intoID, from.Type, fromID, intoID); err != nil {
-			return nil, err
+	// Preserve acquisition policies as independent versions rather than
+	// combining different policies into one default.
+	for _, t := range targets {
+		if t.CollectionID != fromID {
+			continue
 		}
-		if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM `+table+`
-			WHERE ledger = ? AND collection_id = ?`), from.Type, fromID); err != nil {
+		name := t.Name + " (merged " + fmt.Sprint(t.ID) + ")"
+		if _, err = tx.ExecContext(ctx, s.q(`UPDATE download_targets SET collection_id=?,name=?,is_default=FALSE WHERE id=?`), intoID, name, t.ID); err != nil {
 			return nil, err
 		}
 	}
-	if from.Monitored && !into.Monitored {
-		if _, err := tx.ExecContext(ctx, s.q(`UPDATE collections SET monitored = TRUE WHERE id = ?`), intoID); err != nil {
+	for oldID, newID := range mapping {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,verified,pinned,evidence) SELECT file_id,target_id,?,verified,pinned,evidence FROM asset_coverage WHERE work_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
 			return nil, err
 		}
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO unit_overrides(target_id,work_id,monitored) SELECT target_id,?,monitored FROM unit_overrides WHERE work_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO external_refs(provider,kind,external_id,local_id,last_seen) SELECT provider,kind,external_id,?,last_seen FROM external_refs WHERE kind='work' AND local_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
+			return nil, err
+		}
+		for _, column := range []string{"from_id", "to_id"} {
+			if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO work_relations(from_id,to_id,relation) SELECT `+map[string]string{"from_id": "? ,to_id", "to_id": "from_id, ?"}[column]+`,relation FROM work_relations WHERE `+column+`=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
+				return nil, err
+			}
+		}
 	}
-	if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM collections WHERE id = ?`), fromID); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='collection' AND local_id=?) OR (kind='work' AND local_id IN(SELECT id FROM works WHERE collection_id=?))`), fromID, fromID); err != nil {
 		return nil, err
 	}
-	return unmatched, tx.Commit()
+	if _, err = tx.ExecContext(ctx, `DELETE FROM work_relations WHERE from_id=to_id`); err != nil {
+		return nil, err
+	}
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM collections WHERE id=?`), fromID); err != nil {
+		return nil, err
+	}
+	return []int64{}, tx.Commit()
 }
 
 // DeleteCustomCollection removes a custom collection and its slot links
@@ -475,16 +547,30 @@ func (s *Store) DeleteCustomCollection(ctx context.Context, seriesID, collection
 	if !col.Custom {
 		return apperr.Invalidf("only custom collections can be deleted")
 	}
+	pending, e := s.CollectionPending(ctx, collectionID)
+	if e != nil {
+		return e
+	}
+	if pending {
+		return apperr.Conflictf("collection has pending downloads")
+	}
+	n, err := get[int](ctx, s, `SELECT COUNT(*) FROM asset_coverage a JOIN works w ON w.id=a.work_id WHERE w.collection_id=?`, collectionID)
+	if err != nil {
+		return err
+	}
+	if *n > 0 {
+		return apperr.Conflictf("unlink owned files before deleting this edition")
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	for _, table := range []string{"file_slot_links", "slot_overrides"} {
-		if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM `+table+`
-			WHERE ledger = ? AND collection_id = ?`), col.Type, collectionID); err != nil {
-			return err
-		}
+	if _, err = tx.ExecContext(ctx, s.q(`UPDATE source_bindings SET collection_id=0 WHERE collection_id=?`), collectionID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='collection' AND local_id=?) OR (kind='work' AND local_id IN(SELECT id FROM works WHERE collection_id=?))`), collectionID, collectionID); err != nil {
+		return err
 	}
 	if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM collections WHERE id = ?`), collectionID); err != nil {
 		return err
@@ -493,16 +579,22 @@ func (s *Store) DeleteCustomCollection(ctx context.Context, seriesID, collection
 }
 
 func (s *Store) ListWorks(ctx context.Context, collectionID int64) ([]Work, error) {
-	return list[Work](ctx, s, `
-		SELECT id, collection_id, sequence_num, COALESCE(sequence_string,'') AS sequence_string,
-		       count_type, COALESCE(release_date,'') AS release_date,
-		       COALESCE(isbn,'') AS isbn, COALESCE(pages,0) AS pages
-		FROM works WHERE collection_id = ? ORDER BY sequence_num`, collectionID)
+	return list[Work](ctx, s, `SELECT `+workColumns+` FROM works WHERE collection_id=? ORDER BY sequence_num, id`, collectionID)
 }
 
 // SetCollectionCutoff moves a chapter collection's "monitor from N onward"
 // frontier (D6).
 func (s *Store) SetCollectionCutoff(ctx context.Context, seriesID, collectionID, cutoff int64) error {
+	c, err := s.GetCollection(ctx, collectionID)
+	if err != nil {
+		return err
+	}
+	if c.SeriesID != seriesID {
+		return ErrNotFound
+	}
+	if err := s.touch(ctx, `UPDATE download_targets SET cutoff_num=? WHERE collection_id=? AND is_default=TRUE`, cutoff, collectionID); err != nil && err != ErrNotFound {
+		return err
+	}
 	return s.touch(ctx, `UPDATE collections SET cutoff_num = ? WHERE id = ? AND series_id = ?`,
 		cutoff, collectionID, seriesID)
 }
@@ -520,6 +612,9 @@ func (s *Store) SetCollectionLanguage(ctx context.Context, seriesID, collectionI
 // so an import retried after a partial failure converges instead of
 // tripping over what the first attempt already recorded.
 func (s *Store) AddFile(ctx context.Context, f File, parse any, links []SlotLink) (int64, error) {
+	if err := s.EnsureModels(ctx, f.SeriesID); err != nil {
+		return 0, err
+	}
 	parseJSON, _ := json.Marshal(parse)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -529,37 +624,53 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []SlotLink
 
 	var fileID int64
 	if err := tx.QueryRowContext(ctx, s.q(`
-		INSERT INTO files (series_id, path, size, parse_json, provenance, unrequested)
-		VALUES (?,?,?,?,?,?)
+		INSERT INTO files (series_id, path, size, parse_json, provenance, unrequested,needs_review)
+		VALUES (?,?,?,?,?,?,?)
 		ON CONFLICT(path) DO UPDATE SET
 			series_id = excluded.series_id,
 			size = excluded.size,
 			parse_json = excluded.parse_json,
 			provenance = excluded.provenance,
-			unrequested = excluded.unrequested
+			unrequested = excluded.unrequested,
+			needs_review = excluded.needs_review
+		WHERE files.series_id = excluded.series_id
 		RETURNING id`),
-		f.SeriesID, f.Path, f.Size, string(parseJSON), f.Provenance, f.Unrequested).Scan(&fileID); err != nil {
+		f.SeriesID, f.Path, f.Size, string(parseJSON), f.Provenance, f.Unrequested, f.NeedsReview).Scan(&fileID); err != nil {
 		return 0, err
 	}
 	for _, l := range links {
-		if _, err := tx.ExecContext(ctx, s.q(`
-			INSERT INTO file_slot_links (file_id, ledger, collection_id, number)
-			VALUES (?,?,?,?) ON CONFLICT DO NOTHING`), fileID, l.Ledger, l.CollectionID, l.Number); err != nil {
+		var valid int
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), l.WorkID, l.TargetID, l.CollectionID, f.SeriesID).Scan(&valid); err != nil {
 			return 0, err
 		}
+		if valid != 1 {
+			return 0, apperr.Invalidf("file mapping does not belong to this edition/version")
+		}
+		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,evidence) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`), fileID, l.TargetID, l.WorkID, orDefault(f.Provenance, "observed")); err != nil {
+			return 0, err
+		}
+
 	}
+
 	return fileID, tx.Commit()
 }
 
 func (s *Store) ListFiles(ctx context.Context, seriesID int64) ([]File, error) {
 	return list[File](ctx, s, `
-		SELECT id, series_id, path, size, provenance, unrequested, added_at
+		SELECT id, series_id, path, size, provenance, unrequested, added_at,needs_review,COALESCE(hash,'') AS hash,facts_json
 		FROM files WHERE series_id = ? ORDER BY path`, seriesID)
 }
 
 // DeleteFile removes a file row (links cascade) and returns its path so
 // the caller can remove it from disk.
 func (s *Store) DeleteFile(ctx context.Context, id int64) (string, error) {
+	pinned, err := get[int](ctx, s, `SELECT COUNT(*) FROM asset_coverage WHERE file_id=? AND pinned=TRUE`, id)
+	if err != nil {
+		return "", err
+	}
+	if *pinned > 0 {
+		return "", apperr.Conflictf("unpin retained copies before deleting this file")
+	}
 	path, err := get[string](ctx, s, `SELECT path FROM files WHERE id = ?`, id)
 	if err != nil {
 		return "", err
@@ -573,9 +684,9 @@ func (s *Store) DeleteFile(ctx context.Context, id int64) (string, error) {
 // SlotLinks returns all links for a series keyed by "ledger/collection/number".
 func (s *Store) SlotLinks(ctx context.Context, seriesID int64) (map[string][]int64, error) {
 	links, err := list[SlotLink](ctx, s, `
-		SELECT l.ledger, l.collection_id, l.number, l.file_id
-		FROM file_slot_links l JOIN files f ON f.id = l.file_id
-		WHERE f.series_id = ?`, seriesID)
+		SELECT c.ctype AS ledger,w.collection_id,w.sequence_num AS number,a.file_id
+ FROM asset_coverage a JOIN works w ON w.id=a.work_id JOIN collections c ON c.id=w.collection_id JOIN download_targets t ON t.id=a.target_id JOIN files f ON f.id=a.file_id
+ WHERE f.series_id=? AND t.is_default=TRUE AND a.verified=TRUE AND f.needs_review=FALSE`, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -583,6 +694,18 @@ func (s *Store) SlotLinks(ctx context.Context, seriesID int64) (map[string][]int
 	for _, l := range links {
 		key := SlotKey(l.Ledger, l.CollectionID, l.Number)
 		out[key] = append(out[key], l.FileID)
+	}
+	rows, err := list[struct {
+		CollectionID int64
+		WorkID       int64
+		FileID       int64
+	}](ctx, s, `SELECT w.collection_id,a.work_id,a.file_id FROM asset_coverage a JOIN works w ON w.id=a.work_id JOIN download_targets t ON t.id=a.target_id JOIN files f ON f.id=a.file_id WHERE f.series_id=? AND t.is_default=TRUE AND a.verified=TRUE`, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		key := SlotKey("work", r.CollectionID, r.WorkID)
+		out[key] = append(out[key], r.FileID)
 	}
 	return out, nil
 }
@@ -597,24 +720,34 @@ func (s *Store) ListBindings(ctx context.Context, seriesID int64) ([]Binding, er
 	return list[Binding](ctx, s, `
 		SELECT id, series_id, source_id, source_manga_key,
 		       COALESCE(source_name,'') AS source_name,
-		       COALESCE(manga_title,'') AS manga_title, state, priority
+		       COALESCE(manga_title,'') AS manga_title, state, priority,collection_id
 		FROM source_bindings WHERE series_id = ? ORDER BY priority, id`, seriesID)
 }
 
 // AddBinding upserts one series↔manga binding (a site can hold several).
 // An active binding obsoletes any "unmatched" sentinel of the same site.
 func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
+	if b.CollectionID > 0 {
+		c, e := s.GetCollection(ctx, b.CollectionID)
+		if e != nil {
+			return 0, e
+		}
+		if c.SeriesID != b.SeriesID {
+			return 0, ErrNotFound
+		}
+	}
 	state := orDefault(b.State, "active")
 	var id int64
 	err := s.db.QueryRowContext(ctx, s.q(`
-		INSERT INTO source_bindings (series_id, source_id, source_manga_key, source_name, manga_title, state, priority)
-		VALUES (?,?,?,?,?,?,?)
+		INSERT INTO source_bindings (series_id, source_id, source_manga_key, source_name, manga_title, state, priority,collection_id)
+		VALUES (?,?,?,?,?,?,?,?)
 		ON CONFLICT(series_id, source_id, source_manga_key) DO UPDATE SET
 			source_name = excluded.source_name,
 			manga_title = excluded.manga_title,
-			state = excluded.state
+			state = excluded.state,
+			collection_id=CASE WHEN excluded.collection_id>0 THEN excluded.collection_id ELSE source_bindings.collection_id END
 		RETURNING id`),
-		b.SeriesID, b.SourceID, b.SourceMangaKey, b.SourceName, b.MangaTitle, state, b.Priority).Scan(&id)
+		b.SeriesID, b.SourceID, b.SourceMangaKey, b.SourceName, b.MangaTitle, state, b.Priority, b.CollectionID).Scan(&id)
 	if err != nil {
 		return 0, err
 	}

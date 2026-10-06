@@ -1,3 +1,14 @@
+import type {
+  DownloadTarget,
+  Work,
+  CollectionMetadataPatch,
+  CatalogLinkPreview,
+  AssetCoverage,
+  ExpectedSlot,
+  UnitObservation,
+  WorkRelation,
+} from './types/store'
+import type { UnitSlot } from './types/service'
 // Typed client for the Sento API. All payload types are generated from the
 // Go structs (mise run gen) into ./types/ — the backend is the schema.
 
@@ -116,6 +127,80 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  setBindingEdition: (id: number, bid: number, collectionId: number) =>
+    request<void>(`/series/${id}/bindings/${bid}`, {
+      method: 'PUT',
+      body: JSON.stringify({ collectionId }),
+    }),
+  unitMonitor: (id: number, targetId: number, workId: number, monitored: boolean) =>
+    request<void>(`/series/${id}/unit-monitor`, {
+      method: 'PUT',
+      body: JSON.stringify({ targetId, workId, monitored }),
+    }),
+  targets: (id: number) => request<DownloadTarget[]>(`/series/${id}/targets`),
+  targetSlots: (id: number) => request<Record<string, UnitSlot[]>>(`/series/${id}/target-slots`),
+  saveTarget: (id: number, target: DownloadTarget) =>
+    request<DownloadTarget>(`/series/${id}/targets${target.id ? `/${target.id}` : ''}`, {
+      method: target.id ? 'PUT' : 'POST',
+      body: JSON.stringify(target),
+    }),
+  deleteTarget: (id: number, tid: number) =>
+    request<void>(`/series/${id}/targets/${tid}`, { method: 'DELETE' }),
+  saveUnit: (id: number, unit: Work) =>
+    request<Work>(`/series/${id}/units${unit.id ? `/${unit.id}` : ''}`, {
+      method: unit.id ? 'PUT' : 'POST',
+      body: JSON.stringify(unit),
+    }),
+  resetUnit: (id: number, uid: number) =>
+    request<void>(`/series/${id}/units/${uid}/catalog-reset`, { method: 'POST' }),
+  deleteRelation: (id: number, relation: WorkRelation) =>
+    request<void>(`/series/${id}/relations`, { method: 'DELETE', body: JSON.stringify(relation) }),
+  deleteUnit: (id: number, uid: number) =>
+    request<void>(`/series/${id}/units/${uid}`, { method: 'DELETE' }),
+  editEdition: (id: number, cid: number, patch: CollectionMetadataPatch) =>
+    request<void>(`/series/${id}/collections/${cid}/metadata`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+  mergePreview: (id: number, cid: number, into: number) =>
+    request<CatalogLinkPreview>(`/series/${id}/collections/${cid}/merge?preview=1`, {
+      method: 'POST',
+      body: JSON.stringify({ into }),
+    }),
+  catalogLinkPreview: (id: number, cid: number, catalogId: number) =>
+    request<CatalogLinkPreview>(`/series/${id}/collections/${cid}/catalog-link?preview=1`, {
+      method: 'POST',
+      body: JSON.stringify({ catalogId }),
+    }),
+  linkCatalog: (id: number, cid: number, catalogId: number) =>
+    request<void>(`/series/${id}/collections/${cid}/catalog-link`, {
+      method: 'POST',
+      body: JSON.stringify({ catalogId }),
+    }),
+  coverage: (id: number) => request<AssetCoverage[]>(`/series/${id}/coverage`),
+  pinCoverage: (id: number, coverage: AssetCoverage) =>
+    request<void>(`/series/${id}/coverage/pin`, {
+      method: 'PUT',
+      body: JSON.stringify(coverage),
+    }),
+  mapFile: (id: number, fid: number, slots: ExpectedSlot[]) =>
+    request<void>(`/series/${id}/files/${fid}/mapping`, {
+      method: 'PUT',
+      body: JSON.stringify({ slots }),
+    }),
+  observations: (id: number) => request<UnitObservation[]>(`/series/${id}/observations`),
+  reviewObservation: (id: number, oid: number, accept: boolean) =>
+    request<void>(`/series/${id}/observations/${oid}`, {
+      method: 'PUT',
+      body: JSON.stringify({ accept }),
+    }),
+  relations: (id: number) => request<WorkRelation[]>(`/series/${id}/relations`),
+  saveRelation: (id: number, relation: WorkRelation) =>
+    request<void>(`/series/${id}/relations`, {
+      method: 'POST',
+      body: JSON.stringify(relation),
+    }),
+
   status: () => request<SystemStatus>('/system/status'),
   systemTasks: () => request<TaskStatus[]>('/system/tasks'),
   runTask: (slug: string) => request<void>(`/system/tasks/${slug}/run`, { method: 'POST' }),
@@ -128,9 +213,15 @@ export const api = {
   getSeries: (id: number) => request<SeriesDetail>(`/series/${id}/`),
   deleteSeries: (id: number) => request<void>(`/series/${id}/`, { method: 'DELETE' }),
   setSeriesMonitored: (id: number, monitored: boolean) =>
-    request<void>(`/series/${id}/`, { method: 'PUT', body: JSON.stringify({ monitored }) }),
+    request<void>(`/series/${id}/`, {
+      method: 'PUT',
+      body: JSON.stringify({ monitored }),
+    }),
   setSeriesProfile: (id: number, profileId: number) =>
-    request<void>(`/series/${id}/`, { method: 'PUT', body: JSON.stringify({ profileId }) }),
+    request<void>(`/series/${id}/`, {
+      method: 'PUT',
+      body: JSON.stringify({ profileId }),
+    }),
   refreshSeries: (id: number) => request<unknown>(`/series/${id}/refresh`, { method: 'POST' }),
   slots: (id: number) => request<Slots>(`/series/${id}/slots`),
   updateCollection: (id: number, cid: number, patch: CollectionPatch) =>
@@ -166,14 +257,23 @@ export const api = {
   createProfile: (p: Omit<Profile, 'id'>) =>
     request<Profile>('/profiles/', { method: 'POST', body: JSON.stringify(p) }),
   updateProfile: (id: number, p: Omit<Profile, 'id'>) =>
-    request<void>(`/profiles/${id}/`, { method: 'PUT', body: JSON.stringify(p) }),
+    request<void>(`/profiles/${id}/`, {
+      method: 'PUT',
+      body: JSON.stringify(p),
+    }),
   deleteProfile: (id: number) => request<void>(`/profiles/${id}/`, { method: 'DELETE' }),
   exportProfile: (id: number) => request<ProfileDoc>(`/profiles/${id}/export`),
   importProfile: (doc: ProfileDoc) =>
-    request<Profile>('/profiles/import', { method: 'POST', body: JSON.stringify(doc) }),
+    request<Profile>('/profiles/import', {
+      method: 'POST',
+      body: JSON.stringify(doc),
+    }),
   defaultProfile: () => request<{ profileId: number }>('/profiles/default'),
   setDefaultProfile: (profileId: number) =>
-    request<void>('/profiles/default', { method: 'PUT', body: JSON.stringify({ profileId }) }),
+    request<void>('/profiles/default', {
+      method: 'PUT',
+      body: JSON.stringify({ profileId }),
+    }),
   listFormats: () => request<Format[]>('/formats/'),
   createFormat: (f: Omit<Format, 'id'>) =>
     request<Format>('/formats/', { method: 'POST', body: JSON.stringify(f) }),
@@ -185,7 +285,10 @@ export const api = {
   extensions: () => request<ExtensionView[]>('/extensions'),
   extensionRepos: () => request<ExtensionRepos>('/extensions/repos'),
   setExtensionRepos: (urls: string[]) =>
-    request<ExtensionRepos>('/extensions/repos', { method: 'PUT', body: JSON.stringify({ urls }) }),
+    request<ExtensionRepos>('/extensions/repos', {
+      method: 'PUT',
+      body: JSON.stringify({ urls }),
+    }),
   // Preferences are addressed by host source id (settings.sourceId of a
   // source entry), not entry id: the indexer modal edits them before the
   // entry exists.
@@ -201,7 +304,10 @@ export const api = {
   extensionSources: (pkg: string) =>
     request<Source[]>(`/extensions/${encodeURIComponent(pkg)}/sources`),
   saveConnections: (c: ConnectionSettings) =>
-    request<ConnectionSettings>('/settings/connections', { method: 'PUT', body: JSON.stringify(c) }),
+    request<ConnectionSettings>('/settings/connections', {
+      method: 'PUT',
+      body: JSON.stringify(c),
+    }),
   testConnections: (c: ConnectionSettings) =>
     request<ConnectionTest[]>('/settings/connections/test', {
       method: 'POST',
@@ -210,22 +316,40 @@ export const api = {
 
   mediaSettings: () => request<MediaSettings>('/settings/media'),
   saveMediaSettings: (m: MediaSettings) =>
-    request<MediaSettings>('/settings/media', { method: 'PUT', body: JSON.stringify(m) }),
+    request<MediaSettings>('/settings/media', {
+      method: 'PUT',
+      body: JSON.stringify(m),
+    }),
   previewNaming: (m: MediaSettings) =>
-    request<NamingPreview>('/settings/media/preview', { method: 'POST', body: JSON.stringify(m) }),
+    request<NamingPreview>('/settings/media/preview', {
+      method: 'POST',
+      body: JSON.stringify(m),
+    }),
 
   sources: () => request<Source[]>('/sources'),
   indexers: () => request<IndexerView[]>('/indexers'),
   addIndexer: (body: IndexerBody) =>
-    request<IndexerView>('/indexers', { method: 'POST', body: JSON.stringify(body) }),
+    request<IndexerView>('/indexers', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   updateIndexer: (iid: number, body: IndexerBody) =>
-    request<IndexerView>(`/indexers/${iid}`, { method: 'PUT', body: JSON.stringify(body) }),
+    request<IndexerView>(`/indexers/${iid}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
   patchIndexer: (iid: number, patch: IndexerPatch) =>
-    request<IndexerView>(`/indexers/${iid}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    request<IndexerView>(`/indexers/${iid}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
   deleteIndexer: (iid: number) => request<void>(`/indexers/${iid}`, { method: 'DELETE' }),
   testIndexer: (iid: number) => request<void>(`/indexers/${iid}/test`, { method: 'POST' }),
   browseProwlarr: (body: BrowseProwlarrBody) =>
-    request<ProwlarrIndexer[]>('/indexers/browse', { method: 'POST', body: JSON.stringify(body) }),
+    request<ProwlarrIndexer[]>('/indexers/browse', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   seriesIndexers: (id: number) => request<SeriesIndexerView[]>(`/series/${id}/indexers`),
   setSeriesIndexerOverride: (id: number, indexerId: number, ov: OverridePatch) =>
     request<unknown>(`/series/${id}/indexers/${indexerId}`, {
@@ -237,9 +361,17 @@ export const api = {
   bindings: (id: number) => request<Binding[]>(`/series/${id}/bindings`),
   addBinding: (
     id: number,
-    body: { sourceId: string; sourceMangaKey: string; sourceName?: string; mangaTitle?: string },
+    body: {
+      sourceId: string
+      sourceMangaKey: string
+      sourceName?: string
+      mangaTitle?: string
+    },
   ) =>
-    request<{ id: number }>(`/series/${id}/bindings`, { method: 'POST', body: JSON.stringify(body) }),
+    request<{ id: number }>(`/series/${id}/bindings`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   setBindingState: (id: number, bid: number, state: 'active' | 'disabled') =>
     request<void>(`/series/${id}/bindings/${bid}`, {
       method: 'PUT',
@@ -320,8 +452,7 @@ export const api = {
 
   queue: (all = false) => request<QueueItem[]>(`/queue${all ? '?all=1' : ''}`),
   processQueue: () => request<{ processed: number }>('/queue/process', { method: 'POST' }),
-  blocklistQueueItem: (qid: number) =>
-    request<void>(`/queue/${qid}/blocklist`, { method: 'POST' }),
+  blocklistQueueItem: (qid: number) => request<void>(`/queue/${qid}/blocklist`, { method: 'POST' }),
 
   history: (seriesId?: number, limit = 100) =>
     request<Decision[]>(

@@ -89,35 +89,23 @@ func TestCustomEditions(t *testing.T) {
 		t.Fatal("en edition must not become custom")
 	}
 
-	// Merge: links re-point by number, unmatched numbers reported,
-	// custom row gone.
-	fileID, err := st.AddFile(ctx, store.File{SeriesID: id, Path: "/tmp/v9.cbz", Size: 1},
-		nil, []store.SlotLink{
-			{Ledger: "volume", CollectionID: scratchID, Number: 200},
-			{Ledger: "volume", CollectionID: scratchID, Number: 400}, // std has only 1-3
-		})
+	// Different editions cannot be merged by number. Ownership is retained.
+	fileID, err := st.AddFile(ctx, store.File{SeriesID: id, Path: "/tmp/v9.cbz", Size: 1}, nil, fixtureLinks(t, st, id, scratchID, 200, 400))
 	if err != nil {
 		t.Fatal(err)
 	}
-	unmatched, err := st.MergeCollection(ctx, id, scratchID, std.ID)
+	if _, err = st.MergeCollection(ctx, id, scratchID, std.ID); err == nil {
+		t.Fatal("different editions must not be merged by number")
+	}
+	coverage, err := st.Coverage(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(unmatched) != 1 || unmatched[0] != 400 {
-		t.Fatalf("want unmatched [400], got %v", unmatched)
+	if len(coverage) != 2 || coverage[0].FileID != fileID {
+		t.Fatalf("merge refusal changed ownership: %+v", coverage)
 	}
-	links, _ := st.SlotLinks(ctx, id) // slot key → file ids
-	for _, n := range []int64{200, 400} {
-		ids := links[store.SlotKey("volume", std.ID, n)]
-		if len(ids) != 1 || ids[0] != fileID {
-			t.Fatalf("link for v%d not moved into std: %v", n/100, links)
-		}
-		if len(links[store.SlotKey("volume", scratchID, n)]) != 0 {
-			t.Fatalf("link still points at merged collection: %v", links)
-		}
-	}
-	if _, err := st.GetCollection(ctx, scratchID); err != store.ErrNotFound {
-		t.Fatalf("merged collection must be gone, got %v", err)
+	if _, err = st.GetCollection(ctx, scratchID); err != nil {
+		t.Fatal(err)
 	}
 
 	// Non-custom collections refuse to merge away or be deleted.

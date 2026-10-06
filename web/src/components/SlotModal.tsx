@@ -8,6 +8,10 @@ import CandidateList from './CandidateList'
 import { useConfirmAction } from './ConfirmAction'
 
 export type SlotSelection = {
+  targetId?: number
+  workId?: number
+  all?: boolean
+  label?: string
   ledger: 'volume' | 'chapter'
   number: number // hundredths
   collectionId?: number
@@ -50,7 +54,7 @@ export default function SlotModal({
   // Keyed by slot so every open starts fresh (tab choice, search state).
   return (
     <Inner
-      key={`${sel.ledger}-${sel.collectionId ?? 0}-${sel.number}`}
+      key={`${sel.ledger}-${sel.collectionId ?? 0}-${sel.targetId ?? 0}-${sel.workId ?? sel.number}`}
       seriesID={seriesID}
       sel={sel}
       files={files}
@@ -75,7 +79,7 @@ function Inner({
 }) {
   // number 0 = the whole collection (every wanted volume/chapter): the
   // place to grab packs and complete releases.
-  const editionWide = sel.number === 0
+  const editionWide = sel.all ?? (!sel.workId && sel.number === 0)
   const linked = files.filter((f) => sel.fileIds.includes(f.id))
 
   const { confirm, confirmation } = useConfirmAction()
@@ -97,7 +101,13 @@ function Inner({
     if (searching || busy) return
     const controller = new AbortController()
     searchController.current = controller
-    const slotRef = { collectionId: sel.collectionId ?? 0, number: sel.number }
+    const slotRef = {
+      collectionId: sel.collectionId ?? 0,
+      number: sel.number,
+      targetId: sel.targetId,
+      workId: sel.workId,
+      all: sel.all,
+    }
     setSearching(true)
     setResult({
       searched: [],
@@ -109,42 +119,55 @@ function Inner({
       done: false,
     })
     try {
-      await api.searchStream(seriesID, { ledger: sel.ledger, slot: slotRef }, (ev) => {
-        setResult((prev) => {
-          if (!prev) return prev
-          switch (ev.type) {
-            case 'sites':
-              return {
-                ...prev,
-                searched: ev.searched ?? [],
-                pending: ev.searched ?? [],
-              }
-            case 'batch':
-              return {
-                ...prev,
-                pending: prev.pending.filter((p) => !(ev.sites ?? []).includes(p)),
-                candidates: [...prev.candidates, ...(ev.candidates ?? [])],
-                dropped: prev.dropped + (ev.dropped ?? 0),
-                notes: [...prev.notes, ...(ev.bindingNotes ?? [])],
-                errors: ev.error ? [...prev.errors, ev.error] : prev.errors,
-              }
-            case 'done':
-              return { ...prev, pending: [], done: true }
-            case 'error':
-              return {
-                ...prev,
-                pending: [],
-                done: true,
-                errors: [...prev.errors, ev.error ?? 'search failed'],
-              }
-            default:
-              return prev
-          }
-        })
-      }, controller.signal)
+      await api.searchStream(
+        seriesID,
+        { ledger: sel.ledger, slot: slotRef },
+        (ev) => {
+          setResult((prev) => {
+            if (!prev) return prev
+            switch (ev.type) {
+              case 'sites':
+                return {
+                  ...prev,
+                  searched: ev.searched ?? [],
+                  pending: ev.searched ?? [],
+                }
+              case 'batch':
+                return {
+                  ...prev,
+                  pending: prev.pending.filter((p) => !(ev.sites ?? []).includes(p)),
+                  candidates: [...prev.candidates, ...(ev.candidates ?? [])],
+                  dropped: prev.dropped + (ev.dropped ?? 0),
+                  notes: [...prev.notes, ...(ev.bindingNotes ?? [])],
+                  errors: ev.error ? [...prev.errors, ev.error] : prev.errors,
+                }
+              case 'done':
+                return { ...prev, pending: [], done: true }
+              case 'error':
+                return {
+                  ...prev,
+                  pending: [],
+                  done: true,
+                  errors: [...prev.errors, ev.error ?? 'search failed'],
+                }
+              default:
+                return prev
+            }
+          })
+        },
+        controller.signal,
+      )
     } catch (e) {
-      if (controller.signal.aborted) setResult((prev) => prev ? { ...prev, stopped: true } : prev)
-      if (!controller.signal.aborted) setResult((prev) => prev ? { ...prev, errors: [...prev.errors, e instanceof Error ? e.message : String(e)] } : prev)
+      if (controller.signal.aborted) setResult((prev) => (prev ? { ...prev, stopped: true } : prev))
+      if (!controller.signal.aborted)
+        setResult((prev) =>
+          prev
+            ? {
+                ...prev,
+                errors: [...prev.errors, e instanceof Error ? e.message : String(e)],
+              }
+            : prev,
+        )
     } finally {
       setSearching(false)
       setResult((prev) => (prev ? { ...prev, pending: [], done: true } : prev))
@@ -163,23 +186,46 @@ function Inner({
 
   const label = editionWide
     ? `${sel.collectionName ?? 'Collection'} — wanted ${sel.ledger}s`
-    : `${sel.ledger === 'volume' ? 'Volume' : 'Chapter'} ${fmtNum(sel.number)}`
+    : `${sel.ledger === 'volume' ? 'Volume' : 'Chapter'} ${sel.label ?? fmtNum(sel.number)}`
 
   const grab = async (c: ReleaseCandidate, force: boolean) => {
     setBusy(true)
     try {
-      await api.search(seriesID, { ledger: sel.ledger, grab: c.guid, force, slot: { collectionId: sel.collectionId ?? 0, number: sel.number } })
+      await api.search(seriesID, {
+        ledger: sel.ledger,
+        grab: c.guid,
+        force,
+        slot: {
+          collectionId: sel.collectionId ?? 0,
+          number: sel.number,
+          targetId: sel.targetId,
+          workId: sel.workId,
+          all: sel.all,
+        },
+      })
       onChanged()
       notify.ok('Release queued for download')
-    } finally { setBusy(false) }
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
-    <Modal opened onClose={onClose} title={label} size="xl" fullScreen={small} closeOnEscape={!busy} closeOnClickOutside={!busy} withCloseButton={!busy}>
+    <Modal
+      opened
+      onClose={onClose}
+      title={label}
+      size="xl"
+      fullScreen={small}
+      closeOnEscape={!busy}
+      closeOnClickOutside={!busy}
+      withCloseButton={!busy}
+    >
       <Stack gap="sm">
         {editionWide ? (
           <Text size="sm" c="dimmed">
-            Browse releases for the wanted {sel.ledger}s in this collection. Packs can include several {sel.ledger}s.
+            Browse releases for the wanted {sel.ledger}s in this collection. Packs can include
+            several {sel.ledger}s.
           </Text>
         ) : (
           <Group gap={6}>
@@ -226,7 +272,15 @@ function Inner({
               )}
               {(searching || (result?.pending.length ?? 0) > 0 || result?.done) && (
                 <Group gap={6}>
-                  {searching && <Button size="compact-xs" variant="default" onClick={() => searchController.current?.abort()}>Stop search</Button>}
+                  {searching && (
+                    <Button
+                      size="compact-xs"
+                      variant="default"
+                      onClick={() => searchController.current?.abort()}
+                    >
+                      Stop search
+                    </Button>
+                  )}
                   {result?.done && (
                     <Button
                       size="compact-xs"
@@ -264,11 +318,15 @@ function Inner({
                       {e}
                     </Alert>
                   ))}
-                  {result.done && !result.stopped && result.errors.length === 0 && result.candidates.length === 0 && (
-                    <Text size="sm" c="dimmed">
-                      No releases found. Check that this series has an enabled indexer for {sel.ledger}s and that its source matches the correct title.
-                    </Text>
-                  )}
+                  {result.done &&
+                    !result.stopped &&
+                    result.errors.length === 0 &&
+                    result.candidates.length === 0 && (
+                      <Text size="sm" c="dimmed">
+                        No releases found. Check that this series has an enabled indexer for{' '}
+                        {sel.ledger}s and that its source matches the correct title.
+                      </Text>
+                    )}
                   {result.candidates.length > 0 && (
                     <CandidateList
                       candidates={result.candidates}
@@ -312,7 +370,18 @@ function Inner({
                         variant="subtle"
                         leftSection={<IconTrash size={14} />}
                         disabled={busy}
-                        onClick={() => confirm({ title: 'Delete file from disk?', message: `Delete ${f.path}? This cannot be undone. Sento may download the missing ${sel.ledger} again.`, label: 'Delete file', onConfirm: async () => { await api.deleteFile(f.id); onChanged(); notify.ok('File deleted') } })}
+                        onClick={() =>
+                          confirm({
+                            title: 'Delete file from disk?',
+                            message: `Delete ${f.path}? This removes the archive from every unit and collected version that uses it. This cannot be undone. Missing units may download again.`,
+                            label: 'Delete file',
+                            onConfirm: async () => {
+                              await api.deleteFile(f.id)
+                              onChanged()
+                              notify.ok('File deleted')
+                            },
+                          })
+                        }
                       >
                         Delete
                       </Button>

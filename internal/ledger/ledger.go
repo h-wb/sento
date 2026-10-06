@@ -9,21 +9,25 @@ import (
 )
 
 type VolumeSlot struct {
-	Number      int64   `json:"number"` // hundredths
-	SequenceStr string  `json:"sequenceStr"`
-	CountType   string  `json:"countType"`
-	ReleaseDate string  `json:"releaseDate,omitempty"`
-	Monitored   bool    `json:"monitored"`
-	Released    bool    `json:"released"`
-	FileIDs     []int64 `json:"fileIds,omitempty"`
-	Wanted      bool    `json:"wanted"`
+	WorkID       int64   `json:"workId,omitempty"`
+	Availability string  `json:"availability"`
+	Number       int64   `json:"number"` // hundredths
+	SequenceStr  string  `json:"sequenceStr"`
+	CountType    string  `json:"countType"`
+	ReleaseDate  string  `json:"releaseDate,omitempty"`
+	Monitored    bool    `json:"monitored"`
+	Released     bool    `json:"released"`
+	FileIDs      []int64 `json:"fileIds,omitempty"`
+	Wanted       bool    `json:"wanted"`
 }
 
 type ChapterSlot struct {
-	Number    int64   `json:"number"` // hundredths
-	Monitored bool    `json:"monitored"`
-	FileIDs   []int64 `json:"fileIds,omitempty"`
-	Wanted    bool    `json:"wanted"`
+	WorkID      int64   `json:"workId,omitempty"`
+	SequenceStr string  `json:"sequenceStr,omitempty"`
+	Number      int64   `json:"number"` // hundredths
+	Monitored   bool    `json:"monitored"`
+	FileIDs     []int64 `json:"fileIds,omitempty"`
+	Wanted      bool    `json:"wanted"`
 }
 
 // BuildVolumeSlots derives slots for one collection. Default monitoring:
@@ -62,8 +66,27 @@ func BuildVolumeSlots(col store.Collection, works []store.Work, links map[string
 			released = w.SequenceNum <= maxDated
 		}
 
-		files := links[store.SlotKey("volume", col.ID, w.SequenceNum)]
+		files := links[store.SlotKey("work", col.ID, w.ID)]
+		if len(files) == 0 {
+			count := 0
+			for _, other := range works {
+				if other.SequenceNum == w.SequenceNum {
+					count++
+				}
+			}
+			if count == 1 {
+				files = links[store.SlotKey("volume", col.ID, w.SequenceNum)]
+			}
+		}
+		availability := "unknown"
+		if w.ReleaseDate != "" {
+			availability = "released"
+			if !released {
+				availability = "upcoming"
+			}
+		}
 		slots = append(slots, VolumeSlot{
+			WorkID: w.ID, Availability: availability,
 			Number:      w.SequenceNum,
 			SequenceStr: w.SequenceStr,
 			CountType:   w.CountType,

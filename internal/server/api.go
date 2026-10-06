@@ -11,6 +11,7 @@ import (
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/scheduler"
+	"github.com/h-wb/sento/internal/service"
 )
 
 func (s *Server) mountAPI(r chi.Router) {
@@ -49,6 +50,27 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Delete("/", s.handleDeleteSeries)
 			r.Post("/refresh", s.handleRefreshSeries)
 			r.Get("/slots", s.handleSlots)
+			r.Get("/targets", s.handleListTargets)
+			r.Post("/targets", s.handleSaveTarget)
+			r.Put("/targets/{tid}", s.handleSaveTarget)
+			r.Delete("/targets/{tid}", s.handleDeleteTarget)
+			r.Get("/target-slots", s.handleTargetSlots)
+			r.Post("/units", s.handleSaveUnit)
+			r.Put("/units/{uid}", s.handleSaveUnit)
+			r.Delete("/units/{uid}", s.handleDeleteUnit)
+			r.Post("/units/{uid}/catalog-reset", s.handleResetUnit)
+			r.Put("/collections/{cid}/metadata", s.handleEditCollectionMetadata)
+			r.Post("/collections/{cid}/catalog-link", s.handleCatalogLink)
+			r.Get("/coverage", s.handleCoverage)
+			r.Put("/coverage/pin", s.handlePinCoverage)
+			r.Put("/unit-monitor", s.handleUnitMonitor)
+			r.Put("/files/{fid}/mapping", s.handleRemapFile)
+			r.Get("/observations", s.handleObservations)
+			r.Post("/observations", s.handleObservations)
+			r.Put("/observations/{oid}", s.handleResolveObservation)
+			r.Get("/relations", s.handleRelations)
+			r.Post("/relations", s.handleRelations)
+			r.Delete("/relations", s.handleRelations)
 			r.Post("/collections", s.handleCreateCollection)
 			r.Put("/collections/{cid}", s.handleUpdateCollection)
 			r.Post("/collections/{cid}/merge", s.handleMergeCollection)
@@ -112,6 +134,27 @@ func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
 	from := now.AddDate(0, 0, -14).Format("2006-01-02")
 	to := now.AddDate(0, 0, days).Format("2006-01-02")
 	entries, err := s.store.Calendar(r.Context(), from, to)
+	if err == nil {
+		slotsBySeries := map[int64]map[int64][]service.UnitSlot{}
+		for i := range entries {
+			e := &entries[i]
+			slots, exists := slotsBySeries[e.SeriesID]
+			if !exists {
+				slots, err = s.library.TargetSlots(r.Context(), e.SeriesID)
+				if err != nil {
+					break
+				}
+				slotsBySeries[e.SeriesID] = slots
+			}
+			e.Owned = false
+			for _, slot := range slots[e.TargetID] {
+				if slot.Work.ID == e.WorkID {
+					e.Owned = len(slot.FileIDs) > 0
+					break
+				}
+			}
+		}
+	}
 	respondList(w, entries, err)
 }
 

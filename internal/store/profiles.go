@@ -70,10 +70,13 @@ func (s *Store) DeleteFormat(ctx context.Context, id int64) error {
 
 // profileBody is everything but id/name, stored as the row's body_json.
 type profileBody struct {
-	MinFormatScore int                 `json:"minFormatScore"`
-	FormatScores   map[int64]int       `json:"formatScores"`
-	Volume         profile.LedgerRules `json:"volume"`
-	Chapter        profile.LedgerRules `json:"chapter"`
+	UpgradesEnabled   bool                `json:"upgradesEnabled"`
+	UpgradeUntilScore int                 `json:"upgradeUntilScore"`
+	MinUpgradeScore   int                 `json:"minUpgradeScore"`
+	MinFormatScore    int                 `json:"minFormatScore"`
+	FormatScores      map[int64]int       `json:"formatScores"`
+	Volume            profile.LedgerRules `json:"volume"`
+	Chapter           profile.LedgerRules `json:"chapter"`
 }
 
 type profileRow struct {
@@ -92,6 +95,7 @@ func (r profileRow) decode() (profile.Profile, error) {
 	}
 	return profile.Profile{
 		ID: r.ID, Name: r.Name,
+		UpgradesEnabled: body.UpgradesEnabled, UpgradeUntilScore: body.UpgradeUntilScore, MinUpgradeScore: body.MinUpgradeScore,
 		MinFormatScore: body.MinFormatScore, FormatScores: body.FormatScores,
 		Volume: body.Volume, Chapter: body.Chapter,
 	}, nil
@@ -99,6 +103,7 @@ func (r profileRow) decode() (profile.Profile, error) {
 
 func encodeProfileBody(p profile.Profile) (string, error) {
 	body, err := json.Marshal(profileBody{
+		UpgradesEnabled: p.UpgradesEnabled, UpgradeUntilScore: p.UpgradeUntilScore, MinUpgradeScore: p.MinUpgradeScore,
 		MinFormatScore: p.MinFormatScore, FormatScores: p.FormatScores,
 		Volume: p.Volume, Chapter: p.Chapter,
 	})
@@ -162,7 +167,7 @@ func (s *Store) CountProfileUses(ctx context.Context, id int64) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, s.q(`
 		SELECT (SELECT COUNT(*) FROM series WHERE profile_id = ?)
-		     + (SELECT COUNT(*) FROM collections WHERE profile_id = ?)`), id, id).Scan(&n)
+		     + (SELECT COUNT(*) FROM collections WHERE profile_id = ?) + (SELECT COUNT(*) FROM download_targets WHERE profile_id=?)`), id, id, id).Scan(&n)
 	return n, err
 }
 

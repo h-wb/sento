@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -76,7 +75,10 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 		if ctx.Err() != nil {
 			return imported, ctx.Err() // shutting down: leave the rest queued
 		}
-		prov := im.registry.ForProtocol(item.Protocol)
+		prov := im.registry.Get(item.ProviderID)
+		if item.ProviderID == "" {
+			prov = im.registry.ForProtocol(item.Protocol)
+		}
 		if prov == nil {
 			continue // provider currently unconfigured: leave the item queued
 		}
@@ -114,6 +116,12 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 var errDownloadDead = errors.New("download dead")
 
 func (im *Importer) processItem(ctx context.Context, prov provider.Provider, item store.QueueItem) (bool, error) {
+	if item.ExternalID == "" {
+		if time.Since(parseTime(item.CreatedAt)) > 10*time.Minute {
+			return false, fmt.Errorf("download interrupted before the remote handle was recorded; retry this release")
+		}
+		return false, nil
+	}
 	state, err := prov.State(ctx, item.ExternalID)
 	if err != nil {
 		return false, err
@@ -143,9 +151,14 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 		return false, nil
 	}
 
-	if err := im.store.UpdateQueueItem(ctx, item.ID, store.QueueImporting, ""); err != nil {
+	if item.ExternalID == "" {
+		return false, fmt.Errorf("download was interrupted before its remote handle was recorded; retry the release")
+	}
+	frozen, err := im.store.BeginImport(ctx, item.ID)
+	if err != nil {
 		return false, err
 	}
+	item = *frozen
 
 	payload, err := prov.Fetch(ctx, item.ExternalID)
 	if err != nil {
@@ -176,9 +189,9 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	if err != nil {
 		return err
 	}
-	var slots []store.ExpectedSlot
-	if err := json.Unmarshal(item.ExpectedSlots, &slots); err != nil || len(slots) == 0 {
-		return fmt.Errorf("queue item has no expected slots")
+	slots, err := im.normalizeExpected(ctx, item)
+	if err != nil {
+		return err
 	}
 	first := slots[0]
 	isVolume := first.Ledger == "volume"
@@ -236,22 +249,35 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	if !ms.WriteComicInfo {
 		writeInfo = nil
 	}
-	size, err := mediafile.ImportCBZ(stream, destPath, writeInfo)
+	if err := os.MkdirAll(seriesDir, 0o755); err != nil {
+		return err
+	}
+	stage, err := os.CreateTemp(seriesDir, ".sento-stage-*.cbz")
 	if err != nil {
 		return err
 	}
-
-	links := make([]store.SlotLink, 0, len(slots))
-	for _, sl := range slots {
-		links = append(links, store.SlotLink{Ledger: sl.Ledger, CollectionID: sl.CollectionID, Number: sl.Number})
+	stagePath := stage.Name()
+	_ = stage.Close()
+	defer func() { _ = os.Remove(stagePath) }()
+	if _, err = mediafile.ImportCBZ(stream, stagePath, writeInfo); err != nil {
+		return err
 	}
-	_, err = im.store.AddFile(ctx, store.File{
-		SeriesID:   item.SeriesID,
-		Path:       destPath,
-		Size:       size,
-		Provenance: item.Protocol,
-	}, nil, links)
-	return err
+	hash, err := fileHash(stagePath)
+	if err != nil {
+		return err
+	}
+	destPath = assetPath(seriesDir, filepath.Base(destPath), hash, first)
+	if err = verifyDestination(destPath, hash); err != nil {
+		return err
+	}
+	if err = os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return err
+	}
+	if err = installAsset(stagePath, destPath, hash, false); err != nil {
+		return err
+	}
+	return im.recordAsset(ctx, item, destPath, slots, nil)
+
 }
 
 // importFiles imports a directory payload (torrents): every archive is
@@ -268,97 +294,103 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	if err != nil {
 		return err
 	}
-	var expected []store.ExpectedSlot
-	if err := json.Unmarshal(item.ExpectedSlots, &expected); err != nil {
+	expected, err := im.normalizeExpected(ctx, item)
+	if err != nil {
 		return err
 	}
-	if len(expected) == 0 {
-		return fmt.Errorf("queue item has no expected slots")
-	}
-	expectedSet := map[int64]store.ExpectedSlot{}
-	var collectionID int64
-	slotLedger := "volume"
-	for _, sl := range expected {
-		expectedSet[sl.Number] = sl
-		collectionID = sl.CollectionID
-		slotLedger = sl.Ledger
-	}
-
-	editionName, lang := "", ""
-	if col, err := im.store.GetCollection(ctx, collectionID); err == nil {
-		editionName, lang = col.EditionName, col.Language
-	}
-
 	seriesDir, err := im.seriesDir(ctx, series, naming)
 	if err != nil {
 		return err
 	}
-
-	linked := 0
+	linked := map[string]bool{}
 	for _, rel := range files {
+		if filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(filepath.Clean(rel), ".."+string(filepath.Separator)) {
+			return fmt.Errorf("invalid payload path")
+		}
 		ext := strings.ToLower(filepath.Ext(rel))
 		if ext != ".cbz" && ext != ".cbr" {
 			continue
 		}
 		res := parse.ParseAnchored(filepath.Base(rel), parse.ChannelFile, titles)
+		if !res.Anchored || res.TitleLeftover != "" || res.ContentType != parse.ContentManga {
+			if err := im.importReviewFile(ctx, item, seriesDir, filepath.Join(dir, rel), res, ms.AlwaysCopy); err != nil {
+				return err
+			}
+			continue
+		}
 		ranges := res.Volumes
-		if slotLedger == "chapter" {
+		if expected[0].Ledger == "chapter" {
 			ranges = res.Chapters
 		}
-		for _, r := range ranges {
-			for n := (int64(r.From) + 99) / 100 * 100; n <= int64(r.To); n += 100 {
-				sl, ok := expectedSet[n]
-				if !ok {
-					continue
+		var covered []store.ExpectedSlot
+		for _, sl := range expected {
+			w, e := im.store.GetWork(ctx, sl.WorkID)
+			if e != nil {
+				return e
+			}
+			col, e := im.store.GetCollection(ctx, sl.CollectionID)
+			if e != nil {
+				return e
+			}
+			if !editionCompatible(res, *col) {
+				continue
+			}
+			for _, r := range ranges {
+				if w.NumberKnown && w.SequenceNum >= int64(r.From) && w.SequenceNum <= int64(r.To) {
+					covered = append(covered, sl)
+					break
 				}
-				var dest string
-				switch {
-				case !ms.RenameImports:
-					dest = filepath.Join(seriesDir, filepath.Base(rel))
-					if slotLedger == "chapter" && naming.ChapterDir != "" {
-						dest = filepath.Join(seriesDir, naming.ChapterDir, filepath.Base(rel))
-					}
-				case slotLedger == "volume":
-					dest = filepath.Join(seriesDir, mediafile.Render(naming.VolumeFile, mediafile.NameTokens{
-						SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
-						Volume: n, Chapter: -1, Edition: editionName, Lang: lang,
-					}))
-				default:
-					dest = filepath.Join(seriesDir, naming.ChapterDir,
-						mediafile.Render(naming.ChapterFile, mediafile.NameTokens{
-							SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
-							Volume: -1, Chapter: n, Edition: editionName, Lang: lang,
-						}))
-				}
-				// Hardlinked as-is: keep the source's real format extension
-				// (a CBR renamed .cbz would lie about its contents).
-				dest = strings.TrimSuffix(dest, filepath.Ext(dest)) + ext
-				src := filepath.Join(dir, rel)
-				transfer := mediafile.HardlinkOrCopy
-				if ms.AlwaysCopy {
-					transfer = mediafile.CopyFile
-				}
-				if err := transfer(src, dest); err != nil {
-					return fmt.Errorf("linking %s: %w", rel, err)
-				}
-				size := int64(0)
-				if fi, err := os.Stat(dest); err == nil {
-					size = fi.Size()
-				}
-				if _, err := im.store.AddFile(ctx, store.File{
-					SeriesID:   item.SeriesID,
-					Path:       dest,
-					Size:       size,
-					Provenance: item.Protocol,
-				}, res, []store.SlotLink{{Ledger: sl.Ledger, CollectionID: sl.CollectionID, Number: sl.Number}}); err != nil {
-					return err
-				}
-				linked++
 			}
 		}
+		if len(covered) == 0 {
+			if err := im.importReviewFile(ctx, item, seriesDir, filepath.Join(dir, rel), res, ms.AlwaysCopy); err != nil {
+				return err
+			}
+			continue
+		}
+		src := filepath.Join(dir, rel)
+		hash, e := fileHash(src)
+		if e != nil {
+			return e
+		}
+		// A pack stays one asset with several verified coverage links.
+		name := filepath.Base(rel)
+		if ms.RenameImports && len(covered) == 1 {
+			sl := covered[0]
+			col, e := im.store.GetCollection(ctx, sl.CollectionID)
+			if e != nil {
+				return e
+			}
+			token := mediafile.NameTokens{SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Edition: col.EditionName, Lang: col.Language, Group: res.Group, Volume: -1, Chapter: -1}
+			tmpl := naming.VolumeFile
+			if sl.Ledger == "volume" {
+				token.Volume = sl.Number
+			} else {
+				token.Chapter = sl.Number
+				tmpl = naming.ChapterFile
+			}
+			name = mediafile.Render(tmpl, token)
+			name = strings.TrimSuffix(name, filepath.Ext(name)) + ext
+		}
+		// Identical bytes can serve several confirmed versions. Keep one
+		// archive with all coverage links; different releases get different
+		// hashes and can never replace this pathname.
+		dest := assetPath(seriesDir, name, hash, covered[0])
+		if e = verifyDestination(dest, hash); e != nil {
+			return e
+		}
+		if e = installAsset(src, dest, hash, ms.AlwaysCopy); e != nil {
+			return e
+		}
+		if e = im.recordAsset(ctx, item, dest, covered, res); e != nil {
+			return e
+		}
+		for _, sl := range covered {
+			linked[store.SlotKey("unit", sl.TargetID, sl.WorkID)] = true
+		}
 	}
-	if linked == 0 {
-		return fmt.Errorf("no archive in payload matched the expected slots")
+	if len(linked) != len(expected) {
+		return fmt.Errorf("partial import: verified %d of %d expected units; unmatched files need review", len(linked), len(expected))
 	}
 	return nil
 }

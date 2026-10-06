@@ -10,6 +10,24 @@ import type { RepoStatus } from "./sourcehost"
 
 
 //////////
+// source: api_catalog.go
+
+export interface CatalogLinkBody {
+  catalogId: number /* int64 */;
+}
+export interface FileMappingBody {
+  slots: any /* store.ExpectedSlot */[];
+}
+export interface ObservationReviewBody {
+  accept: boolean;
+}
+export interface UnitMonitorBody {
+  targetId: number /* int64 */;
+  workId: number /* int64 */;
+  monitored: boolean;
+}
+
+//////////
 // source: server.go
 /*
 Package server wires the HTTP API and serves the web UI.
@@ -168,6 +186,7 @@ export interface NamingPreview {
  * BindingPatch is PUT /series/{id}/bindings/{bid}.
  */
 export interface BindingPatch {
+  collectionId?: number /* int64 */;
   state: 'active' | 'disabled';
 }
 /**

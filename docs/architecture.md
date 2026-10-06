@@ -1,5 +1,8 @@
 # Backend architecture
 
+The current edition/acquisition model is described in [Editions, units, collected versions, and files](domain/collections.md). Stable work IDs identify memberships, targets express independently collected versions, and verified asset coverage determines ownership. Release evaluations and queue snapshots preserve acquisition decisions.
+
+
 A map of the Go backend: packages, their dependencies, and the data flows
 that run through them. Product behavior is specified in [spec/](spec/)
 (`spec.md`, `decision-engine.md`, `parser.md`); this document is about how

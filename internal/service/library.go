@@ -5,7 +5,6 @@ package service
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/ledger"
@@ -59,7 +58,8 @@ func (l *Library) AddSeries(ctx context.Context, req AddSeriesRequest) (int64, e
 		}
 	}
 
-	return l.store.AddSeries(ctx, store.AddSeriesParams{
+	id, err := l.store.AddSeries(ctx, store.AddSeriesParams{
+		MonitorNone:   req.Monitor == "none",
 		Series:        series,
 		Collections:   collections,
 		Works:         works,
@@ -69,6 +69,10 @@ func (l *Library) AddSeries(ctx context.Context, req AddSeriesRequest) (int64, e
 		ChapterCutoff: req.ChapterCutoff,
 		ProfileID:     req.ProfileID,
 	})
+	if err != nil {
+		return 0, err
+	}
+	return id, l.store.EnsureModels(ctx, id)
 }
 
 // defaultEditionID picks the edition monitored when the caller doesn't
@@ -85,10 +89,10 @@ func defaultEditionID(collections []metadata.Collection, lang string) string {
 		}
 		score := 0
 		if strings.Contains(strings.ToLower(c.EditionName), "standard") {
-			score += 2
+			score += 1
 		}
 		if strings.EqualFold(c.Language, lang) {
-			score++
+			score += 4
 		}
 		if score > bestScore {
 			best, bestScore = c.ProviderID, score
@@ -147,8 +151,8 @@ func (l *Library) CreateCollection(ctx context.Context, seriesID int64, p Create
 	if ctype != "volume" && ctype != "chapter" {
 		return nil, apperr.Invalidf("type must be volume or chapter")
 	}
-	if ctype == "volume" && p.BasedOn == 0 && (p.Volumes < 1 || p.Volumes > 500) {
-		return nil, apperr.Invalidf("volumes must be 1-500 when not based on an existing edition")
+	if ctype == "volume" && p.BasedOn == 0 && (p.Volumes < 0 || p.Volumes > 500) {
+		return nil, apperr.Invalidf("volumes must be 0-500 when not based on an existing edition")
 	}
 	cid, err := l.store.AddCustomCollection(ctx, store.Collection{
 		SeriesID: seriesID, EditionName: p.EditionName, Language: p.Language,
@@ -156,6 +160,9 @@ func (l *Library) CreateCollection(ctx context.Context, seriesID int64, p Create
 		Monitored: p.Monitored, CutoffNum: p.CutoffNum,
 	}, p.BasedOn, p.Volumes)
 	if err != nil {
+		return nil, err
+	}
+	if err := l.store.EnsureModels(ctx, seriesID); err != nil {
 		return nil, err
 	}
 	return l.store.GetCollection(ctx, cid)
@@ -205,7 +212,7 @@ func (l *Library) UpdateCollection(ctx context.Context, seriesID, collectionID i
 		if !col.Custom {
 			return apperr.Invalidf("language can only be changed on custom collections")
 		}
-		if err := l.store.SetCollectionLanguage(ctx, seriesID, collectionID, *u.Language); err != nil {
+		if err := l.store.EditCollection(ctx, seriesID, collectionID, store.CollectionMetadataPatch{Language: u.Language}); err != nil {
 			return err
 		}
 	}
@@ -215,11 +222,11 @@ func (l *Library) UpdateCollection(ctx context.Context, seriesID, collectionID i
 // Slots derives every collection's slot view (spec.md §4.2: computed,
 // never stored), keyed by collection id per ledger.
 func (l *Library) Slots(ctx context.Context, seriesID int64) (map[int64][]ledger.VolumeSlot, map[int64][]ledger.ChapterSlot, error) {
-	series, err := l.store.GetSeries(ctx, seriesID)
+	all, err := l.TargetSlots(ctx, seriesID)
 	if err != nil {
 		return nil, nil, err
 	}
-	links, err := l.store.SlotLinks(ctx, seriesID)
+	targets, err := l.store.ListTargets(ctx, seriesID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -229,16 +236,22 @@ func (l *Library) Slots(ctx context.Context, seriesID int64) (map[int64][]ledger
 	}
 	volumes := map[int64][]ledger.VolumeSlot{}
 	chapters := map[int64][]ledger.ChapterSlot{}
-	for _, col := range collections {
-		if col.Type == "chapter" {
-			chapters[col.ID] = ledger.BuildChapterSlots(col, series.TotalChapters, links, nil)
+	for _, t := range targets {
+		if !t.IsDefault {
 			continue
 		}
-		works, err := l.store.ListWorks(ctx, col.ID)
-		if err != nil {
-			return nil, nil, err
+		c := collectionByID(collections, t.CollectionID)
+		if c == nil || c.SyncState == "superseded" {
+			continue
 		}
-		volumes[col.ID] = ledger.BuildVolumeSlots(col, works, links, nil, time.Now())
+		for _, sl := range all[t.ID] {
+			w := sl.Work
+			if c.Type == "chapter" {
+				chapters[c.ID] = append(chapters[c.ID], ledger.ChapterSlot{WorkID: w.ID, SequenceStr: w.SequenceStr, Number: w.SequenceNum, Monitored: sl.Monitored, FileIDs: sl.FileIDs, Wanted: sl.Wanted})
+				continue
+			}
+			volumes[c.ID] = append(volumes[c.ID], ledger.VolumeSlot{WorkID: w.ID, Number: w.SequenceNum, SequenceStr: w.SequenceStr, CountType: w.CountType, ReleaseDate: w.ReleaseDate, Monitored: sl.Monitored, Released: sl.Availability == "released", Availability: sl.Availability, FileIDs: sl.FileIDs, Wanted: sl.Wanted})
+		}
 	}
 	return volumes, chapters, nil
 }

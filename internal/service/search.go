@@ -47,6 +47,9 @@ func (s *SearchService) HasSourceProvider() bool {
 // (volume or chapter type). Number 0 widens it to every wanted slot of the
 // collection — the per-collection search, where packs shine.
 type TargetSlot struct {
+	TargetID     int64 `json:"targetId,omitempty"`
+	WorkID       int64 `json:"workId,omitempty"`
+	All          bool  `json:"all,omitempty"`
 	CollectionID int64 `json:"collectionId"`
 	Number       int64 `json:"number"` // hundredths; 0 = whole collection
 }
@@ -54,24 +57,32 @@ type TargetSlot struct {
 // ReleaseCandidate is one candidate run through the funnel, for either
 // ledger.
 type ReleaseCandidate struct {
-	GUID         string       `json:"guid"`
-	Provider     string       `json:"provider"`
-	Protocol     string       `json:"protocol"`
-	Site         string       `json:"site"`
-	SiteID       string       `json:"siteId"`
-	Title        string       `json:"title"`
-	URL          string       `json:"url,omitempty"` // release page on the indexer/source site
-	Size         int64        `json:"size,omitempty"`
-	Seeders      int          `json:"seeders,omitempty"`
-	Scanlator    string       `json:"scanlator,omitempty"`
-	CollectionID int64        `json:"collectionId,omitempty"`
-	Covered      []int64      `json:"covered,omitempty"`
-	Score        int          `json:"score"`
-	Formats      []FormatHit  `json:"formats,omitempty"`     // matched custom formats
-	FormatScore  int          `json:"formatScore,omitempty"` // their summed score
-	Rejections   []string     `json:"rejections,omitempty"`
-	Parse        parse.Result `json:"parse"`
-	cand         provider.Candidate
+	TargetSnapshot   *store.DownloadTarget `json:"targetSnapshot,omitempty"`
+	FormatSnapshot   []profile.Format      `json:"formatSnapshot,omitempty"`
+	PolicySnapshot   *profile.Profile      `json:"policySnapshot,omitempty"`
+	EditionSnapshot  *store.Collection     `json:"editionSnapshot,omitempty"`
+	RepresentedUnits int                   `json:"representedUnits"`
+	TargetID         int64                 `json:"targetId,omitempty"`
+	Coverage         []store.ExpectedSlot  `json:"coverage,omitempty"`
+	ProfileID        int64                 `json:"profileId,omitempty"`
+	GUID             string                `json:"guid"`
+	Provider         string                `json:"provider"`
+	Protocol         string                `json:"protocol"`
+	Site             string                `json:"site"`
+	SiteID           string                `json:"siteId"`
+	Title            string                `json:"title"`
+	URL              string                `json:"url,omitempty"` // release page on the indexer/source site
+	Size             int64                 `json:"size,omitempty"`
+	Seeders          int                   `json:"seeders,omitempty"`
+	Scanlator        string                `json:"scanlator,omitempty"`
+	CollectionID     int64                 `json:"collectionId,omitempty"`
+	Covered          []int64               `json:"covered,omitempty"`
+	Score            int                   `json:"score"`
+	Formats          []FormatHit           `json:"formats,omitempty"`     // matched custom formats
+	FormatScore      int                   `json:"formatScore,omitempty"` // their summed score
+	Rejections       []string              `json:"rejections,omitempty"`
+	Parse            parse.Result          `json:"parse"`
+	cand             provider.Candidate
 }
 
 // FormatHit is one custom format the candidate matched, with the score
@@ -269,17 +280,23 @@ type SearchEvent struct {
 // searchRun is the resolved context of one search, shared by all provider
 // goroutines (read-only after prepare).
 type searchRun struct {
-	seriesID    int64
-	ledger      string
-	target      *TargetSlot
-	titles      []string
-	sites       []siteState
-	allowed     map[string]map[string]bool
-	priorities  map[[2]string]int
-	searched    []string
-	wanted      map[int64]map[int64]bool
-	collections []store.Collection
-	blocked     map[string]bool // "protocol/externalKey" bans
+	targets        []store.DownloadTarget
+	units          map[int64][]store.Work
+	targetWanted   map[int64]map[int64]bool
+	targetProfiles map[int64]*profile.Profile
+	sourceEditions map[int64]int64
+	ownedScores    map[int64]map[int64]int
+	seriesID       int64
+	ledger         string
+	target         *TargetSlot
+	titles         []string
+	sites          []siteState
+	allowed        map[string]map[string]bool
+	priorities     map[[2]string]int
+	searched       []string
+	wanted         map[int64]map[int64]bool
+	collections    []store.Collection
+	blocked        map[string]bool // "protocol/externalKey" bans
 	// profiles is the effective release profile per collection id, with
 	// the series-level profile under key 0 (nil map = built-ins).
 	profiles map[int64]*profile.Profile
@@ -331,6 +348,9 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 	if run.profiles, run.formats, err = s.profiles.EffectiveProfiles(ctx, seriesID); err != nil {
 		return nil, err
 	}
+	if err = s.prepareTargets(ctx, run); err != nil {
+		return nil, err
+	}
 	return run, nil
 }
 
@@ -348,6 +368,7 @@ func (s *SearchService) searchOnce(ctx context.Context, p provider.Provider, run
 		slog.Warn("search degraded", "provider", p.ID(), "sites", siteNames, "error", err)
 		ev.Error = fmt.Sprintf("%s: %v", strings.Join(siteNames, ", "), err) // partial results still count
 	}
+	s.observeCandidates(ctx, run, cands)
 	ev.Candidates, ev.Dropped = s.process(run, cands)
 	return ev
 }

@@ -1,0 +1,204 @@
+package service
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"github.com/h-wb/sento/internal/mediafile"
+	"github.com/h-wb/sento/internal/store"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+func fileHash(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err = io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+func assetPath(root, name, hash string, sl store.ExpectedSlot) string {
+	ext := filepath.Ext(name)
+	base := mediafile.Sanitize(strings.TrimSuffix(filepath.Base(name), ext))
+	for len([]byte(base)) > 120 {
+		r := []rune(base)
+		base = string(r[:len(r)-1])
+	}
+	if base == "" {
+		base = "unit"
+	}
+	return filepath.Join(root, "collections", strconv.FormatInt(sl.CollectionID, 10), "versions", strconv.FormatInt(sl.TargetID, 10), base+" ["+hash+"]"+ext)
+}
+func verifyDestination(path, hash string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	got, err := fileHash(path)
+	if err != nil {
+		return err
+	}
+	if got != hash {
+		return fmt.Errorf("destination collision: existing asset has different content: %s", path)
+	}
+	return nil
+}
+func (im *Importer) normalizeExpected(ctx context.Context, item store.QueueItem) ([]store.ExpectedSlot, error) {
+	if err := im.store.EnsureModels(ctx, item.SeriesID); err != nil {
+		return nil, err
+	}
+	var slots []store.ExpectedSlot
+	if err := json.Unmarshal(item.ExpectedSlots, &slots); err != nil {
+		return nil, err
+	}
+	if len(slots) == 0 {
+		return nil, fmt.Errorf("queue item has no expected units")
+	}
+	for i := range slots {
+		sl := &slots[i]
+		col, err := im.store.GetCollection(ctx, sl.CollectionID)
+		if err != nil {
+			return nil, err
+		}
+		if col.SeriesID != item.SeriesID || col.Type != sl.Ledger {
+			return nil, fmt.Errorf("invalid edition mapping")
+		}
+		w, err := im.store.GetWork(ctx, sl.WorkID)
+		if err != nil {
+			return nil, err
+		}
+		t, err := im.store.GetTarget(ctx, sl.TargetID)
+		if err != nil {
+			return nil, err
+		}
+		if w.CollectionID != sl.CollectionID || t.CollectionID != sl.CollectionID {
+			return nil, fmt.Errorf("unit/version mapping does not belong to this edition")
+		}
+	}
+	return slots, nil
+}
+func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path string, slots []store.ExpectedSlot, parsed any) error {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	links := make([]store.SlotLink, 0, len(slots))
+	for _, sl := range slots {
+		links = append(links, store.SlotLink{Ledger: sl.Ledger, CollectionID: sl.CollectionID, Number: sl.Number, TargetID: sl.TargetID, WorkID: sl.WorkID})
+	}
+	id, err := im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol}, parsed, links)
+	if err != nil {
+		return err
+	}
+	var snap ReleaseCandidate
+	_ = json.Unmarshal(item.Snapshot, &snap)
+	facts := store.AssetFacts{Title: snap.Title, Site: snap.Site, Protocol: item.Protocol, FactsKnown: snap.Title != "", Flags: candidateFlags(snap), Language: snap.Parse.Language, Group: snap.Parse.Group, Format: strings.TrimPrefix(filepath.Ext(path), "."), FormatScore: snap.FormatScore, Resolution: snap.Parse.Quality.Resolution, Revision: snap.Parse.Version, Digital: snap.Parse.Quality.Digital, ProfileID: snap.ProfileID, ReleaseKey: item.ReleaseKey}
+	if facts.Group == "" {
+		facts.Group = snap.Scanlator
+	}
+	hash, err := fileHash(path)
+	if err != nil {
+		return err
+	}
+	return im.store.SetAssetFacts(ctx, id, facts, hash)
+}
+
+// installAsset never replaces an existing pathname, even if another actor
+// creates it between the hash check and installation.
+func installAsset(src, dest, hash string, alwaysCopy bool) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	if !alwaysCopy {
+		if err := os.Link(src, dest); err == nil {
+			return nil
+		} else if os.IsExist(err) {
+			return verifyDestination(dest, hash)
+		}
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	tmp, err := os.CreateTemp(filepath.Dir(dest), ".sento-install-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer func() { _ = os.Remove(name) }()
+	if _, err = io.Copy(tmp, in); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err = tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	if err = os.Link(name, dest); os.IsExist(err) {
+		return verifyDestination(dest, hash)
+	}
+	if err == nil {
+		return nil
+	}
+	// Filesystems without hardlinks still get exclusive, non-overwriting copies.
+	staged, err := os.Open(name)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = staged.Close() }()
+	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if os.IsExist(err) {
+		return verifyDestination(dest, hash)
+	}
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(out, staged)
+	if copyErr == nil {
+		copyErr = out.Sync()
+	}
+	closeErr := out.Close()
+	if copyErr == nil {
+		copyErr = closeErr
+	}
+	if copyErr != nil {
+		_ = os.Remove(dest)
+	}
+	return copyErr
+}
+
+// Unmatched archives are retained for human mapping without claiming coverage.
+func (im *Importer) importReviewFile(ctx context.Context, item store.QueueItem, root, src string, parsed any, copy bool) error {
+	hash, err := fileHash(src)
+	if err != nil {
+		return err
+	}
+	dest := assetPath(filepath.Join(root, "review"), filepath.Base(src), hash, store.ExpectedSlot{})
+	if err = installAsset(src, dest, hash, copy); err != nil {
+		return err
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		return err
+	}
+	id, err := im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: dest, Size: info.Size(), Provenance: item.Protocol, NeedsReview: true, Unrequested: true}, parsed, nil)
+	if err != nil {
+		return err
+	}
+	return im.store.SetAssetFacts(ctx, id, store.AssetFacts{Title: filepath.Base(src), Format: strings.TrimPrefix(filepath.Ext(src), "."), Protocol: item.Protocol, ReleaseKey: item.ReleaseKey}, hash)
+}

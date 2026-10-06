@@ -100,6 +100,9 @@ export interface LedgerRules {
  * still works); MinScoreOff disables the floor.
  */
 export interface Profile {
+  upgradesEnabled: boolean;
+  upgradeUntilScore: number /* int */;
+  minUpgradeScore: number /* int */;
   id: number /* int64 */;
   name: string;
   minFormatScore: number /* int */;

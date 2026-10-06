@@ -8,6 +8,9 @@
  * CalendarEntry is one dated volume release of a monitored collection.
  */
 export interface CalendarEntry {
+  workId: number /* int64 */;
+  targetId: number /* int64 */;
+  versionName: string;
   seriesId: number /* int64 */;
   seriesTitle: string;
   collectionId: number /* int64 */;
@@ -16,6 +19,51 @@ export interface CalendarEntry {
   sequenceStr: string;
   releaseDate: string;
   owned: boolean;
+}
+
+//////////
+// source: catalog.go
+
+export interface UnitObservation {
+  id: number /* int64 */;
+  collectionId: number /* int64 */;
+  source: string;
+  externalKey: string;
+  label: string;
+  number: number /* int64 */;
+  state: string;
+}
+export interface WorkRelation {
+  fromId: number /* int64 */;
+  toId: number /* int64 */;
+  relation: string;
+}
+
+//////////
+// source: catalog_edit.go
+
+export interface CollectionMetadataPatch {
+  numberingSource?: string;
+  editionLayout?: string;
+  contentVariant?: string;
+  discoverChapters?: boolean;
+  editionName?: string;
+  language?: string;
+  publisher?: string;
+  medium?: string;
+  reset: string[];
+}
+export interface CatalogLinkPreview {
+  localTargets: DownloadTarget[];
+  catalogTargets: DownloadTarget[];
+  fileCount: number /* int */;
+  pending: boolean;
+  localUnits: Work[];
+  catalogUnits: Work[];
+  local?: Collection;
+  catalog?: Collection;
+  mapping: { [key: number /* int64 */]: number /* int64 */};
+  unmatched: number /* int64 */[];
 }
 
 //////////
@@ -99,6 +147,9 @@ export interface Indexer {
  */
 export type JSONText = string /* []byte */;
 export interface QueueItem {
+  providerId?: string;
+  releaseKey?: string;
+  snapshot: any;
   id: number /* int64 */;
   seriesId: number /* int64 */;
   protocol: string; // torrent|source
@@ -125,6 +176,8 @@ export const QueueFailed = "failed";
  * ExpectedSlot mirrors file_slot_links coordinates for pending grabs.
  */
 export interface ExpectedSlot {
+  targetId?: number /* int64 */;
+  workId?: number /* int64 */;
   ledger: string;
   collectionId: number /* int64 */;
   number: number /* int64 */;
@@ -179,6 +232,11 @@ export interface Series {
   refreshedAt?: string;
 }
 export interface Collection {
+  numberingSource: string;
+  editionLayout: string;
+  contentVariant: string;
+  discoverChapters: boolean;
+  syncState: string;
   id: number /* int64 */;
   seriesId: number /* int64 */;
   editionName: string;
@@ -197,6 +255,10 @@ export interface Collection {
   cutoffNum: number /* int64 */; // chapter ctype: monitor from N onward (D6)
 }
 export interface Work {
+  providerId?: string;
+  numberKnown: boolean;
+  revision?: string;
+  syncState: string;
   id: number /* int64 */;
   collectionId: number /* int64 */;
   sequenceNum: number /* int64 */; // hundredths
@@ -207,6 +269,9 @@ export interface Work {
   pages?: number /* int */;
 }
 export interface File {
+  facts: AssetFacts;
+  needsReview: boolean;
+  hash?: string;
   id: number /* int64 */;
   seriesId: number /* int64 */;
   path: string;
@@ -216,12 +281,15 @@ export interface File {
   addedAt: string;
 }
 export interface SlotLink {
+  TargetID: number /* int64 */;
+  WorkID: number /* int64 */;
   FileID: number /* int64 */;
   Ledger: string;
   CollectionID: number /* int64 */;
   Number: number /* int64 */;
 }
 export interface Binding {
+  collectionId: number /* int64 */;
   id: number /* int64 */;
   seriesId: number /* int64 */;
   sourceId: string;
@@ -236,6 +304,7 @@ export interface Binding {
  * fetched metadata in one transaction.
  */
 export interface AddSeriesParams {
+  MonitorNone: boolean;
   Series?: any /* metadata.Series */;
   Collections: any /* metadata.Collection */[];
   Works: { [key: string]: any /* metadata.Work */[]}; // keyed by collection provider id
@@ -244,4 +313,44 @@ export interface AddSeriesParams {
   ChapterLang: string;
   ChapterCutoff: number /* int64 */; // hundredths; default: total_chapters*100 (latest at add)
   ProfileID: number /* int64 */; // 0 = instance default (stored NULL)
+}
+
+//////////
+// source: targets.go
+
+export interface DownloadTarget {
+  id: number /* int64 */;
+  collectionId: number /* int64 */;
+  name: string;
+  isDefault: boolean;
+  monitored: boolean;
+  profileId: number /* int64 */;
+  cutoffNum: number /* int64 */;
+  requiredGroup: string;
+  allowUnknown: boolean;
+  acquireUnknown: boolean;
+}
+export interface AssetFacts {
+  title?: string;
+  site?: string;
+  protocol?: string;
+  flags?: { [key: string]: boolean};
+  factsKnown: boolean;
+  language?: string;
+  group?: string;
+  format?: string;
+  formatScore: number /* int */;
+  resolution: number /* int */;
+  revision: number /* int */;
+  digital: boolean;
+  profileId?: number /* int64 */;
+  releaseKey?: string;
+}
+export interface AssetCoverage {
+  evidence: string;
+  fileId: number /* int64 */;
+  targetId: number /* int64 */;
+  workId: number /* int64 */;
+  verified: boolean;
+  pinned: boolean;
 }

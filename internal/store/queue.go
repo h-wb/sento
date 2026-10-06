@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/h-wb/sento/internal/apperr"
 	"strings"
 )
 
@@ -33,6 +36,9 @@ func (j JSONText) MarshalJSON() ([]byte, error) {
 }
 
 type QueueItem struct {
+	ProviderID    string   `json:"providerId,omitempty"`
+	ReleaseKey    string   `json:"releaseKey,omitempty"`
+	Snapshot      JSONText `json:"snapshot" db:"snapshot_json" tstype:"any"`
 	ID            int64    `json:"id"`
 	SeriesID      int64    `json:"seriesId"`
 	Protocol      string   `json:"protocol"` // torrent|source
@@ -57,8 +63,10 @@ const (
 	QueueFailed      = "failed"
 )
 
-// ExpectedSlot mirrors file_slot_links coordinates for pending grabs.
+// ExpectedSlot records explicit version and unit coverage for a pending grab.
 type ExpectedSlot struct {
+	TargetID     int64  `json:"targetId,omitempty"`
+	WorkID       int64  `json:"workId,omitempty"`
 	Ledger       string `json:"ledger"`
 	CollectionID int64  `json:"collectionId"`
 	Number       int64  `json:"number"`
@@ -80,7 +88,7 @@ func (s *Store) UpdateQueueItem(ctx context.Context, id int64, status, errMsg st
 
 func (s *Store) ListQueueItems(ctx context.Context, activeOnly bool) ([]QueueItem, error) {
 	q := `SELECT id, series_id, protocol, external_id, title, status, expected_slots_json,
-	             COALESCE(error,'') AS error, created_at,
+	             COALESCE(error,'') AS error, created_at,provider_id,release_key,snapshot_json,
 	             COALESCE(updated_at,'') AS updated_at
 	      FROM queue_items`
 	if activeOnly {
@@ -164,4 +172,163 @@ func (s *Store) SeriesTitles(ctx context.Context, seriesID int64) ([]string, err
 		}
 	}
 	return titles, nil
+}
+
+func (s *Store) PendingUnits(ctx context.Context, seriesID int64) (map[string]bool, error) {
+	raws, err := list[string](ctx, s, `SELECT expected_slots_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing')`, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, raw := range raws {
+		var slots []ExpectedSlot
+		if err = json.Unmarshal([]byte(raw), &slots); err != nil {
+			return nil, err
+		}
+		for _, sl := range slots {
+			if sl.TargetID > 0 && sl.WorkID > 0 {
+				out[SlotKey("unit", sl.TargetID, sl.WorkID)] = true
+			} else {
+				pairs, e := list[struct {
+					TargetID int64
+					WorkID   int64
+				}](ctx, s, `SELECT t.id AS target_id,w.id AS work_id FROM download_targets t JOIN works w ON w.collection_id=t.collection_id WHERE t.is_default=TRUE AND w.collection_id=? AND w.sequence_num=?`, sl.CollectionID, sl.Number)
+				if e != nil {
+					return nil, e
+				}
+				for _, p := range pairs {
+					out[SlotKey("unit", p.TargetID, p.WorkID)] = true
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+// ReserveQueue claims every target/unit before contacting a downloader. Failed
+// jobs release claims on the next reservation; completed jobs retain history.
+func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []ExpectedSlot) (int64, bool, error) {
+	if len(slots) == 0 {
+		return 0, false, apperr.Invalidf("release has no verified unit coverage")
+	}
+	if err := s.EnsureModels(ctx, q.SeriesID); err != nil {
+		return 0, false, err
+	}
+	if !json.Valid(q.Snapshot) {
+		q.Snapshot = JSONText(`{}`)
+	}
+	for i := range slots {
+		sl := &slots[i]
+		c, e := s.GetCollection(ctx, sl.CollectionID)
+		if e != nil {
+			return 0, false, e
+		}
+		if c.SeriesID != q.SeriesID || c.Type != sl.Ledger {
+			return 0, false, apperr.Invalidf("invalid unit edition")
+		}
+		w, e := s.GetWork(ctx, sl.WorkID)
+		if e != nil {
+			return 0, false, e
+		}
+		t, e := s.GetTarget(ctx, sl.TargetID)
+		if e != nil {
+			return 0, false, e
+		}
+		if w.CollectionID != c.ID || t.CollectionID != c.ID {
+			return 0, false, apperr.Invalidf("unit/version belongs to another edition")
+		}
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.ExecContext(ctx, `DELETE FROM unit_reservations WHERE queue_id IN(SELECT id FROM queue_items WHERE status IN('failed','imported'))`); err != nil {
+		return 0, false, err
+	}
+	var id int64
+	var raw, snap string
+	err = sql.ErrNoRows
+	if q.ReleaseKey != "" {
+		query := `SELECT id,expected_slots_json,snapshot_json FROM queue_items WHERE series_id=? AND provider_id=? AND release_key=? AND status IN('queued','downloading') ORDER BY id LIMIT 1`
+		if s.pg {
+			query += " FOR UPDATE"
+		}
+		err = tx.QueryRowContext(ctx, s.q(query), q.SeriesID, q.ProviderID, q.ReleaseKey).Scan(&id, &raw, &snap)
+	}
+	created := errors.Is(err, sql.ErrNoRows)
+	var plan []ExpectedSlot
+	if created {
+		body, _ := json.Marshal(slots)
+		if err = tx.QueryRowContext(ctx, s.q(`INSERT INTO queue_items(series_id,protocol,external_id,title,status,expected_slots_json,provider_id,release_key,snapshot_json) VALUES(?,?,'',?,'queued',?,?,?,?) RETURNING id`), q.SeriesID, q.Protocol, q.Title, string(body), q.ProviderID, q.ReleaseKey, string(q.Snapshot)).Scan(&id); err != nil {
+			return 0, false, conflict(err, "release already has an active job")
+		}
+	} else if err != nil {
+		return 0, false, err
+	} else {
+		if err = json.Unmarshal([]byte(raw), &plan); err != nil {
+			return 0, false, err
+		}
+	}
+	for _, sl := range slots {
+		exists := false
+		for _, old := range plan {
+			if old.TargetID == sl.TargetID && old.WorkID == sl.WorkID && old.CollectionID == sl.CollectionID && old.Number == sl.Number {
+				exists = true
+			}
+		}
+		if exists {
+			continue
+		}
+		if sl.TargetID > 0 && sl.WorkID > 0 {
+			if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO unit_reservations(target_id,work_id,queue_id) VALUES(?,?,?)`), sl.TargetID, sl.WorkID, id); err != nil {
+				return 0, false, conflict(err, "unit already has a pending download")
+			}
+		}
+		plan = append(plan, sl)
+	}
+	if !created {
+		body, _ := json.Marshal(plan)
+		snapshot := map[string]json.RawMessage{}
+		_ = json.Unmarshal([]byte(snap), &snapshot)
+		var extra []json.RawMessage
+		_ = json.Unmarshal(snapshot["extraEvaluations"], &extra)
+		extra = append(extra, json.RawMessage(q.Snapshot))
+		snapshot["extraEvaluations"], _ = json.Marshal(extra)
+		saved, _ := json.Marshal(snapshot)
+		if _, err = tx.ExecContext(ctx, s.q(`UPDATE queue_items SET expected_slots_json=?,snapshot_json=? WHERE id=?`), string(body), string(saved), id); err != nil {
+			return 0, false, err
+		}
+	}
+	return id, created, tx.Commit()
+}
+func (s *Store) SetQueueExternalID(ctx context.Context, id int64, key string) error {
+	return s.touch(ctx, `UPDATE queue_items SET external_id=? WHERE id=?`, key, id)
+}
+
+// BeginImport freezes the plan and reads it after acquiring the row's write
+// lock. A concurrent version attachment either finishes first or is refused.
+func (s *Store) BeginImport(ctx context.Context, id int64) (*QueueItem, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, s.q(`UPDATE queue_items SET status='importing',updated_at=? WHERE id=? AND status IN('queued','downloading','importing')`), utcNow(), id)
+	if err != nil {
+		return nil, err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if n != 1 {
+		return nil, apperr.Conflictf("download is no longer active")
+	}
+	var q QueueItem
+	err = tx.QueryRowContext(ctx, s.q(`SELECT id,series_id,protocol,external_id,title,status,expected_slots_json,provider_id,release_key,snapshot_json,created_at FROM queue_items WHERE id=?`), id).Scan(&q.ID, &q.SeriesID, &q.Protocol, &q.ExternalID, &q.Title, &q.Status, &q.ExpectedSlots, &q.ProviderID, &q.ReleaseKey, &q.Snapshot, &q.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &q, tx.Commit()
 }

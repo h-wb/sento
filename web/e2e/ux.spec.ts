@@ -2,9 +2,32 @@ import { expect, test } from '@playwright/test'
 
 const longError = `Download failed: https://source.example/${'unbroken-path'.repeat(150)}\nUpstream returned HTTP 403.\n${'The source did not allow this request. '.repeat(40)}`
 const queueItems = [
-  { id: 901, seriesId: 901, protocol: 'source', title: `Failed release ${'long-title-'.repeat(30)}`, status: 'failed', error: longError, createdAt: '2026-10-05T12:00:00Z' },
-  { id: 902, seriesId: 901, protocol: 'torrent', title: 'Downloading release', status: 'downloading', progress: 0.42, createdAt: '2026-10-05T12:00:00Z' },
-  { id: 903, seriesId: 901, protocol: 'torrent', title: 'Finished release', status: 'imported', createdAt: '2026-10-05T12:00:00Z' },
+  {
+    id: 901,
+    seriesId: 901,
+    protocol: 'source',
+    title: `Failed release ${'long-title-'.repeat(30)}`,
+    status: 'failed',
+    error: longError,
+    createdAt: '2026-10-05T12:00:00Z',
+  },
+  {
+    id: 902,
+    seriesId: 901,
+    protocol: 'torrent',
+    title: 'Downloading release',
+    status: 'downloading',
+    progress: 0.42,
+    createdAt: '2026-10-05T12:00:00Z',
+  },
+  {
+    id: 903,
+    seriesId: 901,
+    protocol: 'torrent',
+    title: 'Finished release',
+    status: 'imported',
+    createdAt: '2026-10-05T12:00:00Z',
+  },
 ]
 for (const width of [390, 1280]) {
   test(`activity handles long errors at ${width}px`, async ({ page }, testInfo) => {
@@ -14,15 +37,29 @@ for (const width of [390, 1280]) {
     await expect(page.getByText('Downloading release', { exact: true })).toBeVisible()
     await expect(page.getByText('42%', { exact: true })).toBeVisible()
     await expect(page.getByText('Finished release', { exact: true })).toHaveCount(0)
-    const overflow = await page.evaluate(() => [...document.querySelectorAll('*')].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1).map((e) => [e.tagName, e.className, e.getBoundingClientRect().right]))
+    const overflow = await page.evaluate(() =>
+      [...document.querySelectorAll('*')]
+        .filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1)
+        .map((e) => [e.tagName, e.className, e.getBoundingClientRect().right]),
+    )
     expect(overflow).toEqual([])
-    await page.screenshot({ path: testInfo.outputPath('activity.png'), fullPage: true, animations: 'disabled' })
+    await page.screenshot({
+      path: testInfo.outputPath('activity.png'),
+      fullPage: true,
+      animations: 'disabled',
+    })
     await page.getByRole('button', { name: 'View error', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Download error' })
     await expect(dialog.locator('pre')).toHaveText(longError)
     await expect(dialog).toHaveCSS('opacity', '1')
-    expect(await dialog.locator('pre').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
-    await page.screenshot({ path: testInfo.outputPath('error-details.png'), fullPage: true, animations: 'disabled' })
+    expect(await dialog.locator('pre').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+      true,
+    )
+    await page.screenshot({
+      path: testInfo.outputPath('error-details.png'),
+      fullPage: true,
+      animations: 'disabled',
+    })
     await dialog.getByRole('button', { name: 'Close dialog', exact: true }).click()
     await page.getByRole('tab', { name: /Completed/ }).click()
     await expect(page.getByText('Finished release', { exact: true })).toBeVisible()
@@ -32,7 +69,11 @@ for (const width of [390, 1280]) {
 
 test('activity shows a failed request and lets the user retry', async ({ page }) => {
   let fail = true
-  await page.route('**/api/v1/queue?all=1', (route) => fail ? route.fulfill({ status: 503, json: { error: 'Queue unavailable' } }) : route.fulfill({ json: [] }))
+  await page.route('**/api/v1/queue?all=1', (route) =>
+    fail
+      ? route.fulfill({ status: 503, json: { error: 'Queue unavailable' } })
+      : route.fulfill({ json: [] }),
+  )
   await page.goto('/queue')
   await expect(page.getByText('Queue unavailable', { exact: true })).toBeVisible()
   await expect(page.getByText('No downloads in progress', { exact: true })).toHaveCount(0)
@@ -43,7 +84,9 @@ test('activity shows a failed request and lets the user retry', async ({ page })
 
 test('settings navigation protects edits and supports staying or discarding', async ({ page }) => {
   await page.goto('/connections')
-  const input = page.getByRole('region', { name: 'qBittorrent' }).getByRole('textbox', { name: 'URL' })
+  const input = page
+    .getByRole('region', { name: 'qBittorrent' })
+    .getByRole('textbox', { name: 'URL' })
   await expect(input).toHaveValue(/qbit$/)
   await input.fill('http://changed.example:8080')
   await page.getByRole('link', { name: 'Library', exact: true }).click()
@@ -59,14 +102,34 @@ test('settings navigation protects edits and supports staying or discarding', as
 test('importer lets users correct a match and retry a failed import', async ({ page }) => {
   let attempts = 0
   const bodies: unknown[] = []
-  await page.route('**/api/v1/library/import/scan', (route) => route.fulfill({ json: [{ dir: '/library/Blade', name: 'Blade', bestId: 11, confidence: 0.8, candidates: [
-    { mangabakaId: 11, title: 'Blade', year: 2010, type: 'manga', status: 'completed' },
-    { mangabakaId: 12, title: 'Blade Afterstory', year: 2015, type: 'manga', status: 'completed' },
-  ] }] }))
+  await page.route('**/api/v1/library/import/scan', (route) =>
+    route.fulfill({
+      json: [
+        {
+          dir: '/library/Blade',
+          name: 'Blade',
+          bestId: 11,
+          confidence: 0.8,
+          candidates: [
+            { mangabakaId: 11, title: 'Blade', year: 2010, type: 'manga', status: 'completed' },
+            {
+              mangabakaId: 12,
+              title: 'Blade Afterstory',
+              year: 2015,
+              type: 'manga',
+              status: 'completed',
+            },
+          ],
+        },
+      ],
+    }),
+  )
   await page.route('**/api/v1/library/import', (route) => {
     bodies.push(route.request().postDataJSON())
     attempts++
-    return attempts === 1 ? route.fulfill({ status: 500, json: { error: 'Temporary import failure' } }) : route.fulfill({ json: { seriesId: 912, scan: { linked: 3 } } })
+    return attempts === 1
+      ? route.fulfill({ status: 500, json: { error: 'Temporary import failure' } })
+      : route.fulfill({ json: { seriesId: 912, scan: { linked: 3 } } })
   })
   await page.goto('/add?tab=import')
   await page.getByRole('button', { name: 'Scan', exact: true }).click()
@@ -75,15 +138,41 @@ test('importer lets users correct a match and retry a failed import', async ({ p
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await expect(page.getByText(/Temporary import failure/)).toBeVisible()
   await page.getByRole('button', { name: 'Retry import', exact: true }).click()
-  await expect(page.getByRole('link', { name: 'Open', exact: true })).toHaveAttribute('href', '/series/912')
-  expect(bodies).toEqual([{ dir: '/library/Blade', mangabakaId: 12 }, { dir: '/library/Blade', mangabakaId: 12 }])
+  await expect(page.getByRole('link', { name: 'Open', exact: true })).toHaveAttribute(
+    'href',
+    '/series/912',
+  )
+  expect(bodies).toEqual([
+    { dir: '/library/Blade', mangabakaId: 12 },
+    { dir: '/library/Blade', mangabakaId: 12 },
+  ])
 })
 
 test('filtered-out library selections cannot be bulk deleted', async ({ page }) => {
-  await page.route('**/api/v1/series/', (route) => route.fulfill({ json: [
-    { id: 901, title: 'Alpha', sortTitle: 'Alpha', type: 'manga', status: 'ongoing', monitored: true, addedAt: '' },
-    { id: 902, title: 'Beta', sortTitle: 'Beta', type: 'manga', status: 'ongoing', monitored: true, addedAt: '' },
-  ] }))
+  await page.route('**/api/v1/series/', (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: 901,
+          title: 'Alpha',
+          sortTitle: 'Alpha',
+          type: 'manga',
+          status: 'ongoing',
+          monitored: true,
+          addedAt: '',
+        },
+        {
+          id: 902,
+          title: 'Beta',
+          sortTitle: 'Beta',
+          type: 'manga',
+          status: 'ongoing',
+          monitored: true,
+          addedAt: '',
+        },
+      ],
+    }),
+  )
   await page.goto('/')
   await page.getByRole('button', { name: 'Table', exact: true }).click()
   await page.getByRole('checkbox', { name: 'Select Alpha', exact: true }).check()
@@ -98,24 +187,77 @@ test('filtered-out library selections cannot be bulk deleted', async ({ page }) 
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 })
 
-test('series interactions work with keyboard and fit a mobile viewport', async ({ page }, testInfo) => {
-  const series = { id: 901, mangabakaId: 901, title: 'Witch Hat Atelier', sortTitle: 'Witch Hat Atelier', status: 'ongoing', type: 'manga', year: 2016, monitored: true, finalVolume: 15, totalChapters: 85, description: 'A young apprentice discovers a world of magic. '.repeat(25) }
-  const collection = { id: 901, seriesId: 901, editionName: 'Standard Edition', language: 'en', type: 'volume', monitored: true }
-  await page.route('**/api/v1/series/901/', (route) => route.fulfill({ json: { series, collections: [collection] } }))
-  await page.route('**/api/v1/series/901/slots', (route) => route.fulfill({ json: { volumes: { '901': [{ number: 100, countType: 'main', released: true, wanted: true, monitored: true, fileIds: [] }] }, chapters: {} } }))
+test('series interactions work with keyboard and fit a mobile viewport', async ({
+  page,
+}, testInfo) => {
+  const series = {
+    id: 901,
+    mangabakaId: 901,
+    title: 'Witch Hat Atelier',
+    sortTitle: 'Witch Hat Atelier',
+    status: 'ongoing',
+    type: 'manga',
+    year: 2016,
+    monitored: true,
+    finalVolume: 15,
+    totalChapters: 85,
+    description: 'A young apprentice discovers a world of magic. '.repeat(25),
+  }
+  const collection = {
+    id: 901,
+    seriesId: 901,
+    editionName: 'Standard Edition',
+    language: 'en',
+    type: 'volume',
+    monitored: true,
+  }
+  await page.route('**/api/v1/series/901/', (route) =>
+    route.fulfill({ json: { series, collections: [collection] } }),
+  )
+  await page.route('**/api/v1/series/901/slots', (route) =>
+    route.fulfill({
+      json: {
+        volumes: {
+          '901': [
+            {
+              number: 100,
+              countType: 'main',
+              released: true,
+              wanted: true,
+              monitored: true,
+              fileIds: [],
+            },
+          ],
+        },
+        chapters: {},
+      },
+    }),
+  )
   await page.route('**/api/v1/series/901/files', (route) => route.fulfill({ json: [] }))
   await page.goto('/series/901')
   await expect(page.getByRole('button', { name: 'Search & download', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Read more' }).click()
-  await expect(page.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true')
-  const details = page.getByRole('button', { name: 'Volume 1 details', exact: true })
-  await details.focus()
-  await page.keyboard.press('Enter')
-  await expect(page.getByRole('dialog', { name: 'Volume 1', exact: true })).toBeVisible()
-  await page.getByRole('dialog').getByRole('button', { name: 'Close dialog', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Show less' })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  )
+  await expect(page.getByRole('tab', { name: 'Editions', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
   await page.getByRole('button', { name: 'Show less' }).click()
-  await page.screenshot({ path: testInfo.outputPath('series.png'), fullPage: true, animations: 'disabled' })
+  await page.screenshot({
+    path: testInfo.outputPath('series.png'),
+    fullPage: true,
+    animations: 'disabled',
+  })
   await page.setViewportSize({ width: 390, height: 844 })
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await page.screenshot({ path: testInfo.outputPath('series-mobile.png'), fullPage: true, animations: 'disabled' })
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    .toBe(true)
+  await page.screenshot({
+    path: testInfo.outputPath('series-mobile.png'),
+    fullPage: true,
+    animations: 'disabled',
+  })
 })

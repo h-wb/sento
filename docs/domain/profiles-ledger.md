@@ -1,5 +1,7 @@
 # Profiles & the ledger
 
+> Historical walkthrough of the original numbered ledger. The current acquisition model uses stable units and collected versions; see [Editions, units, collected versions, and files](collections.md). The numbered views and legacy ownership tables have been removed; this document records the earlier design.
+
 > Tour session 2 — covers `internal/profile` and `internal/ledger`.
 > Specs: [decision-engine.md §5](../spec/decision-engine.md),
 > [spec.md §4.2](../spec/spec.md). Both are pure domain (no I/O); the store
