@@ -37,8 +37,8 @@ jobs:
             context: .
             image: ghcr.io/${{ github.repository }}
           - name: sento-extensions
-            context: host
-            image: ghcr.io/${{ github.repository }}-host
+            context: extensions
+            image: ghcr.io/${{ github.repository }}-extensions
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
