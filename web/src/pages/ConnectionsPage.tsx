@@ -16,7 +16,7 @@ import {
   Tooltip,
   UnstyledButton,
 } from '@mantine/core'
-import { IconPlus } from '@tabler/icons-react'
+import { IconLock, IconPlus } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, type ConnectionSettings, type ConnectionTest } from '../api'
@@ -133,6 +133,8 @@ export default function ConnectionsPage() {
               <ConnectionTile
                 name="Extensions sidecar"
                 detail={`Extension sources · ${hostOf(saved.extensions.url)}`}
+                tag={saved.managed.extensionsUrl ? 'Read-only' : undefined}
+                locked={saved.managed.extensionsUrl}
                 status={<StatusBadge result={live('extensions')} configured probing={status.isFetching} />}
                 onClick={() => setEditing({ kind: 'extensions' })}
               />
@@ -280,6 +282,7 @@ function SidecarDialog({
       onSaved={onSaved}
       onClose={onClose}
       alwaysSavable={isNew}
+      readOnly={managed}
       blurb="Runs Mihon-compatible extensions so Sento can find and download chapters from their sources."
       isSet={(c) => c.extensions.url.trim() !== ''}
       same={(a, b) => a.extensions.url === b.extensions.url}
@@ -305,12 +308,7 @@ function SidecarDialog({
           <TextInput
             label="URL"
             placeholder="http://localhost:8901"
-            readOnly={managed}
-            description={
-              managed
-                ? 'Set by this deployment (SENTO_EXTENSIONS_URL); change it there.'
-                : undefined
-            }
+            disabled={managed}
             value={form.extensions.url}
             onChange={(e) => set({ extensions: { url: e.currentTarget.value } })}
           />
@@ -341,23 +339,36 @@ function ConnectionTile({
   name,
   detail,
   tag,
+  locked,
   status,
   onClick,
 }: {
   name: string
   detail: string
   tag?: string
+  // Set by the deployment's configuration: it opens to look, not to edit.
+  locked?: boolean
   status: ReactNode
   onClick: () => void
 }) {
   return (
-    <UnstyledButton className={classes.tile} onClick={onClick} aria-label={`Edit ${name}`}>
+    <UnstyledButton
+      className={classes.tile}
+      onClick={onClick}
+      aria-label={`${locked ? 'View' : 'Edit'} ${name}`}
+    >
       <Group justify="space-between" wrap="nowrap" gap="xs" mb={4}>
         <Text fw={600} truncate>
           {name}
         </Text>
         {tag && (
-          <Badge size="xs" variant="outline" color="gray">
+          <Badge
+            size="xs"
+            variant="outline"
+            color="gray"
+            style={{ flexShrink: 0 }}
+            leftSection={locked ? <IconLock size={10} /> : undefined}
+          >
             {tag}
           </Badge>
         )}
@@ -539,6 +550,7 @@ function ConnectionDialog({
   onSaved,
   onClose,
   alwaysSavable = false,
+  readOnly = false,
   isSet,
   same,
   only,
@@ -556,6 +568,9 @@ function ConnectionDialog({
   onClose: () => void
   // A connection being added has nothing saved to differ from.
   alwaysSavable?: boolean
+  // Fixed by the deployment's configuration: the values are shown and can
+  // be tested, but there is nothing to save.
+  readOnly?: boolean
   isSet: (c: ConnectionSettings) => boolean
   same: (a: ConnectionSettings, b: ConnectionSettings) => boolean
   only: (c: ConnectionSettings) => ConnectionSettings
@@ -601,6 +616,14 @@ function ConnectionDialog({
             {blurb}
           </Text>
         )}
+        {readOnly && (
+          <Alert color="gray" py="xs" icon={<IconLock size={16} />} title="Read-only">
+            <Text size="xs">
+              Its address is set by the deployment&apos;s configuration (
+              <code>SENTO_EXTENSIONS_URL</code>). Change it there and restart Sento.
+            </Text>
+          </Alert>
+        )}
         {live && !live.ok && (
           <Alert color="red" py="xs" title="Not reachable right now">
             <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
@@ -627,16 +650,18 @@ function ConnectionDialog({
           <Group gap="xs">
             {extra}
             <Button variant="default" size="xs" onClick={onClose} disabled={busy}>
-              Cancel
+              {readOnly ? 'Close' : 'Cancel'}
             </Button>
-            <Button
-              size="xs"
-              onClick={() => save.mutate()}
-              loading={save.isPending}
-              disabled={test.isPending || (alwaysSavable ? !isSet(form) : !dirty)}
-            >
-              Save
-            </Button>
+            {!readOnly && (
+              <Button
+                size="xs"
+                onClick={() => save.mutate()}
+                loading={save.isPending}
+                disabled={test.isPending || (alwaysSavable ? !isSet(form) : !dirty)}
+              >
+                Save
+              </Button>
+            )}
           </Group>
         </Group>
         {below}
@@ -672,14 +697,24 @@ function Repos() {
 
   return (
     <>
-      <Title order={6} mb={4}>
-        Extension repos
-      </Title>
+      <Group gap="xs" mb={4}>
+        <Title order={6}>Extension repos</Title>
+        {managed && (
+          <Badge size="xs" variant="outline" color="gray" leftSection={<IconLock size={10} />}>
+            Read-only
+          </Badge>
+        )}
+      </Group>
       <Text size="xs" c="dimmed" mb="sm">
-        {managed
-          ? 'Set by this deployment (SENTO_EXTENSIONS_REPOS); change the list there. '
-          : 'Add a Mihon-compatible repository, then '}
-        {managed ? 'Choose' : 'choose'} its sources on <Link to="/indexers">Indexers</Link>.
+        {managed ? (
+          <>
+            This list is set by the deployment&apos;s configuration (
+            <code>SENTO_EXTENSIONS_REPOS</code>). Change it there and restart Sento. Choose
+          </>
+        ) : (
+          'Add a Mihon-compatible repository, then choose'
+        )}{' '}
+        its sources on <Link to="/indexers">Indexers</Link>.
       </Text>
       <QueryFeedback pending={repos.isPending} error={repos.error} onRetry={() => void repos.refetch()} />
       <Stack gap="xs">

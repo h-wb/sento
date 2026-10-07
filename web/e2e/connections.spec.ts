@@ -11,8 +11,9 @@ test('each connection is a card with its live status, and its settings open in a
   const qbit = page.getByRole('button', { name: 'Edit qBittorrent' })
   await expect(qbit.getByText(/^Connected/)).toBeVisible()
   await expect(qbit.getByText('Default', { exact: true })).toBeVisible()
-  const sidecar = page.getByRole('button', { name: 'Edit Extensions sidecar' })
+  const sidecar = page.getByRole('button', { name: 'View Extensions sidecar' })
   await expect(sidecar.getByText(/^Connected · \d+ sources?/)).toBeVisible()
+  await expect(sidecar.getByText('Read-only', { exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('connections.png'), fullPage: true })
 
   await qbit.click()
@@ -27,8 +28,10 @@ test('each connection is a card with its live status, and its settings open in a
   const sidecarDialog = page.getByRole('dialog', { name: 'Extensions sidecar' })
   const sidecarURL = sidecarDialog.getByRole('textbox', { name: 'URL', exact: true })
   await expect(sidecarURL).toHaveValue(/\/host$/)
-  await expect(sidecarURL).toHaveAttribute('readonly', '')
+  await expect(sidecarURL).toBeDisabled()
   await expect(sidecarDialog.getByText(/SENTO_EXTENSIONS_URL/)).toBeVisible()
+  await expect(sidecarDialog.getByRole('button', { name: 'Save' })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('connections-readonly.png') })
   await expect(sidecarDialog.getByRole('button', { name: 'Remove' })).toHaveCount(0)
 })
 
@@ -62,7 +65,7 @@ test('a connection is tested on its own before saving', async ({ page }) => {
 test('a failing extension repo is reported on its row', async ({ page }) => {
   await page.goto('/connections')
   // The sidecar's repos live in its own settings dialog.
-  await page.getByRole('button', { name: 'Edit Extensions sidecar' }).click()
+  await page.getByRole('button', { name: 'View Extensions sidecar' }).click()
   const host = page.getByRole('dialog', { name: 'Extensions sidecar' }).getByRole('region', { name: 'Extension repos' })
   await expect(host.getByText(/Add a repository to see available sources/)).toBeVisible()
 
