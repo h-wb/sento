@@ -52,6 +52,24 @@ type ConnectionSettings struct {
 	// Indexers pick one by id; those that pick none use the default.
 	DownloadClients []DownloadClientConn `json:"downloadClients"`
 	Extensions      ExtensionsConn       `json:"extensions"`
+	// Managed says which settings come from the deployment's configuration
+	// and cannot be changed here (response only; never stored).
+	Managed ManagedConnections `json:"managed"`
+}
+
+// ManagedConnections marks settings fixed by the file/env configuration.
+type ManagedConnections struct {
+	ExtensionsURL bool `json:"extensionsUrl"`
+}
+
+// enforce applies what the deployment's configuration fixes: a sidecar
+// URL given there always wins over a stored one.
+func (c *Connections) enforce(cs *ConnectionSettings) {
+	cs.Managed = ManagedConnections{}
+	if c.cfg.Extensions.URL != "" {
+		cs.Extensions.URL = c.cfg.Extensions.URL
+		cs.Managed.ExtensionsURL = true
+	}
 }
 
 const defaultClientID = "default"
@@ -157,19 +175,25 @@ func (c *Connections) Load(ctx context.Context) ConnectionSettings {
 				cs.DownloadClients = []DownloadClientConn{*legacyClient.QBittorrent}
 			}
 			cs.DownloadClients = normalizeClients(cs.DownloadClients)
+			c.enforce(&cs)
 			return cs
 		}
 	}
-	return DefaultConnections(c.cfg)
+	cs := DefaultConnections(c.cfg)
+	c.enforce(&cs)
+	return cs
 }
 
 // Save persists and applies new settings.
 func (c *Connections) Save(ctx context.Context, cs ConnectionSettings) error {
 	cs.DownloadClients = normalizeClients(cs.DownloadClients)
+	c.enforce(&cs)
 	if err := ValidateConnections(cs); err != nil {
 		return err
 	}
-	raw, err := json.Marshal(cs)
+	stored := cs
+	stored.Managed = ManagedConnections{}
+	raw, err := json.Marshal(stored)
 	if err != nil {
 		return err
 	}

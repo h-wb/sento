@@ -3,10 +3,11 @@ import {
   Alert,
   Badge,
   Button,
-  Card,
+  Divider,
   Group,
   List,
   PasswordInput,
+  Select,
   SimpleGrid,
   Stack,
   Text,
@@ -27,13 +28,19 @@ import { QueryFeedback } from '../components/QueryFeedback'
 import { EditorModal } from '../components/EditionDialogs'
 import classes from './ConnectionsPage.module.css'
 
-// The services Sento connects to: download clients for torrents, the
-// extensions sidecar for extension sources. Each is a card showing what it
-// is and whether it answers right now; its settings open in a dialog. What
-// gets searched lives on the Indexers page; this page is only the
-// plumbing. Stored server-side; the yaml/env config only seeds the very
-// first run.
-type Editing = { kind: 'client'; client: DownloadClientConn; isNew: boolean } | { kind: 'extensions' }
+// The download clients Sento fetches through. They come in two types:
+// qBittorrent instances for torrents (any number), and the extensions
+// sidecar for chapters from extension sources (one). Each is a card showing
+// what it is and whether it answers right now; its settings open in a
+// dialog, the sidecar's extension repos included. What gets searched lives
+// on the Indexers page; this page is only the plumbing. Stored server-side;
+// the yaml/env config only seeds the very first run, so a client given
+// there is already on the page.
+type ClientType = 'qbittorrent' | 'extensions'
+type Editing =
+  | { kind: 'new'; client: DownloadClientConn }
+  | { kind: 'client'; client: DownloadClientConn }
+  | { kind: 'extensions' }
 
 export default function ConnectionsPage() {
   usePageTitle('Connections')
@@ -56,8 +63,7 @@ export default function ConnectionsPage() {
   const saved = settings.data
   const live = (service: string) => status.data?.find((t) => t.service === service)
 
-  const onSaved = () => {
-    setEditing(null)
+  const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['connections'] })
     // The provider set changed: site lists and status are stale.
     queryClient.invalidateQueries({ queryKey: ['indexer-settings'] })
@@ -66,8 +72,13 @@ export default function ConnectionsPage() {
     queryClient.invalidateQueries({ queryKey: ['extensions'] })
     queryClient.invalidateQueries({ queryKey: ['extension-repos'] })
   }
+  const onSaved = () => {
+    setEditing(null)
+    refresh()
+  }
   const clients = saved.downloadClients
-  const nothingSet = clients.length === 0 && saved.extensions.url === ''
+  const sidecar = saved.extensions.url !== ''
+  const nothingSet = clients.length === 0 && !sidecar
   const newClient = (): DownloadClientConn => ({
     id: clients.length === 0 ? 'default' : `client-${Date.now().toString(36)}`,
     name: clients.length === 0 ? 'qBittorrent' : '',
@@ -81,7 +92,7 @@ export default function ConnectionsPage() {
     <>
       <PageHeader
         title="Connections"
-        description="Download services and extension repositories."
+        description="The download clients Sento fetches through."
       />
 
       <Stack maw={900} gap="xl">
@@ -89,10 +100,10 @@ export default function ConnectionsPage() {
           <Alert color="blue" title="Nothing is connected yet">
             <List size="sm" type="ordered" spacing={2}>
               <List.Item>
-                Add a download client for torrents, or connect the extensions sidecar for extension
-                sources.
+                Add a download client: qBittorrent for torrents, or the extensions sidecar for
+                extension sources.
               </List.Item>
-              <List.Item>For extension sources, add a repository below.</List.Item>
+              <List.Item>For extension sources, add a repository in the sidecar's settings.</List.Item>
               <List.Item>
                 Choose what to search on the <Link to="/indexers">Indexers</Link> page.
               </List.Item>
@@ -103,95 +114,217 @@ export default function ConnectionsPage() {
         <section aria-label="Download clients">
           <Title order={4}>Download clients</Title>
           <Text size="sm" c="dimmed" mb="sm">
-            qBittorrent instances that download torrent releases. Sento must have access to their
-            download folders to import files. Indexers use the default client unless they name
-            another.
+            qBittorrent downloads torrent releases; Sento must have access to its download folder to
+            import files, and indexers use the default client unless they name another. The
+            extensions sidecar downloads chapters from Mihon-compatible extension sources.
           </Text>
           <SimpleGrid cols={{ base: 1, xs: 2, md: 3 }} spacing="sm">
             {clients.map((client, index) => (
               <ConnectionTile
                 key={client.id}
                 name={client.name}
-                detail={`${hostOf(client.url)} · ${client.category}`}
+                detail={`qBittorrent · ${hostOf(client.url)} · ${client.category}`}
                 tag={index === 0 ? 'Default' : undefined}
                 status={<StatusBadge result={live(`downloadClient:${client.id}`)} configured probing={status.isFetching} />}
-                onClick={() => setEditing({ kind: 'client', client, isNew: false })}
+                onClick={() => setEditing({ kind: 'client', client })}
               />
             ))}
-            <UnstyledButton
-              className={classes.add}
-              onClick={() => setEditing({ kind: 'client', client: newClient(), isNew: true })}
-            >
+            {sidecar && (
+              <ConnectionTile
+                name="Extensions sidecar"
+                detail={`Extension sources · ${hostOf(saved.extensions.url)}`}
+                status={<StatusBadge result={live('extensions')} configured probing={status.isFetching} />}
+                onClick={() => setEditing({ kind: 'extensions' })}
+              />
+            )}
+            <UnstyledButton className={classes.add} onClick={() => setEditing({ kind: 'new', client: newClient() })}>
               <IconPlus size={16} />
               <Text size="sm">Add download client</Text>
             </UnstyledButton>
           </SimpleGrid>
         </section>
-
-        <section aria-label="Extension sources">
-          <Title order={4}>Extension sources</Title>
-          <Text size="sm" c="dimmed" mb="sm">
-            The sidecar runs Mihon-compatible extensions so Sento can find and download chapters
-            from their sources.
-          </Text>
-          <SimpleGrid cols={{ base: 1, xs: 2, md: 3 }} spacing="sm">
-            <ConnectionTile
-              name="Extensions sidecar"
-              detail={saved.extensions.url ? hostOf(saved.extensions.url) : 'Not connected'}
-              status={
-                <StatusBadge
-                  result={live('extensions')}
-                  configured={saved.extensions.url !== ''}
-                  probing={status.isFetching}
-                />
-              }
-              onClick={() => setEditing({ kind: 'extensions' })}
-            />
-          </SimpleGrid>
-          {saved.extensions.url !== '' && (
-            <Card withBorder padding="md" mt="sm">
-              <Repos />
-            </Card>
-          )}
-        </section>
       </Stack>
 
+      {editing?.kind === 'new' && (
+        <NewClientDialog
+          saved={saved}
+          client={editing.client}
+          onSaved={onSaved}
+          // A sidecar is only useful with a repo: go straight on to its
+          // settings, where repos are added.
+          onSidecarSaved={() => {
+            refresh()
+            setEditing({ kind: 'extensions' })
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
       {editing?.kind === 'client' && (
         <ClientDialog
           key={editing.client.id}
           client={editing.client}
-          isNew={editing.isNew}
-          isDefault={clients.length === 0 || clients[0]?.id === editing.client.id}
+          isNew={false}
+          isDefault={clients[0]?.id === editing.client.id}
           saved={saved}
-          live={editing.isNew ? undefined : live(`downloadClient:${editing.client.id}`)}
+          live={live(`downloadClient:${editing.client.id}`)}
           onSaved={onSaved}
           onClose={() => setEditing(null)}
         />
       )}
       {editing?.kind === 'extensions' && (
-        <ConnectionDialog
-          title="Extensions sidecar"
-          service="extensions"
+        <SidecarDialog
+          key={saved.extensions.url}
+          isNew={false}
           saved={saved}
           live={live('extensions')}
           onSaved={onSaved}
           onClose={() => setEditing(null)}
-          isSet={(c) => c.extensions.url !== ''}
-          same={(a, b) => a.extensions.url === b.extensions.url}
-          only={(c) => ({ ...blank, extensions: c.extensions })}
-          merge={(base, form) => ({ ...base, extensions: form.extensions })}
-          fields={(form, set) => (
-            <TextInput
-              label="URL"
-              placeholder="http://localhost:8901"
-              description="Leave empty to disable extension sources"
-              value={form.extensions.url}
-              onChange={(e) => set({ extensions: { url: e.currentTarget.value } })}
-            />
-          )}
         />
       )}
     </>
+  )
+}
+
+// NewClientDialog adds a download client: pick its type, then fill in that
+// type's settings. There is one sidecar, so its type is only offered while
+// none is connected.
+function NewClientDialog({
+  saved,
+  client,
+  onSaved,
+  onSidecarSaved,
+  onClose,
+}: {
+  saved: ConnectionSettings
+  client: DownloadClientConn
+  onSaved: () => void
+  onSidecarSaved: () => void
+  onClose: () => void
+}) {
+  const hasSidecar = saved.extensions.url !== ''
+  const [type, setType] = useState<ClientType>('qbittorrent')
+  const typeSelect = (
+    <Select
+      label="Type"
+      allowDeselect={false}
+      value={type}
+      onChange={(v) => v && setType(v as ClientType)}
+      data={[
+        { value: 'qbittorrent', label: 'qBittorrent — torrents' },
+        {
+          value: 'extensions',
+          label: hasSidecar
+            ? 'Extensions sidecar — already connected'
+            : 'Extensions sidecar — extension sources',
+          disabled: hasSidecar,
+        },
+      ]}
+    />
+  )
+  return type === 'qbittorrent' ? (
+    <ClientDialog
+      key="qbittorrent"
+      client={client}
+      isNew
+      isDefault={saved.downloadClients.length === 0}
+      saved={saved}
+      typeSelect={typeSelect}
+      onSaved={onSaved}
+      onClose={onClose}
+    />
+  ) : (
+    <SidecarDialog
+      key="extensions"
+      isNew
+      saved={saved}
+      typeSelect={typeSelect}
+      onSaved={onSidecarSaved}
+      onClose={onClose}
+    />
+  )
+}
+
+// SidecarDialog is the extensions sidecar's settings: where it runs and,
+// once connected, the extension repos it loads.
+function SidecarDialog({
+  isNew,
+  saved,
+  live,
+  typeSelect,
+  onSaved,
+  onClose,
+}: {
+  isNew: boolean
+  saved: ConnectionSettings
+  live?: ConnectionTest
+  typeSelect?: ReactNode
+  onSaved: () => void
+  onClose: () => void
+}) {
+  // Given by the deployment's configuration: shown, not editable.
+  const managed = saved.managed.extensionsUrl
+  const remove = useMutation({
+    mutationFn: () => api.saveConnections({ ...saved, extensions: { url: '' } }),
+    onSuccess: () => {
+      notify.ok('Extensions sidecar removed')
+      onSaved()
+    },
+    onError: notify.err,
+  })
+  return (
+    <ConnectionDialog
+      title={isNew ? 'Add download client' : 'Extensions sidecar'}
+      service="extensions"
+      saved={saved}
+      live={live}
+      onSaved={onSaved}
+      onClose={onClose}
+      alwaysSavable={isNew}
+      blurb="Runs Mihon-compatible extensions so Sento can find and download chapters from their sources."
+      isSet={(c) => c.extensions.url.trim() !== ''}
+      same={(a, b) => a.extensions.url === b.extensions.url}
+      only={(c) => ({ ...blank, extensions: c.extensions })}
+      merge={(base, form) => ({ ...base, extensions: { url: form.extensions.url.trim() } })}
+      extra={
+        !isNew &&
+        !managed && (
+          <Button
+            variant="subtle"
+            color="red"
+            size="xs"
+            loading={remove.isPending}
+            onClick={() => remove.mutate()}
+          >
+            Remove
+          </Button>
+        )
+      }
+      fields={(form, set) => (
+        <Stack gap="xs">
+          {typeSelect}
+          <TextInput
+            label="URL"
+            placeholder="http://localhost:8901"
+            readOnly={managed}
+            description={
+              managed
+                ? 'Set by this deployment (SENTO_EXTENSIONS_URL); change it there.'
+                : undefined
+            }
+            value={form.extensions.url}
+            onChange={(e) => set({ extensions: { url: e.currentTarget.value } })}
+          />
+        </Stack>
+      )}
+      below={
+        !isNew && (
+          <section aria-label="Extension repos">
+            <Divider mb="sm" />
+            <Repos />
+          </section>
+        )
+      }
+    />
   )
 }
 
@@ -199,6 +332,7 @@ const blank: ConnectionSettings = {
   prowlarr: { url: '', apiKey: '' },
   downloadClients: [],
   extensions: { url: '' },
+  managed: { extensionsUrl: false },
 }
 
 // ConnectionTile is one connection at a glance: what it is, where it
@@ -244,6 +378,7 @@ function ClientDialog({
   isDefault,
   saved,
   live,
+  typeSelect,
   onSaved,
   onClose,
 }: {
@@ -252,6 +387,7 @@ function ClientDialog({
   isDefault: boolean
   saved: ConnectionSettings
   live?: ConnectionTest
+  typeSelect?: ReactNode
   onSaved: () => void
   onClose: () => void
 }) {
@@ -314,6 +450,7 @@ function ClientDialog({
           set({ downloadClients: put(form, { ...value, ...patch }).downloadClients })
         return (
           <Stack gap="xs">
+            {typeSelect}
             <TextInput
               label="Name"
               placeholder="qBittorrent"
@@ -408,6 +545,7 @@ function ConnectionDialog({
   merge,
   fields,
   extra,
+  below,
 }: {
   title: string
   blurb?: string
@@ -424,6 +562,9 @@ function ConnectionDialog({
   merge: (base: ConnectionSettings, form: ConnectionSettings) => ConnectionSettings
   fields: (form: ConnectionSettings, set: (patch: Partial<ConnectionSettings>) => void) => ReactNode
   extra?: ReactNode
+  // Shown under the buttons: things that act on the saved connection
+  // right away, apart from the form.
+  below?: ReactNode
 }) {
   const [form, setForm] = useState<ConnectionSettings>(saved)
   const [draftTest, setDraftTest] = useState<ConnectionTest | null>(null)
@@ -498,6 +639,7 @@ function ConnectionDialog({
             </Button>
           </Group>
         </Group>
+        {below}
       </Stack>
     </EditorModal>
   )
@@ -522,6 +664,9 @@ function Repos() {
     onError: notify.err,
   })
   const urls = repos.data?.urls ?? []
+  // Given by the deployment's configuration: shown with their status,
+  // not editable.
+  const managed = repos.data?.managed ?? false
   const rows: RepoStatus[] = repos.data?.repos ?? urls.map((url) => ({ url, extensions: 0 }))
   const add = () => { if (newRepo.trim() && !saveRepos.isPending && !urls.includes(newRepo.trim())) saveRepos.mutate([...urls, newRepo.trim()]) }
 
@@ -531,7 +676,10 @@ function Repos() {
         Extension repos
       </Title>
       <Text size="xs" c="dimmed" mb="sm">
-        Add a Mihon-compatible repository, then choose its sources on <Link to="/indexers">Indexers</Link>.
+        {managed
+          ? 'Set by this deployment (SENTO_EXTENSIONS_REPOS); change the list there. '
+          : 'Add a Mihon-compatible repository, then '}
+        {managed ? 'Choose' : 'choose'} its sources on <Link to="/indexers">Indexers</Link>.
       </Text>
       <QueryFeedback pending={repos.isPending} error={repos.error} onRetry={() => void repos.refetch()} />
       <Stack gap="xs">
@@ -545,10 +693,12 @@ function Repos() {
             key={repo.url}
             repo={repo}
             removing={saveRepos.isPending}
-            onRemove={() => saveRepos.mutate(urls.filter((x) => x !== repo.url))}
+            onRemove={
+              managed ? undefined : () => saveRepos.mutate(urls.filter((x) => x !== repo.url))
+            }
           />
         ))}
-        <Group gap={6} wrap="nowrap">
+        {!managed && <Group gap={6} wrap="nowrap">
           <TextInput
             size="xs"
             style={{ flex: 1 }}
@@ -569,7 +719,7 @@ function Repos() {
           >
             Add repo
           </Button>
-        </Group>
+        </Group>}
       </Stack>
     </>
   )
@@ -582,7 +732,7 @@ function RepoRow({
 }: {
   repo: RepoStatus
   removing: boolean
-  onRemove: () => void
+  onRemove?: () => void
 }) {
   return (
     <Group gap="sm" wrap="nowrap" justify="space-between" align="flex-start">
@@ -619,9 +769,11 @@ function RepoRow({
           </Text>
         )}
       </Stack>
-      <Button size="compact-xs" variant="subtle" color="red" disabled={removing} onClick={onRemove}>
-        Remove
-      </Button>
+      {onRemove && (
+        <Button size="compact-xs" variant="subtle" color="red" disabled={removing} onClick={onRemove}>
+          Remove
+        </Button>
+      )}
     </Group>
   )
 }

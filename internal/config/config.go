@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
@@ -61,8 +62,15 @@ type Database struct {
 
 // Extensions points at a sento-extensions sidecar (extensions/), the extension
 // runtime serving manga sources.
+//
+// A URL given here (file or SENTO_EXTENSIONS_URL) is not a first-run seed
+// like the other connections: it stays in force and the UI shows it
+// read-only. The same goes for Repos (SENTO_EXTENSIONS_REPOS, comma- or
+// space-separated), the extension repos the sidecar loads. That lets a
+// deployment declare the whole sidecar setup next to the sidecar itself.
 type Extensions struct {
-	URL string `yaml:"url"`
+	URL   string   `yaml:"url"`
+	Repos []string `yaml:"repos"`
 }
 
 type Prowlarr struct {
@@ -137,6 +145,9 @@ func applyEnv(c *Config) {
 		}
 	}
 	str("SENTO_EXTENSIONS_URL", &c.Extensions.URL)
+	if v, ok := os.LookupEnv("SENTO_EXTENSIONS_REPOS"); ok {
+		c.Extensions.Repos = strings.FieldsFunc(v, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+	}
 	str("SENTO_PROWLARR_URL", &c.Prowlarr.URL)
 	str("SENTO_PROWLARR_API_KEY", &c.Prowlarr.APIKey)
 	str("SENTO_QBITTORRENT_URL", &c.QBittorrent.URL)

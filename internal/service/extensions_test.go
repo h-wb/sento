@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"slices"
 	"testing"
 
 	"github.com/h-wb/sento/internal/extensions"
@@ -282,5 +283,34 @@ func TestRepoStatus(t *testing.T) {
 	none := NewExtensionService(st, func() extensions.Host { return nil })
 	if got := none.RepoStatus(ctx); len(got) != 1 || got[0].URL != url || got[0].Error == "" {
 		t.Fatalf("status without a host = %+v, want the repo listed with an error", got)
+	}
+}
+
+// A repo list given by the deployment's configuration replaces the stored
+// one, cannot be edited, and is what the sidecar ends up with — nothing
+// more.
+func TestConfiguredReposAreAuthoritative(t *testing.T) {
+	ctx := context.Background()
+	_, st := setup(t)
+	host := &fakeExtHost{catalog: []string{"ext.a"}, installed: map[string]bool{}}
+	svc := NewExtensionService(st, func() extensions.Host { return host })
+	if err := svc.SetRepos(ctx, []string{"https://old.example/index.min.json"}); err != nil {
+		t.Fatal(err)
+	}
+
+	managed := []string{"https://repo.example/index.min.json"}
+	svc.ManageRepos(managed)
+	if got := svc.Repos(ctx); !slices.Equal(got, managed) || !svc.ReposManaged() {
+		t.Fatalf("repos = %v, want the configured list", got)
+	}
+	if err := svc.SetRepos(ctx, []string{"https://other.example/index.min.json"}); err == nil {
+		t.Fatal("a configured repo list must not be editable")
+	}
+	host.repos = []string{"https://old.example/index.min.json", managed[0]}
+	if err := svc.reconcileRepos(ctx, host); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(host.repos, managed) {
+		t.Fatalf("sidecar repos = %v, want exactly the configured list", host.repos)
 	}
 }

@@ -69,6 +69,7 @@ func New(cfg config.Config, db *sql.DB, dialect string, mdProvider metadata.Prov
 	s.sites = service.NewSiteService(st, s.registry)
 	s.importer = service.NewImporter(st, s.registry, cfg.Library.Path, cfg.Library.PathMappings)
 	s.extensions = service.NewExtensionService(st, s.conns.Host)
+	s.extensions.ManageRepos(cfg.Extensions.Repos)
 	s.profiles = service.NewProfiles(st)
 	s.health = service.NewHealthService(st, s.conns, cfg.Library.Path)
 	if err := s.profiles.EnsureDefaults(context.Background()); err != nil {

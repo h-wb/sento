@@ -100,6 +100,11 @@ Configuration is a YAML file (`/config/config.yml`, optional) overridden by
 [`internal/config/config.go`](internal/config/config.go). Connection
 settings saved in the UI are stored in the database and win over both.
 
+The extensions sidecar is the exception: `SENTO_EXTENSIONS_URL` and
+`SENTO_EXTENSIONS_REPOS` (extension repo index URLs, comma-separated) stay
+in force when set, and the UI then shows them read-only. That lets a
+deployment declare the sidecar and its repos next to the sidecar itself.
+
 ### Container images
 
 Published to the GitHub Container Registry on every push to `main` and on

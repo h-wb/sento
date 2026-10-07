@@ -68,6 +68,17 @@ export interface ConnectionSettings {
    */
   downloadClients: DownloadClientConn[];
   extensions: ExtensionsConn;
+  /**
+   * Managed says which settings come from the deployment's configuration
+   * and cannot be changed here (response only; never stored).
+   */
+  managed: ManagedConnections;
+}
+/**
+ * ManagedConnections marks settings fixed by the file/env configuration.
+ */
+export interface ManagedConnections {
+  extensionsUrl: boolean;
 }
 /**
  * Connections owns the live service clients: it loads settings, builds

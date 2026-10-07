@@ -41,7 +41,17 @@ type ExtensionView struct {
 type ExtensionService struct {
 	store *store.Store
 	host  func() extensions.Host
+	// managedRepos is the repo list fixed by the deployment's
+	// configuration; when set it replaces the stored list and cannot be
+	// edited.
+	managedRepos []string
 }
+
+// ManageRepos fixes the extension repo list (config.Extensions.Repos).
+func (e *ExtensionService) ManageRepos(urls []string) { e.managedRepos = urls }
+
+// ReposManaged reports whether the repo list is fixed by configuration.
+func (e *ExtensionService) ReposManaged() bool { return len(e.managedRepos) > 0 }
 
 func NewExtensionService(st *store.Store, host func() extensions.Host) *ExtensionService {
 	return &ExtensionService{store: st, host: host}
@@ -83,6 +93,9 @@ func (e *ExtensionService) desired(ctx context.Context) []string {
 // repoURLs is the stored extension repo list (none by default — the
 // user adds Mihon-compatible index URLs).
 func (e *ExtensionService) repoURLs(ctx context.Context) []string {
+	if e.ReposManaged() {
+		return e.managedRepos
+	}
 	var r struct {
 		URLs []string `json:"urls"`
 	}
@@ -134,6 +147,9 @@ func (e *ExtensionService) RepoStatus(ctx context.Context) []extensions.RepoStat
 
 // SetRepos stores the repo list and pushes it to the host.
 func (e *ExtensionService) SetRepos(ctx context.Context, urls []string) error {
+	if e.ReposManaged() {
+		return apperr.Invalidf("extension repos are set by this deployment's configuration (SENTO_EXTENSIONS_REPOS) and cannot be changed here")
+	}
 	mgr := e.manager()
 	if mgr == nil {
 		return apperr.Unavailablef("the configured source backend does not manage extensions")
@@ -181,7 +197,8 @@ func (e *ExtensionService) reconcileRepos(ctx context.Context, mgr extensions.Ex
 			break
 		}
 	}
-	if !missing {
+	// A managed list is the whole list: repos the host has beyond it go.
+	if !missing && (!e.ReposManaged() || len(have) == len(want)) {
 		return nil
 	}
 	slog.Info("reconciling extension repos onto host", "count", len(want))

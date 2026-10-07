@@ -105,8 +105,9 @@ func (s *Server) handleGetExtensionRepos(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) extensionRepos(r *http.Request) ExtensionRepos {
 	return ExtensionRepos{
-		URLs:  s.extensions.Repos(r.Context()),
-		Repos: s.extensions.RepoStatus(r.Context()),
+		URLs:    s.extensions.Repos(r.Context()),
+		Repos:   s.extensions.RepoStatus(r.Context()),
+		Managed: s.extensions.ReposManaged(),
 	}
 }
 

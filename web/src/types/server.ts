@@ -250,4 +250,9 @@ export interface ExtensionRepos {
    * host (response only).
    */
   repos?: RepoStatus[];
+  /**
+   * Managed: the list is fixed by the deployment's configuration and
+   * cannot be edited (response only).
+   */
+  managed: boolean;
 }

@@ -21,10 +21,15 @@ test('each connection is a card with its live status, and its settings open in a
   await page.screenshot({ path: testInfo.outputPath('connections-dialog.png') })
   await dialog.getByRole('button', { name: 'Cancel' }).click()
 
+  // The test backend gets its sidecar URL from its configuration, so the
+  // URL is shown but cannot be edited or removed here.
   await sidecar.click()
-  await expect(
-    page.getByRole('dialog', { name: 'Extensions sidecar' }).getByRole('textbox', { name: 'URL', exact: true }),
-  ).toHaveValue(/\/host$/)
+  const sidecarDialog = page.getByRole('dialog', { name: 'Extensions sidecar' })
+  const sidecarURL = sidecarDialog.getByRole('textbox', { name: 'URL', exact: true })
+  await expect(sidecarURL).toHaveValue(/\/host$/)
+  await expect(sidecarURL).toHaveAttribute('readonly', '')
+  await expect(sidecarDialog.getByText(/SENTO_EXTENSIONS_URL/)).toBeVisible()
+  await expect(sidecarDialog.getByRole('button', { name: 'Remove' })).toHaveCount(0)
 })
 
 test('the old /sources address still lands on the page', async ({ page }) => {
@@ -56,7 +61,9 @@ test('a connection is tested on its own before saving', async ({ page }) => {
 // whose only symptom was an empty extension list somewhere else.
 test('a failing extension repo is reported on its row', async ({ page }) => {
   await page.goto('/connections')
-  const host = page.getByRole('region', { name: 'Extension sources' })
+  // The sidecar's repos live in its own settings dialog.
+  await page.getByRole('button', { name: 'Edit Extensions sidecar' }).click()
+  const host = page.getByRole('dialog', { name: 'Extensions sidecar' }).getByRole('region', { name: 'Extension repos' })
   await expect(host.getByText(/Add a repository to see available sources/)).toBeVisible()
 
   await host.getByRole('textbox', { name: 'Extension repo URL' }).fill('https://broken.example/index.min.json')
@@ -96,6 +103,14 @@ test('an additional download client is added, offered to indexers, and removed',
   await page.getByRole('button', { name: 'Add download client' }).click()
   const add = page.getByRole('dialog', { name: 'Add download client' })
   await expect(add.getByRole('button', { name: 'Save' })).toBeDisabled() // no URL yet
+  // A client has a type. There is one sidecar, and it is already connected.
+  await add.getByLabel('Type').first().click()
+  await expect(page.getByRole('option', { name: /qBittorrent/ })).toBeVisible()
+  await expect(page.getByRole('option', { name: /Extensions sidecar — already connected/ })).toHaveAttribute(
+    'data-combobox-disabled',
+    'true',
+  )
+  await page.keyboard.press('Escape')
   await add.getByRole('textbox', { name: 'Name', exact: true }).fill('VPN')
   await add.getByRole('textbox', { name: 'URL' }).fill(url)
   await add.getByRole('button', { name: 'Test' }).click()

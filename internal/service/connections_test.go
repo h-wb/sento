@@ -37,25 +37,40 @@ func TestConnectionSettings(t *testing.T) {
 		t.Fatalf("host = %v", conns.Host())
 	}
 
-	// Saving prowlarr (browse-assist creds) + a new host URL persists.
+	// A sidecar URL given by the configuration stays in force: a save
+	// cannot change or clear it, and says so. Other settings persist.
+	if !cs.Managed.ExtensionsURL {
+		t.Fatalf("a configured sidecar URL should be marked managed: %+v", cs.Managed)
+	}
 	cs.Extensions.URL = "http://host2.example"
 	cs.Prowlarr = ProwlarrConn{URL: "http://prowlarr.example", APIKey: "k"}
 	if err := conns.Save(ctx, cs); err != nil {
 		t.Fatal(err)
 	}
-
-	// A fresh service sees the saved settings, not the config seed.
 	again := NewConnections(st, cfg).Load(ctx)
-	if again.Extensions.URL != "http://host2.example" || again.Prowlarr.URL != "http://prowlarr.example" {
+	if again.Extensions.URL != "http://host.example" || again.Prowlarr.URL != "http://prowlarr.example" {
 		t.Fatalf("reload = %+v", again)
 	}
 
-	// Clearing the host URL disables the source provider.
-	cs.Extensions.URL = ""
-	if err := conns.Save(ctx, cs); err != nil {
+	// Without one in the configuration, the URL is the user's: it is
+	// stored, and clearing it disables the source provider.
+	free := NewConnections(st, config.Default())
+	cs = free.Load(ctx)
+	if cs.Managed.ExtensionsURL {
+		t.Fatal("nothing configured, nothing managed")
+	}
+	cs.Extensions.URL = "http://host2.example"
+	if err := free.Save(ctx, cs); err != nil {
 		t.Fatal(err)
 	}
-	if conns.Registry().ForProtocol(provider.ProtocolSource) != nil || conns.Host() != nil {
+	if got := NewConnections(st, config.Default()).Load(ctx); got.Extensions.URL != "http://host2.example" {
+		t.Fatalf("stored url = %+v", got)
+	}
+	cs.Extensions.URL = ""
+	if err := free.Save(ctx, cs); err != nil {
+		t.Fatal(err)
+	}
+	if free.Registry().ForProtocol(provider.ProtocolSource) != nil || free.Host() != nil {
 		t.Fatal("source provider should be gone without a host url")
 	}
 

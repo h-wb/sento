@@ -198,4 +198,7 @@ type ExtensionRepos struct {
 	// Repos is the same list with what each repo currently yields on the
 	// host (response only).
 	Repos []extensions.RepoStatus `json:"repos,omitempty"`
+	// Managed: the list is fixed by the deployment's configuration and
+	// cannot be edited (response only).
+	Managed bool `json:"managed"`
 }
