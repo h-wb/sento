@@ -19,7 +19,7 @@ import {
 import { IconDots } from '@tabler/icons-react'
 import { api } from '../api'
 import type {
-  Collection,
+  Edition,
   CollectedVersion,
   Book,
   File as SeriesFile,
@@ -109,15 +109,15 @@ const filters: Filter[] = [
   { value: 'review', label: 'Needs attention', tone: 'review', match: (s) => tone(s) === 'review' },
 ]
 
-function bookSelection(c: Collection, t: CollectedVersion, s: BookStatus): BookSelection {
+function bookSelection(c: Edition, t: CollectedVersion, s: BookStatus): BookSelection {
   return {
     ledger: c.type === 'chapter' ? 'chapter' : 'volume',
-    collectionId: c.id,
+    editionId: c.id,
     versionId: t.id,
     bookId: s.book.id,
     number: s.book.sequenceNum,
     label: s.book.sequenceStr,
-    collectionName: `${c.editionName} · ${t.name}`,
+    editionLabel: `${c.editionName} · ${t.name}`,
     fileIds: s.fileIds,
     monitored: s.monitored,
     wanted: s.wanted,
@@ -137,7 +137,7 @@ export default function EditionBooks({
   busy,
 }: {
   seriesID: number
-  edition: Collection
+  edition: Edition
   version: CollectedVersion
   files: SeriesFile[]
   coverage: AssetCoverage[]

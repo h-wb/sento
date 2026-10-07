@@ -1,6 +1,6 @@
 # Edition model: second design review
 
-Reviewed the domain guide and implementation at `ed37297`. The recommendations below were accepted and implemented in the follow-up. They describe the issues found at review time; [the current domain guide](../domain/collections.md) describes the resulting behavior.
+Reviewed the domain guide and implementation at `ed37297`. The recommendations below were accepted and implemented in the follow-up. They describe the issues found at review time; [the current domain guide](../domain/editions.md) describes the resulting behavior.
 
 ## Assessment
 

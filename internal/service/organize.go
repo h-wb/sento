@@ -75,10 +75,10 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePl
 	if err != nil {
 		return nil, nil, ms, err
 	}
-	defaultVersion := map[int64]int64{} // collection → its default version
+	defaultVersion := map[int64]int64{} // edition → its default version
 	for _, t := range versions {
 		if t.IsDefault {
-			defaultVersion[t.CollectionID] = t.ID
+			defaultVersion[t.EditionID] = t.ID
 		}
 	}
 
@@ -103,13 +103,13 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePl
 			if err != nil {
 				continue
 			}
-			col, err := im.store.GetCollection(ctx, w.CollectionID)
+			col, err := im.store.GetEdition(ctx, w.EditionID)
 			if err != nil {
 				continue
 			}
 			seen[c.BookID] = true
 			slots = append(slots, store.BookRef{
-				Ledger: col.Type, CollectionID: col.ID, Number: w.SequenceNum, BookID: w.ID, VersionID: defaultVersion[col.ID],
+				Ledger: col.Type, EditionID: col.ID, Number: w.SequenceNum, BookID: w.ID, VersionID: defaultVersion[col.ID],
 			})
 		}
 		sort.Slice(slots, func(i, j int) bool { return slots[i].Number < slots[j].Number })

@@ -116,7 +116,7 @@ func TestUnifiedVolumeFunnel(t *testing.T) {
 	checkReject("g2", "rejected.pack_threshold")
 	checkReject("g4", "rejected.series_match")
 	checkReject("g5", "rejected.series_match") // spin-off leftover
-	checkReject("g6", "rejected.language")     // French vs en collection
+	checkReject("g6", "rejected.language")     // French vs en edition
 	// Wrong-kind releases remain visible with their classification; only results
 	// explicitly numbered for the other ledger are excluded.
 	checkReject("g3", "rejected.content_type")
@@ -129,9 +129,9 @@ func TestUnifiedVolumeFunnel(t *testing.T) {
 
 	// Chapter ledger search over the same releases: only g7 matches a book
 	// if wanted. Set cutoff to 1055 so 1056+ is wanted.
-	cols, _ := st.ListCollections(ctx, seriesID)
+	cols, _ := st.ListEditions(ctx, seriesID)
 	chapters := chapterCollection(t, cols)
-	if err := st.SetCollectionCutoff(ctx, seriesID, chapters.ID, 105500); err != nil {
+	if err := st.SetEditionCutoff(ctx, seriesID, chapters.ID, 105500); err != nil {
 		t.Fatal(err)
 	}
 	chResult, err := svc.FindCandidates(ctx, seriesID, LedgerChapter, nil)

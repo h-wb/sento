@@ -5,13 +5,13 @@ Sento distinguishes what a book **is**, which releases you want to **keep**, and
 | Entity | Meaning | Identity |
 | --- | --- | --- |
 | Series | The manga represented in your library | Local series ID; MangaBaka reference |
-| Collection / edition | A publication run: language, publisher, medium, independent traits, and content variant | Local collection ID |
+| Edition | A publication run: language, publisher, medium, independent traits, and content variant | Local edition ID |
 | Book | A volume, chapter, extra, special, or revision within an edition | Stable local book ID |
 | Collected version | An independently collected set of releases of one edition | Version ID |
 | Profile | Reusable release eligibility, scoring, and upgrade policy | Profile ID |
 | Queue item | A provider download with a frozen coverage plan and decision snapshot | Queue ID; provider and offer key |
 | File / asset | One physical archive with observed facts and a content hash | File ID and path; SHA-256 identifies bytes |
-| File contents | Confirmed books inside an archive, independent of collection rules | File ID + work ID |
+| File contents | Confirmed books inside an archive, independent of edition rules | File ID + work ID |
 | Fulfillment | Whether a present, verified asset meets a version’s current rules | Derived; explicit selections and pins use file ID + version ID + work ID |
 
 ```mermaid
@@ -40,7 +40,7 @@ A local edition remains local when similar catalog data appears. **Link to catal
 
 Metadata edits override only changed fields. Other fields continue receiving catalog updates. **Use catalog values** clears overrides and refreshes metadata. Edition traits (`standard`, `omnibus`, `boxset`, `deluxe`) can combine: a deluxe omnibus and a box of standard books are valid. Standard and omnibus numbering are mutually exclusive. An empty trait list is unspecified. Content variant is `unknown`, `original`, or `colored`. A generic name does not establish standard/original identity. Traits and variant are separate from the editable display name.
 
-A disappeared catalog entry becomes `stale`; its identity and files are retained. A retired linked book is retained so the next refresh cannot silently recreate it. A stale parent edition suspends automatic acquisition even when its books are still linked. Continue locally explicitly detaches the upstream references while preserving books, files, and collection preferences. Stale and retired books are excluded from automatic acquisition.
+A disappeared catalog entry becomes `stale`; its identity and files are retained. A retired linked book is retained so the next refresh cannot silently recreate it. A stale parent edition suspends automatic acquisition even when its books are still linked. Continue locally explicitly detaches the upstream references while preserving books, files, and edition preferences. Stale and retired books are excluded from automatic acquisition.
 
 ## Numbers and chapter discovery
 
@@ -58,7 +58,7 @@ Source discovery is opt-in per chapter edition and requires a verified source li
 
 ## Collected versions and profiles
 
-Every edition has one implicit default version. Its selector is hidden until there are additional versions. Only collected versions persist collection intent; collection-level monitoring and cutoff in API responses are projections. Additional versions share its books and carry independent monitoring, per-book intent, required release group, profile assignment, chapter cutoff, and handling of unknown language/dates. Include extras enables bonus/other books; individual overrides can select them separately. “Skip through chapter N” means number > N. Chapter zero remains selectable with an override.
+Every edition has one implicit default version. Its selector is hidden until there are additional versions. Only collected versions persist edition intent; edition-level monitoring and cutoff in API responses are projections. Additional versions share its books and carry independent monitoring, per-book intent, required release group, profile assignment, chapter cutoff, and handling of unknown language/dates. Include extras enables bonus/other books; individual overrides can select them separately. “Skip through chapter N” means number > N. Chapter zero remains selectable with an override.
 
 Profile inheritance is **version → edition → series → instance default**. An unset profile follows its parent; selecting a profile creates an explicit assignment. Profile deletion checks version assignments too.
 
@@ -88,7 +88,7 @@ A book's identity is its **content fingerprint**: the SHA-256 of the sorted SHA-
 
 A series has a folder for its volumes (`series.path`) and, when chapters are kept apart, one for its chapters (`series.chapter_path`). Optional top folders per type (`volumesRoot`, `chaptersRoot`) put the type above the series: `Volumes/<series>/…` and `Chapters/<series>/…`; equal values (both empty by default) keep one folder per series. A series keeps its own folder name when re-rooted, and one adopted from outside the library root is never moved. Scans cover both folders, and storage availability is judged per folder, so an unreachable chapter tree does not block volumes. The `{type}` token puts the split inside the series instead (`<series>/Volumes/…`).
 
-Folder layout inside a series folder is a template (`bookFolder`): by edition (`Standard Edition [en]`, the default, with `(version)` for additional copies), flat, by internal id (`collections/42/versions/81`), or custom. The fingerprint enters a file name only when configured or when a different book already holds the path.
+Folder layout inside a series folder is a template (`bookFolder`): by edition (`Standard Edition [en]`, the default, with `(version)` for additional copies), flat, by internal id (`editions/42/versions/81`), or custom. The fingerprint enters a file name only when configured or when a different book already holds the path.
 
 Installation does not overwrite an occupied path with different bytes. Existing library paths are preserved. A pack stays **one archive** with several coverage links. Identical bytes from one job may satisfy several confirmed versions through the same asset. Different releases remain separate assets.
 
@@ -114,7 +114,7 @@ The shared ledger batches works, overrides, facts, coverage, profiles, and pendi
 
 Migration 14 intentionally resets the old library and its downloads, file mappings, bindings, and decision history. Connections, profiles, custom formats, application settings, and physical files remain. Add series again after upgrading and review existing files before counting them as owned.
 
-Migration 15 preserves the current library. It backfills intrinsic asset contents from confirmed coverage, moves collection intent entirely to versions, and adds cached presence, review/retry states, and independent edition traits. Existing file presence starts unknown and is checked during scan, search, or explicit review recheck.
+Migration 15 preserves the current library. It backfills intrinsic asset contents from confirmed coverage, moves edition intent entirely to versions, and adds cached presence, review/retry states, and independent edition traits. Existing file presence starts unknown and is checked during scan, search, or explicit review recheck.
 
 Canonical ownership uses version and work IDs. The old number-based ownership tables and queued-plan adapters are removed. Migrations remain transactional on SQLite and PostgreSQL.
 

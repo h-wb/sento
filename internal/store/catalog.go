@@ -62,7 +62,7 @@ func (s *Store) EnsureModels(ctx context.Context, seriesID int64) error {
 	if err != nil {
 		return err
 	}
-	cols, err := s.ListCollections(ctx, seriesID)
+	cols, err := s.ListEditions(ctx, seriesID)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (s *Store) GetBook(ctx context.Context, id int64) (*Book, error) {
 const workColumns = `id,collection_id,COALESCE(mb_work_id,'') AS provider_id,sequence_num,COALESCE(sequence_string,'') AS sequence_string,count_type,COALESCE(release_date,'') AS release_date,COALESCE(isbn,'') AS isbn,COALESCE(pages,0) AS pages,number_known,revision,sync_state`
 
 func (s *Store) SaveBook(ctx context.Context, seriesID int64, w Book) (int64, error) {
-	c, err := s.GetCollection(ctx, w.CollectionID)
+	c, err := s.GetEdition(ctx, w.EditionID)
 	if err != nil {
 		return 0, err
 	}
@@ -139,7 +139,7 @@ func (s *Store) SaveBook(ctx context.Context, seriesID int64, w Book) (int64, er
 	}
 	if w.ID == 0 {
 		var id int64
-		err = tx.QueryRowContext(ctx, s.q(`INSERT INTO works(collection_id,sequence_num,sequence_string,count_type,release_date,isbn,pages,number_known,revision) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id`), w.CollectionID, w.SequenceNum, w.SequenceStr, w.CountType, w.ReleaseDate, w.ISBN, w.Pages, w.NumberKnown, w.Revision).Scan(&id)
+		err = tx.QueryRowContext(ctx, s.q(`INSERT INTO works(collection_id,sequence_num,sequence_string,count_type,release_date,isbn,pages,number_known,revision) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id`), w.EditionID, w.SequenceNum, w.SequenceStr, w.CountType, w.ReleaseDate, w.ISBN, w.Pages, w.NumberKnown, w.Revision).Scan(&id)
 		if err != nil {
 			return 0, err
 		}
@@ -176,7 +176,7 @@ func (s *Store) DeleteBook(ctx context.Context, seriesID, id int64) error {
 	if err != nil {
 		return err
 	}
-	c, err := s.GetCollection(ctx, w.CollectionID)
+	c, err := s.GetEdition(ctx, w.EditionID)
 	if err != nil {
 		return err
 	}
@@ -209,8 +209,8 @@ func (s *Store) DeleteBook(ctx context.Context, seriesID, id int64) error {
 	return tx.Commit()
 }
 
-func (s *Store) CollectionPending(ctx context.Context, cid int64) (bool, error) {
-	c, err := s.GetCollection(ctx, cid)
+func (s *Store) EditionPending(ctx context.Context, cid int64) (bool, error) {
+	c, err := s.GetEdition(ctx, cid)
 	if err != nil {
 		return false, err
 	}
@@ -224,7 +224,7 @@ func (s *Store) CollectionPending(ctx context.Context, cid int64) (bool, error) 
 			return false, fmt.Errorf("invalid pending download mapping: %w", err)
 		}
 		for _, sl := range slots {
-			if sl.CollectionID == cid {
+			if sl.EditionID == cid {
 				return true, nil
 			}
 		}
@@ -233,17 +233,17 @@ func (s *Store) CollectionPending(ctx context.Context, cid int64) (bool, error) 
 }
 
 type BookObservation struct {
-	ID           int64  `json:"id"`
-	CollectionID int64  `json:"collectionId"`
-	Source       string `json:"source"`
-	ExternalKey  string `json:"externalKey"`
-	Label        string `json:"label"`
-	Number       int64  `json:"number"`
-	State        string `json:"state"`
+	ID          int64  `json:"id"`
+	EditionID   int64  `json:"editionId" db:"collection_id"`
+	Source      string `json:"source"`
+	ExternalKey string `json:"externalKey"`
+	Label       string `json:"label"`
+	Number      int64  `json:"number"`
+	State       string `json:"state"`
 }
 
 func (s *Store) ObserveBook(ctx context.Context, seriesID int64, o BookObservation) error {
-	c, err := s.GetCollection(ctx, o.CollectionID)
+	c, err := s.GetEdition(ctx, o.EditionID)
 	if err != nil {
 		return err
 	}
@@ -256,7 +256,7 @@ func (s *Store) ObserveBook(ctx context.Context, seriesID int64, o BookObservati
 	if o.Source == "" || o.ExternalKey == "" || o.Label == "" {
 		return apperr.Invalidf("source, external key and label are required")
 	}
-	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO unit_observations(collection_id,source,external_key,label,number) VALUES(?,?,?,?,?) ON CONFLICT(collection_id,source,external_key) DO NOTHING`), o.CollectionID, o.Source, o.ExternalKey, o.Label, o.Number)
+	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO unit_observations(collection_id,source,external_key,label,number) VALUES(?,?,?,?,?) ON CONFLICT(collection_id,source,external_key) DO NOTHING`), o.EditionID, o.Source, o.ExternalKey, o.Label, o.Number)
 	return err
 }
 func (s *Store) ListObservations(ctx context.Context, seriesID int64) ([]BookObservation, error) {
@@ -267,7 +267,7 @@ func (s *Store) ResolveObservation(ctx context.Context, seriesID, id int64, acce
 	if err != nil {
 		return err
 	}
-	c, err := s.GetCollection(ctx, o.CollectionID)
+	c, err := s.GetEdition(ctx, o.EditionID)
 	if err != nil {
 		return err
 	}
@@ -308,7 +308,7 @@ func (s *Store) ResolveObservation(ctx context.Context, seriesID, id int64, acce
 
 func (s *Store) SetBindingEdition(ctx context.Context, seriesID, bindingID, cid int64) error {
 	if cid > 0 {
-		c, err := s.GetCollection(ctx, cid)
+		c, err := s.GetEdition(ctx, cid)
 		if err != nil {
 			return err
 		}
@@ -324,7 +324,7 @@ func (s *Store) ResetBook(ctx context.Context, seriesID, id int64) error {
 	if err != nil {
 		return err
 	}
-	c, err := s.GetCollection(ctx, w.CollectionID)
+	c, err := s.GetEdition(ctx, w.EditionID)
 	if err != nil {
 		return err
 	}
@@ -334,7 +334,7 @@ func (s *Store) ResetBook(ctx context.Context, seriesID, id int64) error {
 	if w.ProviderID == "" {
 		return apperr.Invalidf("book has no catalog link")
 	}
-	pending, err := s.CollectionPending(ctx, c.ID)
+	pending, err := s.EditionPending(ctx, c.ID)
 	if err != nil {
 		return err
 	}
@@ -348,7 +348,7 @@ func (s *Store) SetBindingTrust(ctx context.Context, sid, bid int64, trust bool)
 	return s.touch(ctx, `UPDATE source_bindings SET trust_chapters=? WHERE id=? AND series_id=? AND state='active' AND collection_id IN(SELECT id FROM collections WHERE ctype='chapter')`, trust, bid, sid)
 }
 func (s *Store) AcceptTrustedObservation(ctx context.Context, sid int64, o BookObservation) error {
-	id, err := get[int64](ctx, s, `SELECT id FROM unit_observations WHERE collection_id=? AND source=? AND external_key=? AND state='pending'`, o.CollectionID, o.Source, o.ExternalKey)
+	id, err := get[int64](ctx, s, `SELECT id FROM unit_observations WHERE collection_id=? AND source=? AND external_key=? AND state='pending'`, o.EditionID, o.Source, o.ExternalKey)
 	if err == ErrNotFound {
 		return nil
 	}

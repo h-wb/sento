@@ -41,7 +41,7 @@ test.describe('API', () => {
     expect(Array.isArray(await res.json())).toBeTruthy()
   })
 
-  test('collection endpoints answer with arrays, not null', async ({ request }) => {
+  test('edition endpoints answer with arrays, not null', async ({ request }) => {
     // The UI maps over these directly; a JSON null would crash the page.
     for (const path of [
       '/api/v1/series/',

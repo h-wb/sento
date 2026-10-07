@@ -13,7 +13,7 @@ export interface CalendarEntry {
   versionName: string;
   seriesId: number /* int64 */;
   seriesTitle: string;
-  collectionId: number /* int64 */;
+  editionId: number /* int64 */;
   editionName: string;
   sequenceNum: number /* int64 */; // hundredths
   sequenceStr: string;
@@ -26,7 +26,7 @@ export interface CalendarEntry {
 
 export interface BookObservation {
   id: number /* int64 */;
-  collectionId: number /* int64 */;
+  editionId: number /* int64 */;
   source: string;
   externalKey: string;
   label: string;
@@ -37,7 +37,7 @@ export interface BookObservation {
 //////////
 // source: catalog_edit.go
 
-export interface CollectionMetadataPatch {
+export interface EditionMetadataPatch {
   makeLocal?: boolean;
   numberingSource?: string;
   editionTraits?: string[];
@@ -56,8 +56,8 @@ export interface CatalogLinkPreview {
   pending: boolean;
   localBooks: Book[];
   catalogBooks: Book[];
-  local?: Collection;
-  catalog?: Collection;
+  local?: Edition;
+  catalog?: Edition;
   mapping: { [key: number /* int64 */]: number /* int64 */};
   unmatched: number /* int64 */[];
 }
@@ -203,7 +203,7 @@ export interface BookRef {
   versionId?: number /* int64 */;
   bookId?: number /* int64 */;
   ledger: string;
-  collectionId: number /* int64 */;
+  editionId: number /* int64 */;
   number: number /* int64 */;
 }
 
@@ -274,7 +274,7 @@ export interface Series {
   addedAt: string;
   refreshedAt?: string;
 }
-export interface Collection {
+export interface Edition {
   numberingSource: string;
   editionTraits: EditionTraitList;
   contentVariant: string;
@@ -303,7 +303,7 @@ export interface Book {
   revision?: string;
   syncState: string;
   id: number /* int64 */;
-  collectionId: number /* int64 */;
+  editionId: number /* int64 */;
   sequenceNum: number /* int64 */; // hundredths
   sequenceStr: string;
   countType: string;
@@ -332,12 +332,12 @@ export interface BookLink {
   BookID: number /* int64 */;
   FileID: number /* int64 */;
   Ledger: string;
-  CollectionID: number /* int64 */;
+  EditionID: number /* int64 */;
   Number: number /* int64 */;
 }
 export interface Binding {
   trustChapters: boolean;
-  collectionId: number /* int64 */;
+  editionId: number /* int64 */;
   id: number /* int64 */;
   seriesId: number /* int64 */;
   sourceId: string;
@@ -369,7 +369,7 @@ export interface AddSeriesParams {
 export interface CollectedVersion {
   includeExtras: boolean;
   id: number /* int64 */;
-  collectionId: number /* int64 */;
+  editionId: number /* int64 */;
   name: string;
   isDefault: boolean;
   monitored: boolean;

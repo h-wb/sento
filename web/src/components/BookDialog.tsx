@@ -27,8 +27,8 @@ export type BookSelection = {
   label?: string
   ledger: 'volume' | 'chapter'
   number: number // hundredths
-  collectionId?: number
-  collectionName?: string
+  editionId?: number
+  editionLabel?: string
   releaseDate?: string
   monitored: boolean
   wanted: boolean
@@ -218,7 +218,7 @@ function Inner({
   const showProblems = problemsOpen ?? (!!result?.done && result.candidates.length === 0)
 
   const label = editionWide
-    ? `${sel.collectionName ?? 'Collection'} — ${allBooks ? 'all' : 'wanted'} ${sel.ledger}s`
+    ? `${sel.editionLabel ?? 'Edition'} — ${allBooks ? 'all' : 'wanted'} ${sel.ledger}s`
     : `${sel.ledger === 'volume' ? 'Volume' : 'Chapter'} ${sel.label ?? fmtNum(sel.number)}`
 
   const grab = async (c: ReleaseCandidate, force: boolean) => {
@@ -277,7 +277,7 @@ function Inner({
           </Group>
         ) : (
           <Group gap={6}>
-            {sel.collectionName && <Badge variant="light">{sel.collectionName}</Badge>}
+            {sel.editionLabel && <Badge variant="light">{sel.editionLabel}</Badge>}
             {sel.releaseDate && (
               <Text size="sm" c="dimmed">
                 released {sel.releaseDate}

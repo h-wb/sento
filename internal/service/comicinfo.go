@@ -36,7 +36,7 @@ func (im *Importer) bookInfo(ctx context.Context, series *store.Series, sl store
 	}
 	notes := []string{"sento:v1", fmt.Sprintf("mangabaka:%d", series.MangaBakaID)}
 
-	col, _ := im.store.GetCollection(ctx, sl.CollectionID)
+	col, _ := im.store.GetEdition(ctx, sl.EditionID)
 	if col != nil {
 		info.LanguageISO = col.Language
 		info.Publisher = col.Publisher
@@ -139,7 +139,7 @@ func applyCatalog(info *mediafile.ComicInfo, seriesRaw, workRaw string) {
 // packInfo is bookInfo for an archive holding several books: series-level
 // facts only, since no single number, date or ISBN describes it.
 func (im *Importer) packInfo(ctx context.Context, series *store.Series, slots []store.BookRef, release, group string) mediafile.ComicInfo {
-	info := im.bookInfo(ctx, series, store.BookRef{Ledger: slots[0].Ledger, CollectionID: slots[0].CollectionID}, release, group)
+	info := im.bookInfo(ctx, series, store.BookRef{Ledger: slots[0].Ledger, EditionID: slots[0].EditionID}, release, group)
 	info.Number, info.Volume, info.Count = "", "", ""
 	info.Summary = series.Description
 	first, last := slotSpan(slots)
@@ -175,7 +175,7 @@ func (im *Importer) bookFileName(ctx context.Context, ms MediaSettings, series *
 		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Group: group,
 		Volume: -1, Chapter: -1, Year: series.Year,
 	}
-	if col, err := im.store.GetCollection(ctx, first.CollectionID); err == nil {
+	if col, err := im.store.GetEdition(ctx, first.EditionID); err == nil {
 		tokens.Edition, tokens.Lang = col.EditionName, col.Language
 	}
 	tmpl := ms.VolumeFile
@@ -240,13 +240,13 @@ func titleCase(s string) string {
 func (im *Importer) bookDir(ctx context.Context, ms MediaSettings, seriesDir string, series *store.Series, sl store.BookRef) string {
 	tokens := mediafile.NameTokens{
 		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1,
-		Year: series.Year, CollectionID: sl.CollectionID, VersionID: sl.VersionID,
+		Year: series.Year, EditionID: sl.EditionID, VersionID: sl.VersionID,
 		Type: "Volumes",
 	}
 	if sl.Ledger == "chapter" {
 		tokens.Type = "Chapters"
 	}
-	if col, err := im.store.GetCollection(ctx, sl.CollectionID); err == nil {
+	if col, err := im.store.GetEdition(ctx, sl.EditionID); err == nil {
 		tokens.Edition, tokens.Lang, tokens.Publisher, tokens.Medium = col.EditionName, col.Language, col.Publisher, col.Medium
 	}
 	if t, err := im.store.GetVersion(ctx, sl.VersionID); err == nil && !t.IsDefault {

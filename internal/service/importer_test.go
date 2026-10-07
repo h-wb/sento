@@ -93,7 +93,7 @@ func (p *payloadProvider) Fetch(context.Context, string) (*provider.Payload, err
 }
 func (p *payloadProvider) Cleanup(context.Context, string) error { return nil }
 
-func queueVolumes(t *testing.T, st *store.Store, seriesID, collectionID int64, hash string, numbers ...int64) int64 {
+func queueVolumes(t *testing.T, st *store.Store, seriesID, editionID int64, hash string, numbers ...int64) int64 {
 	t.Helper()
 	slots := make([]store.BookRef, 0, len(numbers))
 	for _, n := range numbers {
@@ -101,13 +101,13 @@ func queueVolumes(t *testing.T, st *store.Store, seriesID, collectionID int64, h
 		if err != nil {
 			t.Fatal(err)
 		}
-		works, err := st.ListBooks(context.Background(), collectionID)
+		works, err := st.ListBooks(context.Background(), editionID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		var versionID, workID int64
 		for _, version := range versions {
-			if version.CollectionID == collectionID && version.IsDefault {
+			if version.EditionID == editionID && version.IsDefault {
 				versionID = version.ID
 			}
 		}
@@ -116,7 +116,7 @@ func queueVolumes(t *testing.T, st *store.Store, seriesID, collectionID int64, h
 				workID = work.ID
 			}
 		}
-		slots = append(slots, store.BookRef{Ledger: "volume", CollectionID: collectionID, Number: n, VersionID: versionID, BookID: workID})
+		slots = append(slots, store.BookRef{Ledger: "volume", EditionID: editionID, Number: n, VersionID: versionID, BookID: workID})
 	}
 	raw, _ := json.Marshal(slots)
 	id, err := st.AddQueueItem(context.Background(), store.QueueItem{
@@ -141,7 +141,7 @@ func TestImportTorrentPayloadIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cols, _ := st.ListCollections(ctx, seriesID)
+	cols, _ := st.ListEditions(ctx, seriesID)
 	var standard int64
 	for _, c := range cols {
 		if c.EditionName == "Standard Edition" {
@@ -241,7 +241,7 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cols, _ := st.ListCollections(ctx, seriesID)
+	cols, _ := st.ListEditions(ctx, seriesID)
 	var standard int64
 	for _, c := range cols {
 		if c.EditionName == "Standard Edition" {
@@ -265,7 +265,7 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 		t.Fatalf("import: %d %v", n, err)
 	}
 	before, _ := st.ListFiles(ctx, seriesID)
-	if len(before) != 2 || !strings.Contains(before[0].Path, filepath.Join("collections")) {
+	if len(before) != 2 || !strings.Contains(before[0].Path, filepath.Join("editions")) {
 		t.Fatalf("old-layout import: %+v", before)
 	}
 	if _, info := readBook(t, before[0].Path); info != nil {
@@ -305,7 +305,7 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 			t.Errorf("identity changed: %s → %s", before[i].Hash, f.Hash)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(library, "ONE PIECE [mangabaka-377]", "collections")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(library, "ONE PIECE [mangabaka-377]", "editions")); !os.IsNotExist(err) {
 		t.Error("emptied id folders were left behind")
 	}
 	// The seeding payload was hardlinked to the old library file: still intact.

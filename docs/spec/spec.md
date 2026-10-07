@@ -1,6 +1,6 @@
 # Sento — Specification (v1 draft)
 
-> Current edition, acquisition, and recovery behavior is specified in [the domain model](../domain/collections.md). Sections marked `[default]` remain proposals.
+> Current edition, acquisition, and recovery behavior is specified in [the domain model](../domain/editions.md). Sections marked `[default]` remain proposals.
 
 
 Sonarr/Radarr-style automation for manga: monitor series, find releases on

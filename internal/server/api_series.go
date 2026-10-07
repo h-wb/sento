@@ -10,7 +10,7 @@ import (
 	"github.com/h-wb/sento/internal/store"
 )
 
-// Series-scoped handlers: the library entries, their collections and
+// Series-scoped handlers: the library entries, their editions and
 // books, files, in-place imports and source bindings.
 
 // handleImportScan proposes MangaBaka matches for a root folder's
@@ -92,14 +92,14 @@ func (s *Server) handleGetSeries(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	collections, err := s.store.ListCollections(r.Context(), id)
+	collections, err := s.store.ListEditions(r.Context(), id)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, SeriesDetail{
-		Series:      series,
-		Collections: collections,
+		Series:   series,
+		Editions: collections,
 	})
 }
 
@@ -151,18 +151,18 @@ func (s *Server) handleRefreshSeries(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "refreshed"})
 }
 
-// --- collection updates ---
+// --- edition updates ---
 
-func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCreateEdition(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	var body CreateCollectionBody
+	var body CreateEditionBody
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	col, err := s.library.CreateCollection(r.Context(), id, service.CreateCollectionParams{
+	col, err := s.library.CreateEdition(r.Context(), id, service.CreateEditionParams{
 		EditionName: body.EditionName, Language: body.Language,
 		Publisher: body.Publisher, Medium: body.Medium, Type: body.Type,
 		BasedOn: body.BasedOn, Volumes: body.Volumes,
@@ -175,21 +175,21 @@ func (s *Server) handleCreateCollection(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, col)
 }
 
-func (s *Server) handleMergeCollection(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleMergeEditions(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	cid, ok := pathID(w, r, "cid")
+	cid, ok := pathID(w, r, "eid")
 	if !ok {
 		return
 	}
-	var body MergeCollectionBody
+	var body MergeEditionBody
 	if !decodeBody(w, r, &body) {
 		return
 	}
 	if body.Into == 0 || body.Into == cid {
-		writeError(w, http.StatusBadRequest, "merge target must be a different collection")
+		writeError(w, http.StatusBadRequest, "choose a different edition to merge into")
 		return
 	}
 	if r.URL.Query().Get("preview") == "1" {
@@ -201,44 +201,44 @@ func (s *Server) handleMergeCollection(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, data)
 		return
 	}
-	unmatched, err := s.store.MergeCollection(r.Context(), id, cid, body.Into)
+	unmatched, err := s.store.MergeEditions(r.Context(), id, cid, body.Into)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, MergeCollectionResponse{Unmatched: unmatched})
+	writeJSON(w, http.StatusOK, MergeEditionResponse{Unmatched: unmatched})
 }
 
-func (s *Server) handleDeleteCollection(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDeleteEdition(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	cid, ok := pathID(w, r, "cid")
+	cid, ok := pathID(w, r, "eid")
 	if !ok {
 		return
 	}
-	if err := s.store.DeleteCustomCollection(r.Context(), id, cid); err != nil {
+	if err := s.store.DeleteCustomEdition(r.Context(), id, cid); err != nil {
 		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleUpdateCollection(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleUpdateEdition(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	cid, ok := pathID(w, r, "cid")
+	cid, ok := pathID(w, r, "eid")
 	if !ok {
 		return
 	}
-	var body CollectionPatch
+	var body EditionPatch
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if err := s.library.UpdateCollection(r.Context(), id, cid, service.CollectionUpdate{
+	if err := s.library.UpdateEdition(r.Context(), id, cid, service.EditionUpdate{
 		Monitored: body.Monitored, ProfileID: body.ProfileID,
 		CutoffNum: body.CutoffNum, Language: body.Language,
 	}); err != nil {
@@ -350,13 +350,13 @@ func (s *Server) handleUpdateBinding(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, err)
 			return
 		}
-		if patch.CollectionID == nil && patch.State == "" {
+		if patch.EditionID == nil && patch.State == "" {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 	}
-	if patch.CollectionID != nil {
-		if err := s.store.SetBindingEdition(r.Context(), id, bid, *patch.CollectionID); err != nil {
+	if patch.EditionID != nil {
+		if err := s.store.SetBindingEdition(r.Context(), id, bid, *patch.EditionID); err != nil {
 			writeErr(w, err)
 			return
 		}

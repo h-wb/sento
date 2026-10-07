@@ -7,7 +7,7 @@ import (
 	"github.com/h-wb/sento/internal/store"
 )
 
-func chapterCollection(t *testing.T, cols []store.Collection) store.Collection {
+func chapterCollection(t *testing.T, cols []store.Edition) store.Edition {
 	t.Helper()
 	for _, c := range cols {
 		if c.Type == "chapter" {
@@ -15,10 +15,10 @@ func chapterCollection(t *testing.T, cols []store.Collection) store.Collection {
 		}
 	}
 	t.Fatalf("no chapter collection in %+v", cols)
-	return store.Collection{}
+	return store.Edition{}
 }
 
-func collectionByName(t *testing.T, cols []store.Collection, name, lang string) store.Collection {
+func collectionByName(t *testing.T, cols []store.Edition, name, lang string) store.Edition {
 	t.Helper()
 	for _, c := range cols {
 		if c.EditionName == name && c.Language == lang {
@@ -26,7 +26,7 @@ func collectionByName(t *testing.T, cols []store.Collection, name, lang string) 
 		}
 	}
 	t.Fatalf("collection %s/%s not found in %+v", name, lang, cols)
-	return store.Collection{}
+	return store.Edition{}
 }
 
 func TestCustomEditions(t *testing.T) {
@@ -37,11 +37,11 @@ func TestCustomEditions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cols, _ := st.ListCollections(ctx, id)
+	cols, _ := st.ListEditions(ctx, id)
 	std := collectionByName(t, cols, "Standard Edition", "en")
 
 	// Language variant: clones numbering, drops release dates.
-	frID, err := st.AddCustomCollection(ctx, store.Collection{
+	frID, err := st.AddCustomEdition(ctx, store.Edition{
 		SeriesID: id, EditionName: "Standard Edition", Language: "fr", Monitored: true,
 	}, std.ID, 0)
 	if err != nil {
@@ -58,7 +58,7 @@ func TestCustomEditions(t *testing.T) {
 	}
 
 	// From scratch: generated numbering.
-	scratchID, err := st.AddCustomCollection(ctx, store.Collection{
+	scratchID, err := st.AddCustomEdition(ctx, store.Edition{
 		SeriesID: id, EditionName: "Fan Colored", Language: "en",
 	}, 0, 5)
 	if err != nil {
@@ -69,7 +69,7 @@ func TestCustomEditions(t *testing.T) {
 	}
 
 	// Duplicate identity rejected by the schema.
-	if _, err := st.AddCustomCollection(ctx, store.Collection{
+	if _, err := st.AddCustomEdition(ctx, store.Edition{
 		SeriesID: id, EditionName: "Fan Colored", Language: "en",
 	}, 0, 5); err == nil {
 		t.Fatal("want UNIQUE violation for duplicate identity")
@@ -80,7 +80,7 @@ func TestCustomEditions(t *testing.T) {
 	if err := lib.Refresh(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	cols, _ = st.ListCollections(ctx, id)
+	cols, _ = st.ListEditions(ctx, id)
 	if c := collectionByName(t, cols, "Standard Edition", "fr"); !c.Custom {
 		t.Fatal("fr variant must stay custom after refresh (no MB identity match)")
 	}
@@ -93,7 +93,7 @@ func TestCustomEditions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = st.MergeCollection(ctx, id, scratchID, std.ID); err == nil {
+	if _, err = st.MergeEditions(ctx, id, scratchID, std.ID); err == nil {
 		t.Fatal("different editions must not be merged by number")
 	}
 	coverage, err := st.Coverage(ctx, id)
@@ -103,18 +103,18 @@ func TestCustomEditions(t *testing.T) {
 	if len(coverage) != 2 || coverage[0].FileID != fileID {
 		t.Fatalf("merge refusal changed ownership: %+v", coverage)
 	}
-	if _, err = st.GetCollection(ctx, scratchID); err != nil {
+	if _, err = st.GetEdition(ctx, scratchID); err != nil {
 		t.Fatal(err)
 	}
 
-	// Non-custom collections refuse to merge away or be deleted.
-	if _, err := st.MergeCollection(ctx, id, std.ID, frID); err == nil {
+	// Non-custom editions refuse to merge away or be deleted.
+	if _, err := st.MergeEditions(ctx, id, std.ID, frID); err == nil {
 		t.Fatal("want refusal to merge a MangaBaka edition away")
 	}
-	if err := st.DeleteCustomCollection(ctx, id, std.ID); err == nil {
+	if err := st.DeleteCustomEdition(ctx, id, std.ID); err == nil {
 		t.Fatal("want refusal to delete a MangaBaka edition")
 	}
-	if err := st.DeleteCustomCollection(ctx, id, frID); err != nil {
+	if err := st.DeleteCustomEdition(ctx, id, frID); err != nil {
 		t.Fatal(err)
 	}
 }

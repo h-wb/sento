@@ -59,7 +59,7 @@ func (im *Importer) normalizeExpected(ctx context.Context, item store.QueueItem)
 	}
 	for i := range slots {
 		sl := &slots[i]
-		col, err := im.store.GetCollection(ctx, sl.CollectionID)
+		col, err := im.store.GetEdition(ctx, sl.EditionID)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +74,7 @@ func (im *Importer) normalizeExpected(ctx context.Context, item store.QueueItem)
 		if err != nil {
 			return nil, err
 		}
-		if w.CollectionID != sl.CollectionID || t.CollectionID != sl.CollectionID {
+		if w.EditionID != sl.EditionID || t.EditionID != sl.EditionID {
 			return nil, fmt.Errorf("book/version mapping does not belong to this edition")
 		}
 	}
@@ -87,7 +87,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 	}
 	links := make([]store.BookLink, 0, len(slots))
 	for _, sl := range slots {
-		links = append(links, store.BookLink{Ledger: sl.Ledger, CollectionID: sl.CollectionID, Number: sl.Number, VersionID: sl.VersionID, BookID: sl.BookID})
+		links = append(links, store.BookLink{Ledger: sl.Ledger, EditionID: sl.EditionID, Number: sl.Number, VersionID: sl.VersionID, BookID: sl.BookID})
 	}
 	var snap ReleaseCandidate
 	_ = json.Unmarshal(item.Snapshot, &snap)

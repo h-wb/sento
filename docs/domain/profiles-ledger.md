@@ -1,6 +1,6 @@
 # Profiles and acquisition state
 
-Profiles decide which releases are acceptable; the shared service ledger decides which books need a copy. Both search and the UI use the same evaluation. See [the edition model](collections.md) for identity and recovery rules.
+Profiles decide which releases are acceptable; the shared service ledger decides which books need a copy. Both search and the UI use the same evaluation. See [the edition model](editions.md) for identity and recovery rules.
 
 ## `internal/profile`
 
@@ -55,7 +55,7 @@ A `Profile` does two jobs:
 
 Monitoring is gated by the series, parent edition, work, version, extras rule, exclusive chapter cutoff, and individual overrides. Retired or catalog-missing publications stop automation. Availability stays released, upcoming, or unknown; unknown dates follow the version’s explicit policy.
 
-On-disk contents are independent of fulfillment. A confirmed archive can satisfy multiple versions of the same edition when it meets each version’s language, group, and profile requirements. Policy changes may leave an existing copy unsatisfactory. Pins prevent upgrades; changing or deleting collection preferences does not delete knowledge of an archive’s contents.
+On-disk contents are independent of fulfillment. A confirmed archive can satisfy multiple versions of the same edition when it meets each version’s language, group, and profile requirements. Policy changes may leave an existing copy unsatisfactory. Pins prevent upgrades; changing or deleting edition preferences does not delete knowledge of an archive’s contents.
 
 Pending downloads and jobs awaiting review keep reservations. Storage uncertainty blocks acquisition. Wanted therefore means the book is collectible, available under policy, lacks a satisfactory copy (or qualifies for an enabled upgrade), and has no pending claim or unresolved storage/content issue.
 

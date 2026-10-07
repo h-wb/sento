@@ -150,7 +150,7 @@ func TestExtensionReconcile(t *testing.T) {
 		t.Fatalf("reconcile not idempotent: %v", host.installs)
 	}
 
-	// Garbage collection: an installed extension no entry references
+	// Garbage edition: an installed extension no entry references
 	// (abandoned Add-Indexer pick) is removed on the next reconcile.
 	host.installed["ext.c"] = true
 	if err := svc.Reconcile(ctx); err != nil {

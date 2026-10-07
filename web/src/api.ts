@@ -3,7 +3,7 @@ import type { EditionOverview, FileChange, HealthReport, OrganizeResult } from '
 import type {
   CollectedVersion,
   Book,
-  CollectionMetadataPatch,
+  EditionMetadataPatch,
   CatalogLinkPreview,
   AssetCoverage,
   BookRef,
@@ -17,12 +17,12 @@ import type { SeriesRef } from './types/metadata'
 import type {
   SearchBody,
   BrowseProwlarrBody,
-  CollectionPatch,
-  CreateCollectionBody,
+  EditionPatch,
+  CreateEditionBody,
   ExtensionRepos,
   IndexerBody,
   IndexerPatch,
-  MergeCollectionResponse,
+  MergeEditionResponse,
   NamingPreview,
   OverridePatch,
   SearchResponse,
@@ -48,7 +48,7 @@ import type {
   Binding,
   BlocklistEntry,
   CalendarEntry,
-  Collection,
+  Edition,
   Decision,
   File as SeriesFile,
   QueueItem,
@@ -72,8 +72,8 @@ export type {
   ProwlarrIndexer,
   BlocklistEntry,
   CalendarEntry,
-  Collection,
-  CollectionPatch,
+  Edition,
+  EditionPatch,
   Decision,
   ImportProposal,
   MediaSettings,
@@ -124,10 +124,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  setBindingEdition: (id: number, bid: number, collectionId: number) =>
+  setBindingEdition: (id: number, bid: number, editionId: number) =>
     request<void>(`/series/${id}/bindings/${bid}`, {
       method: 'PUT',
-      body: JSON.stringify({ collectionId }),
+      body: JSON.stringify({ editionId }),
     }),
   bookMonitor: (id: number, versionId: number, bookId: number, monitored: boolean) =>
     request<void>(`/series/${id}/book-monitor`, {
@@ -195,23 +195,23 @@ export const api = {
     request<void>(`/series/${id}/books/${uid}/catalog-reset`, { method: 'POST' }),
   deleteBook: (id: number, uid: number) =>
     request<void>(`/series/${id}/books/${uid}`, { method: 'DELETE' }),
-  editEdition: (id: number, cid: number, patch: CollectionMetadataPatch) =>
-    request<void>(`/series/${id}/collections/${cid}/metadata`, {
+  editEdition: (id: number, cid: number, patch: EditionMetadataPatch) =>
+    request<void>(`/series/${id}/editions/${cid}/metadata`, {
       method: 'PUT',
       body: JSON.stringify(patch),
     }),
   mergePreview: (id: number, cid: number, into: number) =>
-    request<CatalogLinkPreview>(`/series/${id}/collections/${cid}/merge?preview=1`, {
+    request<CatalogLinkPreview>(`/series/${id}/editions/${cid}/merge?preview=1`, {
       method: 'POST',
       body: JSON.stringify({ into }),
     }),
   catalogLinkPreview: (id: number, cid: number, catalogId: number) =>
-    request<CatalogLinkPreview>(`/series/${id}/collections/${cid}/catalog-link?preview=1`, {
+    request<CatalogLinkPreview>(`/series/${id}/editions/${cid}/catalog-link?preview=1`, {
       method: 'POST',
       body: JSON.stringify({ catalogId }),
     }),
   linkCatalog: (id: number, cid: number, catalogId: number) =>
-    request<void>(`/series/${id}/collections/${cid}/catalog-link`, {
+    request<void>(`/series/${id}/editions/${cid}/catalog-link`, {
       method: 'POST',
       body: JSON.stringify({ catalogId }),
     }),
@@ -257,33 +257,33 @@ export const api = {
       body: JSON.stringify({ profileId }),
     }),
   refreshSeries: (id: number) => request<unknown>(`/series/${id}/refresh`, { method: 'POST' }),
-  updateCollection: (id: number, cid: number, patch: CollectionPatch) =>
-    request<void>(`/series/${id}/collections/${cid}`, {
+  updateEdition: (id: number, cid: number, patch: EditionPatch) =>
+    request<void>(`/series/${id}/editions/${cid}`, {
       method: 'PUT',
       body: JSON.stringify(patch),
     }),
-  setCollectionMonitored: (id: number, cid: number, monitored: boolean) =>
-    request<void>(`/series/${id}/collections/${cid}`, {
+  setEditionMonitored: (id: number, cid: number, monitored: boolean) =>
+    request<void>(`/series/${id}/editions/${cid}`, {
       method: 'PUT',
       body: JSON.stringify({ monitored }),
     }),
-  setCollectionProfile: (id: number, cid: number, profileId: number) =>
-    request<void>(`/series/${id}/collections/${cid}`, {
+  setEditionProfile: (id: number, cid: number, profileId: number) =>
+    request<void>(`/series/${id}/editions/${cid}`, {
       method: 'PUT',
       body: JSON.stringify({ profileId }),
     }),
-  createCollection: (id: number, body: CreateCollectionBody) =>
-    request<Collection>(`/series/${id}/collections`, {
+  createEdition: (id: number, body: CreateEditionBody) =>
+    request<Edition>(`/series/${id}/editions`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  mergeCollection: (id: number, cid: number, into: number) =>
-    request<MergeCollectionResponse>(`/series/${id}/collections/${cid}/merge`, {
+  mergeEditions: (id: number, cid: number, into: number) =>
+    request<MergeEditionResponse>(`/series/${id}/editions/${cid}/merge`, {
       method: 'POST',
       body: JSON.stringify({ into }),
     }),
-  deleteCollection: (id: number, cid: number) =>
-    request<void>(`/series/${id}/collections/${cid}`, { method: 'DELETE' }),
+  deleteEdition: (id: number, cid: number) =>
+    request<void>(`/series/${id}/editions/${cid}`, { method: 'DELETE' }),
   files: (id: number) => request<SeriesFile[]>(`/series/${id}/files`),
 
   listProfiles: () => request<Profile[]>('/profiles/'),

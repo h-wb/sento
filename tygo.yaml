@@ -70,7 +70,7 @@ packages:
     frontmatter: |
       /* eslint-disable */
       import type { ScanResult, SearchResult, SearchScope } from "./service"
-      import type { Collection, Series } from "./store"
+      import type { Edition, Series } from "./store"
       import type { RepoStatus } from "./extensions"
     type_mappings:
       extensions.RepoStatus: "RepoStatus"
@@ -78,4 +78,4 @@ packages:
       service.SearchResult: "SearchResult"
       service.ScanResult: "ScanResult"
       store.Series: "Series"
-      store.Collection: "Collection"
+      store.Edition: "Edition"

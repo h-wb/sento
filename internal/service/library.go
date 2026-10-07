@@ -26,7 +26,7 @@ type AddSeriesRequest struct {
 	// default edition (see defaultEditionID), "all" every volume edition,
 	// "none" nothing. MonitorIDs overrides it with explicit picks.
 	Monitor       string   `json:"monitor"`
-	MonitorIDs    []string `json:"monitorIds"`    // explicit provider collection ids
+	MonitorIDs    []string `json:"monitorIds"`    // explicit provider edition ids
 	ChapterLang   string   `json:"chapterLang"`   // default "en"
 	ChapterCutoff int64    `json:"chapterCutoff"` // hundredths; 0 = latest at add (D6)
 	ProfileID     int64    `json:"profileId"`     // 0 = instance default
@@ -121,10 +121,10 @@ func (l *Library) Refresh(ctx context.Context, seriesID int64) error {
 	return l.store.ReconcileMetadata(ctx, seriesID, series, collections, works)
 }
 
-// CreateCollectionParams describes a user-defined collection: volume
+// CreateEditionParams describes a user-defined edition: volume
 // editions clone numbering from BasedOn or generate 1..Volumes; chapter
 // editions start with explicit chapters unless count inference is selected.
-type CreateCollectionParams struct {
+type CreateEditionParams struct {
 	EditionName string
 	Language    string
 	Publisher   string
@@ -136,8 +136,8 @@ type CreateCollectionParams struct {
 	Monitored   bool
 }
 
-// CreateCollection validates and creates a custom collection.
-func (l *Library) CreateCollection(ctx context.Context, seriesID int64, p CreateCollectionParams) (*store.Collection, error) {
+// CreateEdition validates and creates a custom edition.
+func (l *Library) CreateEdition(ctx context.Context, seriesID int64, p CreateEditionParams) (*store.Edition, error) {
 	if strings.TrimSpace(p.EditionName) == "" || strings.TrimSpace(p.Language) == "" {
 		return nil, apperr.Invalidf("editionName and language are required")
 	}
@@ -151,7 +151,7 @@ func (l *Library) CreateCollection(ctx context.Context, seriesID int64, p Create
 	if ctype == "volume" && p.BasedOn == 0 && (p.Volumes < 0 || p.Volumes > 500) {
 		return nil, apperr.Invalidf("volumes must be 0-500 when not based on an existing edition")
 	}
-	cid, err := l.store.AddCustomCollection(ctx, store.Collection{
+	cid, err := l.store.AddCustomEdition(ctx, store.Edition{
 		SeriesID: seriesID, EditionName: p.EditionName, Language: p.Language,
 		Publisher: p.Publisher, Medium: p.Medium, Type: ctype,
 		Monitored: p.Monitored, CutoffNum: p.CutoffNum,
@@ -162,35 +162,35 @@ func (l *Library) CreateCollection(ctx context.Context, seriesID int64, p Create
 	if err := l.store.EnsureModels(ctx, seriesID); err != nil {
 		return nil, err
 	}
-	return l.store.GetCollection(ctx, cid)
+	return l.store.GetEdition(ctx, cid)
 }
 
-// CollectionUpdate is a partial collection patch (nil = keep).
-type CollectionUpdate struct {
+// EditionUpdate is a partial edition patch (nil = keep).
+type EditionUpdate struct {
 	Monitored *bool
 	ProfileID *int64
 	CutoffNum *int64
 	Language  *string
 }
 
-// UpdateCollection applies a partial update under the field rules: the
-// cutoff exists on chapter collections only, language identity is only
+// UpdateEdition applies a partial update under the field rules: the
+// cutoff exists on chapter editions only, language identity is only
 // editable on custom collections (MangaBaka rows are reference data).
-func (l *Library) UpdateCollection(ctx context.Context, seriesID, collectionID int64, u CollectionUpdate) error {
+func (l *Library) UpdateEdition(ctx context.Context, seriesID, editionID int64, u EditionUpdate) error {
 	if u.Monitored != nil {
-		if err := l.store.SetCollectionMonitored(ctx, seriesID, collectionID, *u.Monitored); err != nil {
+		if err := l.store.SetEditionMonitored(ctx, seriesID, editionID, *u.Monitored); err != nil {
 			return err
 		}
 	}
 	if u.ProfileID != nil {
-		if err := l.store.SetCollectionProfile(ctx, seriesID, collectionID, *u.ProfileID); err != nil {
+		if err := l.store.SetEditionProfile(ctx, seriesID, editionID, *u.ProfileID); err != nil {
 			return err
 		}
 	}
 	if u.CutoffNum == nil && u.Language == nil {
 		return nil
 	}
-	col, err := l.store.GetCollection(ctx, collectionID)
+	col, err := l.store.GetEdition(ctx, editionID)
 	if err != nil {
 		return err
 	}
@@ -199,17 +199,17 @@ func (l *Library) UpdateCollection(ctx context.Context, seriesID, collectionID i
 	}
 	if u.CutoffNum != nil {
 		if col.Type != "chapter" {
-			return apperr.Invalidf("cutoff applies to chapter collections only")
+			return apperr.Invalidf("cutoff applies to chapter editions only")
 		}
-		if err := l.store.SetCollectionCutoff(ctx, seriesID, collectionID, *u.CutoffNum); err != nil {
+		if err := l.store.SetEditionCutoff(ctx, seriesID, editionID, *u.CutoffNum); err != nil {
 			return err
 		}
 	}
 	if u.Language != nil {
 		if !col.Custom {
-			return apperr.Invalidf("language can only be changed on custom collections")
+			return apperr.Invalidf("language can only be changed on local editions")
 		}
-		if err := l.store.EditCollection(ctx, seriesID, collectionID, store.CollectionMetadataPatch{Language: u.Language}); err != nil {
+		if err := l.store.EditEdition(ctx, seriesID, editionID, store.EditionMetadataPatch{Language: u.Language}); err != nil {
 			return err
 		}
 	}

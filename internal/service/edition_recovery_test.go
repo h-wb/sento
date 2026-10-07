@@ -33,7 +33,7 @@ func TestEditionDisappearanceSuspendsCollection(t *testing.T) {
 			t.Fatalf("stale parent remained collectible: %+v", sl)
 		}
 	}
-	if err = st.EditCollection(ctx, id, c.ID, store.CollectionMetadataPatch{MakeLocal: true}); err != nil {
+	if err = st.EditEdition(ctx, id, c.ID, store.EditionMetadataPatch{MakeLocal: true}); err != nil {
 		t.Fatal(err)
 	}
 	slots, err = lib.BooksByVersion(ctx, id)
@@ -178,10 +178,10 @@ func TestIndependentEditionTraitsAndUnknownEvidence(t *testing.T) {
 	_ = lib
 	ctx := context.Background()
 	traits := []string{"omnibus", "deluxe"}
-	if err := st.EditCollection(ctx, id, c.ID, store.CollectionMetadataPatch{EditionTraits: &traits}); err != nil {
+	if err := st.EditEdition(ctx, id, c.ID, store.EditionMetadataPatch{EditionTraits: &traits}); err != nil {
 		t.Fatal(err)
 	}
-	c2, err := st.GetCollection(ctx, c.ID)
+	c2, err := st.GetEdition(ctx, c.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,14 +339,14 @@ func TestFileFactsAreSpecificAndManualCorrectionsSurviveRetry(t *testing.T) {
 func TestChapterExtrasZeroAndReadOnlyLedger(t *testing.T) {
 	lib, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
-	c, err := lib.CreateCollection(ctx, id, CreateCollectionParams{EditionName: "Local chapters", Language: "en", Type: "chapter", Monitored: true})
+	c, err := lib.CreateEdition(ctx, id, CreateEditionParams{EditionName: "Local chapters", Language: "en", Type: "chapter", Monitored: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	versions, _ := st.ListVersions(ctx, id)
 	var version store.CollectedVersion
 	for _, v := range versions {
-		if v.CollectionID == c.ID {
+		if v.EditionID == c.ID {
 			version = v
 		}
 	}
@@ -355,7 +355,7 @@ func TestChapterExtrasZeroAndReadOnlyLedger(t *testing.T) {
 		number      int64
 		label, kind string
 	}{{0, "0", "main"}, {1250, "12.5", "extra"}} {
-		wid, e := st.SaveBook(ctx, id, store.Book{CollectionID: c.ID, SequenceNum: v.number, SequenceStr: v.label, CountType: v.kind, NumberKnown: true})
+		wid, e := st.SaveBook(ctx, id, store.Book{EditionID: c.ID, SequenceNum: v.number, SequenceStr: v.label, CountType: v.kind, NumberKnown: true})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -396,23 +396,23 @@ func TestChapterExtrasZeroAndReadOnlyLedger(t *testing.T) {
 func TestTrustedChaptersRequireVerifiedBindingAndDoNotFillGaps(t *testing.T) {
 	lib, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
-	c, err := lib.CreateCollection(ctx, id, CreateCollectionParams{EditionName: "Reader chapters", Language: "en", Type: "chapter", Monitored: true})
+	c, err := lib.CreateEdition(ctx, id, CreateEditionParams{EditionName: "Reader chapters", Language: "en", Type: "chapter", Monitored: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	yes := true
-	if err = st.EditCollection(ctx, id, c.ID, store.CollectionMetadataPatch{DiscoverChapters: &yes}); err != nil {
+	if err = st.EditEdition(ctx, id, c.ID, store.EditionMetadataPatch{DiscoverChapters: &yes}); err != nil {
 		t.Fatal(err)
 	}
-	bid, err := st.AddBinding(ctx, store.Binding{SeriesID: id, SourceID: "reader", SourceMangaKey: "manga", State: "active", CollectionID: c.ID})
+	bid, err := st.AddBinding(ctx, store.Binding{SeriesID: id, SourceID: "reader", SourceMangaKey: "manga", State: "active", EditionID: c.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = st.SetBindingTrust(ctx, id, bid, true); err != nil {
 		t.Fatal(err)
 	}
-	c, _ = st.GetCollection(ctx, c.ID)
-	run := &searchRun{seriesID: id, ledger: LedgerChapter, collections: []store.Collection{*c}, sourceEditions: map[int64]int64{bid: c.ID}, books: map[int64][]store.Book{}, titles: []string{"ONE PIECE"}}
+	c, _ = st.GetEdition(ctx, c.ID)
+	run := &searchRun{seriesID: id, ledger: LedgerChapter, editions: []store.Edition{*c}, sourceEditions: map[int64]int64{bid: c.ID}, books: map[int64][]store.Book{}, titles: []string{"ONE PIECE"}}
 	svc := &SearchService{store: st}
 	svc.observeCandidates(ctx, run, []provider.Candidate{{Title: "ONE PIECE ch12.5", Protocol: provider.ProtocolSource, Source: &provider.SourceRef{BindingID: bid, SourceID: "reader", ChapterKey: "twelve-half", ChapterNumber: 12.5, Lang: "en"}}})
 	works, err := st.ListBooks(ctx, c.ID)

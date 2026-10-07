@@ -38,13 +38,13 @@ type editionFacet struct {
 // editionView is an edition with its traits and variant resolved: the
 // stored ones, or what its name implies when none are stored.
 type editionView struct {
-	store.Collection
+	store.Edition
 	traits  []string
 	variant string
 }
 
-func viewEdition(c store.Collection) editionView {
-	v := editionView{Collection: c, traits: c.EditionTraits, variant: c.ContentVariant}
+func viewEdition(c store.Edition) editionView {
+	v := editionView{Edition: c, traits: c.EditionTraits, variant: c.ContentVariant}
 	if v.traits == nil {
 		v.traits = metadata.EditionTraits(c.EditionName)
 	}
@@ -103,7 +103,7 @@ var editionFacets = []editionFacet{
 // edition (a verified source listing): the release then need not restate
 // what the edition is, and an edition that does not specify a facet does
 // not contradict a release that does.
-func editionFits(p parse.Result, c store.Collection, established bool) bool {
+func editionFits(p parse.Result, c store.Edition, established bool) bool {
 	if !languageCompatible(p, c.Language) {
 		return false
 	}
@@ -125,12 +125,12 @@ func editionFits(p parse.Result, c store.Collection, established bool) bool {
 }
 
 // editionCompatible is editionFits for a release known only by its name.
-func editionCompatible(p parse.Result, c store.Collection) bool { return editionFits(p, c, false) }
+func editionCompatible(p parse.Result, c store.Edition) bool { return editionFits(p, c, false) }
 
 // editionCompatibleWithEvidence is editionFits when a verified source
 // listing may point at an edition (evidence is that edition's id, 0 for
 // none): the listing settles which edition, and only that one fits.
-func editionCompatibleWithEvidence(p parse.Result, c store.Collection, evidence int64) bool {
+func editionCompatibleWithEvidence(p parse.Result, c store.Edition, evidence int64) bool {
 	if evidence == 0 {
 		return editionFits(p, c, false)
 	}
@@ -143,7 +143,7 @@ func editionCompatibleWithEvidence(p parse.Result, c store.Collection, evidence 
 // of that kind is in play. With no such statement, or no edition of that
 // kind, every edition stays. Packaging never chooses between languages: a
 // digital rip in an unstated language is not thereby English.
-func preferByPackaging(p parse.Result, cols []store.Collection) []store.Collection {
+func preferByPackaging(p parse.Result, cols []store.Edition) []store.Edition {
 	for _, c := range cols {
 		if baseLang(c.Language) != baseLang(cols[0].Language) {
 			return cols
@@ -153,7 +153,7 @@ func preferByPackaging(p parse.Result, cols []store.Collection) []store.Collecti
 		if f.content || !f.stated(p) {
 			continue
 		}
-		var matching []store.Collection
+		var matching []store.Edition
 		for _, c := range cols {
 			if f.holds(viewEdition(c)) {
 				matching = append(matching, c)
@@ -169,16 +169,16 @@ func preferByPackaging(p parse.Result, cols []store.Collection) []store.Collecti
 // ambiguousEdition reports whether a release that fits col fits another
 // edition the user collects at least as well. Catalog editions nobody
 // collects do not compete: the user already chose against them.
-func (run *searchRun) ambiguousEdition(p parse.Result, col store.Collection) bool {
-	fits := []store.Collection{col}
+func (run *searchRun) ambiguousEdition(p parse.Result, col store.Edition) bool {
+	fits := []store.Edition{col}
 	otherLanguage := false
-	for _, c := range run.collections {
+	for _, c := range run.editions {
 		if c.ID == col.ID || c.Type != col.Type || c.SyncState == "stale" || c.SyncState == "superseded" {
 			continue
 		}
 		collected := false
 		for _, t := range run.versions {
-			collected = collected || (t.CollectionID == c.ID && t.Monitored)
+			collected = collected || (t.EditionID == c.ID && t.Monitored)
 		}
 		if !collected || !editionCompatible(p, c) {
 			continue

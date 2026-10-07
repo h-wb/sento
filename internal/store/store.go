@@ -110,7 +110,7 @@ type Series struct {
 	RefreshedAt string `json:"refreshedAt,omitempty"`
 }
 
-type Collection struct {
+type Edition struct {
 	NumberingSource  string           `json:"numberingSource"`
 	EditionTraits    EditionTraitList `json:"editionTraits"`
 	ContentVariant   string           `json:"contentVariant"`
@@ -136,18 +136,18 @@ type Collection struct {
 }
 
 type Book struct {
-	ProviderID   string `json:"providerId,omitempty"`
-	NumberKnown  bool   `json:"numberKnown"`
-	Revision     string `json:"revision,omitempty"`
-	SyncState    string `json:"syncState"`
-	ID           int64  `json:"id"`
-	CollectionID int64  `json:"collectionId"`
-	SequenceNum  int64  `json:"sequenceNum"` // hundredths
-	SequenceStr  string `json:"sequenceStr" db:"sequence_string"`
-	CountType    string `json:"countType"`
-	ReleaseDate  string `json:"releaseDate,omitempty"`
-	ISBN         string `json:"isbn,omitempty"`
-	Pages        int    `json:"pages,omitempty"`
+	ProviderID  string `json:"providerId,omitempty"`
+	NumberKnown bool   `json:"numberKnown"`
+	Revision    string `json:"revision,omitempty"`
+	SyncState   string `json:"syncState"`
+	ID          int64  `json:"id"`
+	EditionID   int64  `json:"editionId" db:"collection_id"`
+	SequenceNum int64  `json:"sequenceNum"` // hundredths
+	SequenceStr string `json:"sequenceStr" db:"sequence_string"`
+	CountType   string `json:"countType"`
+	ReleaseDate string `json:"releaseDate,omitempty"`
+	ISBN        string `json:"isbn,omitempty"`
+	Pages       int    `json:"pages,omitempty"`
 }
 
 type File struct {
@@ -168,17 +168,17 @@ type File struct {
 }
 
 type BookLink struct {
-	VersionID    int64 `db:"target_id"`
-	BookID       int64 `db:"work_id"`
-	FileID       int64
-	Ledger       string
-	CollectionID int64
-	Number       int64
+	VersionID int64 `db:"target_id"`
+	BookID    int64 `db:"work_id"`
+	FileID    int64
+	Ledger    string
+	EditionID int64 `db:"collection_id"`
+	Number    int64
 }
 
 type Binding struct {
 	TrustChapters  bool   `json:"trustChapters"`
-	CollectionID   int64  `json:"collectionId"`
+	EditionID      int64  `json:"editionId" db:"collection_id"`
 	ID             int64  `json:"id"`
 	SeriesID       int64  `json:"seriesId"`
 	SourceID       string `json:"sourceId"`
@@ -301,7 +301,7 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 			seriesID, col.ProviderID, col.EditionName, col.Language, col.Publisher,
 			col.Medium, col.Type, col.CountMain, col.CountExtra, col.CountOther,
 			col.StartDate, col.EndDate, string(col.RawJSON), utcNow(), metadata.TraitsJSON(metadata.EditionTraits(col.EditionName)), metadata.ContentVariant(col.EditionName)).Scan(&colID); err != nil {
-			return 0, fmt.Errorf("inserting collection %q: %w", col.EditionName, err)
+			return 0, fmt.Errorf("inserting edition %q: %w", col.EditionName, err)
 		}
 		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO download_targets(collection_id,name,is_default,monitored) VALUES(?,'Default',TRUE,?)`), colID, monitored); err != nil {
 			return 0, err
@@ -327,7 +327,7 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 		if _, err := tx.ExecContext(ctx, s.q(`
 			UPDATE download_targets SET monitored=?,cutoff_num=? WHERE collection_id=? AND is_default=TRUE`),
 			!p.MonitorNone, cutoff, chapterColID); err != nil {
-			return 0, fmt.Errorf("adopting chapter collection: %w", err)
+			return 0, fmt.Errorf("adopting chapter edition: %w", err)
 		}
 	} else {
 		if err = tx.QueryRowContext(ctx, s.q(`INSERT INTO collections(series_id,edition_name,language,ctype,custom,updated_at,numbering_source) VALUES(?,'Chapters',?,'chapter',TRUE,?,'series_count') RETURNING id`), seriesID, lang, utcNow()).Scan(&chapterColID); err != nil {
@@ -351,33 +351,33 @@ const collectionColumns = `
 	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date, custom,
 	COALESCE(profile_id,0) AS profile_id, COALESCE((SELECT t.cutoff_num FROM download_targets t WHERE t.collection_id=collections.id AND t.is_default=TRUE),0) AS cutoff_num,sync_state,discover_chapters,edition_traits,content_variant,numbering_source`
 
-func (s *Store) ListCollections(ctx context.Context, seriesID int64) ([]Collection, error) {
-	return list[Collection](ctx, s, `SELECT `+collectionColumns+`
+func (s *Store) ListEditions(ctx context.Context, seriesID int64) ([]Edition, error) {
+	return list[Edition](ctx, s, `SELECT `+collectionColumns+`
 		FROM collections WHERE series_id = ? ORDER BY edition_name, language, medium`, seriesID)
 }
 
-func (s *Store) GetCollection(ctx context.Context, id int64) (*Collection, error) {
-	return get[Collection](ctx, s, `SELECT `+collectionColumns+` FROM collections WHERE id = ?`, id)
+func (s *Store) GetEdition(ctx context.Context, id int64) (*Edition, error) {
+	return get[Edition](ctx, s, `SELECT `+collectionColumns+` FROM collections WHERE id = ?`, id)
 }
 
-func (s *Store) SetCollectionMonitored(ctx context.Context, seriesID, collectionID int64, monitored bool) error {
-	c, err := s.GetCollection(ctx, collectionID)
+func (s *Store) SetEditionMonitored(ctx context.Context, seriesID, editionID int64, monitored bool) error {
+	c, err := s.GetEdition(ctx, editionID)
 	if err != nil {
 		return err
 	}
 	if c.SeriesID != seriesID {
 		return ErrNotFound
 	}
-	if _, err := s.db.ExecContext(ctx, s.q(`UPDATE download_targets SET monitored=? WHERE is_default=TRUE AND collection_id IN(SELECT id FROM collections WHERE id=? AND series_id=?)`), monitored, collectionID, seriesID); err != nil {
+	if _, err := s.db.ExecContext(ctx, s.q(`UPDATE download_targets SET monitored=? WHERE is_default=TRUE AND collection_id IN(SELECT id FROM collections WHERE id=? AND series_id=?)`), monitored, editionID, seriesID); err != nil {
 		return err
 	}
 	return nil
 }
 
-// AddCustomCollection creates an independent local edition. Volume numbering may
+// AddCustomEdition creates an independent local edition. Volume numbering may
 // be cloned or generated explicitly; chapter editions start with explicit books.
 // Catalog refresh never adopts local editions without an explicit link.
-func (s *Store) AddCustomCollection(ctx context.Context, c Collection, basedOn int64, volumes int) (int64, error) {
+func (s *Store) AddCustomEdition(ctx context.Context, c Edition, basedOn int64, volumes int) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -400,10 +400,10 @@ func (s *Store) AddCustomCollection(ctx context.Context, c Collection, basedOn i
 		c.SeriesID, c.EditionName, c.Language, c.Publisher, c.Medium, ctype,
 		utcNow(), metadata.TraitsJSON(metadata.EditionTraits(c.EditionName)), metadata.ContentVariant(c.EditionName)).Scan(&colID)
 	if err != nil {
-		if c := conflict(err, "a collection with this name/language/publisher/medium already exists"); c != err {
+		if c := conflict(err, "an edition with this name/language/publisher/medium already exists"); c != err {
 			return 0, c
 		}
-		return 0, fmt.Errorf("inserting custom collection: %w", err)
+		return 0, fmt.Errorf("inserting local edition: %w", err)
 	}
 
 	if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO download_targets(collection_id,name,is_default,monitored,cutoff_num) VALUES(?,'Default',TRUE,?,?)`), colID, c.Monitored, c.CutoffNum); err != nil {
@@ -438,15 +438,15 @@ func (s *Store) AddCustomCollection(ctx context.Context, c Collection, basedOn i
 	return colID, tx.Commit()
 }
 
-// MergeCollection folds a custom edition into another collection of the
+// MergeEditions folds a custom edition into another collection of the
 // same series with an unambiguous match for every book. Acquisition versions
 // and their policies survive independently. Files stay in place.
-func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID int64) ([]int64, error) {
-	from, err := s.GetCollection(ctx, fromID)
+func (s *Store) MergeEditions(ctx context.Context, seriesID, fromID, intoID int64) ([]int64, error) {
+	from, err := s.GetEdition(ctx, fromID)
 	if err != nil {
 		return nil, err
 	}
-	into, err := s.GetCollection(ctx, intoID)
+	into, err := s.GetEdition(ctx, intoID)
 	if err != nil {
 		return nil, err
 	}
@@ -454,22 +454,22 @@ func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID in
 		return nil, ErrNotFound
 	}
 	if !from.Custom {
-		return nil, apperr.Invalidf("only custom collections can be merged away")
+		return nil, apperr.Invalidf("only local editions can be merged away")
 	}
 	for _, id := range []int64{fromID, intoID} {
-		pending, e := s.CollectionPending(ctx, id)
+		pending, e := s.EditionPending(ctx, id)
 		if e != nil {
 			return nil, e
 		}
 		if pending {
-			return nil, apperr.Conflictf("collection has pending downloads")
+			return nil, apperr.Conflictf("edition has pending downloads")
 		}
 	}
 	if from.Language != into.Language || from.EditionName != into.EditionName || from.Publisher != into.Publisher || from.Medium != into.Medium || !slices.Equal(from.EditionTraits, into.EditionTraits) || from.ContentVariant != into.ContentVariant {
 		return nil, apperr.Invalidf("only duplicate editions with matching identity can be merged; use explicit content relationships for different editions")
 	}
 	if from.Type != into.Type {
-		return nil, apperr.Invalidf("collections are of different types")
+		return nil, apperr.Invalidf("editions are of different types")
 	}
 
 	if fromID == intoID {
@@ -517,7 +517,7 @@ func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID in
 	// Preserve acquisition policies as independent versions rather than
 	// combining different policies into one default.
 	for _, t := range versions {
-		if t.CollectionID != fromID {
+		if t.EditionID != fromID {
 			continue
 		}
 		name := t.Name + " (merged " + fmt.Sprint(t.ID) + ")"
@@ -548,10 +548,10 @@ func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID in
 	return []int64{}, tx.Commit()
 }
 
-// DeleteCustomCollection removes a custom collection and its book links
+// DeleteCustomEdition removes a custom collection and its book links
 // (files themselves stay in the library).
-func (s *Store) DeleteCustomCollection(ctx context.Context, seriesID, collectionID int64) error {
-	col, err := s.GetCollection(ctx, collectionID)
+func (s *Store) DeleteCustomEdition(ctx context.Context, seriesID, editionID int64) error {
+	col, err := s.GetEdition(ctx, editionID)
 	if err != nil {
 		return err
 	}
@@ -559,16 +559,16 @@ func (s *Store) DeleteCustomCollection(ctx context.Context, seriesID, collection
 		return ErrNotFound
 	}
 	if !col.Custom {
-		return apperr.Invalidf("only custom collections can be deleted")
+		return apperr.Invalidf("only local editions can be deleted")
 	}
-	pending, e := s.CollectionPending(ctx, collectionID)
+	pending, e := s.EditionPending(ctx, editionID)
 	if e != nil {
 		return e
 	}
 	if pending {
-		return apperr.Conflictf("collection has pending downloads")
+		return apperr.Conflictf("edition has pending downloads")
 	}
-	n, err := get[int](ctx, s, `SELECT COUNT(*) FROM asset_contents a JOIN works w ON w.id=a.work_id WHERE w.collection_id=?`, collectionID)
+	n, err := get[int](ctx, s, `SELECT COUNT(*) FROM asset_contents a JOIN works w ON w.id=a.work_id WHERE w.collection_id=?`, editionID)
 	if err != nil {
 		return err
 	}
@@ -580,36 +580,36 @@ func (s *Store) DeleteCustomCollection(ctx context.Context, seriesID, collection
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err = s.lockEditions(ctx, tx, false, collectionID); err != nil {
+	if err = s.lockEditions(ctx, tx, false, editionID); err != nil {
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, s.q(`UPDATE source_bindings SET collection_id=0 WHERE collection_id=?`), collectionID); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`UPDATE source_bindings SET collection_id=0 WHERE collection_id=?`), editionID); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='collection' AND local_id=?) OR (kind='work' AND local_id IN(SELECT id FROM works WHERE collection_id=?))`), collectionID, collectionID); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='collection' AND local_id=?) OR (kind='work' AND local_id IN(SELECT id FROM works WHERE collection_id=?))`), editionID, editionID); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM collections WHERE id = ?`), collectionID); err != nil {
+	if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM collections WHERE id = ?`), editionID); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (s *Store) ListBooks(ctx context.Context, collectionID int64) ([]Book, error) {
-	return list[Book](ctx, s, `SELECT `+workColumns+` FROM works WHERE collection_id=? ORDER BY sequence_num, id`, collectionID)
+func (s *Store) ListBooks(ctx context.Context, editionID int64) ([]Book, error) {
+	return list[Book](ctx, s, `SELECT `+workColumns+` FROM works WHERE collection_id=? ORDER BY sequence_num, id`, editionID)
 }
 
-// SetCollectionCutoff changes the default version’s exclusive chapter cutoff.
-func (s *Store) SetCollectionCutoff(ctx context.Context, seriesID, collectionID, cutoff int64) error {
-	c, err := s.GetCollection(ctx, collectionID)
+// SetEditionCutoff changes the default version’s exclusive chapter cutoff.
+func (s *Store) SetEditionCutoff(ctx context.Context, seriesID, editionID, cutoff int64) error {
+	c, err := s.GetEdition(ctx, editionID)
 	if err != nil {
 		return err
 	}
 	if c.SeriesID != seriesID {
 		return ErrNotFound
 	}
-	if err := s.touch(ctx, `UPDATE download_targets SET cutoff_num=? WHERE collection_id=? AND is_default=TRUE`, cutoff, collectionID); err != nil && err != ErrNotFound {
+	if err := s.touch(ctx, `UPDATE download_targets SET cutoff_num=? WHERE collection_id=? AND is_default=TRUE`, cutoff, editionID); err != nil && err != ErrNotFound {
 		return err
 	}
 	return nil
@@ -640,7 +640,7 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 
 	cids := []int64{}
 	for _, l := range links {
-		cids = append(cids, l.CollectionID)
+		cids = append(cids, l.EditionID)
 	}
 	if err = s.lockEditions(ctx, tx, true, cids...); err != nil {
 		return 0, err
@@ -701,7 +701,7 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 	}
 	for _, l := range links {
 		var valid int
-		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), l.BookID, l.VersionID, l.CollectionID, f.SeriesID).Scan(&valid); err != nil {
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), l.BookID, l.VersionID, l.EditionID, f.SeriesID).Scan(&valid); err != nil {
 			return 0, err
 		}
 		if valid != 1 {
@@ -785,8 +785,8 @@ func (s *Store) ListBindings(ctx context.Context, seriesID int64) ([]Binding, er
 // AddBinding upserts one series↔manga binding (a site can hold several).
 // An active binding obsoletes any "unmatched" sentinel of the same site.
 func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
-	if b.CollectionID > 0 {
-		c, e := s.GetCollection(ctx, b.CollectionID)
+	if b.EditionID > 0 {
+		c, e := s.GetEdition(ctx, b.EditionID)
 		if e != nil {
 			return 0, e
 		}
@@ -806,7 +806,7 @@ func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
 			trust_chapters=excluded.trust_chapters,
  collection_id=CASE WHEN excluded.collection_id>0 THEN excluded.collection_id ELSE source_bindings.collection_id END
 		RETURNING id`),
-		b.SeriesID, b.SourceID, b.SourceMangaKey, b.SourceName, b.MangaTitle, state, b.Priority, b.CollectionID, b.TrustChapters).Scan(&id)
+		b.SeriesID, b.SourceID, b.SourceMangaKey, b.SourceName, b.MangaTitle, state, b.Priority, b.EditionID, b.TrustChapters).Scan(&id)
 	if err != nil {
 		return 0, err
 	}

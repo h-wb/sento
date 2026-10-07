@@ -4,17 +4,17 @@ import "context"
 
 // CalendarEntry is one dated volume release of a monitored collection.
 type CalendarEntry struct {
-	BookID       int64  `json:"bookId" db:"work_id"`
-	VersionID    int64  `json:"versionId" db:"target_id"`
-	VersionName  string `json:"versionName"`
-	SeriesID     int64  `json:"seriesId"`
-	SeriesTitle  string `json:"seriesTitle"`
-	CollectionID int64  `json:"collectionId"`
-	EditionName  string `json:"editionName"`
-	SequenceNum  int64  `json:"sequenceNum"` // hundredths
-	SequenceStr  string `json:"sequenceStr" db:"sequence_string"`
-	ReleaseDate  string `json:"releaseDate"`
-	Owned        bool   `json:"owned"`
+	BookID      int64  `json:"bookId" db:"work_id"`
+	VersionID   int64  `json:"versionId" db:"target_id"`
+	VersionName string `json:"versionName"`
+	SeriesID    int64  `json:"seriesId"`
+	SeriesTitle string `json:"seriesTitle"`
+	EditionID   int64  `json:"editionId" db:"collection_id"`
+	EditionName string `json:"editionName"`
+	SequenceNum int64  `json:"sequenceNum"` // hundredths
+	SequenceStr string `json:"sequenceStr" db:"sequence_string"`
+	ReleaseDate string `json:"releaseDate"`
+	Owned       bool   `json:"owned"`
 }
 
 // Calendar lists dated volume releases of monitored collections between

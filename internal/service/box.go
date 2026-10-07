@@ -27,7 +27,7 @@ func (l *Library) SplitBox(ctx context.Context, seriesID, workID int64, count in
 	if err != nil {
 		return nil, err
 	}
-	col, err := l.store.GetCollection(ctx, box.CollectionID)
+	col, err := l.store.GetEdition(ctx, box.EditionID)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (l *Library) SplitBox(ctx context.Context, seriesID, workID int64, count in
 		w, ok := byNumber[number]
 		if !ok {
 			id, err := l.store.SaveBook(ctx, seriesID, store.Book{
-				CollectionID: col.ID, SequenceNum: number, SequenceStr: strconv.Itoa(n),
+				EditionID: col.ID, SequenceNum: number, SequenceStr: strconv.Itoa(n),
 				CountType: "main", NumberKnown: true, ReleaseDate: box.ReleaseDate, ISBN: box.ISBN,
 			})
 			if err != nil {
@@ -82,7 +82,7 @@ func (l *Library) SplitBox(ctx context.Context, seriesID, workID int64, count in
 		return nil, err
 	}
 	for _, t := range versions {
-		if t.CollectionID != col.ID {
+		if t.EditionID != col.ID {
 			continue
 		}
 		if err := l.store.BulkMonitor(ctx, seriesID, t.ID, []int64{box.ID}, false); err != nil {

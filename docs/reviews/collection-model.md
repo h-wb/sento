@@ -1,6 +1,6 @@
 # Collections, profiles, and releases: domain model review
 
-Investigated October 5, 2026. This records the original investigation and proposal. The implementation has since adopted the model described in [the domain guide](../domain/collections.md); findings below describe the pre-change behavior.
+Investigated October 5, 2026. This records the original investigation and proposal. The implementation has since adopted the model described in [the domain guide](../domain/editions.md); findings below describe the pre-change behavior.
 
 ## Recommendation
 
@@ -200,4 +200,4 @@ Migration must be additive and reversible until verification. Preserve existing 
 
 ## Decisions proposed for the next implementation
 
-Use collections for edition/publication identity, local collections as first-class records, download targets for intentionally retained variants, and profiles for reusable acquisition policy. Preserve the computed ledger, but derive it from stable units, target intent, asset satisfaction, pending jobs, and explicit availability. Start by fixing the concrete cross-version bugs, then introduce the minimum schema changes supporting these boundaries. The implementation is documented in [Editions, units, collected versions, and files](../domain/collections.md), including migration behavior and deliberate limits. This review preserves the findings and proposed rationale from before implementation.
+Use collections for edition/publication identity, local collections as first-class records, download targets for intentionally retained variants, and profiles for reusable acquisition policy. Preserve the computed ledger, but derive it from stable units, target intent, asset satisfaction, pending jobs, and explicit availability. Start by fixing the concrete cross-version bugs, then introduce the minimum schema changes supporting these boundaries. The implementation is documented in [Editions, units, collected versions, and files](../domain/editions.md), including migration behavior and deliberate limits. This review preserves the findings and proposed rationale from before implementation.

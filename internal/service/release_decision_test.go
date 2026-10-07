@@ -86,7 +86,7 @@ func TestExtraReleaseDoesNotClaimRegularVolume(t *testing.T) {
 	if _, err := st.SaveVersion(ctx, id, version); err != nil {
 		t.Fatal(err)
 	}
-	extra, err := st.SaveBook(ctx, id, store.Book{CollectionID: c.ID, SequenceNum: 100, SequenceStr: "1 bonus", CountType: "extra", NumberKnown: true})
+	extra, err := st.SaveBook(ctx, id, store.Book{EditionID: c.ID, SequenceNum: 100, SequenceStr: "1 bonus", CountType: "extra", NumberKnown: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,16 +107,16 @@ func TestExtraReleaseDoesNotClaimRegularVolume(t *testing.T) {
 // Edition fit: medium only breaks ties, and only editions the user
 // collects compete for a release.
 func TestEditionAmbiguity(t *testing.T) {
-	paper := store.Collection{ID: 1, Type: "volume", Language: "en", Medium: "paperback", EditionTraits: []string{"standard"}}
-	digital := store.Collection{ID: 2, Type: "volume", Language: "en", Medium: "digital", EditionTraits: []string{"standard"}}
-	french := store.Collection{ID: 3, Type: "volume", Language: "fr", EditionTraits: []string{"standard"}}
-	chapters := store.Collection{ID: 4, Type: "chapter", Language: "en"}
+	paper := store.Edition{ID: 1, Type: "volume", Language: "en", Medium: "paperback", EditionTraits: []string{"standard"}}
+	digital := store.Edition{ID: 2, Type: "volume", Language: "en", Medium: "digital", EditionTraits: []string{"standard"}}
+	french := store.Edition{ID: 3, Type: "volume", Language: "fr", EditionTraits: []string{"standard"}}
+	chapters := store.Edition{ID: 4, Type: "chapter", Language: "en"}
 	titles := []string{"ONE PIECE"}
 	parsed := func(name string) parse.Result { return parse.ParseAnchored(name, parse.ChannelTorrent, titles) }
 	run := func(collected ...int64) *searchRun {
-		r := &searchRun{collections: []store.Collection{paper, digital, french, chapters}}
+		r := &searchRun{editions: []store.Edition{paper, digital, french, chapters}}
 		for _, id := range []int64{1, 2, 3, 4} {
-			r.versions = append(r.versions, store.CollectedVersion{ID: id, CollectionID: id, Monitored: slices.Contains(collected, id)})
+			r.versions = append(r.versions, store.CollectedVersion{ID: id, EditionID: id, Monitored: slices.Contains(collected, id)})
 		}
 		return r
 	}
@@ -124,7 +124,7 @@ func TestEditionAmbiguity(t *testing.T) {
 		name      string
 		release   string
 		collected []int64
-		edition   store.Collection
+		edition   store.Edition
 		ambiguous bool
 	}{
 		{"digital rip fits the only collected edition, a paperback", "ONE PIECE v01 (Digital) (1r0n)", []int64{1}, paper, false},
@@ -161,7 +161,7 @@ func TestEditionAmbiguity(t *testing.T) {
 func TestAmbiguousEditionIsReviewable(t *testing.T) {
 	_, st, id, c, _, version := modelFixture(t)
 	ctx := context.Background()
-	french, err := st.AddCustomCollection(ctx, store.Collection{SeriesID: id, EditionName: "Standard Edition", Language: "fr", Monitored: true}, c.ID, 0)
+	french, err := st.AddCustomEdition(ctx, store.Edition{SeriesID: id, EditionName: "Standard Edition", Language: "fr", Monitored: true}, c.ID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestAmbiguousEditionIsReviewable(t *testing.T) {
 	}
 	collecting := false
 	for _, other := range versions {
-		if other.CollectionID == french {
+		if other.EditionID == french {
 			collecting = true
 			other.Monitored = true
 			if _, err = st.SaveVersion(ctx, id, other); err != nil {
@@ -217,7 +217,7 @@ func TestAmbiguousEditionIsReviewable(t *testing.T) {
 func TestLanguageEvidenceForUntaggedReleases(t *testing.T) {
 	_, st, id, c, _, version := modelFixture(t)
 	ctx := context.Background()
-	if _, err := st.AddCustomCollection(ctx, store.Collection{SeriesID: id, EditionName: "Standard Edition", Language: "fr", Monitored: true}, c.ID, 0); err != nil {
+	if _, err := st.AddCustomEdition(ctx, store.Edition{SeriesID: id, EditionName: "Standard Edition", Language: "fr", Monitored: true}, c.ID, 0); err != nil {
 		t.Fatal(err)
 	}
 	svc := NewSearchService(st, provider.NewRegistry())
@@ -311,14 +311,14 @@ func TestApplyCatalog(t *testing.T) {
 func TestEditionFacets(t *testing.T) {
 	titles := []string{"NAUSICAA"}
 	parsed := func(name string) parse.Result { return parse.ParseAnchored(name, parse.ChannelTorrent, titles) }
-	edition := func(id int64, medium string, traits ...string) store.Collection {
-		return store.Collection{ID: id, Type: "volume", Language: "en", Medium: medium, EditionTraits: traits, ContentVariant: "unknown"}
+	edition := func(id int64, medium string, traits ...string) store.Edition {
+		return store.Edition{ID: id, Type: "volume", Language: "en", Medium: medium, EditionTraits: traits, ContentVariant: "unknown"}
 	}
 	standard, box, deluxeBox, omnibus := edition(1, "paperback", "standard"), edition(2, "paperback", "boxset"), edition(3, "hardcover", "boxset", "deluxe"), edition(4, "paperback", "omnibus")
 	for _, tc := range []struct {
 		name    string
 		release string
-		edition store.Collection
+		edition store.Edition
 		fits    bool
 	}{
 		{"a box of deluxe books takes deluxe volumes that never say box", "NAUSICAA - Deluxe Edition v01 (2012) [English]", deluxeBox, true},
@@ -335,10 +335,10 @@ func TestEditionFacets(t *testing.T) {
 		}
 	}
 	// Packaging picks between editions that both fit.
-	if best := preferByPackaging(parsed("NAUSICAA Box Set v01-07 [English]"), []store.Collection{standard, box}); len(best) != 1 || best[0].ID != box.ID {
+	if best := preferByPackaging(parsed("NAUSICAA Box Set v01-07 [English]"), []store.Edition{standard, box}); len(best) != 1 || best[0].ID != box.ID {
 		t.Errorf("a release sold as a box should prefer the box set edition: %+v", best)
 	}
-	if best := preferByPackaging(parsed("NAUSICAA v01 [English]"), []store.Collection{standard, box}); len(best) != 2 {
+	if best := preferByPackaging(parsed("NAUSICAA v01 [English]"), []store.Edition{standard, box}); len(best) != 2 {
 		t.Errorf("no packaging stated: both editions stay: %+v", best)
 	}
 	// A verified listing establishes the edition: the release need not
@@ -359,7 +359,7 @@ func TestEditionFacets(t *testing.T) {
 func TestSplitBox(t *testing.T) {
 	lib, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
-	cols, _ := st.ListCollections(ctx, id)
+	cols, _ := st.ListEditions(ctx, id)
 	omni := collectionByName(t, cols, "Omnibus Edition", "en")
 	works, _ := st.ListBooks(ctx, omni.ID)
 	if len(works) != 1 {
@@ -374,7 +374,7 @@ func TestSplitBox(t *testing.T) {
 	versions, _ := st.ListVersions(ctx, id)
 	var version store.CollectedVersion
 	for _, tg := range versions {
-		if tg.CollectionID == omni.ID {
+		if tg.EditionID == omni.ID {
 			version = tg
 		}
 	}

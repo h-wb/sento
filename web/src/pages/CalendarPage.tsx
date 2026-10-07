@@ -7,7 +7,7 @@ import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { EmptyState } from '../components/EmptyState'
 
-// Upcoming (and recent) dated volume releases of monitored collections,
+// Upcoming (and recent) dated volume releases of monitored editions,
 // grouped by date — Sonarr's calendar, list-shaped.
 export default function CalendarPage() {
   usePageTitle('Calendar')

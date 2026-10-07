@@ -67,7 +67,7 @@ type ReleaseCandidate struct {
 	VersionSnapshot  *store.CollectedVersion `json:"versionSnapshot,omitempty"`
 	FormatSnapshot   []profile.Format        `json:"formatSnapshot,omitempty"`
 	PolicySnapshot   *profile.Profile        `json:"policySnapshot,omitempty"`
-	EditionSnapshot  *store.Collection       `json:"editionSnapshot,omitempty"`
+	EditionSnapshot  *store.Edition          `json:"editionSnapshot,omitempty"`
 	RepresentedBooks int                     `json:"representedBooks"`
 	VersionID        int64                   `json:"versionId,omitempty"`
 	Coverage         []store.BookRef         `json:"coverage,omitempty"`
@@ -82,7 +82,7 @@ type ReleaseCandidate struct {
 	Size             int64                   `json:"size,omitempty"`
 	Seeders          int                     `json:"seeders,omitempty"`
 	Scanlator        string                  `json:"scanlator,omitempty"`
-	CollectionID     int64                   `json:"collectionId,omitempty"`
+	EditionID        int64                   `json:"editionId,omitempty"`
 	Score            int                     `json:"score"`
 	Formats          []FormatHit             `json:"formats,omitempty"`     // matched custom formats
 	FormatScore      int                     `json:"formatScore,omitempty"` // their summed score
@@ -309,17 +309,17 @@ type searchRun struct {
 	allowed         map[string]map[string]bool
 	priorities      map[[2]string]int
 	searched        []string
-	collections     []store.Collection
+	editions        []store.Edition
 	blocked         map[string]bool // "protocol/externalKey" bans
-	// profiles is the effective release profile per collection id, with
+	// profiles is the effective release profile per edition id, with
 	// the series-level profile under key 0 (nil map = built-ins).
 	profiles map[int64]*profile.Profile
 	formats  []profile.Format
 }
 
 // profileFor resolves the effective profile of a routed candidate.
-func (run *searchRun) profileFor(collectionID int64) *profile.Profile {
-	if p, ok := run.profiles[collectionID]; ok {
+func (run *searchRun) profileFor(editionID int64) *profile.Profile {
+	if p, ok := run.profiles[editionID]; ok {
 		return p
 	}
 	return run.profiles[0]

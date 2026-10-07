@@ -2,16 +2,16 @@ import { useState } from 'react'
 import { Alert, Card, Checkbox, Group, Select, Stack, Text } from '@mantine/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
-import type { Collection } from '../types/store'
+import type { Edition } from '../types/store'
 
 // Which edition each bound source listing publishes. A verified mapping
 // is what lets a source release count as evidence for one edition.
 export default function SourceMappings({
   seriesID,
-  collections,
+  editions,
 }: {
   seriesID: number
-  collections: Collection[]
+  editions: Edition[]
 }) {
   const qc = useQueryClient()
   const bindings = useQuery({
@@ -33,7 +33,7 @@ export default function SourceMappings({
     }
   }
   const active = (bindings.data ?? []).filter((b) => b.state === 'active')
-  const editions = collections.filter((c) => c.syncState !== 'superseded')
+  const choices = editions.filter((c) => c.syncState !== 'superseded')
   if (!active.length) return null
   return (
     <Card withBorder>
@@ -57,20 +57,20 @@ export default function SourceMappings({
               aria-label={`Edition for ${b.mangaTitle}`}
               placeholder="Edition not verified"
               clearable
-              data={editions.map((c) => ({
+              data={choices.map((c) => ({
                 value: String(c.id),
                 label: [c.language, c.editionName, c.publisher, c.medium]
                   .filter(Boolean)
                   .join(' · '),
               }))}
-              value={b.collectionId ? String(b.collectionId) : null}
+              value={b.editionId ? String(b.editionId) : null}
               disabled={busy}
               onChange={(v) =>
                 void run(() => api.setBindingEdition(seriesID, b.id, Number(v) || 0))
               }
               style={{ minWidth: 180, flex: 1 }}
             />
-            {collections.find((c) => c.id === b.collectionId)?.type === 'chapter' && (
+            {editions.find((c) => c.id === b.editionId)?.type === 'chapter' && (
               <Checkbox
                 label="Trust new chapters from this listing"
                 description="Add observed chapters automatically when chapter discovery is enabled for this edition."

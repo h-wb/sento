@@ -48,7 +48,7 @@ func (s *Store) lockEditions(ctx context.Context, tx *sql.Tx, allowPending bool,
 				return err
 			}
 			for _, sl := range slots {
-				if sl.CollectionID == id {
+				if sl.EditionID == id {
 					pending = true
 				}
 			}

@@ -39,7 +39,7 @@ import {
 } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, type Collection, type SeriesIndexerView } from '../api'
+import { api, type Edition, type SeriesIndexerView } from '../api'
 import BookDialog, { type BookSelection } from '../components/BookDialog'
 import { fmtWhen, notify, usePageTitle } from '../ui'
 import { QueryFeedback } from '../components/QueryFeedback'
@@ -56,7 +56,7 @@ export default function SeriesPage() {
   const [busy, setBusy] = useState(false)
   const [bookSel, setBookSel] = useState<BookSelection | null>(null)
   const [fullDesc, setFullDesc] = useState(false)
-  const [addCollection, setAddCollection] = useState(false)
+  const [addEdition, setAddEdition] = useState(false)
   // ?view=review is the deep link the global review inbox uses.
   const [tab, setTab] = useState<string | null>(
     new URLSearchParams(window.location.search).get('view') === 'review' ? 'review' : 'editions',
@@ -86,7 +86,7 @@ export default function SeriesPage() {
 
   const series = detail.data?.series ?? null
   usePageTitle(series?.title ?? '')
-  const collections = detail.data?.collections ?? []
+  const editions = detail.data?.editions ?? []
   const overview = overviewQuery.data ?? null
   const files = filesQuery.data ?? []
 
@@ -102,10 +102,10 @@ export default function SeriesPage() {
     <EditionManager
       section={section}
       seriesID={seriesID}
-      collections={collections}
+      editions={editions}
       files={files}
       onBook={setBookSel}
-      onAddEdition={() => setAddCollection(true)}
+      onAddEdition={() => setAddEdition(true)}
     />
   )
 
@@ -338,13 +338,13 @@ export default function SeriesPage() {
         </Text>
       )}
       {confirmation}
-      {addCollection && (
+      {addEdition && (
         <AddEditionModal
           seriesID={seriesID}
-          collections={collections}
+          editions={editions}
           busy={busy}
           run={run}
-          onClose={() => setAddCollection(false)}
+          onClose={() => setAddEdition(false)}
         />
       )}
 
@@ -380,7 +380,7 @@ export default function SeriesPage() {
         <Tabs.Panel value="indexers" pt="md">
           <Stack gap="lg">
             <IndexersTab seriesID={seriesID} seriesTitle={series.title} run={run} busy={busy} />
-            <SourceMappings seriesID={seriesID} collections={collections} />
+            <SourceMappings seriesID={seriesID} editions={editions} />
           </Stack>
         </Tabs.Panel>
 
@@ -559,19 +559,19 @@ function ProfileBarButton({ seriesID, profileId }: { seriesID: number; profileId
   )
 }
 
-// AddCollectionModal creates a custom collection: based on an existing one
+// AddEditionModal creates a custom edition: based on an existing one
 // (clones the volume numbering — language variants) or from scratch with
-// a volume count (collections MangaBaka doesn't know yet). Metadata refresh
+// a volume count (editions MangaBaka doesn't know yet). Metadata refresh
 // keeps local editions independent until explicitly linked to the catalog.
 function AddEditionModal({
   seriesID,
-  collections,
+  editions,
   busy,
   run,
   onClose,
 }: {
   seriesID: number
-  collections: Collection[]
+  editions: Edition[]
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onClose: () => void
@@ -589,7 +589,7 @@ function AddEditionModal({
     run(
       () =>
         api
-          .createCollection(seriesID, {
+          .createEdition(seriesID, {
             editionName: name,
             language,
             publisher,
@@ -648,7 +648,7 @@ function AddEditionModal({
             description="Copy book numbers only. Dates and catalog references are kept separate."
             placeholder="From scratch"
             clearable
-            data={collections
+            data={editions
               .filter((c) => c.type === ctype)
               .map((c) => ({
                 value: String(c.id),

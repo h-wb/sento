@@ -39,7 +39,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 		}
 		rc.Parse = parse.ParseAnchored(cand.Title, channel, run.titles)
 		// Chapter names rarely tag a language; the source's own language is
-		// the release language (drives the R2 gate and collection routing).
+		// the release language (drives the R2 gate and edition routing).
 		if cand.Source != nil && rc.Parse.Language == "" {
 			rc.Parse.Language = cand.Source.Lang
 		}
@@ -98,7 +98,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 				}
 				compatible := 0
 				for _, t := range run.versions {
-					col := collectionByID(run.collections, t.CollectionID)
+					col := editionByID(run.editions, t.EditionID)
 					if run.wantedBooks[t.ID] != nil && col != nil && editionCompatibleWithEvidence(rc.Parse, *col, evidence) {
 						compatible++
 					}
@@ -108,7 +108,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					if run.wantedBooks[t.ID] == nil {
 						continue
 					}
-					col := collectionByID(run.collections, t.CollectionID)
+					col := editionByID(run.editions, t.EditionID)
 					if col == nil {
 						continue
 					}
@@ -127,7 +127,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					}
 					cp := rc
 					cp.VersionID = t.ID
-					cp.CollectionID = col.ID
+					cp.EditionID = col.ID
 					cp.EditionSnapshot = col
 					cp.PolicySnapshot = run.versionProfiles[t.ID]
 					cp.VersionSnapshot = &t
@@ -199,7 +199,7 @@ func (s *SearchService) coverageRanges(searchLedger string, rc *ReleaseCandidate
 // parameterized by ledger and the series' release profile.
 func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []parse.Range) {
 	searchLedger, scope := run.ledger, run.scope
-	collections := run.collections
+	collections := run.editions
 	reject := func(code string) { c.Rejections = append(c.Rejections, code) }
 
 	// An inferred pack runs the whole funnel so its books are known, then
@@ -222,16 +222,16 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 
 	// The release is judged against one collected version at a time: the
 	// caller scoped the run to it.
-	colID := c.CollectionID
+	colID := c.EditionID
 	wantLang := ""
 	for _, col := range collections {
 		if col.ID == colID {
 			wantLang = col.Language
 		}
 	}
-	c.CollectionID = colID
-	// The routed collection's profile decides scoring and health rules
-	// (collection override > series > instance default).
+	c.EditionID = colID
+	// The routed edition's profile decides scoring and health rules
+	// (edition override > series > instance default).
 	prof := run.profileFor(colID)
 	if p, ok := run.versionProfiles[c.VersionID]; ok {
 		prof = p
@@ -240,7 +240,7 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		c.ProfileID = prof.ID
 	}
 	c.PolicySnapshot = prof
-	c.EditionSnapshot = collectionByID(collections, colID)
+	c.EditionSnapshot = editionByID(collections, colID)
 	rules := ledgerRules(prof, searchLedger)
 
 	// R2 language gate (untagged passes). Soft: record and keep going so
@@ -278,7 +278,7 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 					}
 				}
 			}
-			c.Coverage = append(c.Coverage, store.BookRef{Ledger: searchLedger, CollectionID: colID, VersionID: c.VersionID, BookID: w.ID, Number: w.SequenceNum})
+			c.Coverage = append(c.Coverage, store.BookRef{Ledger: searchLedger, EditionID: colID, VersionID: c.VersionID, BookID: w.ID, Number: w.SequenceNum})
 		}
 	}
 	if total == 0 {
@@ -425,7 +425,7 @@ var hardRejections = map[string]bool{
 	"rejected.blocklisted":      true,
 }
 
-func collectionByID(cols []store.Collection, id int64) *store.Collection {
+func editionByID(cols []store.Edition, id int64) *store.Edition {
 	for i := range cols {
 		if cols[i].ID == id {
 			return &cols[i]

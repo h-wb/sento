@@ -61,7 +61,7 @@ test('editions retain independent versions, editable books, and mobile layout', 
     await expect(edit).toBeHidden()
     await page.reload()
     await expect(page.getByText(/Publisher corrected edition/).first()).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Collections', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Editions', exact: true })).toHaveCount(0)
     await page.getByRole('button', { name: 'Add edition', exact: true }).click()
     const add = page.getByRole('dialog', { name: 'Add edition', exact: true })
     await add.getByRole('textbox', { name: 'Edition name', exact: true }).fill('Spanish edition')
@@ -78,7 +78,7 @@ test('editions retain independent versions, editable books, and mobile layout', 
     await expect(page.getByText('Spanish edition', { exact: true })).toBeVisible()
     const added = await request.get(`/api/v1/series/${id}/`)
     const detail = await added.json()
-    const spanish = detail.collections.find(
+    const spanish = detail.editions.find(
       (c: { editionName: string }) => c.editionName === 'Spanish edition',
     )
     expect(spanish.custom).toBe(true)
@@ -88,14 +88,14 @@ test('editions retain independent versions, editable books, and mobile layout', 
         .flat()
         .filter(
           (s: unknown) =>
-            (s as { book: { collectionId: number } }).book.collectionId === spanish.id,
+            (s as { book: { editionId: number } }).book.editionId === spanish.id,
         ),
     ).toHaveLength(0)
-    const chapters = detail.collections.find((c: { type: string }) => c.type === 'chapter')
+    const chapters = detail.editions.find((c: { type: string }) => c.type === 'chapter')
     for (const number of [7050, 7100]) {
       const response = await request.post(`/api/v1/series/${id}/observations`, {
         data: {
-          collectionId: chapters.id,
+          editionId: chapters.id,
           source: 'Verified reader',
           externalKey: String(number),
           label: String(number / 100),
@@ -203,7 +203,7 @@ test('organize files previews renames and metadata updates before applying', asy
     const file = {
       id: 1,
       seriesId: id,
-      path: '/library/Series/collections/1/versions/1/Series v01 [abc].cbz',
+      path: '/library/Series/editions/1/versions/1/Series v01 [abc].cbz',
       size: 1024,
       provenance: 'torrent',
       presence: 'present',
@@ -221,7 +221,7 @@ test('organize files previews renames and metadata updates before applying', asy
         json: [
           {
             fileId: 1,
-            from: 'collections/1/versions/1/Series v01 [abc].cbz',
+            from: 'editions/1/versions/1/Series v01 [abc].cbz',
             to: 'Standard Edition [en]/Series v01.cbz',
             rename: true,
             retag: true,

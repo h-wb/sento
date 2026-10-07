@@ -367,7 +367,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			if e != nil {
 				return e
 			}
-			col, e := im.store.GetCollection(ctx, sl.CollectionID)
+			col, e := im.store.GetEdition(ctx, sl.EditionID)
 			if e != nil {
 				return e
 			}

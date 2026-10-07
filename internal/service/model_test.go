@@ -15,7 +15,7 @@ import (
 	"github.com/h-wb/sento/internal/store"
 )
 
-func modelFixture(t *testing.T) (*Library, *store.Store, int64, store.Collection, []store.Book, store.CollectedVersion) {
+func modelFixture(t *testing.T) (*Library, *store.Store, int64, store.Edition, []store.Book, store.CollectedVersion) {
 	t.Helper()
 	lib, st := setup(t)
 	ctx := context.Background()
@@ -23,7 +23,7 @@ func modelFixture(t *testing.T) (*Library, *store.Store, int64, store.Collection
 	if err != nil {
 		t.Fatal(err)
 	}
-	cs, err := st.ListCollections(ctx, id)
+	cs, err := st.ListEditions(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,27 +37,27 @@ func modelFixture(t *testing.T) (*Library, *store.Store, int64, store.Collection
 		t.Fatal(err)
 	}
 	for _, version := range ts {
-		if version.CollectionID == c.ID && version.IsDefault {
+		if version.EditionID == c.ID && version.IsDefault {
 			return lib, st, id, c, ws, version
 		}
 	}
 	t.Fatal("missing default target")
-	return nil, nil, 0, store.Collection{}, nil, store.CollectedVersion{}
+	return nil, nil, 0, store.Edition{}, nil, store.CollectedVersion{}
 }
-func ownedModelFile(t *testing.T, st *store.Store, id int64, c store.Collection, w store.Book, version store.CollectedVersion) int64 {
+func ownedModelFile(t *testing.T, st *store.Store, id int64, c store.Edition, w store.Book, version store.CollectedVersion) int64 {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "ONE PIECE v01.cbz")
 	if err := os.WriteFile(path, []byte("test archive"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(context.Background(), store.File{SeriesID: id, Path: path, Size: 12}, nil, []store.BookLink{{Ledger: c.Type, CollectionID: c.ID, Number: w.SequenceNum, VersionID: version.ID, BookID: w.ID}})
+	fid, err := st.AddFile(context.Background(), store.File{SeriesID: id, Path: path, Size: 12}, nil, []store.BookLink{{Ledger: c.Type, EditionID: c.ID, Number: w.SequenceNum, VersionID: version.ID, BookID: w.ID}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return fid
 }
-func modelRef(c store.Collection, w store.Book, version store.CollectedVersion) store.BookRef {
-	return store.BookRef{Ledger: c.Type, CollectionID: c.ID, Number: w.SequenceNum, VersionID: version.ID, BookID: w.ID}
+func modelRef(c store.Edition, w store.Book, version store.CollectedVersion) store.BookRef {
+	return store.BookRef{Ledger: c.Type, EditionID: c.ID, Number: w.SequenceNum, VersionID: version.ID, BookID: w.ID}
 }
 
 func TestModelRefreshKeepsIdentityAndCoverage(t *testing.T) {
@@ -76,7 +76,7 @@ func TestModelRefreshKeepsIdentityAndCoverage(t *testing.T) {
 	if err != nil || w.SequenceNum != 150 {
 		t.Fatalf("provider numbering correction lost identity: %+v %v", w, err)
 	}
-	current, err := st.GetCollection(ctx, c.ID)
+	current, err := st.GetEdition(ctx, c.ID)
 	if err != nil || current.EditionName != "Publisher renamed this" {
 		t.Fatalf("rename lost edition ID: %+v %v", current, err)
 	}
@@ -109,7 +109,7 @@ func TestModelRefreshKeepsIdentityAndCoverage(t *testing.T) {
 func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
 	_, st, id, c, _, _ := modelFixture(t)
 	ctx := context.Background()
-	local, err := st.AddCustomCollection(ctx, store.Collection{SeriesID: id, EditionName: c.EditionName, Language: c.Language, Publisher: c.Publisher, Medium: c.Medium, Monitored: true}, c.ID, 0)
+	local, err := st.AddCustomEdition(ctx, store.Edition{SeriesID: id, EditionName: c.EditionName, Language: c.Language, Publisher: c.Publisher, Medium: c.Medium, Monitored: true}, c.ID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,12 +117,12 @@ func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
 	if err = st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
 		t.Fatal(err)
 	}
-	lc, _ := st.GetCollection(ctx, local)
+	lc, _ := st.GetEdition(ctx, local)
 	if lc.ProviderID != "" {
 		t.Fatal("refresh silently adopted local edition")
 	}
 	label := "My local publication"
-	if err = st.EditCollection(ctx, id, local, store.CollectionMetadataPatch{EditionName: &label}); err != nil {
+	if err = st.EditEdition(ctx, id, local, store.EditionMetadataPatch{EditionName: &label}); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := st.ListBooks(ctx, local)
@@ -136,12 +136,12 @@ func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
 	if err = st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
 		t.Fatal(err)
 	}
-	lc, _ = st.GetCollection(ctx, local)
+	lc, _ = st.GetEdition(ctx, local)
 	after, _ := st.ListBooks(ctx, local)
 	if lc.EditionName != label || lc.ProviderID != c.ProviderID || after[0].ID != before[0].ID {
 		t.Fatalf("link changed local identity: %+v %+v", lc, after)
 	}
-	retired, _ := st.GetCollection(ctx, c.ID)
+	retired, _ := st.GetEdition(ctx, c.ID)
 	if retired.SyncState != "superseded" {
 		t.Fatal("duplicate catalog row not retired")
 	}
@@ -199,7 +199,7 @@ func TestModelFractionalZeroExtrasAndUnknownDates(t *testing.T) {
 	_, st, id, c, _, version := modelFixture(t)
 	ctx := context.Background()
 	for _, w := range []store.Book{{SequenceStr: "0", SequenceNum: 0, NumberKnown: true, CountType: "main"}, {SequenceStr: "1.5", SequenceNum: 150, NumberKnown: true, CountType: "main"}, {SequenceStr: "Special", SequenceNum: 100, NumberKnown: true, CountType: "extra"}, {SequenceStr: "Artbook", NumberKnown: false, CountType: "other"}} {
-		w.CollectionID = c.ID
+		w.EditionID = c.ID
 		if _, err := st.SaveBook(ctx, id, w); err != nil {
 			t.Fatal(err)
 		}
@@ -272,10 +272,10 @@ func TestModelCoverageReviewPinAndVersionDeletion(t *testing.T) {
 func TestModelObservationReviewIsBoundedAndIdempotent(t *testing.T) {
 	_, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
-	cs, _ := st.ListCollections(ctx, id)
+	cs, _ := st.ListEditions(ctx, id)
 	chapter := chapterCollection(t, cs)
 	before, _ := st.ListBooks(ctx, chapter.ID)
-	o := store.BookObservation{CollectionID: chapter.ID, Source: "site", ExternalKey: "huge-number", Label: "99999.5", Number: 9999950}
+	o := store.BookObservation{EditionID: chapter.ID, Source: "site", ExternalKey: "huge-number", Label: "99999.5", Number: 9999950}
 	for i := 0; i < 2; i++ {
 		if err := st.ObserveBook(ctx, id, o); err != nil {
 			t.Fatal(err)
@@ -458,19 +458,19 @@ func TestModelPackStaysOneAssetAcrossUnitsAndVersions(t *testing.T) {
 func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
 	_, st, id, c, _, _ := modelFixture(t)
 	ctx := context.Background()
-	duplicate, err := st.AddCustomCollection(ctx, store.Collection{SeriesID: id, EditionName: c.EditionName, Language: c.Language, Publisher: c.Publisher, Medium: c.Medium, Monitored: true}, c.ID, 0)
+	duplicate, err := st.AddCustomEdition(ctx, store.Edition{SeriesID: id, EditionName: c.EditionName, Language: c.Language, Publisher: c.Publisher, Medium: c.Medium, Monitored: true}, c.ID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = st.EnsureModels(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	local, _ := st.GetCollection(ctx, duplicate)
+	local, _ := st.GetEdition(ctx, duplicate)
 	ws, _ := st.ListBooks(ctx, duplicate)
 	ts, _ := st.ListVersions(ctx, id)
 	var version store.CollectedVersion
 	for _, v := range ts {
-		if v.CollectionID == duplicate && v.IsDefault {
+		if v.EditionID == duplicate && v.IsDefault {
 			version = v
 		}
 	}
@@ -482,11 +482,11 @@ func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
 	if err = st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, VersionID: version.ID, BookID: ws[0].ID, Pinned: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = st.MergeCollection(ctx, id, duplicate, c.ID); err != nil {
+	if _, err = st.MergeEditions(ctx, id, duplicate, c.ID); err != nil {
 		t.Fatal(err)
 	}
 	retained, err := st.GetVersion(ctx, version.ID)
-	if err != nil || retained.CollectionID != c.ID || retained.RequiredGroup != "LuCaZ" || retained.IsDefault {
+	if err != nil || retained.EditionID != c.ID || retained.RequiredGroup != "LuCaZ" || retained.IsDefault {
 		t.Fatalf("merge lost version policy: %+v %v", retained, err)
 	}
 	cv, err := st.Coverage(ctx, id)
@@ -500,7 +500,7 @@ func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
 		t.Fatalf("merge lost coverage or pin: %+v %v", cv, err)
 	}
 	w, _ := st.GetBook(ctx, cv[0].BookID)
-	if w.CollectionID != c.ID {
+	if w.EditionID != c.ID {
 		t.Fatal("ownership points to removed edition")
 	}
 }
@@ -508,13 +508,13 @@ func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
 func TestModelLayoutSurvivesDisplayRenameAndRequiresEvidence(t *testing.T) {
 	_, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
-	cs, _ := st.ListCollections(ctx, id)
+	cs, _ := st.ListEditions(ctx, id)
 	omni := collectionByName(t, cs, "Omnibus Edition", "en")
 	label := "My favorite books"
-	if err := st.EditCollection(ctx, id, omni.ID, store.CollectionMetadataPatch{EditionName: &label}); err != nil {
+	if err := st.EditEdition(ctx, id, omni.ID, store.EditionMetadataPatch{EditionName: &label}); err != nil {
 		t.Fatal(err)
 	}
-	renamed, _ := st.GetCollection(ctx, omni.ID)
+	renamed, _ := st.GetEdition(ctx, omni.ID)
 	if !slices.Contains(renamed.EditionTraits, "omnibus") {
 		t.Fatal("layout lost when display name changed")
 	}
@@ -553,7 +553,7 @@ func TestModelEditingOneUnitFieldDoesNotFreezeCatalogDates(t *testing.T) {
 func TestModelNewChapterEditionDoesNotBorrowSeriesNumbering(t *testing.T) {
 	lib, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
-	local, err := lib.CreateCollection(ctx, id, CreateCollectionParams{EditionName: "French chapters", Language: "fr", Type: "chapter", Monitored: true})
+	local, err := lib.CreateEdition(ctx, id, CreateEditionParams{EditionName: "French chapters", Language: "fr", Type: "chapter", Monitored: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -562,7 +562,7 @@ func TestModelNewChapterEditionDoesNotBorrowSeriesNumbering(t *testing.T) {
 		t.Fatalf("new edition fabricated global chapter units: %d %v", len(works), err)
 	}
 	source := "series_count"
-	if err = st.EditCollection(ctx, id, local.ID, store.CollectionMetadataPatch{NumberingSource: &source}); err != nil {
+	if err = st.EditEdition(ctx, id, local.ID, store.EditionMetadataPatch{NumberingSource: &source}); err != nil {
 		t.Fatal(err)
 	}
 	if err = st.EnsureModels(ctx, id); err != nil {
@@ -648,7 +648,7 @@ func TestCatalogGenericRenameKeepsEditionLayout(t *testing.T) {
 	if err := st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
 		t.Fatal(err)
 	}
-	got, err := st.GetCollection(ctx, c.ID)
+	got, err := st.GetEdition(ctx, c.ID)
 	if err != nil || !slices.Contains(got.EditionTraits, "omnibus") {
 		t.Fatalf("generic rename erased layout: %+v %v", got, err)
 	}
@@ -658,7 +658,7 @@ func TestCalendarSeparatesVersionsAndDuplicateNumbers(t *testing.T) {
 	lib, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	ownedModelFile(t, st, id, c, ws[0], version)
-	other := store.CollectedVersion{CollectionID: c.ID, Name: "Another group", Monitored: true, AcquireUnknown: true}
+	other := store.CollectedVersion{EditionID: c.ID, Name: "Another group", Monitored: true, AcquireUnknown: true}
 	if tid, err := st.SaveVersion(ctx, id, other); err != nil {
 		t.Fatal(err)
 	} else {
@@ -697,7 +697,7 @@ func fixtureLinks(t *testing.T, st *store.Store, sid, cid int64, numbers ...int6
 	}
 	var tid int64
 	for _, version := range versions {
-		if version.CollectionID == cid && version.IsDefault {
+		if version.EditionID == cid && version.IsDefault {
 			tid = version.ID
 		}
 	}
@@ -705,7 +705,7 @@ func fixtureLinks(t *testing.T, st *store.Store, sid, cid int64, numbers ...int6
 	for _, n := range numbers {
 		for _, w := range works {
 			if w.SequenceNum == n {
-				links = append(links, store.BookLink{Ledger: "volume", CollectionID: cid, Number: n, BookID: w.ID, VersionID: tid})
+				links = append(links, store.BookLink{Ledger: "volume", EditionID: cid, Number: n, BookID: w.ID, VersionID: tid})
 			}
 		}
 	}
@@ -726,7 +726,7 @@ func booksOf(t *testing.T, lib *Library, st *store.Store, sid, cid int64) []Book
 		t.Fatal(err)
 	}
 	for _, version := range versions {
-		if version.CollectionID == cid && version.IsDefault {
+		if version.EditionID == cid && version.IsDefault {
 			return all[version.ID]
 		}
 	}
@@ -744,7 +744,7 @@ func TestBookRefReadsItsOldFieldName(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"targetId":4,"bookId":7,"ledger":"volume","collectionId":1,"number":100}`), &current); err != nil {
 		t.Fatal(err)
 	}
-	if old != current || old.BookID != 7 || old.VersionID != 4 || old.Number != 100 {
+	if old != current || old.BookID != 7 || old.VersionID != 4 || old.EditionID != 1 || old.Number != 100 {
 		t.Fatalf("old %+v, current %+v", old, current)
 	}
 	raw, _ := json.Marshal(current)

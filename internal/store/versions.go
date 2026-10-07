@@ -12,7 +12,7 @@ import (
 type CollectedVersion struct {
 	IncludeExtras  bool   `json:"includeExtras"`
 	ID             int64  `json:"id"`
-	CollectionID   int64  `json:"collectionId"`
+	EditionID      int64  `json:"editionId" db:"collection_id"`
 	Name           string `json:"name"`
 	IsDefault      bool   `json:"isDefault"`
 	Monitored      bool   `json:"monitored"`
@@ -32,7 +32,7 @@ func (s *Store) GetVersion(ctx context.Context, id int64) (*CollectedVersion, er
 	return get[CollectedVersion](ctx, s, `SELECT `+versionColumns+` FROM download_targets WHERE id=?`, id)
 }
 func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVersion) (int64, error) {
-	c, err := s.GetCollection(ctx, t.CollectionID)
+	c, err := s.GetEdition(ctx, t.EditionID)
 	if err != nil {
 		return 0, err
 	}
@@ -68,7 +68,7 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 			return 0, e
 		}
 		var id int64
-		e = tx.QueryRowContext(ctx, s.q(`INSERT INTO download_targets(collection_id,name,monitored,profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id`), t.CollectionID, t.Name, t.Monitored, prof, t.CutoffNum, t.RequiredGroup, t.AllowUnknown, t.AcquireUnknown, t.IncludeExtras).Scan(&id)
+		e = tx.QueryRowContext(ctx, s.q(`INSERT INTO download_targets(collection_id,name,monitored,profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id`), t.EditionID, t.Name, t.Monitored, prof, t.CutoffNum, t.RequiredGroup, t.AllowUnknown, t.AcquireUnknown, t.IncludeExtras).Scan(&id)
 		if e != nil {
 			return 0, conflict(e, "a collected version already uses this name")
 		}
@@ -79,10 +79,10 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 	if err != nil {
 		return 0, err
 	}
-	if old.CollectionID != c.ID {
+	if old.EditionID != c.ID {
 		return 0, ErrNotFound
 	}
-	pending, err := s.CollectionPending(ctx, c.ID)
+	pending, err := s.EditionPending(ctx, c.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -110,7 +110,7 @@ func (s *Store) DeleteVersion(ctx context.Context, seriesID, id int64) error {
 	if err != nil {
 		return err
 	}
-	c, err := s.GetCollection(ctx, t.CollectionID)
+	c, err := s.GetEdition(ctx, t.EditionID)
 	if err != nil {
 		return err
 	}
@@ -120,12 +120,12 @@ func (s *Store) DeleteVersion(ctx context.Context, seriesID, id int64) error {
 	if t.IsDefault {
 		return apperr.Invalidf("the default version cannot be deleted; pause it instead")
 	}
-	pending, err := s.CollectionPending(ctx, c.ID)
+	pending, err := s.EditionPending(ctx, c.ID)
 	if err != nil {
 		return err
 	}
 	if pending {
-		return apperr.Conflictf("collection has pending downloads")
+		return apperr.Conflictf("edition has pending downloads")
 	}
 	// Version deletion drops references, never assets or files.
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -216,11 +216,11 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Boo
 		if err != nil {
 			return err
 		}
-		c, err := s.GetCollection(ctx, w.CollectionID)
+		c, err := s.GetEdition(ctx, w.EditionID)
 		if err != nil {
 			return err
 		}
-		if t.CollectionID != c.ID || c.SeriesID != seriesID {
+		if t.EditionID != c.ID || c.SeriesID != seriesID {
 			return apperr.Invalidf("file mapping must belong to this series and version")
 		}
 	}
@@ -231,14 +231,14 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Boo
 	defer func() { _ = tx.Rollback() }()
 	cids := []int64{}
 	for _, sl := range slots {
-		cids = append(cids, sl.CollectionID)
+		cids = append(cids, sl.EditionID)
 	}
 	if err = s.lockEditions(ctx, tx, true, cids...); err != nil {
 		return err
 	}
 	for _, sl := range slots {
 		var valid int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), sl.BookID, sl.VersionID, sl.CollectionID, seriesID).Scan(&valid); err != nil {
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), sl.BookID, sl.VersionID, sl.EditionID, seriesID).Scan(&valid); err != nil {
 			return err
 		}
 		if valid != 1 {
@@ -299,11 +299,11 @@ func (s *Store) SetBookMonitored(ctx context.Context, seriesID, versionID, workI
 	if err != nil {
 		return err
 	}
-	c, err := s.GetCollection(ctx, t.CollectionID)
+	c, err := s.GetEdition(ctx, t.EditionID)
 	if err != nil {
 		return err
 	}
-	if c.SeriesID != seriesID || w.CollectionID != c.ID {
+	if c.SeriesID != seriesID || w.EditionID != c.ID {
 		return ErrNotFound
 	}
 	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO unit_overrides(target_id,work_id,monitored) VALUES(?,?,?) ON CONFLICT(target_id,work_id) DO UPDATE SET monitored=excluded.monitored`), versionID, workID, monitored)
@@ -347,7 +347,7 @@ func (s *Store) BulkMonitor(ctx context.Context, sid, tid int64, ids []int64, mo
 	if err != nil {
 		return err
 	}
-	c, err := s.GetCollection(ctx, t.CollectionID)
+	c, err := s.GetEdition(ctx, t.EditionID)
 	if err != nil {
 		return err
 	}

@@ -70,20 +70,20 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 		}
 	}
 
-	collections, err := sc.store.ListCollections(ctx, seriesID)
+	collections, err := sc.store.ListEditions(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	// Edition evidence determines file contents even when collection is paused.
+	// Edition evidence determines file contents even when edition is paused.
 	// Ambiguous archives remain available for explicit review.
-	var monitored, chapterCols []store.Collection
+	var monitored, chapterCols []store.Edition
 	for _, c := range collections {
 		switch c.Type {
 		case "volume":
 			monitored = append(monitored, c)
 		case "chapter":
 			if c.Monitored {
-				chapterCols = append([]store.Collection{c}, chapterCols...)
+				chapterCols = append([]store.Edition{c}, chapterCols...)
 			} else {
 				chapterCols = append(chapterCols, c)
 			}
@@ -158,23 +158,23 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 }
 
 // linksFor maps a parsed file onto book links: a volume file to the routed
-// volume collection, a chapter file to the first monitored chapter
-// collection (language-matched when the filename is tagged). A file is one
+// volume edition, a chapter file to the first monitored chapter
+// edition (language-matched when the filename is tagged). A file is one
 // or the other (bookRanges).
-func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chapters []store.Collection) []store.BookLink {
+func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chapters []store.Edition) []store.BookLink {
 	if parsed.ContentType != parse.ContentManga || !parsed.Anchored || parsed.TitleLeftover != "" {
 		return nil
 	}
 	var links []store.BookLink
 	for _, axis := range []struct {
 		kind   string
-		cols   []store.Collection
+		cols   []store.Edition
 		ranges []parse.Range
 	}{{"volume", vols, bookRanges(parsed, LedgerVolume)}, {"chapter", chapters, bookRanges(parsed, LedgerChapter)}} {
 		if len(axis.ranges) == 0 {
 			continue
 		}
-		var matches []store.Collection
+		var matches []store.Edition
 		for _, c := range axis.cols {
 			if editionCompatible(parsed, c) {
 				matches = append(matches, c)
@@ -191,7 +191,7 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 		}
 		var versionID int64
 		for _, version := range versions {
-			if version.CollectionID == col.ID && version.IsDefault {
+			if version.EditionID == col.ID && version.IsDefault {
 				versionID = version.ID
 			}
 		}
@@ -205,7 +205,7 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 			}
 			for _, r := range axis.ranges {
 				if w.SequenceNum >= int64(r.From) && w.SequenceNum <= int64(r.To) {
-					links = append(links, store.BookLink{Ledger: axis.kind, CollectionID: col.ID, BookID: w.ID, VersionID: versionID, Number: w.SequenceNum})
+					links = append(links, store.BookLink{Ledger: axis.kind, EditionID: col.ID, BookID: w.ID, VersionID: versionID, Number: w.SequenceNum})
 					break
 				}
 			}
@@ -215,14 +215,14 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 }
 
 // LowestOwnedChapters returns the lowest linked chapter number per chapter
-// collection, used for the import-time cutoff default (§11.4: lowest owned
+// edition, used for the import-time cutoff default (§11.4: lowest owned
 // chapter so owned chapters land in-ledger and the frontier continues).
 func (sc *Scanner) LowestOwnedChapters(ctx context.Context, seriesID int64) (map[int64]int64, error) {
 	return sc.store.LowestOwnedChapters(ctx, seriesID)
 }
 
 // ScanAndAdoptCutoff runs ScanSeriesFolder and, when chapter files were
-// linked, lowers each chapter collection's cutoff to just below its lowest
+// linked, lowers each chapter edition's cutoff to just below its lowest
 // owned chapter so owned chapters land in-ledger (spec.md §11.4).
 func (sc *Scanner) ScanAndAdoptCutoff(ctx context.Context, seriesID int64, dir string) (*ScanResult, error) {
 	result, err := sc.ScanSeriesFolder(ctx, seriesID, dir)
@@ -236,13 +236,13 @@ func (sc *Scanner) ScanAndAdoptCutoff(ctx context.Context, seriesID int64, dir s
 	if err != nil || len(lowest) == 0 {
 		return result, nil
 	}
-	collections, err := sc.store.ListCollections(ctx, seriesID)
+	collections, err := sc.store.ListEditions(ctx, seriesID)
 	if err != nil {
 		return result, nil
 	}
 	for _, col := range collections {
 		if low, ok := lowest[col.ID]; ok && col.Type == "chapter" && low-100 < col.CutoffNum {
-			_ = sc.store.SetCollectionCutoff(ctx, seriesID, col.ID, low-100)
+			_ = sc.store.SetEditionCutoff(ctx, seriesID, col.ID, low-100)
 		}
 	}
 	return result, nil

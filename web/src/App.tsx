@@ -316,7 +316,7 @@ export default function App() {
       </AppShell.Header>
       <AppShell.Navbar p="md" className={classes.navbar}>
         <AppShell.Section grow>
-          <Text className={classes.sectionLabel}>Collection</Text>
+          <Text className={classes.sectionLabel}>Edition</Text>
           {primaryLinks.map(renderLink)}
 
           <Text className={classes.sectionLabel}>Settings</Text>

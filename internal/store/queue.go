@@ -72,22 +72,23 @@ const (
 
 // BookRef records explicit version and book coverage for a pending grab.
 type BookRef struct {
-	VersionID    int64  `json:"versionId,omitempty"`
-	BookID       int64  `json:"bookId,omitempty"`
-	Ledger       string `json:"ledger"`
-	CollectionID int64  `json:"collectionId"`
-	Number       int64  `json:"number"`
+	VersionID int64  `json:"versionId,omitempty"`
+	BookID    int64  `json:"bookId,omitempty"`
+	Ledger    string `json:"ledger"`
+	EditionID int64  `json:"editionId"`
+	Number    int64  `json:"number"`
 }
 
-// UnmarshalJSON also accepts "workId" and "targetId", the names these
-// fields had in queue items, decisions and snapshots written before they
-// were renamed.
+// UnmarshalJSON also accepts "workId", "targetId" and "collectionId", the
+// names these fields had in queue items, decisions and snapshots written
+// before they were renamed.
 func (b *BookRef) UnmarshalJSON(data []byte) error {
 	type plain BookRef
 	aux := struct {
 		*plain
 		LegacyBook    int64 `json:"workId"`
 		LegacyVersion int64 `json:"targetId"`
+		LegacyEdition int64 `json:"collectionId"`
 	}{plain: (*plain)(b)}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
@@ -97,6 +98,9 @@ func (b *BookRef) UnmarshalJSON(data []byte) error {
 	}
 	if b.VersionID == 0 {
 		b.VersionID = aux.LegacyVersion
+	}
+	if b.EditionID == 0 {
+		b.EditionID = aux.LegacyEdition
 	}
 	return nil
 }
@@ -222,7 +226,7 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []BookRef) 
 	}
 	for i := range slots {
 		sl := &slots[i]
-		c, e := s.GetCollection(ctx, sl.CollectionID)
+		c, e := s.GetEdition(ctx, sl.EditionID)
 		if e != nil {
 			return 0, false, e
 		}
@@ -237,7 +241,7 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []BookRef) 
 		if e != nil {
 			return 0, false, e
 		}
-		if w.CollectionID != c.ID || t.CollectionID != c.ID {
+		if w.EditionID != c.ID || t.EditionID != c.ID {
 			return 0, false, apperr.Invalidf("book/version belongs to another edition")
 		}
 	}
@@ -248,14 +252,14 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []BookRef) 
 	defer func() { _ = tx.Rollback() }()
 	editionIDs := []int64{}
 	for _, sl := range slots {
-		editionIDs = append(editionIDs, sl.CollectionID)
+		editionIDs = append(editionIDs, sl.EditionID)
 	}
 	if err = s.lockEditions(ctx, tx, true, editionIDs...); err != nil {
 		return 0, false, err
 	}
 	for _, sl := range slots {
 		var n int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id WHERE w.id=? AND t.id=? AND w.collection_id=? AND w.sync_state<>'retired'`), sl.BookID, sl.VersionID, sl.CollectionID).Scan(&n); err != nil {
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id WHERE w.id=? AND t.id=? AND w.collection_id=? AND w.sync_state<>'retired'`), sl.BookID, sl.VersionID, sl.EditionID).Scan(&n); err != nil {
 			return 0, false, err
 		}
 		if n != 1 {
@@ -292,7 +296,7 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []BookRef) 
 	for _, sl := range slots {
 		exists := false
 		for _, old := range plan {
-			if old.VersionID == sl.VersionID && old.BookID == sl.BookID && old.CollectionID == sl.CollectionID && old.Number == sl.Number {
+			if old.VersionID == sl.VersionID && old.BookID == sl.BookID && old.EditionID == sl.EditionID && old.Number == sl.Number {
 				exists = true
 			}
 		}

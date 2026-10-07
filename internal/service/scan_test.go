@@ -50,8 +50,8 @@ func TestScanSeriesFolder(t *testing.T) {
 	}
 
 	// Volume books 1+2 satisfied now.
-	cols, _ := st.ListCollections(ctx, seriesID)
-	var standard store.Collection
+	cols, _ := st.ListEditions(ctx, seriesID)
+	var standard store.Edition
 	for _, c := range cols {
 		if c.EditionName == "Standard Edition" {
 			standard = c
@@ -62,7 +62,7 @@ func TestScanSeriesFolder(t *testing.T) {
 		t.Errorf("vols 1-2 should be satisfied after scan: %+v", slots[:2])
 	}
 
-	// Chapter 1180 linked to the chapter collection.
+	// Chapter 1180 linked to the chapter edition.
 	chapters := chapterCollection(t, cols)
 	linked := 0
 	for _, b := range booksOf(t, lib, st, seriesID, chapters.ID) {

@@ -68,8 +68,8 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Delete("/books/{bid}", s.handleDeleteBook)
 			r.Post("/books/{bid}/catalog-reset", s.handleResetBook)
 			r.Post("/books/{bid}/split", s.handleSplitBox)
-			r.Put("/collections/{cid}/metadata", s.handleEditCollectionMetadata)
-			r.Post("/collections/{cid}/catalog-link", s.handleCatalogLink)
+			r.Put("/editions/{eid}/metadata", s.handleEditEditionMetadata)
+			r.Post("/editions/{eid}/catalog-link", s.handleCatalogLink)
 			r.Get("/coverage", s.handleCoverage)
 			r.Put("/coverage/pin", s.handlePinCoverage)
 			r.Put("/book-monitor", s.handleBookMonitor)
@@ -79,10 +79,10 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Get("/observations", s.handleObservations)
 			r.Post("/observations", s.handleObservations)
 			r.Put("/observations/{oid}", s.handleResolveObservation)
-			r.Post("/collections", s.handleCreateCollection)
-			r.Put("/collections/{cid}", s.handleUpdateCollection)
-			r.Post("/collections/{cid}/merge", s.handleMergeCollection)
-			r.Delete("/collections/{cid}", s.handleDeleteCollection)
+			r.Post("/editions", s.handleCreateEdition)
+			r.Put("/editions/{eid}", s.handleUpdateEdition)
+			r.Post("/editions/{eid}/merge", s.handleMergeEditions)
+			r.Delete("/editions/{eid}", s.handleDeleteEdition)
 			r.Get("/files", s.handleListFiles)
 			r.Get("/files/organize", s.handlePlanOrganize)
 			r.Post("/files/organize", s.handleOrganize)
@@ -180,7 +180,7 @@ func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, refs)
 }
 
-// handleCalendar lists dated volume releases of monitored collections:
+// handleCalendar lists dated volume releases of monitored editions:
 // two weeks back, `days` ahead (default 60).
 func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
 	days, _ := strconv.Atoi(r.URL.Query().Get("days"))

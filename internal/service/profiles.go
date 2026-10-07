@@ -124,7 +124,7 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, p profile.Profile) e
 	return s.store.UpdateProfile(ctx, p)
 }
 
-// DeleteProfile refuses while series or collections use the profile or it
+// DeleteProfile refuses while series or editions use the profile or it
 // is the default.
 func (s *ProfileService) DeleteProfile(ctx context.Context, id int64) error {
 	if did, _ := s.DefaultProfileID(ctx); did == id {
@@ -135,7 +135,7 @@ func (s *ProfileService) DeleteProfile(ctx context.Context, id int64) error {
 		return err
 	}
 	if n > 0 {
-		return apperr.Conflictf("profile is used by %d series/collections", n)
+		return apperr.Conflictf("profile is used by %d series/editions", n)
 	}
 	return s.store.DeleteProfile(ctx, id)
 }
@@ -164,8 +164,8 @@ func (s *ProfileService) SetDefaultProfile(ctx context.Context, id int64) error 
 	return s.store.PutSetting(ctx, defaultProfileKey, raw)
 }
 
-// EffectiveProfiles resolves the release profile per collection of a
-// series — collection override > series > instance default — plus the
+// EffectiveProfiles resolves the release profile per edition of a
+// series — edition override > series > instance default — plus the
 // series-level profile under key 0 (the chapter ledger and any routing
 // fallback) and all formats. A nil seriesProfile (and empty map) means
 // none are configured — the funnel falls back to built-in rules.
@@ -193,7 +193,7 @@ func (s *ProfileService) EffectiveProfiles(ctx context.Context, seriesID int64) 
 		}
 		seriesEff = byID[did]
 	}
-	collections, err := s.store.ListCollections(ctx, seriesID)
+	collections, err := s.store.ListEditions(ctx, seriesID)
 	if err != nil {
 		return nil, nil, err
 	}

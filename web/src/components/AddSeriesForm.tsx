@@ -47,11 +47,11 @@ export function AddSeriesForm({ onDone, onOpenImporter }: {
         </Group>
       </form>
       <Group align="flex-start" gap="md" mt="md" mb="lg">
-        <Select size="sm" label="Monitor on add" description="Which collections to track for downloads"
+        <Select size="sm" label="Monitor on add" description="Which editions to track for downloads"
           style={{ flex: 1, minWidth: 200 }} allowDeselect={false} value={monitor} disabled={busy}
           onChange={(v) => v && setMonitor(v)} data={[
-            { value: 'default', label: 'Default collection' },
-            { value: 'all', label: 'All volume collections' },
+            { value: 'default', label: 'Default edition' },
+            { value: 'all', label: 'All volume editions' },
             { value: 'none', label: 'None — add without monitoring' },
           ]} />
         {(profiles.data?.length ?? 0) > 1 && (

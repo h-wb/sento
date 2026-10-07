@@ -26,7 +26,7 @@ func (s *SearchService) observeCandidates(ctx context.Context, run *searchRun, c
 			continue
 		}
 		cid := run.sourceEditions[cand.Source.BindingID]
-		col := collectionByID(run.collections, cid)
+		col := editionByID(run.editions, cid)
 		if col == nil || !col.DiscoverChapters {
 			continue
 		}
@@ -55,7 +55,7 @@ func (s *SearchService) observeCandidates(ctx context.Context, run *searchRun, c
 				return
 			}
 			count++
-			o := store.BookObservation{CollectionID: cid, Source: cand.Source.SourceID, ExternalKey: cand.Source.ChapterKey, Label: mediafile.RenderPlainNum(int64(r.From)), Number: int64(r.From)}
+			o := store.BookObservation{EditionID: cid, Source: cand.Source.SourceID, ExternalKey: cand.Source.ChapterKey, Label: mediafile.RenderPlainNum(int64(r.From)), Number: int64(r.From)}
 			if err := s.store.ObserveBook(ctx, run.seriesID, o); err == nil && trusted[cand.Source.BindingID] {
 				_ = s.store.AcceptTrustedObservation(ctx, run.seriesID, o)
 			}

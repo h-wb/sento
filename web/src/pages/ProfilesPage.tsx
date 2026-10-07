@@ -232,7 +232,7 @@ export default function ProfilesPage() {
                         onClick={() =>
                           confirm({
                             title: 'Delete profile?',
-                            message: `Delete “${p.name}”? Only unused profiles can be deleted. Reassign any series or collections using it first.`,
+                            message: `Delete “${p.name}”? Only unused profiles can be deleted. Reassign any series or editions using it first.`,
                             label: 'Delete profile',
                             onConfirm: () => deleteProfile.mutateAsync(p.id),
                           })

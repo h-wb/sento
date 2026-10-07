@@ -112,20 +112,20 @@ func (s *Server) handleDeleteBook(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-func (s *Server) handleEditCollectionMetadata(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleEditEditionMetadata(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	cid, ok := pathID(w, r, "cid")
+	cid, ok := pathID(w, r, "eid")
 	if !ok {
 		return
 	}
-	var p store.CollectionMetadataPatch
+	var p store.EditionMetadataPatch
 	if !decodeBody(w, r, &p) {
 		return
 	}
-	if err := s.store.EditCollection(r.Context(), id, cid, p); err != nil {
+	if err := s.store.EditEdition(r.Context(), id, cid, p); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -147,7 +147,7 @@ func (s *Server) handleCatalogLink(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	cid, ok := pathID(w, r, "cid")
+	cid, ok := pathID(w, r, "eid")
 	if !ok {
 		return
 	}

@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-type CollectionMetadataPatch struct {
+type EditionMetadataPatch struct {
 	MakeLocal        bool      `json:"makeLocal,omitempty"`
 	NumberingSource  *string   `json:"numberingSource"`
 	EditionTraits    *[]string `json:"editionTraits"`
@@ -23,15 +23,15 @@ type CollectionMetadataPatch struct {
 	Reset            []string  `json:"reset"`
 }
 
-func (s *Store) EditCollection(ctx context.Context, seriesID, cid int64, p CollectionMetadataPatch) error {
-	c, err := s.GetCollection(ctx, cid)
+func (s *Store) EditEdition(ctx context.Context, seriesID, cid int64, p EditionMetadataPatch) error {
+	c, err := s.GetEdition(ctx, cid)
 	if err != nil {
 		return err
 	}
 	if c.SeriesID != seriesID {
 		return ErrNotFound
 	}
-	pending, err := s.CollectionPending(ctx, cid)
+	pending, err := s.EditionPending(ctx, cid)
 	if err != nil {
 		return err
 	}
@@ -152,8 +152,8 @@ type CatalogLinkPreview struct {
 	Pending         bool               `json:"pending"`
 	LocalBooks      []Book             `json:"localBooks"`
 	CatalogBooks    []Book             `json:"catalogBooks"`
-	Local           *Collection        `json:"local"`
-	Catalog         *Collection        `json:"catalog"`
+	Local           *Edition           `json:"local"`
+	Catalog         *Edition           `json:"catalog"`
 	Mapping         map[int64]int64    `json:"mapping"`
 	Unmatched       []int64            `json:"unmatched"`
 }
@@ -174,11 +174,11 @@ func (s *Store) PreviewMerge(ctx context.Context, seriesID, fromID, intoID int64
 }
 
 func (s *Store) previewBookLink(ctx context.Context, seriesID, localID, catalogID int64, catalogOnly bool) (*CatalogLinkPreview, error) {
-	local, err := s.GetCollection(ctx, localID)
+	local, err := s.GetEdition(ctx, localID)
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := s.GetCollection(ctx, catalogID)
+	catalog, err := s.GetEdition(ctx, catalogID)
 	if err != nil {
 		return nil, err
 	}
@@ -224,10 +224,10 @@ func (s *Store) previewBookLink(ctx context.Context, seriesID, localID, catalogI
 	out.LocalVersions = []CollectedVersion{}
 	out.CatalogVersions = []CollectedVersion{}
 	for _, t := range versions {
-		if t.CollectionID == localID {
+		if t.EditionID == localID {
 			out.LocalVersions = append(out.LocalVersions, t)
 		}
-		if t.CollectionID == catalogID {
+		if t.EditionID == catalogID {
 			out.CatalogVersions = append(out.CatalogVersions, t)
 		}
 	}
@@ -237,7 +237,7 @@ func (s *Store) previewBookLink(ctx context.Context, seriesID, localID, catalogI
 	}
 	out.FileCount = *n
 	for _, cid := range []int64{localID, catalogID} {
-		pending, e := s.CollectionPending(ctx, cid)
+		pending, e := s.EditionPending(ctx, cid)
 		if e != nil {
 			return nil, e
 		}
@@ -251,7 +251,7 @@ func (s *Store) LinkCatalog(ctx context.Context, seriesID, localID, catalogID in
 		return err
 	}
 	for _, id := range []int64{localID, catalogID} {
-		pending, e := s.CollectionPending(ctx, id)
+		pending, e := s.EditionPending(ctx, id)
 		if e != nil {
 			return e
 		}
@@ -271,7 +271,7 @@ func (s *Store) LinkCatalog(ctx context.Context, seriesID, localID, catalogID in
 		return err
 	}
 	for _, v := range versions {
-		if v.CollectionID == catalogID && !v.IsDefault {
+		if v.EditionID == catalogID && !v.IsDefault {
 			return apperr.Conflictf("catalog edition has additional collected versions; review those before linking")
 		}
 	}

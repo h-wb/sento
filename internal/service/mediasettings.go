@@ -49,7 +49,7 @@ const (
 	// "Volumes/Standard Edition [en]": the type split inside the series.
 	BookFolderByType = "{type}/{edition} [{lang}] ({version})"
 	// Stable internal ids: paths never change when an edition is renamed.
-	BookFolderByID = "collections/{collectionId}/versions/{versionId}"
+	BookFolderByID = "editions/{editionId}/versions/{versionId}"
 )
 
 func DefaultMediaSettings() MediaSettings {
@@ -145,7 +145,7 @@ func PreviewMediaSettings(m MediaSettings) map[string]string {
 	volume.Volume, volume.Chapter = 11200, -1 // v112
 	chapter := sample
 	chapter.Volume, chapter.Chapter = -1, 110250 // ch 1102.5
-	folder.CollectionID, folder.VersionID = 42, 81
+	folder.EditionID, folder.VersionID = 42, 81
 	// Whole example paths: top folder, series folder, book folder, file.
 	full := func(root, kind, file string) string {
 		tokens := folder

@@ -37,7 +37,7 @@ const tokens: [string, string][] = [
   ['{medium}', 'paperback, digital… (folders)'],
   ['{type}', 'Volumes or Chapters (folders)'],
   ['{version}', 'name of an additional version; empty for the default one (folders)'],
-  ['{collectionId} {versionId}', 'internal ids that never change (folders)'],
+  ['{editionId} {versionId}', 'internal ids that never change (folders)'],
 ]
 
 // Folder layout presets; the templates mirror the backend's constants.
@@ -45,7 +45,7 @@ const layouts = [
   { value: 'edition', label: 'By edition — Standard Edition [en]', template: '{edition} [{lang}] ({version})' },
   { value: 'type', label: 'By type, then edition — Volumes/Standard Edition [en]', template: '{type}/{edition} [{lang}] ({version})' },
   { value: 'flat', label: 'Flat — everything in the series folder', template: '' },
-  { value: 'ids', label: 'By internal id — collections/42/versions/81', template: 'collections/{collectionId}/versions/{versionId}' },
+  { value: 'ids', label: 'By internal id — editions/42/versions/81', template: 'editions/{editionId}/versions/{versionId}' },
 ]
 
 export default function MediaPage() {

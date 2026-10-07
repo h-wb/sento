@@ -24,11 +24,11 @@ type DatabaseStatus struct {
 	OK bool `json:"ok"`
 }
 
-// SeriesDetail is GET /series/{id}. The collections list carries both
-// volume editions and chapter collections (ctype distinguishes them).
+// SeriesDetail is GET /series/{id}. The editions list carries both
+// volume editions and chapter editions (ctype distinguishes them).
 type SeriesDetail struct {
-	Series      *store.Series      `json:"series"`
-	Collections []store.Collection `json:"collections"`
+	Series   *store.Series   `json:"series"`
+	Editions []store.Edition `json:"editions"`
 }
 
 // SearchBody is POST /series/{id}/search.
@@ -57,40 +57,40 @@ type SeriesPatch struct {
 	ProfileID *int64 `json:"profileId"`
 }
 
-// CollectionPatch is PUT /series/{id}/collections/{cid} (nil = keep);
+// EditionPatch is PUT /series/{id}/editions/{cid} (nil = keep);
 // ProfileID 0 = inherit the series profile. CutoffNum applies to chapter
-// collections, Language to custom collections only.
-type CollectionPatch struct {
+// editions, Language to custom editions only.
+type EditionPatch struct {
 	Monitored *bool   `json:"monitored"`
 	ProfileID *int64  `json:"profileId"`
 	CutoffNum *int64  `json:"cutoffNum"`
 	Language  *string `json:"language"`
 }
 
-// CreateCollectionBody is POST /series/{id}/collections — a custom
-// collection. Volume editions clone their book structure from basedOn
+// CreateEditionBody is POST /series/{id}/editions — a custom
+// edition. Volume editions clone their book structure from basedOn
 // (language variants) or generate volumes 1..N (editions MangaBaka
-// doesn't know); chapter collections derive books from total_chapters.
-type CreateCollectionBody struct {
+// doesn't know); chapter editions derive books from total_chapters.
+type CreateEditionBody struct {
 	EditionName string `json:"editionName"`
 	Language    string `json:"language"`
 	Publisher   string `json:"publisher"`
 	Medium      string `json:"medium"`
 	Type        string `json:"type" tstype:"'' | 'volume' | 'chapter'"` // default volume
-	BasedOn     int64  `json:"basedOn"`                                 // collection id; 0 = from scratch
+	BasedOn     int64  `json:"basedOn"`                                 // edition id; 0 = from scratch
 	Volumes     int    `json:"volumes"`                                 // only when basedOn is 0
 	CutoffNum   int64  `json:"cutoffNum"`                               // chapter type: monitor from N onward
 	Monitored   bool   `json:"monitored"`
 }
 
-// MergeCollectionBody is POST /series/{id}/collections/{cid}/merge.
-type MergeCollectionBody struct {
+// MergeEditionBody is POST /series/{id}/editions/{cid}/merge.
+type MergeEditionBody struct {
 	Into int64 `json:"into"`
 }
 
-// MergeCollectionResponse lists volume numbers (hundredths) whose files
+// MergeEditionResponse lists volume numbers (hundredths) whose files
 // have no matching book in the target edition.
-type MergeCollectionResponse struct {
+type MergeEditionResponse struct {
 	Unmatched []int64 `json:"unmatched"`
 }
 
@@ -158,7 +158,7 @@ type OrganizeBody struct {
 // BindingPatch is PUT /series/{id}/bindings/{bid}.
 type BindingPatch struct {
 	TrustChapters *bool  `json:"trustChapters,omitempty"`
-	CollectionID  *int64 `json:"collectionId"`
+	EditionID     *int64 `json:"editionId"`
 	State         string `json:"state" tstype:"'active' | 'disabled'"`
 }
 

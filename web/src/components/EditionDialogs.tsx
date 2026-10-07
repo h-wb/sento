@@ -17,7 +17,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import type {
-  Collection,
+  Edition,
   CollectedVersion,
   Book,
   CatalogLinkPreview,
@@ -26,7 +26,7 @@ import type {
 import type { BookStatus } from '../types/service'
 import { useConfirmAction } from './ConfirmAction'
 
-const editionLabel = (c: Collection) =>
+const editionLabel = (c: Edition) =>
   [c.language, c.editionName, c.publisher, c.medium].filter(Boolean).join(' · ')
 function useEditor() {
   const [busy, setBusy] = useState(false)
@@ -66,7 +66,7 @@ export function VersionEditor({
       dirty={JSON.stringify(v) !== JSON.stringify(value)}
       busy={edit.busy}
       onClose={close}
-      title={v.id ? 'Collection settings' : 'Keep an additional version'}
+      title={v.id ? 'Version settings' : 'Keep an additional version'}
     >
       <form
         onSubmit={(e) => {
@@ -208,7 +208,7 @@ export function BookEditor({
                 )}
                 <Select
                   label="Category"
-                  description="Regular books are collected by default. Enable extras in collection settings to include bonuses."
+                  description="Regular books are collected by default. Enable extras in edition settings to include bonuses."
                   data={[
                     { value: 'main', label: 'Regular' },
                     { value: 'extra', label: 'Bonus / special' },
@@ -277,7 +277,7 @@ export function EditionEditor({
   reset,
   close,
 }: {
-  value: Collection
+  value: Edition
   save: (p: {
     profileId?: number
     editionName: string
@@ -405,13 +405,13 @@ export function EditionEditor({
 export function CatalogLink({
   seriesID,
   value,
-  collections,
+  editions,
   done,
   close,
 }: {
   seriesID: number
-  value: Collection
-  collections: Collection[]
+  value: Edition
+  editions: Edition[]
   done: () => Promise<void>
   close: () => void
 }) {
@@ -433,7 +433,7 @@ export function CatalogLink({
         </Text>
         <Select
           label="Catalog edition"
-          data={collections
+          data={editions
             .filter(
               (c) =>
                 !c.custom &&
@@ -509,7 +509,7 @@ export function MappingEditor({
   versions,
   existing,
   books,
-  collections,
+  editions,
   save,
   close,
 }: {
@@ -518,17 +518,17 @@ export function MappingEditor({
   versions: CollectedVersion[]
   existing: import('../types/store').AssetCoverage[]
   books: BookStatus[]
-  collections: Collection[]
+  editions: Edition[]
   save: (books: import('../types/store').BookRef[]) => Promise<void>
   close: () => void
 }) {
   const initial = existing.map((a) => ({
     versionId: a.versionId,
     bookId: a.bookId,
-    collectionId: versions.find((t) => t.id === a.versionId)?.collectionId ?? 0,
+    editionId: versions.find((t) => t.id === a.versionId)?.editionId ?? 0,
     number: books.find((s) => s.book.id === a.bookId)?.book.sequenceNum ?? 0,
     ledger:
-      collections.find((c) => c.id === versions.find((t) => t.id === a.versionId)?.collectionId)
+      editions.find((c) => c.id === versions.find((t) => t.id === a.versionId)?.editionId)
         ?.type ?? 'volume',
   }))
   const [draft, setDraft] = useState(initial)
@@ -592,7 +592,7 @@ export function MappingEditor({
           label="Collected version"
           data={versions.map((t) => ({
             value: String(t.id),
-            label: `${editionLabel(collections.find((c) => c.id === t.collectionId)!)} · ${t.name}`,
+            label: `${editionLabel(editions.find((c) => c.id === t.editionId)!)} · ${t.name}`,
           }))}
           value={version}
           onChange={setVersion}
@@ -612,9 +612,9 @@ export function MappingEditor({
               ...ids.map((id) => ({
                 versionId: t.id,
                 bookId: Number(id),
-                collectionId: t.collectionId,
+                editionId: t.editionId,
                 number: books.find((s) => s.book.id === Number(id))?.book.sequenceNum ?? 0,
-                ledger: collections.find((c) => c.id === t.collectionId)?.type ?? 'volume',
+                ledger: editions.find((c) => c.id === t.editionId)?.type ?? 'volume',
               })),
             ])
           }}

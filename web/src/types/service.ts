@@ -95,7 +95,7 @@ export interface ConnectionTest {
 
 export interface VersionSummary {
   versionId: number /* int64 */;
-  collectionId: number /* int64 */;
+  editionId: number /* int64 */;
   total: number /* int */;
   owned: number /* int */;
   onDisk: number /* int */;
@@ -247,17 +247,17 @@ export interface AddSeriesRequest {
    * "none" nothing. MonitorIDs overrides it with explicit picks.
    */
   monitor: string;
-  monitorIds: string[]; // explicit provider collection ids
+  monitorIds: string[]; // explicit provider edition ids
   chapterLang: string; // default "en"
   chapterCutoff: number /* int64 */; // hundredths; 0 = latest at add (D6)
   profileId: number /* int64 */; // 0 = instance default
 }
 /**
- * CreateCollectionParams describes a user-defined collection: volume
+ * CreateEditionParams describes a user-defined edition: volume
  * editions clone numbering from BasedOn or generate 1..Volumes; chapter
  * editions start with explicit chapters unless count inference is selected.
  */
-export interface CreateCollectionParams {
+export interface CreateEditionParams {
   EditionName: string;
   Language: string;
   Publisher: string;
@@ -269,9 +269,9 @@ export interface CreateCollectionParams {
   Monitored: boolean;
 }
 /**
- * CollectionUpdate is a partial collection patch (nil = keep).
+ * EditionUpdate is a partial edition patch (nil = keep).
  */
-export interface CollectionUpdate {
+export interface EditionUpdate {
   Monitored?: boolean;
   ProfileID?: number /* int64 */;
   CutoffNum?: number /* int64 */;
@@ -329,7 +329,7 @@ export const BookFolderByType = "{type}/{edition} [{lang}] ({version})";
 /**
  * Stable internal ids: paths never change when an edition is renamed.
  */
-export const BookFolderByID = "collections/{collectionId}/versions/{versionId}";
+export const BookFolderByID = "editions/{editionId}/versions/{versionId}";
 
 //////////
 // source: organize.go
@@ -471,7 +471,7 @@ export interface ReleaseCandidate {
   versionSnapshot?: CollectedVersion;
   formatSnapshot?: any /* profile.Format */[];
   policySnapshot?: any /* profile.Profile */;
-  editionSnapshot?: any /* store.Collection */;
+  editionSnapshot?: any /* store.Edition */;
   representedBooks: number /* int */;
   versionId?: number /* int64 */;
   coverage?: BookRef[];
@@ -486,7 +486,7 @@ export interface ReleaseCandidate {
   size?: number /* int64 */;
   seeders?: number /* int */;
   scanlator?: string;
-  collectionId?: number /* int64 */;
+  editionId?: number /* int64 */;
   score: number /* int */;
   formats?: FormatHit[]; // matched custom formats
   formatScore?: number /* int */; // their summed score

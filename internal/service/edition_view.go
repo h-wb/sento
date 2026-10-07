@@ -7,7 +7,7 @@ import (
 
 type VersionSummary struct {
 	VersionID     int64  `json:"versionId"`
-	CollectionID  int64  `json:"collectionId"`
+	EditionID     int64  `json:"editionId"`
 	Total         int    `json:"total"`
 	Owned         int    `json:"owned"`
 	OnDisk        int    `json:"onDisk"`
@@ -35,8 +35,8 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 	out := &EditionOverview{Versions: []VersionSummary{}}
 	unique := map[int64]bool{}
 	for _, t := range v.Versions {
-		row := VersionSummary{VersionID: t.ID, CollectionID: t.CollectionID, Total: len(v.Status[t.ID]), ProfileSource: "instance default"}
-		c := collectionByID(v.Collections, t.CollectionID)
+		row := VersionSummary{VersionID: t.ID, EditionID: t.EditionID, Total: len(v.Status[t.ID]), ProfileSource: "instance default"}
+		c := editionByID(v.Editions, t.EditionID)
 		if series.ProfileID > 0 {
 			row.ProfileSource = "series"
 		}

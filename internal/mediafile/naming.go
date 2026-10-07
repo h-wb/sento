@@ -42,12 +42,12 @@ type NameTokens struct {
 	ISBN       string
 	Year       int
 	// Folder-layout tokens: what tells two copies of a book apart.
-	Publisher    string
-	Medium       string
-	Version      string // collected version name; empty for the default one
-	Type         string // "Volumes" or "Chapters"
-	CollectionID int64
-	VersionID    int64
+	Publisher string
+	Medium    string
+	Version   string // collected version name; empty for the default one
+	Type      string // "Volumes" or "Chapters"
+	EditionID int64
+	VersionID int64
 }
 
 var tokenRe = regexp.MustCompile(`\{([A-Za-z ]+?)(?::(0+))?\}`)
@@ -98,8 +98,8 @@ func Render(template string, t NameTokens) string {
 			return sanitize(t.Version)
 		case "type":
 			return sanitize(t.Type)
-		case "collectionid":
-			return fmt.Sprintf("%d", t.CollectionID)
+		case "editionid", "collectionid": // collectionid: the token's earlier name
+			return fmt.Sprintf("%d", t.EditionID)
 		case "versionid":
 			return fmt.Sprintf("%d", t.VersionID)
 		case "year":

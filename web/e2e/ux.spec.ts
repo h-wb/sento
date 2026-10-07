@@ -202,7 +202,7 @@ test('series interactions work with keyboard and fit a mobile viewport', async (
     totalChapters: 85,
     description: 'A young apprentice discovers a world of magic. '.repeat(25),
   }
-  const collection = {
+  const edition = {
     id: 901,
     seriesId: 901,
     editionName: 'Standard Edition',
@@ -211,7 +211,7 @@ test('series interactions work with keyboard and fit a mobile viewport', async (
     monitored: true,
   }
   await page.route('**/api/v1/series/901/', (route) =>
-    route.fulfill({ json: { series, collections: [collection] } }),
+    route.fulfill({ json: { series, editions: [edition] } }),
   )
   await page.route('**/api/v1/series/901/files', (route) => route.fulfill({ json: [] }))
   await page.goto('/series/901')

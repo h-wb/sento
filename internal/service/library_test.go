@@ -88,12 +88,12 @@ func TestAddSeriesDefaultMonitor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cols, err := st.ListCollections(ctx, id)
+	cols, err := st.ListEditions(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range cols {
-		// The chapter collection is always monitored at add (cutoff = latest,
+		// The chapter edition is always monitored at add (cutoff = latest,
 		// so nothing is wanted until new chapters release).
 		want := c.Type == "chapter" || (c.EditionName == "Standard Edition" && c.Type == "volume")
 		if c.Monitored != want {
@@ -110,7 +110,7 @@ func TestAddSeriesMonitorNone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cols, err := st.ListCollections(ctx, id)
+	cols, err := st.ListEditions(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,11 +156,11 @@ func TestAddSeriesAndSlots(t *testing.T) {
 		t.Fatalf("unexpected series: %+v", series)
 	}
 
-	cols, err := st.ListCollections(ctx, id)
+	cols, err := st.ListEditions(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cols) != 3 { // 2 volume editions + the default chapter collection
+	if len(cols) != 3 { // 2 volume editions + the default chapter edition
 		t.Fatalf("want 3 collections, got %d", len(cols))
 	}
 	for _, c := range cols {
@@ -169,14 +169,14 @@ func TestAddSeriesAndSlots(t *testing.T) {
 		}
 	}
 
-	// Chapter collection: cutoff defaults to latest at add (D6).
+	// Chapter edition: cutoff defaults to latest at add (D6).
 	chapters := chapterCollection(t, cols)
 	if chapters.CutoffNum != 1184*100 {
 		t.Fatalf("cutoff: want %d, got %d", 1184*100, chapters.CutoffNum)
 	}
 
 	// Volume books: vol 1+2 wanted (released, no files); vol 3 future → not wanted.
-	var standard store.Collection
+	var standard store.Edition
 	for _, c := range cols {
 		if c.EditionName == "Standard Edition" {
 			standard = c
@@ -217,7 +217,7 @@ func TestChapterSlots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cols, err := st.ListCollections(ctx, id)
+	cols, err := st.ListEditions(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,14 +258,14 @@ func TestRefreshReconciliation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cols, err := st.ListCollections(ctx, id)
+	cols, err := st.ListEditions(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cols) != 3 { // 2 volume editions + the chapter collection
+	if len(cols) != 3 { // 2 volume editions + the chapter edition
 		t.Fatalf("descriptor matching must not duplicate collections: got %d", len(cols))
 	}
-	var standard store.Collection
+	var standard store.Edition
 	for _, c := range cols {
 		if c.EditionName == "Standard Edition" {
 			standard = c

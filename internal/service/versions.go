@@ -72,11 +72,11 @@ func versionBooks(t store.CollectedVersion, works []store.Book, coverage []store
 
 // ledgerView is loaded once per series and shared by search and UI evaluation.
 type ledgerView struct {
-	Versions    []store.CollectedVersion
-	Collections []store.Collection
-	Books       map[int64][]store.Book
-	Status      map[int64][]BookStatus
-	Profiles    map[int64]*profile.Profile
+	Versions []store.CollectedVersion
+	Editions []store.Edition
+	Books    map[int64][]store.Book
+	Status   map[int64][]BookStatus
+	Profiles map[int64]*profile.Profile
 }
 
 func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerView, error) {
@@ -88,7 +88,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	if err != nil {
 		return nil, err
 	}
-	cols, err := st.ListCollections(ctx, seriesID)
+	cols, err := st.ListEditions(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -132,13 +132,13 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	for _, a := range coverage {
 		coverageByVersion[a.VersionID] = append(coverageByVersion[a.VersionID], a)
 	}
-	view := &ledgerView{Versions: versions, Collections: cols, Books: map[int64][]store.Book{}, Status: map[int64][]BookStatus{}, Profiles: map[int64]*profile.Profile{}}
-	byCol := map[int64]store.Collection{}
+	view := &ledgerView{Versions: versions, Editions: cols, Books: map[int64][]store.Book{}, Status: map[int64][]BookStatus{}, Profiles: map[int64]*profile.Profile{}}
+	byCol := map[int64]store.Edition{}
 	for _, c := range cols {
 		byCol[c.ID] = c
 	}
 	for _, w := range works {
-		view.Books[w.CollectionID] = append(view.Books[w.CollectionID], w)
+		view.Books[w.EditionID] = append(view.Books[w.EditionID], w)
 	}
 	byOverride := map[int64]map[int64]bool{}
 	for _, o := range overrides {
@@ -162,7 +162,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 		byContent[c.BookID] = append(byContent[c.BookID], c)
 	}
 	for _, version := range versions {
-		col := byCol[version.CollectionID]
+		col := byCol[version.EditionID]
 		prof := profiles[col.ID]
 		if version.ProfileID > 0 {
 			prof = byProfile[version.ProfileID]
@@ -229,7 +229,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 			case !version.Monitored:
 				sl.Reason = "Collecting is paused for this version"
 			case !sl.Monitored:
-				sl.Reason = "This book is excluded from collection rules"
+				sl.Reason = "This book is excluded by the version's collecting rules"
 			}
 			if !sl.Monitored {
 				sl.Wanted = false
@@ -314,7 +314,7 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 	if err != nil {
 		return err
 	}
-	run.collections = view.Collections
+	run.editions = view.Editions
 	run.versions = view.Versions
 	run.books = view.Books
 	run.versionProfiles = view.Profiles
@@ -326,13 +326,13 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 	}
 	run.sourceEditions = map[int64]int64{}
 	for _, b := range bindings {
-		if b.CollectionID > 0 {
-			run.sourceEditions[b.ID] = b.CollectionID
+		if b.EditionID > 0 {
+			run.sourceEditions[b.ID] = b.EditionID
 		}
 	}
 	found := run.scope == nil
 	for _, t := range view.Versions {
-		col := collectionByID(view.Collections, t.CollectionID)
+		col := editionByID(view.Editions, t.EditionID)
 		if col.Type != run.ledger {
 			continue
 		}
