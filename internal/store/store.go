@@ -135,7 +135,7 @@ type Collection struct {
 	CutoffNum        int64            `json:"cutoffNum" db:"cutoff_num"`           // chapter ctype: skip through this number (exclusive cutoff)
 }
 
-type Work struct {
+type Book struct {
 	ProviderID   string `json:"providerId,omitempty"`
 	NumberKnown  bool   `json:"numberKnown"`
 	Revision     string `json:"revision,omitempty"`
@@ -167,9 +167,9 @@ type File struct {
 	AddedAt       string     `json:"addedAt"`
 }
 
-type SlotLink struct {
+type BookLink struct {
 	TargetID     int64
-	WorkID       int64
+	BookID       int64 `db:"work_id"`
 	FileID       int64
 	Ledger       string
 	CollectionID int64
@@ -416,7 +416,7 @@ func (s *Store) AddCustomCollection(ctx context.Context, c Collection, basedOn i
 			return 0, ErrNotFound
 		}
 		if sourceType != ctype {
-			return 0, apperr.Invalidf("clone must have the same unit type")
+			return 0, apperr.Invalidf("clone must have the same book type")
 		}
 		if _, err := tx.ExecContext(ctx, s.q(`
 			INSERT INTO works (collection_id, sequence_num, sequence_string, count_type, number_known, revision)
@@ -439,7 +439,7 @@ func (s *Store) AddCustomCollection(ctx context.Context, c Collection, basedOn i
 }
 
 // MergeCollection folds a custom edition into another collection of the
-// same series with an unambiguous match for every unit. Acquisition versions
+// same series with an unambiguous match for every book. Acquisition versions
 // and their policies survive independently. Files stay in place.
 func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID int64) ([]int64, error) {
 	from, err := s.GetCollection(ctx, fromID)
@@ -478,25 +478,25 @@ func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID in
 	if err := s.EnsureModels(ctx, seriesID); err != nil {
 		return nil, err
 	}
-	fromWorks, err := s.ListWorks(ctx, fromID)
+	fromBooks, err := s.ListBooks(ctx, fromID)
 	if err != nil {
 		return nil, err
 	}
-	intoWorks, err := s.ListWorks(ctx, intoID)
+	intoBooks, err := s.ListBooks(ctx, intoID)
 	if err != nil {
 		return nil, err
 	}
 	mapping := map[int64]int64{}
 	used := map[int64]bool{}
-	for _, w := range fromWorks {
+	for _, w := range fromBooks {
 		matches := []int64{}
-		for _, v := range intoWorks {
+		for _, v := range intoBooks {
 			if w.SequenceStr == v.SequenceStr && w.NumberKnown == v.NumberKnown && w.CountType == v.CountType && w.Revision == v.Revision && (w.ISBN == "" || v.ISBN == "" || w.ISBN == v.ISBN) {
 				matches = append(matches, v.ID)
 			}
 		}
 		if len(matches) != 1 || used[matches[0]] {
-			return nil, apperr.Conflictf("every unit needs an unambiguous match before merging editions")
+			return nil, apperr.Conflictf("every book needs an unambiguous match before merging editions")
 		}
 		mapping[w.ID] = matches[0]
 		used[matches[0]] = true
@@ -548,7 +548,7 @@ func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID in
 	return []int64{}, tx.Commit()
 }
 
-// DeleteCustomCollection removes a custom collection and its slot links
+// DeleteCustomCollection removes a custom collection and its book links
 // (files themselves stay in the library).
 func (s *Store) DeleteCustomCollection(ctx context.Context, seriesID, collectionID int64) error {
 	col, err := s.GetCollection(ctx, collectionID)
@@ -596,8 +596,8 @@ func (s *Store) DeleteCustomCollection(ctx context.Context, seriesID, collection
 	return tx.Commit()
 }
 
-func (s *Store) ListWorks(ctx context.Context, collectionID int64) ([]Work, error) {
-	return list[Work](ctx, s, `SELECT `+workColumns+` FROM works WHERE collection_id=? ORDER BY sequence_num, id`, collectionID)
+func (s *Store) ListBooks(ctx context.Context, collectionID int64) ([]Book, error) {
+	return list[Book](ctx, s, `SELECT `+workColumns+` FROM works WHERE collection_id=? ORDER BY sequence_num, id`, collectionID)
 }
 
 // SetCollectionCutoff changes the default target’s exclusive chapter cutoff.
@@ -617,11 +617,11 @@ func (s *Store) SetCollectionCutoff(ctx context.Context, seriesID, collectionID,
 
 // --- files & links ---
 
-// AddFile records a library file and its slot links. Re-adding a known
+// AddFile records a library file and its book links. Re-adding a known
 // path updates the row in place (paths are unique) and adds any new links,
 // so an import retried after a partial failure converges instead of
 // tripping over what the first attempt already recorded.
-func (s *Store) AddFile(ctx context.Context, f File, parse any, links []SlotLink) (int64, error) {
+func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink) (int64, error) {
 	if err := s.EnsureModels(ctx, f.SeriesID); err != nil {
 		return 0, err
 	}
@@ -701,16 +701,16 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []SlotLink
 	}
 	for _, l := range links {
 		var valid int
-		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), l.WorkID, l.TargetID, l.CollectionID, f.SeriesID).Scan(&valid); err != nil {
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), l.BookID, l.TargetID, l.CollectionID, f.SeriesID).Scan(&valid); err != nil {
 			return 0, err
 		}
 		if valid != 1 {
 			return 0, apperr.Invalidf("file mapping does not belong to this edition/version")
 		}
-		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,evidence) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`), fileID, l.TargetID, l.WorkID, orDefault(f.Provenance, "observed")); err != nil {
+		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,evidence) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`), fileID, l.TargetID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
 			return 0, err
 		}
-		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,evidence) VALUES(?,?,?) ON CONFLICT DO NOTHING`), fileID, l.WorkID, orDefault(f.Provenance, "observed")); err != nil {
+		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,evidence) VALUES(?,?,?) ON CONFLICT DO NOTHING`), fileID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
 			return 0, err
 		}
 
@@ -766,7 +766,7 @@ func (s *Store) LowestOwnedChapters(ctx context.Context, seriesID int64) (map[in
 	return out, nil
 }
 
-// BookKey identifies one book of one collected version: the unit of
+// BookKey identifies one book of one collected version: the book of
 // wanting, reserving and owning.
 func BookKey(targetID, workID int64) string {
 	return fmt.Sprintf("%d/%d", targetID, workID)

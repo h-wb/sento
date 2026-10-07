@@ -213,25 +213,6 @@ test('series interactions work with keyboard and fit a mobile viewport', async (
   await page.route('**/api/v1/series/901/', (route) =>
     route.fulfill({ json: { series, collections: [collection] } }),
   )
-  await page.route('**/api/v1/series/901/slots', (route) =>
-    route.fulfill({
-      json: {
-        volumes: {
-          '901': [
-            {
-              number: 100,
-              countType: 'main',
-              released: true,
-              wanted: true,
-              monitored: true,
-              fileIds: [],
-            },
-          ],
-        },
-        chapters: {},
-      },
-    }),
-  )
   await page.route('**/api/v1/series/901/files', (route) => route.fulfill({ json: [] }))
   await page.goto('/series/901')
   await expect(page.getByRole('button', { name: 'Search & download', exact: true })).toBeVisible()

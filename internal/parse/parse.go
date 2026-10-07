@@ -255,9 +255,9 @@ func resolveBare(res *Result, ch Channel) {
 		}
 	}
 	// Whatever stays in res.Bare is deliberately unresolved: nothing
-	// downstream reads it for slot coverage (only the implicit-pack count
+	// downstream reads it for book coverage (only the implicit-pack count
 	// and scoreConfidence look at it). An ambiguous number conservatively
-	// matches no slot rather than guessing an axis.
+	// matches no book rather than guessing an axis.
 	res.Bare = remaining
 }
 

@@ -11,7 +11,7 @@ func (l *Library) Calendar(ctx context.Context, from, to string) ([]store.Calend
 	if err != nil {
 		return nil, err
 	}
-	bySeries := map[int64]map[string]UnitSlot{}
+	bySeries := map[int64]map[string]BookStatus{}
 	out := []store.CalendarEntry{}
 	for _, e := range entries {
 		slots, ok := bySeries[e.SeriesID]
@@ -20,15 +20,15 @@ func (l *Library) Calendar(ctx context.Context, from, to string) ([]store.Calend
 			if err != nil {
 				return nil, err
 			}
-			slots = map[string]UnitSlot{}
-			for tid, books := range view.Slots {
+			slots = map[string]BookStatus{}
+			for tid, books := range view.Status {
 				for _, book := range books {
-					slots[store.BookKey(tid, book.Work.ID)] = book
+					slots[store.BookKey(tid, book.Book.ID)] = book
 				}
 			}
 			bySeries[e.SeriesID] = slots
 		}
-		book, ok := slots[store.BookKey(e.TargetID, e.WorkID)]
+		book, ok := slots[store.BookKey(e.TargetID, e.BookID)]
 		if !ok || !book.Monitored {
 			continue
 		}

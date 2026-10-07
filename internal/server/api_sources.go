@@ -280,7 +280,7 @@ func (s *Server) handleSeriesIndexerOverride(w http.ResponseWriter, r *http.Requ
 // --- unified search ---
 
 // handleSearch is the single search endpoint for both ledgers:
-// {ledger, dryRun, slot?, grab?, force?, stream?}. stream implies dryRun
+// {ledger, dryRun, book?, grab?, force?, stream?}. stream implies dryRun
 // and switches the response to NDJSON SearchEvents, one per provider, so
 // fast sites render before slow ones finish.
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -298,11 +298,11 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if body.Stream {
-		s.streamSearch(w, r, id, body.Ledger, body.Slot)
+		s.streamSearch(w, r, id, body.Ledger, body.Scope)
 		return
 	}
 
-	result, err := s.search.FindCandidates(r.Context(), id, body.Ledger, body.Slot)
+	result, err := s.search.FindCandidates(r.Context(), id, body.Ledger, body.Scope)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -341,7 +341,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 // streamSearch writes NDJSON SearchEvents, flushing after each so the UI
 // can render provider batches as they arrive.
-func (s *Server) streamSearch(w http.ResponseWriter, r *http.Request, id int64, searchLedger string, slot *service.TargetSlot) {
+func (s *Server) streamSearch(w http.ResponseWriter, r *http.Request, id int64, searchLedger string, slot *service.SearchScope) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-cache")
 	flusher, _ := w.(http.Flusher)

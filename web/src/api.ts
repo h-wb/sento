@@ -2,19 +2,20 @@ import type { ReviewItem } from './types/store'
 import type { EditionOverview, FileChange, HealthReport, OrganizeResult } from './types/service'
 import type {
   DownloadTarget,
-  Work,
+  Book,
   CollectionMetadataPatch,
   CatalogLinkPreview,
   AssetCoverage,
-  ExpectedSlot,
-  UnitObservation,
+  BookRef,
+  BookObservation,
 } from './types/store'
-import type { UnitSlot } from './types/service'
+import type { BookStatus } from './types/service'
 // Typed client for the Sento API. All payload types are generated from the
 // Go structs (mise run gen) into ./types/ — the backend is the schema.
 
 import type { SeriesRef } from './types/metadata'
 import type {
+  SearchBody,
   BrowseProwlarrBody,
   CollectionPatch,
   CreateCollectionBody,
@@ -41,7 +42,7 @@ import type {
   ScanResult,
   SearchEvent,
   SeriesIndexerView,
-  TargetSlot,
+  SearchScope,
 } from './types/service'
 import type {
   Binding,
@@ -88,7 +89,7 @@ export type {
   SeriesIndexerView,
   Source,
   SourceManga,
-  TargetSlot,
+  SearchScope,
   TaskStatus,
   Condition,
   Format,
@@ -128,10 +129,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ collectionId }),
     }),
-  unitMonitor: (id: number, targetId: number, workId: number, monitored: boolean) =>
-    request<void>(`/series/${id}/unit-monitor`, {
+  bookMonitor: (id: number, targetId: number, bookId: number, monitored: boolean) =>
+    request<void>(`/series/${id}/book-monitor`, {
       method: 'PUT',
-      body: JSON.stringify({ targetId, workId, monitored }),
+      body: JSON.stringify({ targetId, bookId, monitored }),
     }),
   targets: (id: number) => request<DownloadTarget[]>(`/series/${id}/targets`),
   correctFileFacts: (id: number, fid: number, patch: { language?: string; group?: string }) =>
@@ -150,7 +151,7 @@ export const api = {
   // Older servers answered this route with a paged object. Say so instead
   // of letting the page fail on a shape it cannot read.
   targetBooks: async (id: number, target: number) => {
-    const books = await request<UnitSlot[]>(`/series/${id}/targets/${target}/books`)
+    const books = await request<BookStatus[]>(`/series/${id}/targets/${target}/books`)
     if (!Array.isArray(books)) {
       throw new Error(
         'The Sento server is older than this page and returned books in an outdated format. Restart or update the server, then reload.',
@@ -158,10 +159,10 @@ export const api = {
     }
     return books.map((b) => ({ ...b, fileIds: b.fileIds ?? [], onDiskFileIds: b.onDiskFileIds ?? [] }))
   },
-  bulkMonitor: (id: number, target: number, workIds: number[], monitored: boolean) =>
+  bulkMonitor: (id: number, target: number, bookIds: number[], monitored: boolean) =>
     request<void>(`/series/${id}/targets/${target}/monitor`, {
       method: 'POST',
-      body: JSON.stringify({ workIds, monitored }),
+      body: JSON.stringify({ bookIds, monitored }),
     }),
   trustBinding: (id: number, bid: number, trustChapters: boolean) =>
     request<void>(`/series/${id}/bindings/${bid}`, {
@@ -172,7 +173,7 @@ export const api = {
   retryQueue: (id: number, remoteId = '') =>
     request<void>(`/queue/${id}/retry`, { method: 'POST', body: JSON.stringify({ remoteId }) }),
   cancelQueue: (id: number) => request<void>(`/queue/${id}/cancel`, { method: 'POST' }),
-  targetSlots: (id: number) => request<Record<string, UnitSlot[]>>(`/series/${id}/target-slots`),
+  versionBooks: (id: number) => request<Record<string, BookStatus[]>>(`/series/${id}/books`),
   saveTarget: (id: number, target: DownloadTarget) =>
     request<DownloadTarget>(`/series/${id}/targets${target.id ? `/${target.id}` : ''}`, {
       method: target.id ? 'PUT' : 'POST',
@@ -180,20 +181,20 @@ export const api = {
     }),
   deleteTarget: (id: number, tid: number) =>
     request<void>(`/series/${id}/targets/${tid}`, { method: 'DELETE' }),
-  saveUnit: (id: number, unit: Work) =>
-    request<Work>(`/series/${id}/units${unit.id ? `/${unit.id}` : ''}`, {
-      method: unit.id ? 'PUT' : 'POST',
-      body: JSON.stringify(unit),
+  saveBook: (id: number, book: Book) =>
+    request<Book>(`/series/${id}/books${book.id ? `/${book.id}` : ''}`, {
+      method: book.id ? 'PUT' : 'POST',
+      body: JSON.stringify(book),
     }),
   splitBox: (id: number, uid: number, count: number) =>
-    request<Work[]>(`/series/${id}/units/${uid}/split`, {
+    request<Book[]>(`/series/${id}/books/${uid}/split`, {
       method: 'POST',
       body: JSON.stringify({ count }),
     }),
-  resetUnit: (id: number, uid: number) =>
-    request<void>(`/series/${id}/units/${uid}/catalog-reset`, { method: 'POST' }),
-  deleteUnit: (id: number, uid: number) =>
-    request<void>(`/series/${id}/units/${uid}`, { method: 'DELETE' }),
+  resetBook: (id: number, uid: number) =>
+    request<void>(`/series/${id}/books/${uid}/catalog-reset`, { method: 'POST' }),
+  deleteBook: (id: number, uid: number) =>
+    request<void>(`/series/${id}/books/${uid}`, { method: 'DELETE' }),
   editEdition: (id: number, cid: number, patch: CollectionMetadataPatch) =>
     request<void>(`/series/${id}/collections/${cid}/metadata`, {
       method: 'PUT',
@@ -220,12 +221,12 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(coverage),
     }),
-  mapFile: (id: number, fid: number, slots: ExpectedSlot[]) =>
+  mapFile: (id: number, fid: number, books: BookRef[]) =>
     request<void>(`/series/${id}/files/${fid}/mapping`, {
       method: 'PUT',
-      body: JSON.stringify({ slots }),
+      body: JSON.stringify({ books }),
     }),
-  observations: (id: number) => request<UnitObservation[]>(`/series/${id}/observations`),
+  observations: (id: number) => request<BookObservation[]>(`/series/${id}/observations`),
   reviewObservation: (id: number, oid: number, accept: boolean) =>
     request<void>(`/series/${id}/observations/${oid}`, {
       method: 'PUT',
@@ -414,15 +415,7 @@ export const api = {
 
   search: (
     id: number,
-    opts: {
-      ledger: Ledger
-      dryRun?: boolean
-      grab?: string
-      grabProvider?: string
-      grabTargetId?: number
-      force?: boolean
-      slot?: TargetSlot
-    },
+    opts: Partial<SearchBody> & { ledger: Ledger },
   ) =>
     request<SearchResponse>(`/series/${id}/search`, {
       method: 'POST',
@@ -431,7 +424,7 @@ export const api = {
   // Streaming dry-run search: provider batches arrive as they complete.
   searchStream: async (
     id: number,
-    opts: { ledger: Ledger; slot?: TargetSlot },
+    opts: { ledger: Ledger; scope?: SearchScope },
     onEvent: (ev: SearchEvent) => void,
     signal?: AbortSignal,
   ) => {

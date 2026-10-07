@@ -19,11 +19,11 @@ import { api } from '../api'
 import type {
   Collection,
   DownloadTarget,
-  Work,
+  Book,
   CatalogLinkPreview,
   File as SeriesFile,
 } from '../types/store'
-import type { UnitSlot } from '../types/service'
+import type { BookStatus } from '../types/service'
 import { useConfirmAction } from './ConfirmAction'
 
 const editionLabel = (c: Collection) =>
@@ -150,15 +150,15 @@ export function TargetEditor({
     </EditorModal>
   )
 }
-export function UnitEditor({
+export function BookEditor({
   value,
   save,
   remove,
   reset,
   close,
 }: {
-  value: Work
-  save: (v: Work) => Promise<void>
+  value: Book
+  save: (v: Book) => Promise<void>
   remove: () => Promise<void>
   reset: () => Promise<void>
   close: () => void
@@ -467,11 +467,11 @@ export function CatalogLink({
               books remain unmatched.
             </Text>
             <Stack gap={4}>
-              {preview.localUnits.map((w) => (
+              {preview.localBooks.map((w) => (
                 <Text key={w.id} size="xs">
                   {w.sequenceStr} · {w.countType} →{' '}
                   {preview.mapping[w.id]
-                    ? `${preview.catalogUnits.find((v) => v.id === preview.mapping[w.id])?.sequenceStr} · ${preview.catalogUnits.find((v) => v.id === preview.mapping[w.id])?.countType}`
+                    ? `${preview.catalogBooks.find((v) => v.id === preview.mapping[w.id])?.sequenceStr} · ${preview.catalogBooks.find((v) => v.id === preview.mapping[w.id])?.countType}`
                     : 'No catalog match; kept locally'}
                 </Text>
               ))}
@@ -508,7 +508,7 @@ export function MappingEditor({
   value,
   targets,
   existing,
-  units,
+  books,
   collections,
   save,
   close,
@@ -517,16 +517,16 @@ export function MappingEditor({
   value: SeriesFile
   targets: DownloadTarget[]
   existing: import('../types/store').AssetCoverage[]
-  units: UnitSlot[]
+  books: BookStatus[]
   collections: Collection[]
-  save: (slots: import('../types/store').ExpectedSlot[]) => Promise<void>
+  save: (books: import('../types/store').BookRef[]) => Promise<void>
   close: () => void
 }) {
   const initial = existing.map((a) => ({
     targetId: a.targetId,
-    workId: a.workId,
+    bookId: a.bookId,
     collectionId: targets.find((t) => t.id === a.targetId)?.collectionId ?? 0,
-    number: units.find((s) => s.work.id === a.workId)?.work.sequenceNum ?? 0,
+    number: books.find((s) => s.book.id === a.bookId)?.book.sequenceNum ?? 0,
     ledger:
       collections.find((c) => c.id === targets.find((t) => t.id === a.targetId)?.collectionId)
         ?.type ?? 'volume',
@@ -539,7 +539,7 @@ export function MappingEditor({
   const [language, setLanguage] = useState(value.facts?.language ?? '')
   const [group, setGroup] = useState(value.facts?.group ?? '')
   const t = targets.find((t) => String(t.id) === target)
-  const chosen = draft.filter((s) => s.targetId === t?.id).map((s) => String(s.workId))
+  const chosen = draft.filter((s) => s.targetId === t?.id).map((s) => String(s.bookId))
   return (
     <EditorModal
       dirty={
@@ -601,9 +601,9 @@ export function MappingEditor({
           label="Books in this file"
           searchable
           disabled={!t}
-          data={units
+          data={books
             .filter((s) => s.targetId === t?.id)
-            .map((s) => ({ value: String(s.work.id), label: s.work.sequenceStr }))}
+            .map((s) => ({ value: String(s.book.id), label: s.book.sequenceStr }))}
           value={chosen}
           onChange={(ids) => {
             if (!t) return
@@ -611,9 +611,9 @@ export function MappingEditor({
               ...draft.filter((s) => s.targetId !== t.id),
               ...ids.map((id) => ({
                 targetId: t.id,
-                workId: Number(id),
+                bookId: Number(id),
                 collectionId: t.collectionId,
-                number: units.find((s) => s.work.id === Number(id))?.work.sequenceNum ?? 0,
+                number: books.find((s) => s.book.id === Number(id))?.book.sequenceNum ?? 0,
                 ledger: collections.find((c) => c.id === t.collectionId)?.type ?? 'volume',
               })),
             ])
@@ -621,9 +621,9 @@ export function MappingEditor({
         />
         <Stack gap={2}>
           {draft.map((s) => (
-            <Text size="xs" key={`${s.targetId}-${s.workId}`}>
+            <Text size="xs" key={`${s.targetId}-${s.bookId}`}>
               {targets.find((t) => t.id === s.targetId)?.name} ·{' '}
-              {units.find((u) => u.work.id === s.workId)?.work.sequenceStr}
+              {books.find((u) => u.book.id === s.bookId)?.book.sequenceStr}
             </Text>
           ))}
         </Stack>

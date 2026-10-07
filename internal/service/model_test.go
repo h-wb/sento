@@ -15,7 +15,7 @@ import (
 	"github.com/h-wb/sento/internal/store"
 )
 
-func modelFixture(t *testing.T) (*Library, *store.Store, int64, store.Collection, []store.Work, store.DownloadTarget) {
+func modelFixture(t *testing.T) (*Library, *store.Store, int64, store.Collection, []store.Book, store.DownloadTarget) {
 	t.Helper()
 	lib, st := setup(t)
 	ctx := context.Background()
@@ -28,7 +28,7 @@ func modelFixture(t *testing.T) (*Library, *store.Store, int64, store.Collection
 		t.Fatal(err)
 	}
 	c := collectionByName(t, cs, "Standard Edition", "en")
-	ws, err := st.ListWorks(ctx, c.ID)
+	ws, err := st.ListBooks(ctx, c.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,20 +44,20 @@ func modelFixture(t *testing.T) (*Library, *store.Store, int64, store.Collection
 	t.Fatal("missing default target")
 	return nil, nil, 0, store.Collection{}, nil, store.DownloadTarget{}
 }
-func ownedModelFile(t *testing.T, st *store.Store, id int64, c store.Collection, w store.Work, target store.DownloadTarget) int64 {
+func ownedModelFile(t *testing.T, st *store.Store, id int64, c store.Collection, w store.Book, target store.DownloadTarget) int64 {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "ONE PIECE v01.cbz")
 	if err := os.WriteFile(path, []byte("test archive"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(context.Background(), store.File{SeriesID: id, Path: path, Size: 12}, nil, []store.SlotLink{{Ledger: c.Type, CollectionID: c.ID, Number: w.SequenceNum, TargetID: target.ID, WorkID: w.ID}})
+	fid, err := st.AddFile(context.Background(), store.File{SeriesID: id, Path: path, Size: 12}, nil, []store.BookLink{{Ledger: c.Type, CollectionID: c.ID, Number: w.SequenceNum, TargetID: target.ID, BookID: w.ID}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return fid
 }
-func modelSlot(c store.Collection, w store.Work, target store.DownloadTarget) store.ExpectedSlot {
-	return store.ExpectedSlot{Ledger: c.Type, CollectionID: c.ID, Number: w.SequenceNum, TargetID: target.ID, WorkID: w.ID}
+func modelRef(c store.Collection, w store.Book, target store.DownloadTarget) store.BookRef {
+	return store.BookRef{Ledger: c.Type, CollectionID: c.ID, Number: w.SequenceNum, TargetID: target.ID, BookID: w.ID}
 }
 
 func TestModelRefreshKeepsIdentityAndCoverage(t *testing.T) {
@@ -72,7 +72,7 @@ func TestModelRefreshKeepsIdentityAndCoverage(t *testing.T) {
 	if err := st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
 		t.Fatal(err)
 	}
-	w, err := st.GetWork(ctx, ws[0].ID)
+	w, err := st.GetBook(ctx, ws[0].ID)
 	if err != nil || w.SequenceNum != 150 {
 		t.Fatalf("provider numbering correction lost identity: %+v %v", w, err)
 	}
@@ -81,14 +81,14 @@ func TestModelRefreshKeepsIdentityAndCoverage(t *testing.T) {
 		t.Fatalf("rename lost edition ID: %+v %v", current, err)
 	}
 	cv, err := st.Coverage(ctx, id)
-	if err != nil || len(cv) != 1 || cv[0].WorkID != ws[0].ID || cv[0].FileID != fid {
+	if err != nil || len(cv) != 1 || cv[0].BookID != ws[0].ID || cv[0].FileID != fid {
 		t.Fatalf("coverage changed: %+v %v", cv, err)
 	}
-	units, err := st.ListWorks(ctx, c.ID)
+	units, err := st.ListBooks(ctx, c.ID)
 	if err != nil || len(units) != 4 {
 		t.Fatalf("distinct provider works collapsed: %+v %v", units, err)
 	}
-	slots, err := lib.TargetSlots(ctx, id)
+	slots, err := lib.VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestModelRefreshKeepsIdentityAndCoverage(t *testing.T) {
 	for _, s := range slots[target.ID] {
 		if s.State == "owned" {
 			owned++
-			if s.Work.ID != ws[0].ID {
+			if s.Book.ID != ws[0].ID {
 				t.Fatal("ownership leaked to same-number revision")
 			}
 		}
@@ -125,7 +125,7 @@ func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
 	if err = st.EditCollection(ctx, id, local, store.CollectionMetadataPatch{EditionName: &label}); err != nil {
 		t.Fatal(err)
 	}
-	before, _ := st.ListWorks(ctx, local)
+	before, _ := st.ListBooks(ctx, local)
 	preview, err := st.PreviewCatalogLink(ctx, id, local, c.ID)
 	if err != nil || len(preview.Mapping) != 3 {
 		t.Fatalf("bad link preview: %+v %v", preview, err)
@@ -137,7 +137,7 @@ func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 	lc, _ = st.GetCollection(ctx, local)
-	after, _ := st.ListWorks(ctx, local)
+	after, _ := st.ListBooks(ctx, local)
 	if lc.EditionName != label || lc.ProviderID != c.ProviderID || after[0].ID != before[0].ID {
 		t.Fatalf("link changed local identity: %+v %+v", lc, after)
 	}
@@ -160,11 +160,11 @@ func TestModelTargetsReserveOnceAndFreezeCombinedPlan(t *testing.T) {
 	}
 	other.ID = oid
 	q := store.QueueItem{SeriesID: id, Protocol: "torrent", ProviderID: "torrent", ReleaseKey: "same-offer", Title: "ONE PIECE v01", Snapshot: store.JSONText(`{"title":"original"}`)}
-	first, created, err := st.ReserveQueue(ctx, q, []store.ExpectedSlot{modelSlot(c, ws[0], target)})
+	first, created, err := st.ReserveQueue(ctx, q, []store.BookRef{modelRef(c, ws[0], target)})
 	if err != nil || !created {
 		t.Fatalf("first reservation: %v %v", created, err)
 	}
-	second, created, err := st.ReserveQueue(ctx, q, []store.ExpectedSlot{modelSlot(c, ws[0], other)})
+	second, created, err := st.ReserveQueue(ctx, q, []store.BookRef{modelRef(c, ws[0], other)})
 	if err != nil || created || second != first {
 		t.Fatalf("same offer did not share job: %d %v %v", second, created, err)
 	}
@@ -172,25 +172,25 @@ func TestModelTargetsReserveOnceAndFreezeCombinedPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var plan []store.ExpectedSlot
-	if json.Unmarshal(frozen.ExpectedSlots, &plan) != nil || len(plan) != 2 {
-		t.Fatalf("combined plan lost: %s", frozen.ExpectedSlots)
+	var plan []store.BookRef
+	if json.Unmarshal(frozen.Books, &plan) != nil || len(plan) != 2 {
+		t.Fatalf("combined plan lost: %s", frozen.Books)
 	}
-	if _, _, err = st.ReserveQueue(ctx, q, []store.ExpectedSlot{modelSlot(c, ws[1], target)}); err == nil {
+	if _, _, err = st.ReserveQueue(ctx, q, []store.BookRef{modelRef(c, ws[1], target)}); err == nil {
 		t.Fatal("importing plan must not change")
 	}
 	otherOffer := q
 	otherOffer.ReleaseKey = "another-offer"
-	if _, _, err = st.ReserveQueue(ctx, otherOffer, []store.ExpectedSlot{modelSlot(c, ws[0], target)}); err == nil {
+	if _, _, err = st.ReserveQueue(ctx, otherOffer, []store.BookRef{modelRef(c, ws[0], target)}); err == nil {
 		t.Fatal("double reservation allowed")
 	}
-	if _, err = st.SaveWork(ctx, id, ws[0]); err == nil {
+	if _, err = st.SaveBook(ctx, id, ws[0]); err == nil {
 		t.Fatal("changed unit while download pending")
 	}
 	if err = st.UpdateQueueItem(ctx, first, store.QueueFailed, "test failure"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = st.ReserveQueue(ctx, otherOffer, []store.ExpectedSlot{modelSlot(c, ws[0], target)}); err != nil {
+	if _, _, err = st.ReserveQueue(ctx, otherOffer, []store.BookRef{modelRef(c, ws[0], target)}); err != nil {
 		t.Fatal("failed job did not release claims:", err)
 	}
 }
@@ -198,35 +198,35 @@ func TestModelTargetsReserveOnceAndFreezeCombinedPlan(t *testing.T) {
 func TestModelFractionalZeroExtrasAndUnknownDates(t *testing.T) {
 	_, st, id, c, _, target := modelFixture(t)
 	ctx := context.Background()
-	for _, w := range []store.Work{{SequenceStr: "0", SequenceNum: 0, NumberKnown: true, CountType: "main"}, {SequenceStr: "1.5", SequenceNum: 150, NumberKnown: true, CountType: "main"}, {SequenceStr: "Special", SequenceNum: 100, NumberKnown: true, CountType: "extra"}, {SequenceStr: "Artbook", NumberKnown: false, CountType: "other"}} {
+	for _, w := range []store.Book{{SequenceStr: "0", SequenceNum: 0, NumberKnown: true, CountType: "main"}, {SequenceStr: "1.5", SequenceNum: 150, NumberKnown: true, CountType: "main"}, {SequenceStr: "Special", SequenceNum: 100, NumberKnown: true, CountType: "extra"}, {SequenceStr: "Artbook", NumberKnown: false, CountType: "other"}} {
 		w.CollectionID = c.ID
-		if _, err := st.SaveWork(ctx, id, w); err != nil {
+		if _, err := st.SaveBook(ctx, id, w); err != nil {
 			t.Fatal(err)
 		}
 	}
-	ws, _ := st.ListWorks(ctx, c.ID)
-	extra := store.Work{}
+	ws, _ := st.ListBooks(ctx, c.ID)
+	extra := store.Book{}
 	for _, w := range ws {
 		if w.SequenceStr == "Special" {
 			extra = w
 		}
 	}
-	if err := st.SetUnitMonitored(ctx, id, target.ID, extra.ID, true); err != nil {
+	if err := st.SetBookMonitored(ctx, id, target.ID, extra.ID, true); err != nil {
 		t.Fatal(err)
 	}
 	target.AcquireUnknown = false
 	if _, err := st.SaveTarget(ctx, id, target); err != nil {
 		t.Fatal(err)
 	}
-	slots, err := NewLibrary(st, nil).TargetSlots(ctx, id)
+	slots, err := NewLibrary(st, nil).VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := map[string]UnitSlot{}
+	seen := map[string]BookStatus{}
 	for _, s := range slots[target.ID] {
-		seen[s.Work.SequenceStr] = s
+		seen[s.Book.SequenceStr] = s
 	}
-	if !seen["0"].Monitored || seen["0"].Wanted || seen["0"].State != "unknown" || !seen["1.5"].Work.NumberKnown || !seen["Special"].Monitored || seen["Artbook"].Work.NumberKnown {
+	if !seen["0"].Monitored || seen["0"].Wanted || seen["0"].State != "unknown" || !seen["1.5"].Book.NumberKnown || !seen["Special"].Monitored || seen["Artbook"].Book.NumberKnown {
 		t.Fatalf("unit semantics: %+v", seen)
 	}
 }
@@ -243,10 +243,10 @@ func TestModelCoverageReviewPinAndVersionDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	other.ID = tid
-	if err = st.MapFile(ctx, id, fid, []store.ExpectedSlot{modelSlot(c, ws[0], target), modelSlot(c, ws[1], other)}); err != nil {
+	if err = st.MapFile(ctx, id, fid, []store.BookRef{modelRef(c, ws[0], target), modelRef(c, ws[1], other)}); err != nil {
 		t.Fatal(err)
 	}
-	if err = st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, TargetID: target.ID, WorkID: ws[0].ID, Pinned: true}); err != nil {
+	if err = st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, TargetID: target.ID, BookID: ws[0].ID, Pinned: true}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = st.DeleteFile(ctx, fid); err == nil {
@@ -274,14 +274,14 @@ func TestModelObservationReviewIsBoundedAndIdempotent(t *testing.T) {
 	ctx := context.Background()
 	cs, _ := st.ListCollections(ctx, id)
 	chapter := chapterCollection(t, cs)
-	before, _ := st.ListWorks(ctx, chapter.ID)
-	o := store.UnitObservation{CollectionID: chapter.ID, Source: "site", ExternalKey: "huge-number", Label: "99999.5", Number: 9999950}
+	before, _ := st.ListBooks(ctx, chapter.ID)
+	o := store.BookObservation{CollectionID: chapter.ID, Source: "site", ExternalKey: "huge-number", Label: "99999.5", Number: 9999950}
 	for i := 0; i < 2; i++ {
-		if err := st.ObserveUnit(ctx, id, o); err != nil {
+		if err := st.ObserveBook(ctx, id, o); err != nil {
 			t.Fatal(err)
 		}
 	}
-	same, _ := st.ListWorks(ctx, chapter.ID)
+	same, _ := st.ListBooks(ctx, chapter.ID)
 	if len(same) != len(before) {
 		t.Fatal("observation expanded library before review")
 	}
@@ -295,7 +295,7 @@ func TestModelObservationReviewIsBoundedAndIdempotent(t *testing.T) {
 	if err := st.ResolveObservation(ctx, id, obs[0].ID, true); err == nil {
 		t.Fatal("accepted observation twice")
 	}
-	after, _ := st.ListWorks(ctx, chapter.ID)
+	after, _ := st.ListBooks(ctx, chapter.ID)
 	if len(after) != len(before)+1 {
 		t.Fatal("acceptance expanded gaps instead of adding one unit")
 	}
@@ -313,7 +313,7 @@ func TestModelQualifyingAssetReusedAcrossVersions(t *testing.T) {
 	}
 	other.ID = tid
 	ownedModelFile(t, st, id, c, ws[0], target)
-	slots, err := NewLibrary(st, nil).TargetSlots(ctx, id)
+	slots, err := NewLibrary(st, nil).VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +390,7 @@ func TestModelUpgradeReevaluatesFactsAndRespectsPins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.targetWanted[target.ID][ws[0].ID] {
+	if run.wantedBooks[target.ID][ws[0].ID] {
 		t.Fatal("stale stored score used instead of current profile")
 	}
 	p.FormatScores[formatID] = 50
@@ -402,17 +402,17 @@ func TestModelUpgradeReevaluatesFactsAndRespectsPins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !run.targetWanted[target.ID][ws[0].ID] {
+	if !run.wantedBooks[target.ID][ws[0].ID] {
 		t.Fatal("eligible upgrade not searched")
 	}
-	if err = st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, TargetID: target.ID, WorkID: ws[0].ID, Pinned: true}); err != nil {
+	if err = st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, TargetID: target.ID, BookID: ws[0].ID, Pinned: true}); err != nil {
 		t.Fatal(err)
 	}
 	run, err = svc.prepare(ctx, id, LedgerVolume, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.targetWanted[target.ID][ws[0].ID] {
+	if run.wantedBooks[target.ID][ws[0].ID] {
 		t.Fatal("pinned copy selected for upgrade")
 	}
 }
@@ -428,13 +428,13 @@ func TestModelPackStaysOneAssetAcrossUnitsAndVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	other.ID = tid
-	slots := []store.ExpectedSlot{modelSlot(c, ws[0], target), modelSlot(c, ws[1], target), modelSlot(c, ws[0], other)}
+	slots := []store.BookRef{modelRef(c, ws[0], target), modelRef(c, ws[1], target), modelRef(c, ws[0], other)}
 	raw, _ := json.Marshal(slots)
 	dir := t.TempDir()
 	name := "ONE PIECE v01-v02 (Digital).cbz"
 	writeCBZ(t, filepath.Join(dir, name), "one unsplit pack")
 	im := NewImporter(st, nil, t.TempDir(), nil)
-	if err = im.importFiles(ctx, store.QueueItem{SeriesID: id, Protocol: "torrent", ExpectedSlots: raw}, dir, []string{name}); err != nil {
+	if err = im.importFiles(ctx, store.QueueItem{SeriesID: id, Protocol: "torrent", Books: raw}, dir, []string{name}); err != nil {
 		t.Fatal(err)
 	}
 	fs, err := st.ListFiles(ctx, id)
@@ -466,7 +466,7 @@ func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	local, _ := st.GetCollection(ctx, duplicate)
-	ws, _ := st.ListWorks(ctx, duplicate)
+	ws, _ := st.ListBooks(ctx, duplicate)
 	ts, _ := st.ListTargets(ctx, id)
 	var target store.DownloadTarget
 	for _, v := range ts {
@@ -479,7 +479,7 @@ func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	fid := ownedModelFile(t, st, id, *local, ws[0], target)
-	if err = st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, TargetID: target.ID, WorkID: ws[0].ID, Pinned: true}); err != nil {
+	if err = st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, TargetID: target.ID, BookID: ws[0].ID, Pinned: true}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = st.MergeCollection(ctx, id, duplicate, c.ID); err != nil {
@@ -499,7 +499,7 @@ func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
 	if err != nil || len(cv) != 2 || !pinned {
 		t.Fatalf("merge lost coverage or pin: %+v %v", cv, err)
 	}
-	w, _ := st.GetWork(ctx, cv[0].WorkID)
+	w, _ := st.GetBook(ctx, cv[0].BookID)
 	if w.CollectionID != c.ID {
 		t.Fatal("ownership points to removed edition")
 	}
@@ -536,7 +536,7 @@ func TestModelEditingOneUnitFieldDoesNotFreezeCatalogDates(t *testing.T) {
 	ctx := context.Background()
 	w := ws[1]
 	w.SequenceStr = "Local label"
-	if _, err := st.SaveWork(ctx, id, w); err != nil {
+	if _, err := st.SaveBook(ctx, id, w); err != nil {
 		t.Fatal(err)
 	}
 	p := testProvider()
@@ -544,7 +544,7 @@ func TestModelEditingOneUnitFieldDoesNotFreezeCatalogDates(t *testing.T) {
 	if err := st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
 		t.Fatal(err)
 	}
-	current, _ := st.GetWork(ctx, w.ID)
+	current, _ := st.GetBook(ctx, w.ID)
 	if current.SequenceStr != "Local label" || current.ReleaseDate != "2020-02-01" {
 		t.Fatalf("local edit froze unrelated provider fields: %+v", current)
 	}
@@ -557,7 +557,7 @@ func TestModelNewChapterEditionDoesNotBorrowSeriesNumbering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	works, err := st.ListWorks(ctx, local.ID)
+	works, err := st.ListBooks(ctx, local.ID)
 	if err != nil || len(works) != 0 {
 		t.Fatalf("new edition fabricated global chapter units: %d %v", len(works), err)
 	}
@@ -568,7 +568,7 @@ func TestModelNewChapterEditionDoesNotBorrowSeriesNumbering(t *testing.T) {
 	if err = st.EnsureModels(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	works, _ = st.ListWorks(ctx, local.ID)
+	works, _ = st.ListBooks(ctx, local.ID)
 	if len(works) != 1184 {
 		t.Fatal("explicit count numbering not applied")
 	}
@@ -578,10 +578,10 @@ func TestModelFileReviewPreservesPinsInOtherVersions(t *testing.T) {
 	_, st, id, c, ws, target := modelFixture(t)
 	ctx := context.Background()
 	fid := ownedModelFile(t, st, id, c, ws[0], target)
-	if err := st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, TargetID: target.ID, WorkID: ws[0].ID, Pinned: true}); err != nil {
+	if err := st.PinCoverage(ctx, id, store.AssetCoverage{FileID: fid, TargetID: target.ID, BookID: ws[0].ID, Pinned: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.MapFile(ctx, id, fid, []store.ExpectedSlot{modelSlot(c, ws[0], target), modelSlot(c, ws[1], target)}); err != nil {
+	if err := st.MapFile(ctx, id, fid, []store.BookRef{modelRef(c, ws[0], target), modelRef(c, ws[1], target)}); err != nil {
 		t.Fatal(err)
 	}
 	cv, _ := st.Coverage(ctx, id)
@@ -589,7 +589,7 @@ func TestModelFileReviewPreservesPinsInOtherVersions(t *testing.T) {
 		t.Fatal(cv)
 	}
 	for _, a := range cv {
-		if a.WorkID == ws[0].ID && !a.Pinned {
+		if a.BookID == ws[0].ID && !a.Pinned {
 			t.Fatal("review silently removed a retained pin")
 		}
 	}
@@ -670,7 +670,7 @@ func TestCalendarSeparatesVersionsAndDuplicateNumbers(t *testing.T) {
 	}
 	foundOwned, foundMissing := false, false
 	for _, e := range entries {
-		if e.WorkID != ws[0].ID {
+		if e.BookID != ws[0].ID {
 			continue
 		}
 		if e.TargetID == target.ID {
@@ -685,13 +685,13 @@ func TestCalendarSeparatesVersionsAndDuplicateNumbers(t *testing.T) {
 	}
 }
 
-func fixtureLinks(t *testing.T, st *store.Store, sid, cid int64, numbers ...int64) []store.SlotLink {
+func fixtureLinks(t *testing.T, st *store.Store, sid, cid int64, numbers ...int64) []store.BookLink {
 	t.Helper()
 	targets, err := st.ListTargets(context.Background(), sid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	works, err := st.ListWorks(context.Background(), cid)
+	works, err := st.ListBooks(context.Background(), cid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -701,11 +701,11 @@ func fixtureLinks(t *testing.T, st *store.Store, sid, cid int64, numbers ...int6
 			tid = target.ID
 		}
 	}
-	var links []store.SlotLink
+	var links []store.BookLink
 	for _, n := range numbers {
 		for _, w := range works {
 			if w.SequenceNum == n {
-				links = append(links, store.SlotLink{Ledger: "volume", CollectionID: cid, Number: n, WorkID: w.ID, TargetID: tid})
+				links = append(links, store.BookLink{Ledger: "volume", CollectionID: cid, Number: n, BookID: w.ID, TargetID: tid})
 			}
 		}
 	}
@@ -714,14 +714,14 @@ func fixtureLinks(t *testing.T, st *store.Store, sid, cid int64, numbers ...int6
 
 // booksOf returns the books of an edition's default collected version, in
 // the ledger's order.
-func booksOf(t *testing.T, lib *Library, st *store.Store, sid, cid int64) []UnitSlot {
+func booksOf(t *testing.T, lib *Library, st *store.Store, sid, cid int64) []BookStatus {
 	t.Helper()
 	ctx := context.Background()
 	targets, err := st.ListTargets(ctx, sid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	all, err := lib.TargetSlots(ctx, sid)
+	all, err := lib.VersionBooks(ctx, sid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -732,4 +732,27 @@ func booksOf(t *testing.T, lib *Library, st *store.Store, sid, cid int64) []Unit
 	}
 	t.Fatalf("edition %d has no default version", cid)
 	return nil
+}
+
+// Queue items, decisions and snapshots stored before the rename wrote
+// "workId": they must still say which book they are about.
+func TestBookRefReadsItsOldFieldName(t *testing.T) {
+	var old, current store.BookRef
+	if err := json.Unmarshal([]byte(`{"targetId":4,"workId":7,"ledger":"volume","collectionId":1,"number":100}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(`{"targetId":4,"bookId":7,"ledger":"volume","collectionId":1,"number":100}`), &current); err != nil {
+		t.Fatal(err)
+	}
+	if old != current || old.BookID != 7 || old.TargetID != 4 || old.Number != 100 {
+		t.Fatalf("old %+v, current %+v", old, current)
+	}
+	raw, _ := json.Marshal(current)
+	if !strings.Contains(string(raw), `"bookId":7`) || strings.Contains(string(raw), "workId") {
+		t.Fatalf("written form: %s", raw)
+	}
+	var list []store.BookRef
+	if err := json.Unmarshal([]byte(`[{"workId":1},{"bookId":2}]`), &list); err != nil || len(list) != 2 || list[0].BookID != 1 || list[1].BookID != 2 {
+		t.Fatalf("list: %+v %v", list, err)
+	}
 }

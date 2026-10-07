@@ -29,7 +29,7 @@ type IndexerView struct {
 }
 
 // SeriesIndexerView adds per-series override state and the binding set (a
-// source entry can bind several manga entries; the funnel picks per slot).
+// source entry can bind several manga entries; the funnel picks per book).
 type SeriesIndexerView struct {
 	IndexerView `tstype:",extends"`
 	Override    *store.SiteOverride `json:"override,omitempty"`

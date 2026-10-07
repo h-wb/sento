@@ -55,7 +55,7 @@ func (s *Store) CheckFilePresence(ctx context.Context, seriesID int64) error {
 
 type AssetContent struct {
 	FileID   int64  `json:"fileId"`
-	WorkID   int64  `json:"workId"`
+	BookID   int64  `json:"bookId" db:"work_id"`
 	Verified bool   `json:"verified"`
 	Evidence string `json:"evidence"`
 }
@@ -63,16 +63,16 @@ type AssetContent struct {
 func (s *Store) Contents(ctx context.Context, seriesID int64) ([]AssetContent, error) {
 	return list[AssetContent](ctx, s, `SELECT c.file_id,c.work_id,c.verified,c.evidence FROM asset_contents c JOIN files f ON f.id=c.file_id WHERE f.series_id=?`, seriesID)
 }
-func (s *Store) SeriesWorks(ctx context.Context, seriesID int64) ([]Work, error) {
-	return list[Work](ctx, s, `SELECT `+workColumns+` FROM works WHERE collection_id IN(SELECT id FROM collections WHERE series_id=?) ORDER BY sequence_num,count_type,id`, seriesID)
+func (s *Store) SeriesBooks(ctx context.Context, seriesID int64) ([]Book, error) {
+	return list[Book](ctx, s, `SELECT `+workColumns+` FROM works WHERE collection_id IN(SELECT id FROM collections WHERE series_id=?) ORDER BY sequence_num,count_type,id`, seriesID)
 }
 
-type UnitOverride struct {
+type BookOverride struct {
 	TargetID  int64
-	WorkID    int64
+	BookID    int64 `db:"work_id"`
 	Monitored bool
 }
 
-func (s *Store) SeriesUnitOverrides(ctx context.Context, seriesID int64) ([]UnitOverride, error) {
-	return list[UnitOverride](ctx, s, `SELECT target_id,work_id,monitored FROM unit_overrides WHERE target_id IN(SELECT t.id FROM download_targets t JOIN collections c ON c.id=t.collection_id WHERE c.series_id=?)`, seriesID)
+func (s *Store) SeriesBookOverrides(ctx context.Context, seriesID int64) ([]BookOverride, error) {
+	return list[BookOverride](ctx, s, `SELECT target_id,work_id,monitored FROM unit_overrides WHERE target_id IN(SELECT t.id FROM download_targets t JOIN collections c ON c.id=t.collection_id WHERE c.series_id=?)`, seriesID)
 }

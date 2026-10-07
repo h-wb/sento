@@ -8,7 +8,7 @@
  * CalendarEntry is one dated volume release of a monitored collection.
  */
 export interface CalendarEntry {
-  workId: number /* int64 */;
+  bookId: number /* int64 */;
   targetId: number /* int64 */;
   versionName: string;
   seriesId: number /* int64 */;
@@ -24,7 +24,7 @@ export interface CalendarEntry {
 //////////
 // source: catalog.go
 
-export interface UnitObservation {
+export interface BookObservation {
   id: number /* int64 */;
   collectionId: number /* int64 */;
   source: string;
@@ -54,8 +54,8 @@ export interface CatalogLinkPreview {
   catalogTargets: DownloadTarget[];
   fileCount: number /* int */;
   pending: boolean;
-  localUnits: Work[];
-  catalogUnits: Work[];
+  localBooks: Book[];
+  catalogBooks: Book[];
   local?: Collection;
   catalog?: Collection;
   mapping: { [key: number /* int64 */]: number /* int64 */};
@@ -89,7 +89,10 @@ export interface DecisionBody {
   provider?: string;
   site?: string;
   key?: string; // external id (infohash / chapter id)
-  slots?: ExpectedSlot[];
+  /**
+   * "books" is the name in decisions already stored.
+   */
+  slots?: BookRef[];
   error?: string;
   force?: boolean;
 }
@@ -139,13 +142,13 @@ export interface Indexer {
 
 export interface AssetContent {
   fileId: number /* int64 */;
-  workId: number /* int64 */;
+  bookId: number /* int64 */;
   verified: boolean;
   evidence: string;
 }
-export interface UnitOverride {
+export interface BookOverride {
   TargetID: number /* int64 */;
-  WorkID: number /* int64 */;
+  BookID: number /* int64 */;
   Monitored: boolean;
 }
 
@@ -173,7 +176,7 @@ export interface QueueItem {
   externalId: string;
   title: string;
   status: string;
-  expectedSlots: ExpectedSlot[];
+  books: BookRef[];
   error?: string;
   createdAt: string;
   updatedAt?: string;
@@ -194,11 +197,11 @@ export const QueueRetryWait = "retry_wait";
 export const QueueDispatchUnknown = "dispatch_unknown";
 export const QueueCancelled = "cancelled";
 /**
- * ExpectedSlot records explicit version and unit coverage for a pending grab.
+ * BookRef records explicit version and book coverage for a pending grab.
  */
-export interface ExpectedSlot {
+export interface BookRef {
   targetId?: number /* int64 */;
-  workId?: number /* int64 */;
+  bookId?: number /* int64 */;
   ledger: string;
   collectionId: number /* int64 */;
   number: number /* int64 */;
@@ -294,7 +297,7 @@ export interface Collection {
   profileId?: number /* int64 */; // 0 = inherit from series
   cutoffNum: number /* int64 */; // chapter ctype: skip through this number (exclusive cutoff)
 }
-export interface Work {
+export interface Book {
   providerId?: string;
   numberKnown: boolean;
   revision?: string;
@@ -324,9 +327,9 @@ export interface File {
   unrequested: boolean;
   addedAt: string;
 }
-export interface SlotLink {
+export interface BookLink {
   TargetID: number /* int64 */;
-  WorkID: number /* int64 */;
+  BookID: number /* int64 */;
   FileID: number /* int64 */;
   Ledger: string;
   CollectionID: number /* int64 */;
@@ -397,7 +400,7 @@ export interface AssetCoverage {
   evidence: string;
   fileId: number /* int64 */;
   targetId: number /* int64 */;
-  workId: number /* int64 */;
+  bookId: number /* int64 */;
   verified: boolean;
   pinned: boolean;
 }

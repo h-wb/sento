@@ -150,8 +150,8 @@ type CatalogLinkPreview struct {
 	CatalogTargets []DownloadTarget `json:"catalogTargets"`
 	FileCount      int              `json:"fileCount"`
 	Pending        bool             `json:"pending"`
-	LocalUnits     []Work           `json:"localUnits"`
-	CatalogUnits   []Work           `json:"catalogUnits"`
+	LocalBooks     []Book           `json:"localBooks"`
+	CatalogBooks   []Book           `json:"catalogBooks"`
 	Local          *Collection      `json:"local"`
 	Catalog        *Collection      `json:"catalog"`
 	Mapping        map[int64]int64  `json:"mapping"`
@@ -159,11 +159,11 @@ type CatalogLinkPreview struct {
 }
 
 func (s *Store) PreviewCatalogLink(ctx context.Context, seriesID, localID, catalogID int64) (*CatalogLinkPreview, error) {
-	return s.previewUnitLink(ctx, seriesID, localID, catalogID, true)
+	return s.previewBookLink(ctx, seriesID, localID, catalogID, true)
 }
 
 func (s *Store) PreviewMerge(ctx context.Context, seriesID, fromID, intoID int64) (*CatalogLinkPreview, error) {
-	p, err := s.previewUnitLink(ctx, seriesID, fromID, intoID, false)
+	p, err := s.previewBookLink(ctx, seriesID, fromID, intoID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ func (s *Store) PreviewMerge(ctx context.Context, seriesID, fromID, intoID int64
 	return p, nil
 }
 
-func (s *Store) previewUnitLink(ctx context.Context, seriesID, localID, catalogID int64, catalogOnly bool) (*CatalogLinkPreview, error) {
+func (s *Store) previewBookLink(ctx context.Context, seriesID, localID, catalogID int64, catalogOnly bool) (*CatalogLinkPreview, error) {
 	local, err := s.GetCollection(ctx, localID)
 	if err != nil {
 		return nil, err
@@ -191,15 +191,15 @@ func (s *Store) previewUnitLink(ctx context.Context, seriesID, localID, catalogI
 	if local.Type != catalog.Type || local.Language != catalog.Language || !slices.Equal(local.EditionTraits, catalog.EditionTraits) || local.ContentVariant != catalog.ContentVariant {
 		return nil, apperr.Invalidf("catalog link must match publication type, language, layout and content version")
 	}
-	lw, err := s.ListWorks(ctx, localID)
+	lw, err := s.ListBooks(ctx, localID)
 	if err != nil {
 		return nil, err
 	}
-	cw, err := s.ListWorks(ctx, catalogID)
+	cw, err := s.ListBooks(ctx, catalogID)
 	if err != nil {
 		return nil, err
 	}
-	out := &CatalogLinkPreview{Local: local, Catalog: catalog, LocalUnits: lw, CatalogUnits: cw, Mapping: map[int64]int64{}, Unmatched: []int64{}}
+	out := &CatalogLinkPreview{Local: local, Catalog: catalog, LocalBooks: lw, CatalogBooks: cw, Mapping: map[int64]int64{}, Unmatched: []int64{}}
 	for _, a := range lw {
 		var match int64
 		for _, b := range cw {

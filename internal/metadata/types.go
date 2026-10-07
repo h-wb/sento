@@ -69,7 +69,7 @@ func (c Collection) Descriptor() [5]string {
 	return [5]string{c.EditionName, c.Language, c.Publisher, c.Medium, c.Type}
 }
 
-// Work is one released unit (volume) inside a collection.
+// Work is one released book (volume) inside a collection.
 type Work struct {
 	ProviderID  string
 	NumberKnown bool

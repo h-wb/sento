@@ -10,7 +10,7 @@ import (
 // ParseAnchored parses a name in the context of known candidate titles
 // (series title + aliases). The best (longest) title occurrence is located
 // and removed before number extraction, so numbers inside titles
-// ("Mob Psycho 100") never leak into slots (parser.md §5.9).
+// ("Mob Psycho 100") never leak into books (parser.md §5.9).
 //
 // Titles must be plain strings; they are normalized internally.
 func ParseAnchored(name string, ch Channel, titles []string) Result {

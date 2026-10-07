@@ -104,7 +104,7 @@ func TestRegexConditionsAreCachedSafely(t *testing.T) {
 			t.Fatal("invalid pattern matched")
 		}
 	}
-	// Case-insensitive, and distinct patterns do not share a cache slot.
+	// Case-insensitive, and distinct patterns do not share a cache book.
 	if !(Format{Conditions: []Condition{{Type: CondTitle, Value: `DIGITAL`}}}).Matches(in) {
 		t.Fatal("patterns must match case-insensitively")
 	}

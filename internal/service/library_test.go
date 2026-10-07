@@ -175,7 +175,7 @@ func TestAddSeriesAndSlots(t *testing.T) {
 		t.Fatalf("cutoff: want %d, got %d", 1184*100, chapters.CutoffNum)
 	}
 
-	// Volume slots: vol 1+2 wanted (released, no files); vol 3 future → not wanted.
+	// Volume books: vol 1+2 wanted (released, no files); vol 3 future → not wanted.
 	var standard store.Collection
 	for _, c := range cols {
 		if c.EditionName == "Standard Edition" {
@@ -274,7 +274,7 @@ func TestRefreshReconciliation(t *testing.T) {
 	if !standard.Monitored {
 		t.Error("monitored flag must survive refresh")
 	}
-	works, err := st.ListWorks(ctx, standard.ID)
+	works, err := st.ListBooks(ctx, standard.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -18,11 +18,11 @@ import { notify } from '../ui'
 import CandidateList from './CandidateList'
 import { useConfirmAction } from './ConfirmAction'
 
-export type SlotSelection = {
-  // The collected version being searched; workId narrows it to one book,
+export type BookSelection = {
+  // The collected version being searched; bookId narrows it to one book,
   // all widens it to every wanted book.
   targetId: number
-  workId?: number
+  bookId?: number
   all?: boolean
   label?: string
   ledger: 'volume' | 'chapter'
@@ -60,7 +60,7 @@ function tidyProblem(message: string): string {
     .join(': ')
 }
 
-export default function SlotModal({
+export default function BookDialog({
   seriesID,
   sel,
   files,
@@ -68,16 +68,16 @@ export default function SlotModal({
   onChanged,
 }: {
   seriesID: number
-  sel: SlotSelection | null
+  sel: BookSelection | null
   files: SeriesFile[]
   onClose: () => void
   onChanged: () => void
 }) {
   if (!sel) return null
-  // Keyed by slot so every open starts fresh (tab choice, search state).
+  // Keyed by book so every open starts fresh (tab choice, search state).
   return (
     <Inner
-      key={`${sel.targetId}-${sel.workId ?? 'all'}`}
+      key={`${sel.targetId}-${sel.bookId ?? 'all'}`}
       seriesID={seriesID}
       sel={sel}
       files={files}
@@ -95,14 +95,14 @@ function Inner({
   onChanged,
 }: {
   seriesID: number
-  sel: SlotSelection
+  sel: BookSelection
   files: SeriesFile[]
   onClose: () => void
   onChanged: () => void
 }) {
   // Without a book, the search covers the whole collected version: the
   // place to grab packs and complete releases.
-  const editionWide = sel.all ?? !sel.workId
+  const editionWide = sel.all ?? !sel.bookId
   const linked = files.filter((f) => sel.fileIds.includes(f.id))
 
   const { confirm, confirmation } = useConfirmAction()
@@ -122,9 +122,9 @@ function Inner({
 
   // Streaming search: each provider's batch renders as soon as it lands,
   // so fast extension sources show up while torrent indexers still load.
-  const slotRef = (everyBook: boolean) => ({
+  const searchScope = (everyBook: boolean) => ({
     targetId: sel.targetId,
-    workId: sel.workId,
+    bookId: sel.bookId,
     all: sel.all,
     allBooks: editionWide && everyBook ? true : undefined,
   })
@@ -145,7 +145,7 @@ function Inner({
     try {
       await api.searchStream(
         seriesID,
-        { ledger: sel.ledger, slot: slotRef(everyBook) },
+        { ledger: sel.ledger, scope: searchScope(everyBook) },
         (ev) => {
           setResult((prev) => {
             if (!prev) return prev
@@ -230,7 +230,7 @@ function Inner({
         grabProvider: c.provider,
         grabTargetId: c.targetId,
         force,
-        slot: slotRef(allBooks),
+        scope: searchScope(allBooks),
       })
       onChanged()
       notify.ok('Release queued for download')

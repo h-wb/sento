@@ -2,7 +2,7 @@
 
 // Contract tests against the live MangaBaka API. They exist to catch
 // upstream drift — a renamed field, a dropped endpoint, a changed
-// envelope — which unit tests against fixtures cannot see. Network-bound
+// envelope — which book tests against fixtures cannot see. Network-bound
 // and therefore never part of `go test ./...`:
 //
 //	mise run test:contract

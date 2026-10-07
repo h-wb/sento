@@ -21,12 +21,12 @@ import { api } from '../api'
 import type {
   Collection,
   DownloadTarget,
-  Work,
+  Book,
   File as SeriesFile,
   AssetCoverage,
 } from '../types/store'
-import type { UnitSlot } from '../types/service'
-import type { SlotSelection } from './SlotModal'
+import type { BookStatus } from '../types/service'
+import type { BookSelection } from './BookDialog'
 import { QueryFeedback } from './QueryFeedback'
 import classes from './EditionBooks.module.css'
 
@@ -51,7 +51,7 @@ const PAGE_SIZE = 100
 type Tone = 'disk' | 'wanted' | 'pending' | 'review' | 'upcoming' | 'paused'
 
 // tone is the one colour a book gets in the grid and the status badge.
-function tone(s: UnitSlot): Tone {
+function tone(s: BookStatus): Tone {
   switch (s.state) {
     case 'pending':
       return 'pending'
@@ -85,7 +85,7 @@ type Filter = {
   label: string
   tone?: Tone
   always?: boolean
-  match: (s: UnitSlot) => boolean
+  match: (s: BookStatus) => boolean
 }
 
 const filters: Filter[] = [
@@ -109,14 +109,14 @@ const filters: Filter[] = [
   { value: 'review', label: 'Needs attention', tone: 'review', match: (s) => tone(s) === 'review' },
 ]
 
-function bookSelection(c: Collection, t: DownloadTarget, s: UnitSlot): SlotSelection {
+function bookSelection(c: Collection, t: DownloadTarget, s: BookStatus): BookSelection {
   return {
     ledger: c.type === 'chapter' ? 'chapter' : 'volume',
     collectionId: c.id,
     targetId: t.id,
-    workId: s.work.id,
-    number: s.work.sequenceNum,
-    label: s.work.sequenceStr,
+    bookId: s.book.id,
+    number: s.book.sequenceNum,
+    label: s.book.sequenceStr,
     collectionName: `${c.editionName} · ${t.name}`,
     fileIds: s.fileIds,
     monitored: s.monitored,
@@ -130,7 +130,7 @@ export default function EditionBooks({
   target: t,
   files,
   coverage,
-  onSlot,
+  onBook,
   onEdit,
   onFile,
   run,
@@ -141,8 +141,8 @@ export default function EditionBooks({
   target: DownloadTarget
   files: SeriesFile[]
   coverage: AssetCoverage[]
-  onSlot: (s: SlotSelection) => void
-  onEdit: (w: Work) => void
+  onBook: (s: BookSelection) => void
+  onEdit: (w: Book) => void
   onFile: (f: SeriesFile) => void
   run: (fn: () => Promise<unknown>) => Promise<void>
   busy: boolean
@@ -161,7 +161,7 @@ export default function EditionBooks({
     to: '',
   })
   const [rangeOpen, setRangeOpen] = useState(false)
-  const [split, setSplit] = useState<{ work: Work; count: string | number } | null>(null)
+  const [split, setSplit] = useState<{ book: Book; count: string | number } | null>(null)
   const container = useRef<HTMLDivElement>(null)
 
   const q = useQuery({
@@ -177,53 +177,53 @@ export default function EditionBooks({
   const shown =
     view === 'list' ? books.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE) : books
   // A selection only ever acts on books that still exist.
-  const picked = all.filter((s) => selected.has(s.work.id))
+  const picked = all.filter((s) => selected.has(s.book.id))
 
   const clearSelection = () => {
     setSelected(new Set())
     setAnchor(null)
   }
-  const monitor = (slots: UnitSlot[], monitored: boolean) =>
+  const monitor = (list: BookStatus[], monitored: boolean) =>
     void run(() =>
       api.bulkMonitor(
         seriesID,
         t.id,
-        slots.map((s) => s.work.id),
+        list.map((s) => s.book.id),
         monitored,
       ),
     ).then(clearSelection)
 
   // Shift extends from the last picked book across the visible order;
   // Ctrl/Cmd (or Select mode) toggles one book.
-  const pick = (s: UnitSlot, shift: boolean) => {
+  const pick = (s: BookStatus, shift: boolean) => {
     const next = new Set(selected)
-    const from = books.findIndex((b) => b.work.id === anchor)
-    const to = books.findIndex((b) => b.work.id === s.work.id)
+    const from = books.findIndex((b) => b.book.id === anchor)
+    const to = books.findIndex((b) => b.book.id === s.book.id)
     if (shift && from >= 0 && to >= 0) {
-      for (const b of books.slice(Math.min(from, to), Math.max(from, to) + 1)) next.add(b.work.id)
-    } else if (next.has(s.work.id)) {
-      next.delete(s.work.id)
+      for (const b of books.slice(Math.min(from, to), Math.max(from, to) + 1)) next.add(b.book.id)
+    } else if (next.has(s.book.id)) {
+      next.delete(s.book.id)
     } else {
-      next.add(s.work.id)
+      next.add(s.book.id)
     }
     setSelected(next)
-    setAnchor(s.work.id)
+    setAnchor(s.book.id)
   }
-  const open = (e: MouseEvent, s: UnitSlot) => {
+  const open = (e: MouseEvent, s: BookStatus) => {
     if (selecting || e.shiftKey || e.metaKey || e.ctrlKey) {
       e.preventDefault()
       pick(s, e.shiftKey)
       return
     }
-    onSlot(bookSelection(c, t, s))
+    onBook(bookSelection(c, t, s))
   }
 
   const jump = () => {
     const wantedNumber = Number(goTo)
     if (goTo === '' || Number.isNaN(wantedNumber)) return
-    const at = (list: UnitSlot[]) =>
+    const at = (list: BookStatus[]) =>
       list.findIndex(
-        (s) => s.work.numberKnown && s.work.sequenceNum >= Math.round(wantedNumber * 100),
+        (s) => s.book.numberKnown && s.book.sequenceNum >= Math.round(wantedNumber * 100),
       )
     let list = books
     let index = at(list)
@@ -233,7 +233,7 @@ export default function EditionBooks({
       if (index >= 0) setFilter('all')
     }
     if (index < 0) return
-    const id = list[index].work.id
+    const id = list[index].book.id
     setPage(Math.floor(index / PAGE_SIZE) + 1)
     setFlash(id)
     window.setTimeout(() => setFlash((f) => (f === id ? null : f)), 2500)
@@ -257,17 +257,17 @@ export default function EditionBooks({
       new Set(
         all
           .filter(
-            (s) => s.work.numberKnown && s.work.sequenceNum >= low && s.work.sequenceNum <= high,
+            (s) => s.book.numberKnown && s.book.sequenceNum >= low && s.book.sequenceNum <= high,
           )
-          .map((s) => s.work.id),
+          .map((s) => s.book.id),
       ),
     )
     setAnchor(null)
     setRangeOpen(false)
   }
 
-  const title = (s: UnitSlot) =>
-    `${noun[0].toUpperCase()}${noun.slice(1)} ${s.work.sequenceStr} · ${labels[s.state] ?? s.state}${s.reason ? ` · ${s.reason}` : ''}`
+  const title = (s: BookStatus) =>
+    `${noun[0].toUpperCase()}${noun.slice(1)} ${s.book.sequenceStr} · ${labels[s.state] ?? s.state}${s.reason ? ` · ${s.reason}` : ''}`
 
   if (q.isPending || q.error) {
     return <QueryFeedback pending={q.isPending} error={q.error} onRetry={() => void q.refetch()} />
@@ -437,17 +437,17 @@ export default function EditionBooks({
         <div className={classes.grid}>
           {shown.map((s) => (
             <button
-              key={s.work.id}
+              key={s.book.id}
               type="button"
               className={classes.cell}
-              data-book={s.work.id}
+              data-book={s.book.id}
               data-tone={tone(s)}
-              data-selected={selected.has(s.work.id)}
-              data-flash={flash === s.work.id}
+              data-selected={selected.has(s.book.id)}
+              data-flash={flash === s.book.id}
               title={title(s)}
               onClick={(e) => open(e, s)}
             >
-              {s.work.sequenceStr}
+              {s.book.sequenceStr}
             </button>
           ))}
         </div>
@@ -460,36 +460,36 @@ export default function EditionBooks({
             const pins = s.fileIds
               .map((fid) =>
                 coverage.find(
-                  (a) => a.fileId === fid && a.targetId === t.id && a.workId === s.work.id,
+                  (a) => a.fileId === fid && a.targetId === t.id && a.bookId === s.book.id,
                 ),
               )
               .filter((a): a is AssetCoverage => !!a)
             return (
               <div
-                key={s.work.id}
+                key={s.book.id}
                 className={classes.row}
-                data-book={s.work.id}
-                data-selected={selected.has(s.work.id)}
-                data-flash={flash === s.work.id}
+                data-book={s.book.id}
+                data-selected={selected.has(s.book.id)}
+                data-flash={flash === s.book.id}
               >
                 <Checkbox
                   size="xs"
-                  aria-label={`Collect ${c.type} ${s.work.sequenceStr}`}
+                  aria-label={`Collect ${c.type} ${s.book.sequenceStr}`}
                   checked={s.monitored}
                   disabled={busy}
                   onChange={(e) =>
                     void run(() =>
-                      api.unitMonitor(seriesID, t.id, s.work.id, e.currentTarget.checked),
+                      api.bookMonitor(seriesID, t.id, s.book.id, e.currentTarget.checked),
                     )
                   }
                 />
                 <Button size="compact-sm" variant="subtle" miw={44} onClick={(e) => open(e, s)}>
-                  {s.work.sequenceStr}
+                  {s.book.sequenceStr}
                 </Button>
                 <Text size="xs" c="dimmed" className={classes.rowDetail}>
-                  {s.work.countType !== 'main' &&
-                    (s.work.countType === 'extra' ? 'Bonus / special · ' : 'Other · ')}
-                  {s.reason || s.work.releaseDate || 'Publication date unknown'}
+                  {s.book.countType !== 'main' &&
+                    (s.book.countType === 'extra' ? 'Bonus / special · ' : 'Other · ')}
+                  {s.reason || s.book.releaseDate || 'Publication date unknown'}
                 </Text>
                 <Badge size="xs" variant="light" color={badgeColor[tone(s)]}>
                   {labels[s.state] ?? s.state}
@@ -500,15 +500,15 @@ export default function EditionBooks({
                       size="sm"
                       variant="subtle"
                       color="gray"
-                      aria-label={`Actions for ${noun} ${s.work.sequenceStr}`}
+                      aria-label={`Actions for ${noun} ${s.book.sequenceStr}`}
                     >
                       <IconDots size={14} />
                     </ActionIcon>
                   </Menu.Target>
                   <Menu.Dropdown>
-                    <Menu.Item onClick={() => onEdit(s.work)}>Edit</Menu.Item>
+                    <Menu.Item onClick={() => onEdit(s.book)}>Edit</Menu.Item>
                     {c.type === 'volume' && (
-                      <Menu.Item onClick={() => setSplit({ work: s.work, count: 2 })}>
+                      <Menu.Item onClick={() => setSplit({ book: s.book, count: 2 })}>
                         This is a box of several volumes…
                       </Menu.Item>
                     )}
@@ -547,7 +547,7 @@ export default function EditionBooks({
         <Modal
           opened
           onClose={() => setSplit(null)}
-          title={`Split "${split.work.sequenceStr}" into volumes`}
+          title={`Split "${split.book.sequenceStr}" into volumes`}
         >
           <Stack gap="sm">
             <Text size="sm" c="dimmed">
@@ -569,7 +569,7 @@ export default function EditionBooks({
               <Button
                 disabled={busy || Number(split.count) < 2}
                 onClick={() =>
-                  void run(() => api.splitBox(seriesID, split.work.id, Number(split.count))).then(
+                  void run(() => api.splitBox(seriesID, split.book.id, Number(split.count))).then(
                     () => setSplit(null),
                   )
                 }

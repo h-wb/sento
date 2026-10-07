@@ -56,7 +56,7 @@ func (s *Store) upsertWork(ctx context.Context, tx *sql.Tx, cid int64, w metadat
 	return err
 }
 
-// EnsureModels creates default targets and explicitly inferred chapter units. It never adopts local metadata or touches bytes.
+// EnsureModels creates default targets and explicitly inferred chapter books. It never adopts local metadata or touches bytes.
 func (s *Store) EnsureModels(ctx context.Context, seriesID int64) error {
 	series, err := s.GetSeries(ctx, seriesID)
 	if err != nil {
@@ -100,13 +100,13 @@ func (s *Store) EnsureModels(ctx context.Context, seriesID int64) error {
 	return tx.Commit()
 }
 
-func (s *Store) GetWork(ctx context.Context, id int64) (*Work, error) {
-	return get[Work](ctx, s, `SELECT `+workColumns+` FROM works WHERE id=?`, id)
+func (s *Store) GetBook(ctx context.Context, id int64) (*Book, error) {
+	return get[Book](ctx, s, `SELECT `+workColumns+` FROM works WHERE id=?`, id)
 }
 
 const workColumns = `id,collection_id,COALESCE(mb_work_id,'') AS provider_id,sequence_num,COALESCE(sequence_string,'') AS sequence_string,count_type,COALESCE(release_date,'') AS release_date,COALESCE(isbn,'') AS isbn,COALESCE(pages,0) AS pages,number_known,revision,sync_state`
 
-func (s *Store) SaveWork(ctx context.Context, seriesID int64, w Work) (int64, error) {
+func (s *Store) SaveBook(ctx context.Context, seriesID int64, w Book) (int64, error) {
 	c, err := s.GetCollection(ctx, w.CollectionID)
 	if err != nil {
 		return 0, err
@@ -116,7 +116,7 @@ func (s *Store) SaveWork(ctx context.Context, seriesID int64, w Work) (int64, er
 	}
 	w.SequenceStr = strings.TrimSpace(w.SequenceStr)
 	if w.SequenceNum < 0 {
-		return 0, apperr.Invalidf("unit number cannot be negative")
+		return 0, apperr.Invalidf("book number cannot be negative")
 	}
 	if w.ReleaseDate != "" {
 		if _, err := time.Parse("2006-01-02", w.ReleaseDate); err != nil {
@@ -124,7 +124,7 @@ func (s *Store) SaveWork(ctx context.Context, seriesID int64, w Work) (int64, er
 		}
 	}
 	if w.SequenceStr == "" {
-		return 0, apperr.Invalidf("unit label is required")
+		return 0, apperr.Invalidf("book label is required")
 	}
 	if w.CountType != "main" && w.CountType != "extra" && w.CountType != "other" {
 		return 0, apperr.Invalidf("count type must be main, extra or other")
@@ -145,7 +145,7 @@ func (s *Store) SaveWork(ctx context.Context, seriesID int64, w Work) (int64, er
 		}
 		return id, tx.Commit()
 	}
-	var old Work
+	var old Book
 	if err = sqlscan.Get(ctx, tx, &old, s.q(`SELECT `+workColumns+` FROM works WHERE id=? AND collection_id=?`), w.ID, c.ID); err != nil {
 		return 0, err
 	}
@@ -171,8 +171,8 @@ func (s *Store) SaveWork(ctx context.Context, seriesID int64, w Work) (int64, er
 	}
 	return w.ID, tx.Commit()
 }
-func (s *Store) DeleteWork(ctx context.Context, seriesID, id int64) error {
-	w, err := s.GetWork(ctx, id)
+func (s *Store) DeleteBook(ctx context.Context, seriesID, id int64) error {
+	w, err := s.GetBook(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -219,7 +219,7 @@ func (s *Store) CollectionPending(ctx context.Context, cid int64) (bool, error) 
 		return false, err
 	}
 	for _, raw := range raws {
-		var slots []ExpectedSlot
+		var slots []BookRef
 		if err = json.Unmarshal([]byte(raw), &slots); err != nil {
 			return false, fmt.Errorf("invalid pending download mapping: %w", err)
 		}
@@ -232,7 +232,7 @@ func (s *Store) CollectionPending(ctx context.Context, cid int64) (bool, error) 
 	return false, nil
 }
 
-type UnitObservation struct {
+type BookObservation struct {
 	ID           int64  `json:"id"`
 	CollectionID int64  `json:"collectionId"`
 	Source       string `json:"source"`
@@ -242,7 +242,7 @@ type UnitObservation struct {
 	State        string `json:"state"`
 }
 
-func (s *Store) ObserveUnit(ctx context.Context, seriesID int64, o UnitObservation) error {
+func (s *Store) ObserveBook(ctx context.Context, seriesID int64, o BookObservation) error {
 	c, err := s.GetCollection(ctx, o.CollectionID)
 	if err != nil {
 		return err
@@ -259,11 +259,11 @@ func (s *Store) ObserveUnit(ctx context.Context, seriesID int64, o UnitObservati
 	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO unit_observations(collection_id,source,external_key,label,number) VALUES(?,?,?,?,?) ON CONFLICT(collection_id,source,external_key) DO NOTHING`), o.CollectionID, o.Source, o.ExternalKey, o.Label, o.Number)
 	return err
 }
-func (s *Store) ListObservations(ctx context.Context, seriesID int64) ([]UnitObservation, error) {
-	return list[UnitObservation](ctx, s, `SELECT id,collection_id,source,external_key,label,number,state FROM unit_observations WHERE collection_id IN(SELECT id FROM collections WHERE series_id=?) ORDER BY id DESC LIMIT 500`, seriesID)
+func (s *Store) ListObservations(ctx context.Context, seriesID int64) ([]BookObservation, error) {
+	return list[BookObservation](ctx, s, `SELECT id,collection_id,source,external_key,label,number,state FROM unit_observations WHERE collection_id IN(SELECT id FROM collections WHERE series_id=?) ORDER BY id DESC LIMIT 500`, seriesID)
 }
 func (s *Store) ResolveObservation(ctx context.Context, seriesID, id int64, accept bool) error {
-	o, err := get[UnitObservation](ctx, s, `SELECT id,collection_id,source,external_key,label,number,state FROM unit_observations WHERE id=?`, id)
+	o, err := get[BookObservation](ctx, s, `SELECT id,collection_id,source,external_key,label,number,state FROM unit_observations WHERE id=?`, id)
 	if err != nil {
 		return err
 	}
@@ -319,8 +319,8 @@ func (s *Store) SetBindingEdition(ctx context.Context, seriesID, bindingID, cid 
 	return s.touch(ctx, `UPDATE source_bindings SET trust_chapters=CASE WHEN collection_id=? THEN trust_chapters ELSE FALSE END,collection_id=? WHERE id=? AND series_id=?`, cid, cid, bindingID, seriesID)
 }
 
-func (s *Store) ResetWork(ctx context.Context, seriesID, id int64) error {
-	w, err := s.GetWork(ctx, id)
+func (s *Store) ResetBook(ctx context.Context, seriesID, id int64) error {
+	w, err := s.GetBook(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -332,7 +332,7 @@ func (s *Store) ResetWork(ctx context.Context, seriesID, id int64) error {
 		return ErrNotFound
 	}
 	if w.ProviderID == "" {
-		return apperr.Invalidf("unit has no catalog link")
+		return apperr.Invalidf("book has no catalog link")
 	}
 	pending, err := s.CollectionPending(ctx, c.ID)
 	if err != nil {
@@ -347,7 +347,7 @@ func (s *Store) ResetWork(ctx context.Context, seriesID, id int64) error {
 func (s *Store) SetBindingTrust(ctx context.Context, sid, bid int64, trust bool) error {
 	return s.touch(ctx, `UPDATE source_bindings SET trust_chapters=? WHERE id=? AND series_id=? AND state='active' AND collection_id IN(SELECT id FROM collections WHERE ctype='chapter')`, trust, bid, sid)
 }
-func (s *Store) AcceptTrustedObservation(ctx context.Context, sid int64, o UnitObservation) error {
+func (s *Store) AcceptTrustedObservation(ctx context.Context, sid int64, o BookObservation) error {
 	id, err := get[int64](ctx, s, `SELECT id FROM unit_observations WHERE collection_id=? AND source=? AND external_key=? AND state='pending'`, o.CollectionID, o.Source, o.ExternalKey)
 	if err == ErrNotFound {
 		return nil

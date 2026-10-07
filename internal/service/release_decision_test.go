@@ -16,7 +16,7 @@ func TestReleaseClassificationAndDecisionEvidence(t *testing.T) {
 	_, st, id, _, _, target := modelFixture(t)
 	ctx := context.Background()
 	svc := NewSearchService(st, provider.NewRegistry())
-	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}, priorities: map[[2]string]int{{"torrent", "site"}: 5}}
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &SearchScope{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}, priorities: map[[2]string]int{{"torrent", "site"}: 5}}
 	if err := svc.prepareTargets(ctx, run); err != nil {
 		t.Fatal(err)
 	}
@@ -86,20 +86,20 @@ func TestExtraReleaseDoesNotClaimRegularVolume(t *testing.T) {
 	if _, err := st.SaveTarget(ctx, id, target); err != nil {
 		t.Fatal(err)
 	}
-	extra, err := st.SaveWork(ctx, id, store.Work{CollectionID: c.ID, SequenceNum: 100, SequenceStr: "1 bonus", CountType: "extra", NumberKnown: true})
+	extra, err := st.SaveBook(ctx, id, store.Book{CollectionID: c.ID, SequenceNum: 100, SequenceStr: "1 bonus", CountType: "extra", NumberKnown: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	svc := NewSearchService(st, provider.NewRegistry())
-	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &SearchScope{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
 	if err = svc.prepareTargets(ctx, run); err != nil {
 		t.Fatal(err)
 	}
 	out, _ := svc.process(run, []provider.Candidate{{Provider: "torrent", Protocol: "torrent", Title: "ONE PIECE Special v01 [English Digital]", Torrent: &provider.TorrentRef{GUID: "bonus", Size: 100 << 20, Seeders: 30}}})
-	if len(out) != 1 || len(out[0].Coverage) != 1 || out[0].Coverage[0].WorkID != extra {
+	if len(out) != 1 || len(out[0].Coverage) != 1 || out[0].Coverage[0].BookID != extra {
 		t.Fatalf("bonus mapped incorrectly: %+v", out)
 	}
-	if out[0].Coverage[0].WorkID == works[0].ID {
+	if out[0].Coverage[0].BookID == works[0].ID {
 		t.Fatal("special claimed regular book")
 	}
 }
@@ -187,7 +187,7 @@ func TestAmbiguousEditionIsReviewable(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewSearchService(st, provider.NewRegistry())
-	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &SearchScope{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
 	if err = svc.prepareTargets(ctx, run); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestLanguageEvidenceForUntaggedReleases(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewSearchService(st, provider.NewRegistry())
-	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &SearchScope{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
 	if err := svc.prepareTargets(ctx, run); err != nil {
 		t.Fatal(err)
 	}
@@ -266,11 +266,11 @@ func TestEditionSearchScope(t *testing.T) {
 	svc := NewSearchService(st, provider.NewRegistry())
 	wanted := func(allBooks bool) int {
 		t.Helper()
-		run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{TargetID: target.ID, All: true, AllBooks: allBooks}, titles: []string{"ONE PIECE"}}
+		run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &SearchScope{TargetID: target.ID, All: true, AllBooks: allBooks}, titles: []string{"ONE PIECE"}}
 		if err := svc.prepareTargets(ctx, run); err != nil {
 			t.Fatal(err)
 		}
-		return len(run.targetWanted[target.ID])
+		return len(run.wantedBooks[target.ID])
 	}
 	if got := wanted(false); got != 0 {
 		t.Fatalf("a paused edition wants %d books", got)
@@ -361,13 +361,13 @@ func TestSplitBox(t *testing.T) {
 	ctx := context.Background()
 	cols, _ := st.ListCollections(ctx, id)
 	omni := collectionByName(t, cols, "Omnibus Edition", "en")
-	works, _ := st.ListWorks(ctx, omni.ID)
+	works, _ := st.ListBooks(ctx, omni.ID)
 	if len(works) != 1 {
 		t.Fatalf("fixture: %d works", len(works))
 	}
 	box := works[0]
 	box.ISBN, box.ReleaseDate = "9781421550640", "2012-11-06"
-	if _, err := st.SaveWork(ctx, id, box); err != nil {
+	if _, err := st.SaveBook(ctx, id, box); err != nil {
 		t.Fatal(err)
 	}
 	// Collect the edition so "wanted" means something.
@@ -397,16 +397,16 @@ func TestSplitBox(t *testing.T) {
 	if volumes, err = lib.SplitBox(ctx, id, box.ID, 3); err != nil || len(volumes) != 3 {
 		t.Fatalf("second split: %+v %v", volumes, err)
 	}
-	if all, _ := st.ListWorks(ctx, omni.ID); len(all) != 4 {
+	if all, _ := st.ListBooks(ctx, omni.ID); len(all) != 4 {
 		t.Fatalf("edition has %d books, want the box and 3 volumes", len(all))
 	}
-	slots, err := lib.TargetSlots(ctx, id)
+	slots, err := lib.VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	wanted := 0
 	for _, sl := range slots[target.ID] {
-		if sl.Work.ID == box.ID && (sl.Monitored || sl.Wanted) {
+		if sl.Book.ID == box.ID && (sl.Monitored || sl.Wanted) {
 			t.Error("the box itself is still collected")
 		}
 		if sl.Wanted {
@@ -416,7 +416,7 @@ func TestSplitBox(t *testing.T) {
 	if wanted != 3 {
 		t.Errorf("%d wanted books, want the 3 volumes", wanted)
 	}
-	if again, _ := st.GetWork(ctx, box.ID); again.CountType != "other" {
+	if again, _ := st.GetBook(ctx, box.ID); again.CountType != "other" {
 		t.Errorf("the box is still counted as a %q book", again.CountType)
 	}
 	if _, err := lib.SplitBox(ctx, id, box.ID, 1); err == nil {

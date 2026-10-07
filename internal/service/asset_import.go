@@ -27,7 +27,7 @@ func assetPath(dir, name, hash string) string {
 		base = string(r[:len(r)-1])
 	}
 	if base == "" {
-		base = "unit"
+		base = "book"
 	}
 	if hash != "" {
 		base += " [" + hash + "]"
@@ -49,13 +49,13 @@ func verifyDestination(path, hash string) error {
 	}
 	return nil
 }
-func (im *Importer) normalizeExpected(ctx context.Context, item store.QueueItem) ([]store.ExpectedSlot, error) {
-	var slots []store.ExpectedSlot
-	if err := json.Unmarshal(item.ExpectedSlots, &slots); err != nil {
+func (im *Importer) normalizeExpected(ctx context.Context, item store.QueueItem) ([]store.BookRef, error) {
+	var slots []store.BookRef
+	if err := json.Unmarshal(item.Books, &slots); err != nil {
 		return nil, err
 	}
 	if len(slots) == 0 {
-		return nil, fmt.Errorf("queue item has no expected units")
+		return nil, fmt.Errorf("queue item has no expected books")
 	}
 	for i := range slots {
 		sl := &slots[i]
@@ -66,7 +66,7 @@ func (im *Importer) normalizeExpected(ctx context.Context, item store.QueueItem)
 		if col.SeriesID != item.SeriesID || col.Type != sl.Ledger {
 			return nil, fmt.Errorf("invalid edition mapping")
 		}
-		w, err := im.store.GetWork(ctx, sl.WorkID)
+		w, err := im.store.GetBook(ctx, sl.BookID)
 		if err != nil {
 			return nil, err
 		}
@@ -75,19 +75,19 @@ func (im *Importer) normalizeExpected(ctx context.Context, item store.QueueItem)
 			return nil, err
 		}
 		if w.CollectionID != sl.CollectionID || t.CollectionID != sl.CollectionID {
-			return nil, fmt.Errorf("unit/version mapping does not belong to this edition")
+			return nil, fmt.Errorf("book/version mapping does not belong to this edition")
 		}
 	}
 	return slots, nil
 }
-func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path string, slots []store.ExpectedSlot, parsed any) error {
+func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path string, slots []store.BookRef, parsed any) error {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
-	links := make([]store.SlotLink, 0, len(slots))
+	links := make([]store.BookLink, 0, len(slots))
 	for _, sl := range slots {
-		links = append(links, store.SlotLink{Ledger: sl.Ledger, CollectionID: sl.CollectionID, Number: sl.Number, TargetID: sl.TargetID, WorkID: sl.WorkID})
+		links = append(links, store.BookLink{Ledger: sl.Ledger, CollectionID: sl.CollectionID, Number: sl.Number, TargetID: sl.TargetID, BookID: sl.BookID})
 	}
 	var snap ReleaseCandidate
 	_ = json.Unmarshal(item.Snapshot, &snap)

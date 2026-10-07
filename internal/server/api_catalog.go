@@ -57,56 +57,56 @@ func (s *Server) handleDeleteTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-func (s *Server) handleTargetSlots(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleVersionBooks(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	data, err := s.library.TargetSlots(r.Context(), id)
+	data, err := s.library.VersionBooks(r.Context(), id)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, data)
 }
-func (s *Server) handleSaveUnit(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSaveBook(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	var unit store.Work
+	var unit store.Book
 	if !decodeBody(w, r, &unit) {
 		return
 	}
 	if r.Method == http.MethodPut {
-		uid, ok := pathID(w, r, "uid")
+		bid, ok := pathID(w, r, "bid")
 		if !ok {
 			return
 		}
-		unit.ID = uid
+		unit.ID = bid
 	}
-	uid, err := s.store.SaveWork(r.Context(), id, unit)
+	bid, err := s.store.SaveBook(r.Context(), id, unit)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	data, err := s.store.GetWork(r.Context(), uid)
+	data, err := s.store.GetBook(r.Context(), bid)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, data)
 }
-func (s *Server) handleDeleteUnit(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDeleteBook(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	uid, ok := pathID(w, r, "uid")
+	bid, ok := pathID(w, r, "bid")
 	if !ok {
 		return
 	}
-	if err := s.store.DeleteWork(r.Context(), id, uid); err != nil {
+	if err := s.store.DeleteBook(r.Context(), id, bid); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -206,7 +206,7 @@ func (s *Server) handleRemapFile(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if err := s.store.MapFile(r.Context(), id, fid, body.Slots); err != nil {
+	if err := s.store.MapFile(r.Context(), id, fid, body.Books); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -214,7 +214,7 @@ func (s *Server) handleRemapFile(w http.ResponseWriter, r *http.Request) {
 }
 
 type FileMappingBody struct {
-	Slots []store.ExpectedSlot `json:"slots"`
+	Books []store.BookRef `json:"books"`
 }
 
 func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
@@ -227,11 +227,11 @@ func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 		respondList(w, data, err)
 		return
 	}
-	var o store.UnitObservation
+	var o store.BookObservation
 	if !decodeBody(w, r, &o) {
 		return
 	}
-	if err := s.store.ObserveUnit(r.Context(), id, o); err != nil {
+	if err := s.store.ObserveBook(r.Context(), id, o); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -262,38 +262,38 @@ func (s *Server) handleResolveObservation(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-type UnitMonitorBody struct {
+type BookMonitorBody struct {
 	TargetID  int64 `json:"targetId"`
-	WorkID    int64 `json:"workId"`
+	BookID    int64 `json:"bookId"`
 	Monitored bool  `json:"monitored"`
 }
 
-func (s *Server) handleUnitMonitor(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleBookMonitor(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	var b UnitMonitorBody
+	var b BookMonitorBody
 	if !decodeBody(w, r, &b) {
 		return
 	}
-	if err := s.store.SetUnitMonitored(r.Context(), id, b.TargetID, b.WorkID, b.Monitored); err != nil {
+	if err := s.store.SetBookMonitored(r.Context(), id, b.TargetID, b.BookID, b.Monitored); err != nil {
 		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleResetUnit(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleResetBook(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	uid, ok := pathID(w, r, "uid")
+	bid, ok := pathID(w, r, "bid")
 	if !ok {
 		return
 	}
-	if err := s.store.ResetWork(r.Context(), id, uid); err != nil {
+	if err := s.store.ResetBook(r.Context(), id, bid); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -338,13 +338,13 @@ func (s *Server) handleBulkMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		WorkIDs   []int64 `json:"workIds"`
+		BookIDs   []int64 `json:"bookIds"`
 		Monitored bool    `json:"monitored"`
 	}
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if err := s.store.BulkMonitor(r.Context(), id, tid, body.WorkIDs, body.Monitored); err != nil {
+	if err := s.store.BulkMonitor(r.Context(), id, tid, body.BookIDs, body.Monitored); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -383,7 +383,7 @@ func (s *Server) handleSplitBox(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	uid, ok := pathID(w, r, "uid")
+	bid, ok := pathID(w, r, "bid")
 	if !ok {
 		return
 	}
@@ -391,7 +391,7 @@ func (s *Server) handleSplitBox(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	volumes, err := s.library.SplitBox(r.Context(), id, uid, body.Count)
+	volumes, err := s.library.SplitBox(r.Context(), id, bid, body.Count)
 	respondList(w, volumes, err)
 }
 

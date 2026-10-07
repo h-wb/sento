@@ -43,7 +43,7 @@ func (s *SearchService) observeCandidates(ctx context.Context, run *searchRun, c
 				continue
 			}
 			exists := false
-			for _, w := range run.units[cid] {
+			for _, w := range run.books[cid] {
 				if w.NumberKnown && w.SequenceNum == int64(r.From) {
 					exists = true
 				}
@@ -55,8 +55,8 @@ func (s *SearchService) observeCandidates(ctx context.Context, run *searchRun, c
 				return
 			}
 			count++
-			o := store.UnitObservation{CollectionID: cid, Source: cand.Source.SourceID, ExternalKey: cand.Source.ChapterKey, Label: mediafile.RenderPlainNum(int64(r.From)), Number: int64(r.From)}
-			if err := s.store.ObserveUnit(ctx, run.seriesID, o); err == nil && trusted[cand.Source.BindingID] {
+			o := store.BookObservation{CollectionID: cid, Source: cand.Source.SourceID, ExternalKey: cand.Source.ChapterKey, Label: mediafile.RenderPlainNum(int64(r.From)), Number: int64(r.From)}
+			if err := s.store.ObserveBook(ctx, run.seriesID, o); err == nil && trusted[cand.Source.BindingID] {
 				_ = s.store.AcceptTrustedObservation(ctx, run.seriesID, o)
 			}
 		}

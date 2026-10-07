@@ -157,15 +157,15 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 	return res, nil
 }
 
-// linksFor maps a parsed file onto slot links: a volume file to the routed
+// linksFor maps a parsed file onto book links: a volume file to the routed
 // volume collection, a chapter file to the first monitored chapter
 // collection (language-matched when the filename is tagged). A file is one
 // or the other (bookRanges).
-func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chapters []store.Collection) []store.SlotLink {
+func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chapters []store.Collection) []store.BookLink {
 	if parsed.ContentType != parse.ContentManga || !parsed.Anchored || parsed.TitleLeftover != "" {
 		return nil
 	}
-	var links []store.SlotLink
+	var links []store.BookLink
 	for _, axis := range []struct {
 		kind   string
 		cols   []store.Collection
@@ -195,7 +195,7 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 				targetID = target.ID
 			}
 		}
-		works, err := sc.store.ListWorks(ctx, col.ID)
+		works, err := sc.store.ListBooks(ctx, col.ID)
 		if err != nil {
 			continue
 		}
@@ -205,7 +205,7 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 			}
 			for _, r := range axis.ranges {
 				if w.SequenceNum >= int64(r.From) && w.SequenceNum <= int64(r.To) {
-					links = append(links, store.SlotLink{Ledger: axis.kind, CollectionID: col.ID, WorkID: w.ID, TargetID: targetID, Number: w.SequenceNum})
+					links = append(links, store.BookLink{Ledger: axis.kind, CollectionID: col.ID, BookID: w.ID, TargetID: targetID, Number: w.SequenceNum})
 					break
 				}
 			}

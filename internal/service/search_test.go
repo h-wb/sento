@@ -127,7 +127,7 @@ func TestUnifiedVolumeFunnel(t *testing.T) {
 		t.Errorf("dropped: want 1, got %d", result.Dropped)
 	}
 
-	// Chapter ledger search over the same releases: only g7 matches a slot
+	// Chapter ledger search over the same releases: only g7 matches a book
 	// if wanted. Set cutoff to 1055 so 1056+ is wanted.
 	cols, _ := st.ListCollections(ctx, seriesID)
 	chapters := chapterCollection(t, cols)
@@ -147,7 +147,7 @@ func TestUnifiedVolumeFunnel(t *testing.T) {
 	if g7 == nil || len(g7.Rejections) != 0 {
 		t.Fatalf("torrent chapter 1056 should be eligible on chapter ledger: %+v", g7)
 	}
-	if len(g7.Coverage) != 1 || g7.Coverage[0].Number != 105600 || g7.Coverage[0].WorkID == 0 {
+	if len(g7.Coverage) != 1 || g7.Coverage[0].Number != 105600 || g7.Coverage[0].BookID == 0 {
 		t.Errorf("g7 coverage: %+v", g7.Coverage)
 	}
 }

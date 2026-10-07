@@ -18,7 +18,7 @@ import (
 	"github.com/h-wb/sento/internal/store"
 )
 
-// Ledger names the two slot ledgers a search can target.
+// Ledger names the two book ledgers a search can target.
 const (
 	LedgerVolume  = "volume"
 	LedgerChapter = "chapter"
@@ -42,11 +42,11 @@ func (s *SearchService) HasSourceProvider() bool {
 	return s.registry.ForProtocol(provider.ProtocolSource) != nil
 }
 
-// TargetSlot scopes an interactive search to one collected version: one
+// SearchScope scopes an interactive search to one collected version: one
 // of its books (WorkID), or every wanted book of it (All).
-type TargetSlot struct {
+type SearchScope struct {
 	TargetID int64 `json:"targetId"`
-	WorkID   int64 `json:"workId,omitempty"`
+	BookID   int64 `json:"bookId,omitempty"`
 	All      bool  `json:"all,omitempty"`
 	// AllBooks widens an edition-wide search from the wanted books to
 	// every book of the version, owned and paused ones included: looking
@@ -68,9 +68,9 @@ type ReleaseCandidate struct {
 	FormatSnapshot   []profile.Format      `json:"formatSnapshot,omitempty"`
 	PolicySnapshot   *profile.Profile      `json:"policySnapshot,omitempty"`
 	EditionSnapshot  *store.Collection     `json:"editionSnapshot,omitempty"`
-	RepresentedUnits int                   `json:"representedUnits"`
+	RepresentedBooks int                   `json:"representedBooks"`
 	TargetID         int64                 `json:"targetId,omitempty"`
-	Coverage         []store.ExpectedSlot  `json:"coverage,omitempty"`
+	Coverage         []store.BookRef       `json:"coverage,omitempty"`
 	ProfileID        int64                 `json:"profileId,omitempty"`
 	GUID             string                `json:"guid"`
 	Provider         string                `json:"provider"`
@@ -149,7 +149,7 @@ const maxAutoBindings = 5
 // resolveBindings auto-resolves one site's series↔manga bindings (spec.md
 // §6: auto-bind at ≥0.9 title similarity) under a time budget. EVERY entry
 // clearing the threshold is bound — sites like Madokami list the same
-// series several times and the funnel picks per slot at search time, with
+// series several times and the funnel picks per book at search time, with
 // better information than a bind-time argmax. Definitive misses persist as
 // one "unmatched" sentinel so slow sources aren't re-probed on every
 // search (rebind in the UI retries); transient errors are not persisted.
@@ -278,7 +278,7 @@ func hasLatin(s string) bool {
 
 // SearchEvent is one frame of a streaming search: "sites" announces what
 // will be searched, "batch" delivers processed candidates as soon as one
-// search unit finishes (a single extension source, or one provider's
+// search book finishes (a single extension source, or one provider's
 // indexer sweep), "done" closes the stream.
 type SearchEvent struct {
 	Type         string             `json:"type" tstype:"'sites' | 'batch' | 'done' | 'error'"`
@@ -296,14 +296,14 @@ type SearchEvent struct {
 // goroutines (read-only after prepare).
 type searchRun struct {
 	targets        []store.DownloadTarget
-	units          map[int64][]store.Work
-	targetWanted   map[int64]map[int64]bool
+	books          map[int64][]store.Book
+	wantedBooks    map[int64]map[int64]bool
 	targetProfiles map[int64]*profile.Profile
 	sourceEditions map[int64]int64
 	ownedScores    map[int64]map[int64]int
 	seriesID       int64
 	ledger         string
-	target         *TargetSlot
+	target         *SearchScope
 	titles         []string
 	sites          []siteState
 	allowed        map[string]map[string]bool
@@ -325,7 +325,7 @@ func (run *searchRun) profileFor(collectionID int64) *profile.Profile {
 	return run.profiles[0]
 }
 
-func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot) (*searchRun, error) {
+func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedger string, target *SearchScope) (*searchRun, error) {
 	if s.registry.Empty() {
 		return nil, apperr.Unavailablef("no search providers configured")
 	}
@@ -364,7 +364,7 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 	return run, nil
 }
 
-// searchOnce runs one search unit (one provider call under an Allowed
+// searchOnce runs one search book (one provider call under an Allowed
 // filter) and funnels its results.
 func (s *SearchService) searchOnce(ctx context.Context, p provider.Provider, run *searchRun,
 	allowed map[string]map[string]bool, siteNames []string, bindings []provider.Binding,
@@ -383,7 +383,7 @@ func (s *SearchService) searchOnce(ctx context.Context, p provider.Provider, run
 	return ev
 }
 
-// streamProvider fans one provider out into one search unit per usable
+// streamProvider fans one provider out into one search book per usable
 // indexer entry — a slow indexer (or a slow first-time binding
 // resolution) doesn't hold back its siblings. Source entries resolve
 // their missing bindings before searching.
@@ -440,15 +440,15 @@ func (s *SearchService) streamProvider(ctx context.Context, p provider.Provider,
 }
 
 // FindCandidatesStream runs the unified search for one ledger, emitting a
-// batch per search unit as it completes. emit is always called from this
-// goroutine. With a target, only that slot counts as wanted (interactive
-// search, any slot state).
-func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot, emit func(SearchEvent)) error {
+// batch per search book as it completes. emit is always called from this
+// goroutine. With a target, only that book counts as wanted (interactive
+// search, any book state).
+func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64, searchLedger string, target *SearchScope, emit func(SearchEvent)) error {
 	run, err := s.prepare(ctx, seriesID, searchLedger, target)
 	if err != nil {
 		return err
 	}
-	if len(run.targets) > 0 && len(run.targetWanted) == 0 {
+	if len(run.targets) > 0 && len(run.wantedBooks) == 0 {
 		emit(SearchEvent{Type: "sites", Ledger: searchLedger, BindingNotes: []string{"No books can be acquired in this selection. Check the edition’s book statuses, or open a specific book to search for another copy."}})
 		emit(SearchEvent{Type: "done", Ledger: searchLedger})
 		return nil
@@ -474,7 +474,7 @@ func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64
 
 // FindCandidates runs the unified search and collects the whole stream
 // into one result (scheduler, auto-grab and grab-by-GUID paths).
-func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, searchLedger string, target *TargetSlot) (*SearchResult, error) {
+func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, searchLedger string, target *SearchScope) (*SearchResult, error) {
 	result := &SearchResult{Ledger: searchLedger, Candidates: []ReleaseCandidate{}}
 	err := s.FindCandidatesStream(ctx, seriesID, searchLedger, target, func(ev SearchEvent) {
 		switch ev.Type {

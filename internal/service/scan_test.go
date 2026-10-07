@@ -49,7 +49,7 @@ func TestScanSeriesFolder(t *testing.T) {
 		t.Errorf("unrequested: want 1 (artbook), got %d", res.Unrequested)
 	}
 
-	// Volume slots 1+2 satisfied now.
+	// Volume books 1+2 satisfied now.
 	cols, _ := st.ListCollections(ctx, seriesID)
 	var standard store.Collection
 	for _, c := range cols {
@@ -66,7 +66,7 @@ func TestScanSeriesFolder(t *testing.T) {
 	chapters := chapterCollection(t, cols)
 	linked := 0
 	for _, b := range booksOf(t, lib, st, seriesID, chapters.ID) {
-		if b.Work.SequenceNum == 118000 {
+		if b.Book.SequenceNum == 118000 {
 			linked = len(b.OnDiskFileIDs)
 		}
 	}

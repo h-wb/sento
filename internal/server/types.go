@@ -33,14 +33,14 @@ type SeriesDetail struct {
 
 // SearchBody is POST /series/{id}/search.
 type SearchBody struct {
-	GrabProvider string              `json:"grabProvider,omitempty"`
-	GrabTargetID int64               `json:"grabTargetId,omitempty"`
-	Ledger       string              `json:"ledger"`
-	DryRun       bool                `json:"dryRun"`
-	Slot         *service.TargetSlot `json:"slot"`
-	Grab         string              `json:"grab"` // GUID of one candidate
-	Force        bool                `json:"force"`
-	Stream       bool                `json:"stream"`
+	GrabProvider string               `json:"grabProvider,omitempty"`
+	GrabTargetID int64                `json:"grabTargetId,omitempty"`
+	Ledger       string               `json:"ledger"`
+	DryRun       bool                 `json:"dryRun"`
+	Scope        *service.SearchScope `json:"scope"`
+	Grab         string               `json:"grab"` // GUID of one candidate
+	Force        bool                 `json:"force"`
+	Stream       bool                 `json:"stream"`
 }
 
 // SearchResponse is the non-streaming POST /series/{id}/search reply.
@@ -68,9 +68,9 @@ type CollectionPatch struct {
 }
 
 // CreateCollectionBody is POST /series/{id}/collections — a custom
-// collection. Volume editions clone their slot structure from basedOn
+// collection. Volume editions clone their book structure from basedOn
 // (language variants) or generate volumes 1..N (editions MangaBaka
-// doesn't know); chapter collections derive slots from total_chapters.
+// doesn't know); chapter collections derive books from total_chapters.
 type CreateCollectionBody struct {
 	EditionName string `json:"editionName"`
 	Language    string `json:"language"`
@@ -89,7 +89,7 @@ type MergeCollectionBody struct {
 }
 
 // MergeCollectionResponse lists volume numbers (hundredths) whose files
-// have no matching slot in the target edition.
+// have no matching book in the target edition.
 type MergeCollectionResponse struct {
 	Unmatched []int64 `json:"unmatched"`
 }
@@ -142,7 +142,7 @@ type NamingPreview struct {
 	ChapterFile  string `json:"chapterFile"`
 }
 
-// SplitBoxBody is POST /series/{id}/units/{uid}/split: how many volumes
+// SplitBoxBody is POST /series/{id}/books/{bid}/split: how many volumes
 // the box holds.
 type SplitBoxBody struct {
 	Count int `json:"count"`

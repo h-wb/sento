@@ -35,7 +35,7 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 	out := &EditionOverview{Targets: []TargetSummary{}}
 	unique := map[int64]bool{}
 	for _, t := range v.Targets {
-		row := TargetSummary{TargetID: t.ID, CollectionID: t.CollectionID, Total: len(v.Slots[t.ID]), ProfileSource: "instance default"}
+		row := TargetSummary{TargetID: t.ID, CollectionID: t.CollectionID, Total: len(v.Status[t.ID]), ProfileSource: "instance default"}
 		c := collectionByID(v.Collections, t.CollectionID)
 		if series.ProfileID > 0 {
 			row.ProfileSource = "series"
@@ -49,13 +49,13 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 		if p := v.Profiles[t.ID]; p != nil {
 			row.ProfileName = p.Name
 		}
-		for _, sl := range v.Slots[t.ID] {
+		for _, sl := range v.Status[t.ID] {
 			if len(sl.FileIDs) > 0 {
 				row.Owned++
 			}
 			if len(sl.OnDiskFileIDs) > 0 {
 				row.OnDisk++
-				unique[sl.Work.ID] = true
+				unique[sl.Book.ID] = true
 			}
 			if sl.Wanted {
 				row.Wanted++
@@ -84,12 +84,12 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 // state. The list is not paged: the ledger is evaluated whole either way,
 // and the Editions view needs all of it to draw the overview grid, count
 // each state and select ranges.
-func (l *Library) TargetBooks(ctx context.Context, sid, tid int64) ([]UnitSlot, error) {
+func (l *Library) TargetBooks(ctx context.Context, sid, tid int64) ([]BookStatus, error) {
 	v, err := loadLedger(ctx, l.store, sid)
 	if err != nil {
 		return nil, err
 	}
-	slots, ok := v.Slots[tid]
+	slots, ok := v.Status[tid]
 	if !ok {
 		return nil, apperr.NotFoundf("collected version not found")
 	}

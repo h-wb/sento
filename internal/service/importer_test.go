@@ -95,13 +95,13 @@ func (p *payloadProvider) Cleanup(context.Context, string) error { return nil }
 
 func queueVolumes(t *testing.T, st *store.Store, seriesID, collectionID int64, hash string, numbers ...int64) int64 {
 	t.Helper()
-	slots := make([]store.ExpectedSlot, 0, len(numbers))
+	slots := make([]store.BookRef, 0, len(numbers))
 	for _, n := range numbers {
 		targets, err := st.ListTargets(context.Background(), seriesID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		works, err := st.ListWorks(context.Background(), collectionID)
+		works, err := st.ListBooks(context.Background(), collectionID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,12 +116,12 @@ func queueVolumes(t *testing.T, st *store.Store, seriesID, collectionID int64, h
 				workID = work.ID
 			}
 		}
-		slots = append(slots, store.ExpectedSlot{Ledger: "volume", CollectionID: collectionID, Number: n, TargetID: targetID, WorkID: workID})
+		slots = append(slots, store.BookRef{Ledger: "volume", CollectionID: collectionID, Number: n, TargetID: targetID, BookID: workID})
 	}
 	raw, _ := json.Marshal(slots)
 	id, err := st.AddQueueItem(context.Background(), store.QueueItem{
 		SeriesID: seriesID, Protocol: provider.ProtocolTorrent, ExternalID: hash,
-		Title: "ONE PIECE v01-v02", ExpectedSlots: raw,
+		Title: "ONE PIECE v01-v02", Books: raw,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -211,7 +211,7 @@ func TestImportTorrentPayloadIsIdempotent(t *testing.T) {
 	}
 	for _, b := range booksOf(t, lib, st, seriesID, standard)[:2] {
 		if len(b.OnDiskFileIDs) != 1 {
-			t.Fatalf("volume %s has %d files, want 1", b.Work.SequenceStr, len(b.OnDiskFileIDs))
+			t.Fatalf("volume %s has %d files, want 1", b.Book.SequenceStr, len(b.OnDiskFileIDs))
 		}
 	}
 }
@@ -316,7 +316,7 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 	}
 	for _, b := range booksOf(t, lib, st, seriesID, standard)[:2] {
 		if len(b.OnDiskFileIDs) != 1 {
-			t.Fatalf("volume %s lost its file", b.Work.SequenceStr)
+			t.Fatalf("volume %s lost its file", b.Book.SequenceStr)
 		}
 	}
 	// Up to date now: a second look finds nothing to do.
@@ -418,7 +418,7 @@ func TestMultiBookFileIsNamedForItsRange(t *testing.T) {
 	im := NewImporter(st, nil, t.TempDir(), nil)
 	series, _ := st.GetSeries(ctx, id)
 	ms := DefaultMediaSettings()
-	slots := []store.ExpectedSlot{modelSlot(c, ws[1], target), modelSlot(c, ws[0], target)}
+	slots := []store.BookRef{modelRef(c, ws[1], target), modelRef(c, ws[0], target)}
 	if got := im.bookFileName(ctx, ms, series, slots, "", ".cbz"); !strings.Contains(got, "v01-02") {
 		t.Errorf("range name = %q", got)
 	}

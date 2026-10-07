@@ -163,7 +163,7 @@ type AssetCoverage struct {
 	Evidence string `json:"evidence"`
 	FileID   int64  `json:"fileId"`
 	TargetID int64  `json:"targetId"`
-	WorkID   int64  `json:"workId"`
+	BookID   int64  `json:"bookId" db:"work_id"`
 	Verified bool   `json:"verified"`
 	Pinned   bool   `json:"pinned"`
 }
@@ -178,7 +178,7 @@ func (s *Store) PinCoverage(ctx context.Context, seriesID int64, a AssetCoverage
 	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,pinned)
  SELECT c.file_id,t.id,c.work_id,? FROM asset_contents c JOIN works w ON w.id=c.work_id JOIN download_targets t ON t.collection_id=w.collection_id JOIN files f ON f.id=c.file_id
  WHERE c.file_id=? AND t.id=? AND c.work_id=? AND f.series_id=?
- ON CONFLICT(file_id,target_id,work_id) DO UPDATE SET pinned=excluded.pinned`), a.Pinned, a.FileID, a.TargetID, a.WorkID, seriesID)
+ ON CONFLICT(file_id,target_id,work_id) DO UPDATE SET pinned=excluded.pinned`), a.Pinned, a.FileID, a.TargetID, a.BookID, seriesID)
 	return err
 }
 func (s *Store) FileFacts(ctx context.Context, id int64) (AssetFacts, error) {
@@ -199,7 +199,7 @@ func (s *Store) SetAssetFacts(ctx context.Context, id int64, f AssetFacts, hash 
 
 // Explicit review replaces a file's mappings atomically. It does not rewrite
 // publication facts or infer equivalence between editions with equal numbers.
-func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []ExpectedSlot) error {
+func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []BookRef) error {
 	var fileSeries int64
 	if err := s.db.QueryRowContext(ctx, s.q(`SELECT series_id FROM files WHERE id=?`), fileID).Scan(&fileSeries); err != nil {
 		return err
@@ -212,7 +212,7 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Exp
 		if err != nil {
 			return err
 		}
-		w, err := s.GetWork(ctx, sl.WorkID)
+		w, err := s.GetBook(ctx, sl.BookID)
 		if err != nil {
 			return err
 		}
@@ -238,7 +238,7 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Exp
 	}
 	for _, sl := range slots {
 		var valid int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), sl.WorkID, sl.TargetID, sl.CollectionID, seriesID).Scan(&valid); err != nil {
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), sl.BookID, sl.TargetID, sl.CollectionID, seriesID).Scan(&valid); err != nil {
 			return err
 		}
 		if valid != 1 {
@@ -271,10 +271,10 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Exp
 		return err
 	}
 	for _, sl := range slots {
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,verified,evidence) VALUES(?,?,TRUE,'manual') ON CONFLICT DO NOTHING`), fileID, sl.WorkID); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,verified,evidence) VALUES(?,?,TRUE,'manual') ON CONFLICT DO NOTHING`), fileID, sl.BookID); err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,pinned,evidence) VALUES(?,?,?,? ,'manual') ON CONFLICT DO NOTHING`), fileID, sl.TargetID, sl.WorkID, pins[BookKey(sl.TargetID, sl.WorkID)]); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,pinned,evidence) VALUES(?,?,?,? ,'manual') ON CONFLICT DO NOTHING`), fileID, sl.TargetID, sl.BookID, pins[BookKey(sl.TargetID, sl.BookID)]); err != nil {
 			return err
 		}
 	}
@@ -290,12 +290,12 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Exp
 	return tx.Commit()
 }
 
-func (s *Store) SetUnitMonitored(ctx context.Context, seriesID, targetID, workID int64, monitored bool) error {
+func (s *Store) SetBookMonitored(ctx context.Context, seriesID, targetID, workID int64, monitored bool) error {
 	t, err := s.GetTarget(ctx, targetID)
 	if err != nil {
 		return err
 	}
-	w, err := s.GetWork(ctx, workID)
+	w, err := s.GetBook(ctx, workID)
 	if err != nil {
 		return err
 	}
@@ -309,7 +309,7 @@ func (s *Store) SetUnitMonitored(ctx context.Context, seriesID, targetID, workID
 	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO unit_overrides(target_id,work_id,monitored) VALUES(?,?,?) ON CONFLICT(target_id,work_id) DO UPDATE SET monitored=excluded.monitored`), targetID, workID, monitored)
 	return err
 }
-func (s *Store) UnitOverrides(ctx context.Context, targetID int64) (map[int64]bool, error) {
+func (s *Store) BookOverrides(ctx context.Context, targetID int64) (map[int64]bool, error) {
 	rows, err := list[struct {
 		WorkID    int64
 		Monitored bool

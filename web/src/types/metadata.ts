@@ -64,7 +64,7 @@ export interface Collection {
   RawJSON: string /* []byte */;
 }
 /**
- * Work is one released unit (volume) inside a collection.
+ * Work is one released book (volume) inside a collection.
  */
 export interface Work {
   ProviderID: string;

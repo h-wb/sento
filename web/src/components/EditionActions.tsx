@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api, type Collection } from '../api'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
-// Local edition management lives alongside its units and collected versions.
+// Local edition management lives alongside its books and collected versions.
 export default function EditionActions({
   seriesID,
   collection,
@@ -138,13 +138,13 @@ function MergePreview({
         {p && (
           <>
             <Text size="sm">
-              {p.localUnits.length} books · {p.fileCount} files · {p.localTargets.length} versions
+              {p.localBooks.length} books · {p.fileCount} files · {p.localTargets.length} versions
             </Text>
-            {p.localUnits.map((w) => (
+            {p.localBooks.map((w) => (
               <Text size="xs" key={w.id}>
                 {w.sequenceStr} · {w.countType} →{' '}
                 {p.mapping[w.id]
-                  ? p.catalogUnits.find((v) => v.id === p.mapping[w.id])?.sequenceStr
+                  ? p.catalogBooks.find((v) => v.id === p.mapping[w.id])?.sequenceStr
                   : 'No match'}
               </Text>
             ))}

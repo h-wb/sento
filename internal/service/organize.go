@@ -93,13 +93,13 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePl
 		p := filePlan{file: f, FileChange: FileChange{FileID: f.ID, From: rel(f.Path), To: rel(f.Path)}}
 		// The books this file holds, once each, filed under the edition's
 		// default version unless only an additional copy claims it.
-		var slots []store.ExpectedSlot
+		var slots []store.BookRef
 		seen := map[int64]bool{}
 		for _, c := range coverage {
-			if c.FileID != f.ID || !c.Verified || seen[c.WorkID] {
+			if c.FileID != f.ID || !c.Verified || seen[c.BookID] {
 				continue
 			}
-			w, err := im.store.GetWork(ctx, c.WorkID)
+			w, err := im.store.GetBook(ctx, c.BookID)
 			if err != nil {
 				continue
 			}
@@ -107,9 +107,9 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePl
 			if err != nil {
 				continue
 			}
-			seen[c.WorkID] = true
-			slots = append(slots, store.ExpectedSlot{
-				Ledger: col.Type, CollectionID: col.ID, Number: w.SequenceNum, WorkID: w.ID, TargetID: defaultTarget[col.ID],
+			seen[c.BookID] = true
+			slots = append(slots, store.BookRef{
+				Ledger: col.Type, CollectionID: col.ID, Number: w.SequenceNum, BookID: w.ID, TargetID: defaultTarget[col.ID],
 			})
 		}
 		sort.Slice(slots, func(i, j int) bool { return slots[i].Number < slots[j].Number })

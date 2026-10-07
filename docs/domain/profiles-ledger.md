@@ -51,7 +51,7 @@ A `Profile` does two jobs:
 
 ## Shared ledger
 
-`internal/service/targets.go` loads works, acquisition targets, per-book overrides, verified file contents, selections/pins, stored presence, pending jobs, and effective profiles in batches. `targetSlots` evaluates each target/work pair. GETs never initialize chapters or check paths.
+`internal/service/targets.go` loads works, acquisition targets, per-book overrides, verified file contents, selections/pins, stored presence, pending jobs, and effective profiles in batches. `targetSlots` evaluates each target/book pair. GETs never initialize chapters or check paths.
 
 Monitoring is gated by the series, parent edition, work, target, extras rule, exclusive chapter cutoff, and individual overrides. Retired or catalog-missing publications stop automation. Availability stays released, upcoming, or unknown; unknown dates follow the target’s explicit policy.
 
@@ -59,4 +59,4 @@ On-disk contents are independent of fulfillment. A confirmed archive can satisfy
 
 Pending downloads and jobs awaiting review keep reservations. Storage uncertainty blocks acquisition. Wanted therefore means the book is collectible, available under policy, lacks a satisfactory copy (or qualifies for an enabled upgrade), and has no pending claim or unresolved storage/content issue.
 
-Acquisition identity is `(target ID, work ID)`, never the displayed volume/chapter number. The earlier number-keyed slot model (`internal/ledger`, `/series/{id}/slots`, number-only search requests) has been removed.
+Acquisition identity is `(target ID, book ID)`, never the displayed volume/chapter number. The earlier number-keyed slot model (`internal/ledger`, `/series/{id}/slots`, number-only search requests) has been removed.

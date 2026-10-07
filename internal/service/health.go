@@ -128,7 +128,7 @@ func (h *HealthService) collect(ctx context.Context) []HealthIssue {
 		})
 	}
 
-	// Remote probes run side by side; each reports into its own slot so
+	// Remote probes run side by side; each reports into its own book so
 	// the issue order stays stable between runs.
 	cs := h.conns.Load(ctx)
 	probes := []func(context.Context) []HealthIssue{

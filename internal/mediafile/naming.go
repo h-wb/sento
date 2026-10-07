@@ -10,7 +10,7 @@ import (
 
 // Naming templates use {Token} and {token:000} padding syntax (spec.md
 // §11.2). Volume/chapter numbers are passed in hundredths and rendered in
-// plain units; padding applies to the integer part.
+// plain books; padding applies to the integer part.
 type NamingConfig struct {
 	SeriesFolder string `yaml:"series_folder"`
 	VolumeFile   string `yaml:"volume_file"`
@@ -119,7 +119,7 @@ func Render(template string, t NameTokens) string {
 	return strings.TrimSpace(out)
 }
 
-// RenderPlainNum renders a hundredths number in plain units ("34", "34.5").
+// RenderPlainNum renders a hundredths number in plain books ("34", "34.5").
 func RenderPlainNum(hundredths int64) string {
 	return renderNum(hundredths, 0)
 }

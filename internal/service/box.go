@@ -19,11 +19,11 @@ const maxBoxVolumes = 100
 // collecting it in every version of the edition. The box entry stays, with its catalog
 // link. Running it again only adds what
 // is missing.
-func (l *Library) SplitBox(ctx context.Context, seriesID, workID int64, count int) ([]store.Work, error) {
+func (l *Library) SplitBox(ctx context.Context, seriesID, workID int64, count int) ([]store.Book, error) {
 	if count < 2 || count > maxBoxVolumes {
 		return nil, apperr.Invalidf("a box holds between 2 and %d volumes", maxBoxVolumes)
 	}
-	box, err := l.store.GetWork(ctx, workID)
+	box, err := l.store.GetBook(ctx, workID)
 	if err != nil {
 		return nil, err
 	}
@@ -37,30 +37,30 @@ func (l *Library) SplitBox(ctx context.Context, seriesID, workID int64, count in
 	if col.Type != "volume" {
 		return nil, apperr.Invalidf("only a volume can be a box of volumes")
 	}
-	existing, err := l.store.ListWorks(ctx, col.ID)
+	existing, err := l.store.ListBooks(ctx, col.ID)
 	if err != nil {
 		return nil, err
 	}
-	byNumber := map[int64]store.Work{}
+	byNumber := map[int64]store.Book{}
 	for _, w := range existing {
 		if w.ID != box.ID && w.CountType == "main" && w.NumberKnown {
 			byNumber[w.SequenceNum] = w
 		}
 	}
 
-	volumes := make([]store.Work, 0, count)
+	volumes := make([]store.Book, 0, count)
 	for n := 1; n <= count; n++ {
 		number := int64(n) * 100
 		w, ok := byNumber[number]
 		if !ok {
-			id, err := l.store.SaveWork(ctx, seriesID, store.Work{
+			id, err := l.store.SaveBook(ctx, seriesID, store.Book{
 				CollectionID: col.ID, SequenceNum: number, SequenceStr: strconv.Itoa(n),
 				CountType: "main", NumberKnown: true, ReleaseDate: box.ReleaseDate, ISBN: box.ISBN,
 			})
 			if err != nil {
 				return nil, err
 			}
-			saved, err := l.store.GetWork(ctx, id)
+			saved, err := l.store.GetBook(ctx, id)
 			if err != nil {
 				return nil, err
 			}
@@ -73,7 +73,7 @@ func (l *Library) SplitBox(ctx context.Context, seriesID, workID int64, count in
 	// competes with a volume for a number, and explicitly not collected.
 	if box.CountType == "main" {
 		box.CountType = "other"
-		if _, err := l.store.SaveWork(ctx, seriesID, *box); err != nil {
+		if _, err := l.store.SaveBook(ctx, seriesID, *box); err != nil {
 			return nil, err
 		}
 	}

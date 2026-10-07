@@ -9,7 +9,7 @@ import (
 	"github.com/h-wb/sento/internal/store"
 )
 
-// GrabBest greedily grabs eligible candidates by slot coverage.
+// GrabBest greedily grabs eligible candidates by book coverage.
 func (s *SearchService) GrabBest(ctx context.Context, seriesID int64, searchLedger string, candidates []ReleaseCandidate) []int64 {
 	var queued []int64
 	taken := map[string]bool{}
@@ -84,7 +84,7 @@ func (s *SearchService) Grab(ctx context.Context, seriesID int64, searchLedger s
 		_ = s.store.AddDecision(ctx, seriesID, store.DecisionBody{
 			Event: "grabbed", Ledger: searchLedger, Title: c.Title,
 			Provider: c.Provider, Site: c.Site, Key: externalID,
-			Slots: slots, Force: force,
+			Books: slots, Force: force,
 		})
 	}
 	return qid, err
@@ -95,7 +95,7 @@ func (s *SearchService) Grab(ctx context.Context, seriesID int64, searchLedger s
 func grabKeys(c ReleaseCandidate) []string {
 	keys := make([]string, 0, len(c.Coverage))
 	for _, sl := range c.Coverage {
-		keys = append(keys, store.BookKey(sl.TargetID, sl.WorkID))
+		keys = append(keys, store.BookKey(sl.TargetID, sl.BookID))
 	}
 	return keys
 }

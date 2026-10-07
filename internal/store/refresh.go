@@ -10,7 +10,7 @@ import (
 
 // ReconcileMetadata matches known external identity first. Local editions are
 // never silently adopted. A complete snapshot marks disappeared entries stale
-// without deleting their units, targets, coverage or user overrides.
+// without deleting their books, targets, coverage or user overrides.
 func (s *Store) ReconcileMetadata(ctx context.Context, seriesID int64, md *metadata.Series, collections []metadata.Collection, works map[string][]metadata.Work) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

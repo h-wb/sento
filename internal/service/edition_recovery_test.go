@@ -24,7 +24,7 @@ func TestEditionDisappearanceSuspendsCollection(t *testing.T) {
 	if err := st.ReconcileMetadata(ctx, id, p.series, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	slots, err := lib.TargetSlots(ctx, id)
+	slots, err := lib.VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestEditionDisappearanceSuspendsCollection(t *testing.T) {
 	if err = st.EditCollection(ctx, id, c.ID, store.CollectionMetadataPatch{MakeLocal: true}); err != nil {
 		t.Fatal(err)
 	}
-	slots, err = lib.TargetSlots(ctx, id)
+	slots, err = lib.VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestContentsSurviveTargetDeletionAndPolicyChanges(t *testing.T) {
 	if _, err = st.SaveTarget(ctx, id, target); err != nil {
 		t.Fatal(err)
 	}
-	slots, err := lib.TargetSlots(ctx, id)
+	slots, err := lib.VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestContentsSurviveTargetDeletionAndPolicyChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	slots, err = lib.TargetSlots(ctx, id)
+	slots, err = lib.VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestUnavailableRootBlocksRedownloadButMissingArchiveDoesNot(t *testing.T) {
 	if err := st.CheckFilePresence(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	slots, err := lib.TargetSlots(ctx, id)
+	slots, err := lib.VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestUnavailableRootBlocksRedownloadButMissingArchiveDoesNot(t *testing.T) {
 	if err = st.CheckFilePresence(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	slots, err = lib.TargetSlots(ctx, id)
+	slots, err = lib.VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestBulkMonitoringRollsBackForeignBook(t *testing.T) {
 	if err := st.BulkMonitor(ctx, id, target.ID, []int64{ws[0].ID, 999999}, false); err == nil {
 		t.Fatal("foreign book accepted")
 	}
-	slots, err := lib.TargetSlots(ctx, id)
+	slots, err := lib.VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestImportReviewRetainsClaimsAndCompletesExistingPayload(t *testing.T) {
 	}
 	p := &recoveryProvider{payloadProvider: payloadProvider{dir: dir, files: []string{"unknown.cbz"}}}
 	reg := provider.NewRegistry(p)
-	plan := []store.ExpectedSlot{modelSlot(c, ws[0], target)}
+	plan := []store.BookRef{modelRef(c, ws[0], target)}
 	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: id, ProviderID: p.ID(), Protocol: p.Protocol(), ReleaseKey: "review-offer", Title: "ONE PIECE v01"}, plan)
 	if err != nil {
 		t.Fatal(err)
@@ -237,7 +237,7 @@ func TestImportReviewRetainsClaimsAndCompletesExistingPayload(t *testing.T) {
 	if len(queue) != 1 || queue[0].Status != store.QueueNeedsReview {
 		t.Fatalf("review became terminal: %+v", queue)
 	}
-	pending, err := st.PendingUnits(ctx, id)
+	pending, err := st.PendingBooks(ctx, id)
 	if err != nil || !pending[store.BookKey(target.ID, ws[0].ID)] {
 		t.Fatal("review released its reservation")
 	}
@@ -264,7 +264,7 @@ func TestTransientProviderErrorBacksOffAndRetainsClaims(t *testing.T) {
 	ctx := context.Background()
 	p := &recoveryProvider{stateErr: errors.New("client unavailable")}
 	reg := provider.NewRegistry(p)
-	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: id, ProviderID: p.ID(), Protocol: p.Protocol(), ReleaseKey: "transient"}, []store.ExpectedSlot{modelSlot(c, ws[0], target)})
+	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: id, ProviderID: p.ID(), Protocol: p.Protocol(), ReleaseKey: "transient"}, []store.BookRef{modelRef(c, ws[0], target)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +286,7 @@ func TestTransientProviderErrorBacksOffAndRetainsClaims(t *testing.T) {
 	if queue[0].RetryCount != 1 {
 		t.Fatal("retry ignored backoff")
 	}
-	if err = st.DeleteWork(ctx, id, ws[0].ID); err == nil {
+	if err = st.DeleteBook(ctx, id, ws[0].ID); err == nil {
 		t.Fatal("pending plan allowed book deletion")
 	}
 	if err = st.CancelQueue(ctx, qid); err != nil {
@@ -295,7 +295,7 @@ func TestTransientProviderErrorBacksOffAndRetainsClaims(t *testing.T) {
 	if err = st.UpdateQueueItem(ctx, qid, store.QueueNeedsReview, "late worker"); err == nil {
 		t.Fatal("worker resurrected cancelled job")
 	}
-	pending, _ := st.PendingUnits(ctx, id)
+	pending, _ := st.PendingBooks(ctx, id)
 	if pending[store.BookKey(target.ID, ws[0].ID)] {
 		t.Fatal("cancel left a reservation")
 	}
@@ -311,7 +311,7 @@ func TestFileFactsAreSpecificAndManualCorrectionsSurviveRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	item := store.QueueItem{SeriesID: id, Protocol: "torrent", ReleaseKey: "facts", Snapshot: snap}
-	plan := []store.ExpectedSlot{modelSlot(c, ws[0], target)}
+	plan := []store.BookRef{modelRef(c, ws[0], target)}
 	if err := im.recordAsset(ctx, item, path, plan, parse.Result{Group: "Actual", Language: "en"}); err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +355,7 @@ func TestChapterExtrasZeroAndReadOnlyLedger(t *testing.T) {
 		number      int64
 		label, kind string
 	}{{0, "0", "main"}, {1250, "12.5", "extra"}} {
-		wid, e := st.SaveWork(ctx, id, store.Work{CollectionID: c.ID, SequenceNum: v.number, SequenceStr: v.label, CountType: v.kind, NumberKnown: true})
+		wid, e := st.SaveBook(ctx, id, store.Book{CollectionID: c.ID, SequenceNum: v.number, SequenceStr: v.label, CountType: v.kind, NumberKnown: true})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -365,7 +365,7 @@ func TestChapterExtrasZeroAndReadOnlyLedger(t *testing.T) {
 			bonus = wid
 		}
 	}
-	slots, err := lib.TargetSlots(ctx, id)
+	slots, err := lib.VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,12 +381,12 @@ func TestChapterExtrasZeroAndReadOnlyLedger(t *testing.T) {
 	if err = st.BulkMonitor(ctx, id, target.ID, []int64{zero}, true); err != nil {
 		t.Fatal(err)
 	}
-	slots, err = lib.TargetSlots(ctx, id)
+	slots, err = lib.VersionBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range slots[target.ID] {
-		if (s.Work.ID == zero || s.Work.ID == bonus) && !s.Monitored {
+		if (s.Book.ID == zero || s.Book.ID == bonus) && !s.Monitored {
 			t.Fatal("explicit zero/extra collection was ignored")
 		}
 	}
@@ -412,10 +412,10 @@ func TestTrustedChaptersRequireVerifiedBindingAndDoNotFillGaps(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, _ = st.GetCollection(ctx, c.ID)
-	run := &searchRun{seriesID: id, ledger: LedgerChapter, collections: []store.Collection{*c}, sourceEditions: map[int64]int64{bid: c.ID}, units: map[int64][]store.Work{}, titles: []string{"ONE PIECE"}}
+	run := &searchRun{seriesID: id, ledger: LedgerChapter, collections: []store.Collection{*c}, sourceEditions: map[int64]int64{bid: c.ID}, books: map[int64][]store.Book{}, titles: []string{"ONE PIECE"}}
 	svc := &SearchService{store: st}
 	svc.observeCandidates(ctx, run, []provider.Candidate{{Title: "ONE PIECE ch12.5", Protocol: provider.ProtocolSource, Source: &provider.SourceRef{BindingID: bid, SourceID: "reader", ChapterKey: "twelve-half", ChapterNumber: 12.5, Lang: "en"}}})
-	works, err := st.ListWorks(ctx, c.ID)
+	works, err := st.ListBooks(ctx, c.ID)
 	if err != nil || len(works) != 1 || works[0].SequenceNum != 1250 {
 		t.Fatalf("trusted chapter missing or gap filled: %+v %v", works, err)
 	}
@@ -435,10 +435,10 @@ func TestConcurrentBookDeletionAndReservationDoNotLeaveDanglingPlan(t *testing.T
 	ctx := context.Background()
 	start := make(chan struct{})
 	done := make(chan error, 2)
-	go func() { <-start; done <- st.DeleteWork(ctx, id, ws[0].ID) }()
+	go func() { <-start; done <- st.DeleteBook(ctx, id, ws[0].ID) }()
 	go func() {
 		<-start
-		_, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: id, ProviderID: "race", Protocol: "torrent", ReleaseKey: "race"}, []store.ExpectedSlot{modelSlot(c, ws[0], target)})
+		_, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: id, ProviderID: "race", Protocol: "torrent", ReleaseKey: "race"}, []store.BookRef{modelRef(c, ws[0], target)})
 		done <- err
 	}()
 	close(start)
@@ -446,12 +446,12 @@ func TestConcurrentBookDeletionAndReservationDoNotLeaveDanglingPlan(t *testing.T
 	if a == nil && b == nil {
 		t.Fatal("deletion and reservation both committed")
 	}
-	pending, err := st.PendingUnits(ctx, id)
+	pending, err := st.PendingBooks(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if pending[store.BookKey(target.ID, ws[0].ID)] {
-		w, e := st.GetWork(ctx, ws[0].ID)
+		w, e := st.GetBook(ctx, ws[0].ID)
 		if e != nil || w.SyncState == "retired" {
 			t.Fatalf("reservation refers to deleted/retired work: %+v %v", w, e)
 		}
@@ -477,7 +477,7 @@ func TestLedgerReadsDoNotInferNewChapters(t *testing.T) {
 	if _, err = st.ListTargets(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = lib.TargetSlots(ctx, id); err != nil {
+	if _, err = lib.VersionBooks(ctx, id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = lib.EditionOverview(ctx, id); err != nil {

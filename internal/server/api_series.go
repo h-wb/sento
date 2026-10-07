@@ -11,7 +11,7 @@ import (
 )
 
 // Series-scoped handlers: the library entries, their collections and
-// slots, files, in-place imports and source bindings.
+// books, files, in-place imports and source bindings.
 
 // handleImportScan proposes MangaBaka matches for a root folder's
 // subfolders (read-only; §11.4 bulk import).
@@ -259,7 +259,7 @@ func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	respondList(w, files, err)
 }
 
-// handleDeleteFile unlinks a file and deletes it from disk. The freed slots
+// handleDeleteFile unlinks a file and deletes it from disk. The freed books
 // become wanted again and may re-download (Sonarr semantics, spec.md §11.4).
 func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 	fid, ok := pathID(w, r, "fid")

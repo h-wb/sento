@@ -4,7 +4,7 @@ import type { SeriesRef } from "./metadata"
 import type { Result, Step } from "./parse"
 import type { Condition, LedgerRules } from "./profile"
 import type { ExtensionInfo } from "./extensions"
-import type { Work, ExpectedSlot, DownloadTarget, Binding, Indexer, SiteOverride } from "./store"
+import type { Book, BookRef, DownloadTarget, Binding, Indexer, SiteOverride } from "./store"
 
 //////////
 // source: box.go
@@ -182,7 +182,7 @@ export interface HealthService {
 
 /**
  * Importer advances the download queue for every provider: poll state,
- * fetch finished payloads, import into the library, link slots, clean up.
+ * fetch finished payloads, import into the library, link books, clean up.
  * The import pipeline itself (naming, ComicInfo, linking) is provider-
  * agnostic; only the payload shape varies (stream vs directory).
  */
@@ -431,11 +431,11 @@ export interface ScanResult {
 // source: search.go
 
 /**
- * Ledger names the two slot ledgers a search can target.
+ * Ledger names the two book ledgers a search can target.
  */
 export const LedgerVolume = "volume";
 /**
- * Ledger names the two slot ledgers a search can target.
+ * Ledger names the two book ledgers a search can target.
  */
 export const LedgerChapter = "chapter";
 /**
@@ -446,12 +446,12 @@ export const LedgerChapter = "chapter";
 export interface SearchService {
 }
 /**
- * TargetSlot scopes an interactive search to one collected version: one
+ * SearchScope scopes an interactive search to one collected version: one
  * of its books (WorkID), or every wanted book of it (All).
  */
-export interface TargetSlot {
+export interface SearchScope {
   targetId: number /* int64 */;
-  workId?: number /* int64 */;
+  bookId?: number /* int64 */;
   all?: boolean;
   /**
    * AllBooks widens an edition-wide search from the wanted books to
@@ -472,9 +472,9 @@ export interface ReleaseCandidate {
   formatSnapshot?: any /* profile.Format */[];
   policySnapshot?: any /* profile.Profile */;
   editionSnapshot?: any /* store.Collection */;
-  representedUnits: number /* int */;
+  representedBooks: number /* int */;
   targetId?: number /* int64 */;
-  coverage?: ExpectedSlot[];
+  coverage?: BookRef[];
   profileId?: number /* int64 */;
   guid: string;
   provider: string;
@@ -516,7 +516,7 @@ export interface SearchResult {
 /**
  * SearchEvent is one frame of a streaming search: "sites" announces what
  * will be searched, "batch" delivers processed candidates as soon as one
- * search unit finishes (a single extension source, or one provider's
+ * search book finishes (a single extension source, or one provider's
  * indexer sweep), "done" closes the stream.
  */
 export interface SearchEvent {
@@ -549,7 +549,7 @@ export interface IndexerView extends Indexer {
 }
 /**
  * SeriesIndexerView adds per-series override state and the binding set (a
- * source entry can bind several manga entries; the funnel picks per slot).
+ * source entry can bind several manga entries; the funnel picks per book).
  */
 export interface SeriesIndexerView extends IndexerView {
   override?: SiteOverride;
@@ -559,11 +559,11 @@ export interface SeriesIndexerView extends IndexerView {
 //////////
 // source: targets.go
 
-export interface UnitSlot {
+export interface BookStatus {
   onDiskFileIds: number /* int64 */[];
   reason: string;
   currentScore: number /* int */;
-  work: Work;
+  book: Book;
   targetId: number /* int64 */;
   monitored: boolean;
   availability: string;

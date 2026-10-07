@@ -55,7 +55,7 @@ const reasonNames: Record<string, string> = {
   'rejected.numbers_unknown': 'No book number',
   'rejected.pack_unverified': 'Contents not confirmed',
   'rejected.no_coverage': 'Not needed',
-  'rejected.unit_ambiguous': 'Ambiguous book',
+  'rejected.book_ambiguous': 'Ambiguous book',
   'rejected.blocklisted': 'On your blocklist',
   'rejected.target_group': 'Other release group',
 }

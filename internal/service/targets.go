@@ -8,12 +8,12 @@ import (
 	"time"
 )
 
-type UnitSlot struct {
+type BookStatus struct {
 	OnDiskFileIDs []int64 `json:"onDiskFileIds"`
 	Reason        string  `json:"reason"`
 	CurrentScore  int     `json:"currentScore"`
 
-	Work         store.Work `json:"work"`
+	Book         store.Book `json:"book"`
 	TargetID     int64      `json:"targetId"`
 	Monitored    bool       `json:"monitored"`
 	Availability string     `json:"availability"`
@@ -22,13 +22,13 @@ type UnitSlot struct {
 	Wanted       bool       `json:"wanted"`
 }
 
-func targetSlots(t store.DownloadTarget, works []store.Work, coverage []store.AssetCoverage, pending map[string]bool, files map[int64]bool, now time.Time, overrides map[int64]bool, chapter bool) []UnitSlot {
-	out := make([]UnitSlot, 0, len(works))
+func versionBooks(t store.DownloadTarget, works []store.Book, coverage []store.AssetCoverage, pending map[string]bool, files map[int64]bool, now time.Time, overrides map[int64]bool, chapter bool) []BookStatus {
+	out := make([]BookStatus, 0, len(works))
 	today := now.Format("2006-01-02")
-	byWork := map[int64][]store.AssetCoverage{}
+	byBook := map[int64][]store.AssetCoverage{}
 	for _, a := range coverage {
 		if a.TargetID == t.ID {
-			byWork[a.WorkID] = append(byWork[a.WorkID], a)
+			byBook[a.BookID] = append(byBook[a.BookID], a)
 		}
 	}
 	for _, w := range works {
@@ -40,12 +40,12 @@ func targetSlots(t store.DownloadTarget, works []store.Work, coverage []store.As
 				availability = "upcoming"
 			}
 		}
-		slot := UnitSlot{Work: w, TargetID: t.ID, Monitored: t.Monitored && (w.CountType == "main" || t.IncludeExtras) && (!chapter || !w.NumberKnown || w.SequenceNum > t.CutoffNum), Availability: availability, FileIDs: []int64{}, OnDiskFileIDs: []int64{}}
+		slot := BookStatus{Book: w, TargetID: t.ID, Monitored: t.Monitored && (w.CountType == "main" || t.IncludeExtras) && (!chapter || !w.NumberKnown || w.SequenceNum > t.CutoffNum), Availability: availability, FileIDs: []int64{}, OnDiskFileIDs: []int64{}}
 		if v, ok := overrides[w.ID]; ok {
 			slot.Monitored = t.Monitored && v
 		}
-		for _, a := range byWork[w.ID] {
-			if a.TargetID == t.ID && a.WorkID == w.ID && a.Verified && files[a.FileID] {
+		for _, a := range byBook[w.ID] {
+			if a.TargetID == t.ID && a.BookID == w.ID && a.Verified && files[a.FileID] {
 				slot.FileIDs = append(slot.FileIDs, a.FileID)
 			}
 		}
@@ -74,8 +74,8 @@ func targetSlots(t store.DownloadTarget, works []store.Work, coverage []store.As
 type ledgerView struct {
 	Targets     []store.DownloadTarget
 	Collections []store.Collection
-	Works       map[int64][]store.Work
-	Slots       map[int64][]UnitSlot
+	Books       map[int64][]store.Book
+	Status      map[int64][]BookStatus
 	Profiles    map[int64]*profile.Profile
 }
 
@@ -92,11 +92,11 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	if err != nil {
 		return nil, err
 	}
-	works, err := st.SeriesWorks(ctx, seriesID)
+	works, err := st.SeriesBooks(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	overrides, err := st.SeriesUnitOverrides(ctx, seriesID)
+	overrides, err := st.SeriesBookOverrides(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	if err != nil {
 		return nil, err
 	}
-	pending, err := st.PendingUnits(ctx, seriesID)
+	pending, err := st.PendingBooks(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -132,20 +132,20 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	for _, a := range coverage {
 		coverageByTarget[a.TargetID] = append(coverageByTarget[a.TargetID], a)
 	}
-	view := &ledgerView{Targets: targets, Collections: cols, Works: map[int64][]store.Work{}, Slots: map[int64][]UnitSlot{}, Profiles: map[int64]*profile.Profile{}}
+	view := &ledgerView{Targets: targets, Collections: cols, Books: map[int64][]store.Book{}, Status: map[int64][]BookStatus{}, Profiles: map[int64]*profile.Profile{}}
 	byCol := map[int64]store.Collection{}
 	for _, c := range cols {
 		byCol[c.ID] = c
 	}
 	for _, w := range works {
-		view.Works[w.CollectionID] = append(view.Works[w.CollectionID], w)
+		view.Books[w.CollectionID] = append(view.Books[w.CollectionID], w)
 	}
 	byOverride := map[int64]map[int64]bool{}
 	for _, o := range overrides {
 		if byOverride[o.TargetID] == nil {
 			byOverride[o.TargetID] = map[int64]bool{}
 		}
-		byOverride[o.TargetID][o.WorkID] = o.Monitored
+		byOverride[o.TargetID][o.BookID] = o.Monitored
 	}
 	byFile := map[int64]store.File{}
 	present := map[int64]bool{}
@@ -159,7 +159,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	}
 	byContent := map[int64][]store.AssetContent{}
 	for _, c := range contents {
-		byContent[c.WorkID] = append(byContent[c.WorkID], c)
+		byContent[c.BookID] = append(byContent[c.BookID], c)
 	}
 	for _, target := range targets {
 		col := byCol[target.CollectionID]
@@ -193,22 +193,22 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 				reason = "Existing copy does not meet the release profile"
 			}
 			if reason != "" {
-				reasons[a.WorkID] = reason
+				reasons[a.BookID] = reason
 				continue
 			}
 			accepted = append(accepted, a)
 		}
-		pinnedWorks := map[int64]bool{}
+		pinnedBooks := map[int64]bool{}
 		for _, a := range accepted {
 			if a.Pinned {
-				pinnedWorks[a.WorkID] = true
+				pinnedBooks[a.BookID] = true
 			}
 		}
-		slots := targetSlots(target, view.Works[col.ID], accepted, pending, present, time.Now(), byOverride[target.ID], col.Type == "chapter")
+		slots := versionBooks(target, view.Books[col.ID], accepted, pending, present, time.Now(), byOverride[target.ID], col.Type == "chapter")
 		for i := range slots {
 			sl := &slots[i]
 			hasReview := false
-			for _, c := range byContent[sl.Work.ID] {
+			for _, c := range byContent[sl.Book.ID] {
 				f := byFile[c.FileID]
 				if f.Presence == "present" {
 					sl.OnDiskFileIDs = append(sl.OnDiskFileIDs, f.ID)
@@ -224,7 +224,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 			case col.SyncState == "stale" || col.SyncState == "superseded":
 				sl.Monitored = false
 				sl.Reason = "Edition is unavailable in the catalog; review it before collecting"
-			case sl.Work.SyncState == "stale" || sl.Work.SyncState == "retired":
+			case sl.Book.SyncState == "stale" || sl.Book.SyncState == "retired":
 				sl.Reason = "This book is retired or unavailable in the catalog"
 			case !target.Monitored:
 				sl.Reason = "Collecting is paused for this version"
@@ -246,7 +246,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 			}
 			if sl.State == "missing" && len(sl.OnDiskFileIDs) > 0 {
 				sl.State = "unsatisfactory"
-				sl.Reason = reasons[sl.Work.ID]
+				sl.Reason = reasons[sl.Book.ID]
 				if sl.Reason == "" {
 					sl.Reason = "Existing copy is not selected for this version"
 				}
@@ -272,14 +272,14 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 				best = max(best, scores[fid])
 				known = known && byFile[fid].Facts.FactsKnown
 			}
-			pinned = pinnedWorks[sl.Work.ID]
+			pinned = pinnedBooks[sl.Book.ID]
 			if sl.State == "owned" && sl.Monitored && !storageUnavailable && prof != nil && prof.UpgradesEnabled && known && !pinned && (prof.UpgradeUntilScore == 0 || best < prof.UpgradeUntilScore) {
 				sl.State = "upgrade_eligible"
 				sl.Wanted = true
 				sl.Reason = "Current copy is below the upgrade cutoff"
 			}
 		}
-		view.Slots[target.ID] = slots
+		view.Status[target.ID] = slots
 	}
 	return view, nil
 }
@@ -298,12 +298,12 @@ func assetScore(f store.AssetFacts, p *profile.Profile, formats []profile.Format
 	return score
 }
 
-func (l *Library) TargetSlots(ctx context.Context, seriesID int64) (map[int64][]UnitSlot, error) {
+func (l *Library) VersionBooks(ctx context.Context, seriesID int64) (map[int64][]BookStatus, error) {
 	view, err := loadLedger(ctx, l.store, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	return view.Slots, nil
+	return view.Status, nil
 }
 
 func (s *SearchService) prepareTargets(ctx context.Context, run *searchRun) error {
@@ -316,9 +316,9 @@ func (s *SearchService) prepareTargets(ctx context.Context, run *searchRun) erro
 	}
 	run.collections = view.Collections
 	run.targets = view.Targets
-	run.units = view.Works
+	run.books = view.Books
 	run.targetProfiles = view.Profiles
-	run.targetWanted = map[int64]map[int64]bool{}
+	run.wantedBooks = map[int64]map[int64]bool{}
 	run.ownedScores = map[int64]map[int64]int{}
 	bindings, err := s.store.ListBindings(ctx, run.seriesID)
 	if err != nil {
@@ -339,18 +339,18 @@ func (s *SearchService) prepareTargets(ctx context.Context, run *searchRun) erro
 		if run.target != nil && run.target.TargetID != t.ID {
 			continue
 		}
-		if run.target != nil && run.target.WorkID == 0 {
+		if run.target != nil && run.target.BookID == 0 {
 			found = true
 		}
 		wanted := map[int64]bool{}
 		run.ownedScores[t.ID] = map[int64]int{}
-		for _, sl := range view.Slots[t.ID] {
+		for _, sl := range view.Status[t.ID] {
 			selected := sl.Wanted
-			if run.target != nil && run.target.AllBooks && run.target.WorkID == 0 {
+			if run.target != nil && run.target.AllBooks && run.target.BookID == 0 {
 				selected = sl.State != "storage_unavailable" && sl.State != "needs_review" && sl.State != "pending"
 			}
-			if run.target != nil && run.target.WorkID != 0 {
-				selected = run.target.WorkID == sl.Work.ID
+			if run.target != nil && run.target.BookID != 0 {
+				selected = run.target.BookID == sl.Book.ID
 				if selected {
 					found = true
 				}
@@ -359,14 +359,14 @@ func (s *SearchService) prepareTargets(ctx context.Context, run *searchRun) erro
 				}
 			}
 			if selected {
-				wanted[sl.Work.ID] = true
+				wanted[sl.Book.ID] = true
 			}
 			if sl.State == "upgrade_eligible" {
-				run.ownedScores[t.ID][sl.Work.ID] = sl.CurrentScore
+				run.ownedScores[t.ID][sl.Book.ID] = sl.CurrentScore
 			}
 		}
 		if len(wanted) > 0 {
-			run.targetWanted[t.ID] = wanted
+			run.wantedBooks[t.ID] = wanted
 		}
 	}
 	if !found {

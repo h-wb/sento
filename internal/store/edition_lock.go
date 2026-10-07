@@ -42,7 +42,7 @@ func (s *Store) lockEditions(ctx context.Context, tx *sql.Tx, allowPending bool,
 				_ = rows.Close()
 				return err
 			}
-			var slots []ExpectedSlot
+			var slots []BookRef
 			if err = json.Unmarshal([]byte(raw), &slots); err != nil {
 				_ = rows.Close()
 				return err

@@ -37,21 +37,21 @@ func (j JSONText) MarshalJSON() ([]byte, error) {
 }
 
 type QueueItem struct {
-	RetryCount    int      `json:"retryCount"`
-	RetryAt       string   `json:"retryAt"`
-	ProviderID    string   `json:"providerId,omitempty"`
-	ReleaseKey    string   `json:"releaseKey,omitempty"`
-	Snapshot      JSONText `json:"snapshot" db:"snapshot_json" tstype:"any"`
-	ID            int64    `json:"id"`
-	SeriesID      int64    `json:"seriesId"`
-	Protocol      string   `json:"protocol"` // torrent|source
-	ExternalID    string   `json:"externalId"`
-	Title         string   `json:"title"`
-	Status        string   `json:"status"`
-	ExpectedSlots JSONText `json:"expectedSlots" db:"expected_slots_json" tstype:"ExpectedSlot[]"`
-	Error         string   `json:"error,omitempty"`
-	CreatedAt     string   `json:"createdAt"`
-	UpdatedAt     string   `json:"updatedAt,omitempty"`
+	RetryCount int      `json:"retryCount"`
+	RetryAt    string   `json:"retryAt"`
+	ProviderID string   `json:"providerId,omitempty"`
+	ReleaseKey string   `json:"releaseKey,omitempty"`
+	Snapshot   JSONText `json:"snapshot" db:"snapshot_json" tstype:"any"`
+	ID         int64    `json:"id"`
+	SeriesID   int64    `json:"seriesId"`
+	Protocol   string   `json:"protocol"` // torrent|source
+	ExternalID string   `json:"externalId"`
+	Title      string   `json:"title"`
+	Status     string   `json:"status"`
+	Books      JSONText `json:"books" db:"expected_slots_json" tstype:"BookRef[]"`
+	Error      string   `json:"error,omitempty"`
+	CreatedAt  string   `json:"createdAt"`
+	UpdatedAt  string   `json:"updatedAt,omitempty"`
 	// Progress is the live download fraction (0–1) for in-flight items,
 	// filled in by the queue handler from the provider. Runtime-only: it is
 	// neither stored nor scanned from the database.
@@ -70,13 +70,30 @@ const (
 	QueueCancelled       = "cancelled"
 )
 
-// ExpectedSlot records explicit version and unit coverage for a pending grab.
-type ExpectedSlot struct {
+// BookRef records explicit version and book coverage for a pending grab.
+type BookRef struct {
 	TargetID     int64  `json:"targetId,omitempty"`
-	WorkID       int64  `json:"workId,omitempty"`
+	BookID       int64  `json:"bookId,omitempty"`
 	Ledger       string `json:"ledger"`
 	CollectionID int64  `json:"collectionId"`
 	Number       int64  `json:"number"`
+}
+
+// UnmarshalJSON also accepts "workId", the name this field had in queue
+// items, decisions and snapshots written before it was renamed.
+func (b *BookRef) UnmarshalJSON(data []byte) error {
+	type plain BookRef
+	aux := struct {
+		*plain
+		LegacyID int64 `json:"workId"`
+	}{plain: (*plain)(b)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if b.BookID == 0 {
+		b.BookID = aux.LegacyID
+	}
+	return nil
 }
 
 func (s *Store) AddQueueItem(ctx context.Context, q QueueItem) (int64, error) {
@@ -84,7 +101,7 @@ func (s *Store) AddQueueItem(ctx context.Context, q QueueItem) (int64, error) {
 		INSERT INTO queue_items (series_id, protocol, external_id, title, status, expected_slots_json)
 		VALUES (?,?,?,?,?,?) RETURNING id`,
 		q.SeriesID, q.Protocol, q.ExternalID, q.Title, orDefault(q.Status, QueueQueued),
-		string(q.ExpectedSlots))
+		string(q.Books))
 }
 
 func (s *Store) UpdateQueueItem(ctx context.Context, id int64, status, errMsg string) error {
@@ -166,31 +183,31 @@ func (s *Store) SeriesTitles(ctx context.Context, seriesID int64) ([]string, err
 	return titles, nil
 }
 
-func (s *Store) PendingUnits(ctx context.Context, seriesID int64) (map[string]bool, error) {
+func (s *Store) PendingBooks(ctx context.Context, seriesID int64) (map[string]bool, error) {
 	raws, err := list[string](ctx, s, `SELECT expected_slots_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`, seriesID)
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]bool{}
 	for _, raw := range raws {
-		var slots []ExpectedSlot
+		var slots []BookRef
 		if err = json.Unmarshal([]byte(raw), &slots); err != nil {
 			return nil, err
 		}
 		for _, sl := range slots {
-			if sl.TargetID > 0 && sl.WorkID > 0 {
-				out[BookKey(sl.TargetID, sl.WorkID)] = true
+			if sl.TargetID > 0 && sl.BookID > 0 {
+				out[BookKey(sl.TargetID, sl.BookID)] = true
 			}
 		}
 	}
 	return out, nil
 }
 
-// ReserveQueue claims every target/unit before contacting a downloader. Failed
+// ReserveQueue claims every target/book before contacting a downloader. Failed
 // jobs release claims on the next reservation; completed jobs retain history.
-func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []ExpectedSlot) (int64, bool, error) {
+func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []BookRef) (int64, bool, error) {
 	if len(slots) == 0 {
-		return 0, false, apperr.Invalidf("release has no verified unit coverage")
+		return 0, false, apperr.Invalidf("release has no verified book coverage")
 	}
 	if err := s.EnsureModels(ctx, q.SeriesID); err != nil {
 		return 0, false, err
@@ -205,9 +222,9 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []ExpectedS
 			return 0, false, e
 		}
 		if c.SeriesID != q.SeriesID || c.Type != sl.Ledger {
-			return 0, false, apperr.Invalidf("invalid unit edition")
+			return 0, false, apperr.Invalidf("invalid book edition")
 		}
-		w, e := s.GetWork(ctx, sl.WorkID)
+		w, e := s.GetBook(ctx, sl.BookID)
 		if e != nil {
 			return 0, false, e
 		}
@@ -216,7 +233,7 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []ExpectedS
 			return 0, false, e
 		}
 		if w.CollectionID != c.ID || t.CollectionID != c.ID {
-			return 0, false, apperr.Invalidf("unit/version belongs to another edition")
+			return 0, false, apperr.Invalidf("book/version belongs to another edition")
 		}
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -233,7 +250,7 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []ExpectedS
 	}
 	for _, sl := range slots {
 		var n int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id WHERE w.id=? AND t.id=? AND w.collection_id=? AND w.sync_state<>'retired'`), sl.WorkID, sl.TargetID, sl.CollectionID).Scan(&n); err != nil {
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id WHERE w.id=? AND t.id=? AND w.collection_id=? AND w.sync_state<>'retired'`), sl.BookID, sl.TargetID, sl.CollectionID).Scan(&n); err != nil {
 			return 0, false, err
 		}
 		if n != 1 {
@@ -254,7 +271,7 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []ExpectedS
 		err = tx.QueryRowContext(ctx, s.q(query), q.SeriesID, q.ProviderID, q.ReleaseKey).Scan(&id, &raw, &snap)
 	}
 	created := errors.Is(err, sql.ErrNoRows)
-	var plan []ExpectedSlot
+	var plan []BookRef
 	if created {
 		body, _ := json.Marshal(slots)
 		if err = tx.QueryRowContext(ctx, s.q(`INSERT INTO queue_items(series_id,protocol,external_id,title,status,expected_slots_json,provider_id,release_key,snapshot_json) VALUES(?,?,'',?,'queued',?,?,?,?) RETURNING id`), q.SeriesID, q.Protocol, q.Title, string(body), q.ProviderID, q.ReleaseKey, string(q.Snapshot)).Scan(&id); err != nil {
@@ -270,16 +287,16 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []ExpectedS
 	for _, sl := range slots {
 		exists := false
 		for _, old := range plan {
-			if old.TargetID == sl.TargetID && old.WorkID == sl.WorkID && old.CollectionID == sl.CollectionID && old.Number == sl.Number {
+			if old.TargetID == sl.TargetID && old.BookID == sl.BookID && old.CollectionID == sl.CollectionID && old.Number == sl.Number {
 				exists = true
 			}
 		}
 		if exists {
 			continue
 		}
-		if sl.TargetID > 0 && sl.WorkID > 0 {
-			if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO unit_reservations(target_id,work_id,queue_id) VALUES(?,?,?)`), sl.TargetID, sl.WorkID, id); err != nil {
-				return 0, false, conflict(err, "unit already has a pending download")
+		if sl.TargetID > 0 && sl.BookID > 0 {
+			if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO unit_reservations(target_id,work_id,queue_id) VALUES(?,?,?)`), sl.TargetID, sl.BookID, id); err != nil {
+				return 0, false, conflict(err, "book already has a pending download")
 			}
 		}
 		plan = append(plan, sl)
@@ -323,7 +340,7 @@ func (s *Store) BeginImport(ctx context.Context, id int64) (*QueueItem, error) {
 		return nil, apperr.Conflictf("download is no longer active")
 	}
 	var q QueueItem
-	err = tx.QueryRowContext(ctx, s.q(`SELECT id,series_id,protocol,external_id,title,status,expected_slots_json,provider_id,release_key,snapshot_json,created_at FROM queue_items WHERE id=?`), id).Scan(&q.ID, &q.SeriesID, &q.Protocol, &q.ExternalID, &q.Title, &q.Status, &q.ExpectedSlots, &q.ProviderID, &q.ReleaseKey, &q.Snapshot, &q.CreatedAt)
+	err = tx.QueryRowContext(ctx, s.q(`SELECT id,series_id,protocol,external_id,title,status,expected_slots_json,provider_id,release_key,snapshot_json,created_at FROM queue_items WHERE id=?`), id).Scan(&q.ID, &q.SeriesID, &q.Protocol, &q.ExternalID, &q.Title, &q.Status, &q.Books, &q.ProviderID, &q.ReleaseKey, &q.Snapshot, &q.CreatedAt)
 	if err != nil {
 		return nil, err
 	}

@@ -1,7 +1,7 @@
 import {
   EditorModal,
   TargetEditor,
-  UnitEditor,
+  BookEditor,
   EditionEditor,
   CatalogLink,
   MappingEditor,
@@ -27,8 +27,8 @@ import {
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, fmtSize } from '../api'
-import type { Collection, DownloadTarget, Work, File as SeriesFile } from '../types/store'
-import type { SlotSelection } from './SlotModal'
+import type { Collection, DownloadTarget, Book, File as SeriesFile } from '../types/store'
+import type { BookSelection } from './BookDialog'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
 
@@ -42,7 +42,7 @@ type Props = {
   seriesID: number
   collections: Collection[]
   files: SeriesFile[]
-  onSlot: (s: SlotSelection) => void
+  onBook: (s: BookSelection) => void
   onAddEdition: () => void
 }
 export default function EditionManager({
@@ -50,7 +50,7 @@ export default function EditionManager({
   seriesID,
   collections,
   files,
-  onSlot,
+  onBook,
   onAddEdition,
 }: Props) {
   const qc = useQueryClient()
@@ -59,7 +59,7 @@ export default function EditionManager({
     queryKey: ['series', seriesID, 'targets'],
     queryFn: () => api.targets(seriesID),
   })
-  const slots = useQuery({
+  const overview = useQuery({
     queryKey: ['series', seriesID, 'edition-overview'],
     queryFn: () => api.editionOverview(seriesID),
   })
@@ -69,7 +69,7 @@ export default function EditionManager({
   })
   const [chosen, setChosen] = useState<Record<number, string>>({})
   const [target, setTarget] = useState<DownloadTarget | null>(null)
-  const [unit, setUnit] = useState<Work | null>(null)
+  const [book, setBook] = useState<Book | null>(null)
   const [edition, setEdition] = useState<Collection | null>(null)
   const [link, setLink] = useState<Collection | null>(null)
   const [file, setFile] = useState<SeriesFile | null>(null)
@@ -105,17 +105,17 @@ export default function EditionManager({
         Number(a.type === 'chapter') - Number(b.type === 'chapter') ||
         a.editionName.localeCompare(b.editionName),
     )
-  const pending = targets.isPending || slots.isPending
+  const pending = targets.isPending || overview.isPending
   const details = useQuery({
-    queryKey: ['series', seriesID, 'target-slots'],
-    queryFn: () => api.targetSlots(seriesID),
+    queryKey: ['series', seriesID, 'version-books'],
+    queryFn: () => api.versionBooks(seriesID),
     enabled: !!file,
   })
-  const allUnits = Object.values(details.data ?? {}).flat()
+  const allBooks = Object.values(details.data ?? {}).flat()
   const [otherEditions, setOtherEditions] = useState(false)
   const [language, setLanguage] = useState<string | null>(null)
   const [layout, setLayout] = useState<string | null>(null)
-  const summary = (id: number) => slots.data?.targets.find((t) => t.targetId === id)
+  const summary = (id: number) => overview.data?.targets.find((t) => t.targetId === id)
   const isYours = (c: Collection) =>
     (c.custom && c.numberingSource === 'manual') ||
     allTargets.some(
@@ -130,10 +130,10 @@ export default function EditionManager({
         <>
           <QueryFeedback
             pending={pending}
-            error={targets.error || slots.error}
+            error={targets.error || overview.error}
             onRetry={() => {
               void targets.refetch()
-              void slots.refetch()
+              void overview.refetch()
             }}
           />
           {error && <Alert color="red">{error}</Alert>}
@@ -163,7 +163,7 @@ export default function EditionManager({
               }`
               const findMissing = () =>
                 t &&
-                onSlot({
+                onBook({
                   ledger: c.type === 'chapter' ? 'chapter' : 'volume',
                   collectionId: c.id,
                   targetId: t.id,
@@ -277,7 +277,7 @@ export default function EditionManager({
 
                           <Menu.Item
                             onClick={() =>
-                              setUnit({
+                              setBook({
                                 id: 0,
                                 collectionId: c.id,
                                 sequenceNum: 0,
@@ -383,8 +383,8 @@ export default function EditionManager({
                         target={t}
                         files={files}
                         coverage={coverage.data ?? []}
-                        onSlot={onSlot}
-                        onEdit={setUnit}
+                        onBook={onBook}
+                        onEdit={setBook}
                         onFile={setFile}
                         run={run}
                         busy={busy}
@@ -551,26 +551,26 @@ export default function EditionManager({
           close={() => setTarget(null)}
         />
       )}
-      {unit && (
-        <UnitEditor
-          key={unit.id}
-          value={unit}
+      {book && (
+        <BookEditor
+          key={book.id}
+          value={book}
           save={async (value) => {
-            await api.saveUnit(seriesID, value)
+            await api.saveBook(seriesID, value)
             await changed()
-            setUnit(null)
+            setBook(null)
           }}
           reset={async () => {
-            await api.resetUnit(seriesID, unit.id)
+            await api.resetBook(seriesID, book.id)
             await changed()
-            setUnit(null)
+            setBook(null)
           }}
           remove={async () => {
-            await api.deleteUnit(seriesID, unit.id)
+            await api.deleteBook(seriesID, book.id)
             await changed()
-            setUnit(null)
+            setBook(null)
           }}
-          close={() => setUnit(null)}
+          close={() => setBook(null)}
         />
       )}
       {edition && (
@@ -638,10 +638,10 @@ export default function EditionManager({
           value={file}
           targets={allTargets}
           existing={coverage.data?.filter((a) => a.fileId === file.id) ?? []}
-          units={allUnits}
+          books={allBooks}
           collections={collections}
-          save={async (slots) => {
-            await api.mapFile(seriesID, file.id, slots)
+          save={async (books) => {
+            await api.mapFile(seriesID, file.id, books)
             await changed()
             setFile(null)
           }}

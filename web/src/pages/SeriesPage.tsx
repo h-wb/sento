@@ -40,7 +40,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, type Collection, type SeriesIndexerView } from '../api'
-import SlotModal, { type SlotSelection } from '../components/SlotModal'
+import BookDialog, { type BookSelection } from '../components/BookDialog'
 import { fmtWhen, notify, usePageTitle } from '../ui'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { EmptyState } from '../components/EmptyState'
@@ -54,7 +54,7 @@ export default function SeriesPage() {
   const { confirm, confirmation } = useConfirmAction()
 
   const [busy, setBusy] = useState(false)
-  const [slotSel, setSlotSel] = useState<SlotSelection | null>(null)
+  const [bookSel, setBookSel] = useState<BookSelection | null>(null)
   const [fullDesc, setFullDesc] = useState(false)
   const [addCollection, setAddCollection] = useState(false)
   // ?view=review is the deep link the global review inbox uses.
@@ -75,7 +75,7 @@ export default function SeriesPage() {
     refetchInterval: 15000,
   })
   const reviewCount = review.data?.length ?? 0
-  const slotsQuery = useQuery({
+  const overviewQuery = useQuery({
     queryKey: ['series', seriesID, 'edition-overview'],
     queryFn: () => api.editionOverview(seriesID),
   })
@@ -87,10 +87,10 @@ export default function SeriesPage() {
   const series = detail.data?.series ?? null
   usePageTitle(series?.title ?? '')
   const collections = detail.data?.collections ?? []
-  const slots = slotsQuery.data ?? null
+  const overview = overviewQuery.data ?? null
   const files = filesQuery.data ?? []
 
-  // Refresh everything under this series (slots, files, indexers, detail).
+  // Refresh everything under this series (books, files, indexers, detail).
   const load = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['queue'] })
     return queryClient.invalidateQueries({ queryKey: ['series'] })
@@ -104,7 +104,7 @@ export default function SeriesPage() {
       seriesID={seriesID}
       collections={collections}
       files={files}
-      onSlot={setSlotSel}
+      onBook={setBookSel}
       onAddEdition={() => setAddCollection(true)}
     />
   )
@@ -137,8 +137,8 @@ export default function SeriesPage() {
     )
   }
 
-  const owned = slots?.booksOnDisk ?? 0
-  const wanted = slots?.wantedCopies ?? 0
+  const owned = overview?.booksOnDisk ?? 0
+  const wanted = overview?.wantedCopies ?? 0
 
   return (
     <>
@@ -220,7 +220,7 @@ export default function SeriesPage() {
                 </Text>
               </div>
             )}
-            {slots && (
+            {overview && (
               <>
                 <div>
                   <Text size="lg" fw={500}>
@@ -368,7 +368,7 @@ export default function SeriesPage() {
           <Tabs.Tab value="indexers">Indexers</Tabs.Tab>
           <Tabs.Tab value="history">History</Tabs.Tab>
         </Tabs.List>
-        <QueryFeedback error={slotsQuery.error} onRetry={() => void slotsQuery.refetch()} />
+        <QueryFeedback error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} />
         <QueryFeedback error={filesQuery.error} onRetry={() => void filesQuery.refetch()} />
 
         <Tabs.Panel value="editions" pt="md">
@@ -427,11 +427,11 @@ export default function SeriesPage() {
       </Tabs>
 
       {organize && <OrganizeFiles seriesID={seriesID} onClose={() => setOrganize(false)} />}
-      <SlotModal
+      <BookDialog
         seriesID={seriesID}
-        sel={slotSel}
+        sel={bookSel}
         files={files}
-        onClose={() => setSlotSel(null)}
+        onClose={() => setBookSel(null)}
         onChanged={load}
       />
     </>
@@ -645,7 +645,7 @@ function AddEditionModal({
         {
           <Select
             label="Copy numbering from"
-            description="Copy unit labels only. Dates and catalog references are kept separate."
+            description="Copy book numbers only. Dates and catalog references are kept separate."
             placeholder="From scratch"
             clearable
             data={collections
@@ -670,7 +670,7 @@ function AddEditionModal({
         )}
         {ctype === 'chapter' && (
           <Text size="sm" c="dimmed">
-            This edition starts with explicit units. Add chapters individually, or enable
+            This edition starts empty. Add chapters individually, or enable
             count-based numbering in Edit edition.
           </Text>
         )}
@@ -890,7 +890,7 @@ function IndexersTab({
 }
 
 // BindingList shows a site's bound manga entries: every entry that cleared
-// auto-matching is searched in parallel and the funnel picks per slot —
+// auto-matching is searched in parallel and the funnel picks per book —
 // disable an entry only if it produces garbage.
 function BindingList({
   seriesID,

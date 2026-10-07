@@ -20,7 +20,7 @@ import (
 )
 
 // Importer advances the download queue for every provider: poll state,
-// fetch finished payloads, import into the library, link slots, clean up.
+// fetch finished payloads, import into the library, link books, clean up.
 // The import pipeline itself (naming, ComicInfo, linking) is provider-
 // agnostic; only the payload shape varies (stream vs directory).
 type Importer struct {
@@ -216,8 +216,8 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 	return true, im.store.UpdateQueueItem(ctx, item.ID, store.QueueImported, "")
 }
 
-// importStream imports a single-archive payload into the slot(s) the queue
-// item expects — ledger-aware: volume slots get volume naming.
+// importStream imports a single-archive payload into the book(s) the queue
+// item expects — ledger-aware: volume books get volume naming.
 func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stream io.Reader) error {
 	ms := LoadMediaSettings(ctx, im.store)
 	series, err := im.store.GetSeries(ctx, item.SeriesID)
@@ -283,7 +283,7 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 }
 
 // importFiles imports a directory payload (torrents): every archive is
-// parsed and installed into the library for each expected slot it covers —
+// parsed and installed into the library for each expected book it covers —
 // as a tagged CBZ copy, or a hardlink when metadata embedding is off.
 // Payload data is never moved or modified (seeding, spec.md §7).
 func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir string, files []string) error {
@@ -325,11 +325,11 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			}
 		}
 		for _, sl := range expected {
-			for _, book := range view.Slots[sl.TargetID] {
-				if book.Work.ID == sl.WorkID {
+			for _, book := range view.Status[sl.TargetID] {
+				if book.Book.ID == sl.BookID {
 					for _, fid := range book.FileIDs {
 						if belongs[fid] {
-							linked[store.BookKey(sl.TargetID, sl.WorkID)] = true
+							linked[store.BookKey(sl.TargetID, sl.BookID)] = true
 						}
 					}
 				}
@@ -361,9 +361,9 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			continue
 		}
 		ranges := bookRanges(res, expected[0].Ledger)
-		var covered []store.ExpectedSlot
+		var covered []store.BookRef
 		for _, sl := range expected {
-			w, e := im.store.GetWork(ctx, sl.WorkID)
+			w, e := im.store.GetBook(ctx, sl.BookID)
 			if e != nil {
 				return e
 			}
@@ -426,11 +426,11 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			return e
 		}
 		for _, sl := range covered {
-			linked[store.BookKey(sl.TargetID, sl.WorkID)] = true
+			linked[store.BookKey(sl.TargetID, sl.BookID)] = true
 		}
 	}
 	if len(linked) != len(expected) {
-		return fmt.Errorf("partial import: verified %d of %d expected units; unmatched files need review", len(linked), len(expected))
+		return fmt.Errorf("partial import: verified %d of %d expected books; unmatched files need review", len(linked), len(expected))
 	}
 	return nil
 }
@@ -502,8 +502,8 @@ func (im *Importer) reviewedJobComplete(ctx context.Context, item store.QueueIte
 	if err := im.store.CheckFilePresence(ctx, item.SeriesID); err != nil {
 		return false, err
 	}
-	var plan []store.ExpectedSlot
-	if err := json.Unmarshal(item.ExpectedSlots, &plan); err != nil {
+	var plan []store.BookRef
+	if err := json.Unmarshal(item.Books, &plan); err != nil {
 		return false, err
 	}
 	if len(plan) == 0 {
@@ -523,8 +523,8 @@ func (im *Importer) reviewedJobComplete(ctx context.Context, item store.QueueIte
 	}
 	for _, sl := range plan {
 		found := false
-		for _, book := range view.Slots[sl.TargetID] {
-			if book.Work.ID == sl.WorkID {
+		for _, book := range view.Status[sl.TargetID] {
+			if book.Book.ID == sl.BookID {
 				for _, fid := range book.FileIDs {
 					if belongs[fid] {
 						found = true

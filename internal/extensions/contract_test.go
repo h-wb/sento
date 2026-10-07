@@ -3,7 +3,7 @@
 // Contract tests against a live sento-extensions sidecar. Their job is to fail
 // loudly when a Suwayomi bump (host/vendir.yml) breaks the vendored fake
 // Android runtime or the APK loading path — the parts of host/ Sento does
-// not own and cannot unit-test. Network- and JVM-bound, so never part of
+// not own and cannot book-test. Network- and JVM-bound, so never part of
 // `go test ./...`:
 //
 //	mise run extensions:contract

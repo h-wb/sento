@@ -21,7 +21,7 @@ const maxTags = 30
 // reader needs to file and describe the file without Sento. release is
 // the name of the download it came from and group its release group; both
 // may be empty.
-func (im *Importer) bookInfo(ctx context.Context, series *store.Series, sl store.ExpectedSlot, release, group string) mediafile.ComicInfo {
+func (im *Importer) bookInfo(ctx context.Context, series *store.Series, sl store.BookRef, release, group string) mediafile.ComicInfo {
 	info := mediafile.ComicInfo{
 		Series:          series.Title,
 		Summary:         series.Description,
@@ -69,7 +69,7 @@ func (im *Importer) bookInfo(ctx context.Context, series *store.Series, sl store
 		}
 	}
 
-	if w, err := im.store.GetWork(ctx, sl.WorkID); err == nil {
+	if w, err := im.store.GetBook(ctx, sl.BookID); err == nil {
 		info.GTIN = w.ISBN
 		if y, m, d, ok := splitDate(w.ReleaseDate); ok {
 			info.Year, info.Month, info.Day = y, m, d
@@ -83,7 +83,7 @@ func (im *Importer) bookInfo(ctx context.Context, series *store.Series, sl store
 		}
 	}
 
-	seriesRaw, workRaw, _ := im.store.CatalogPayloads(ctx, series.ID, sl.WorkID)
+	seriesRaw, workRaw, _ := im.store.CatalogPayloads(ctx, series.ID, sl.BookID)
 	applyCatalog(&info, seriesRaw, workRaw)
 
 	if release != "" {
@@ -138,8 +138,8 @@ func applyCatalog(info *mediafile.ComicInfo, seriesRaw, workRaw string) {
 
 // packInfo is bookInfo for an archive holding several books: series-level
 // facts only, since no single number, date or ISBN describes it.
-func (im *Importer) packInfo(ctx context.Context, series *store.Series, slots []store.ExpectedSlot, release, group string) mediafile.ComicInfo {
-	info := im.bookInfo(ctx, series, store.ExpectedSlot{Ledger: slots[0].Ledger, CollectionID: slots[0].CollectionID}, release, group)
+func (im *Importer) packInfo(ctx context.Context, series *store.Series, slots []store.BookRef, release, group string) mediafile.ComicInfo {
+	info := im.bookInfo(ctx, series, store.BookRef{Ledger: slots[0].Ledger, CollectionID: slots[0].CollectionID}, release, group)
 	info.Number, info.Volume, info.Count = "", "", ""
 	info.Summary = series.Description
 	first, last := slotSpan(slots)
@@ -153,7 +153,7 @@ func (im *Importer) packInfo(ctx context.Context, series *store.Series, slots []
 
 // slotSpan returns the lowest- and highest-numbered of the books a file
 // holds.
-func slotSpan(slots []store.ExpectedSlot) (first, last store.ExpectedSlot) {
+func slotSpan(slots []store.BookRef) (first, last store.BookRef) {
 	first, last = slots[0], slots[0]
 	for _, sl := range slots[1:] {
 		if sl.Number < first.Number {
@@ -169,7 +169,7 @@ func slotSpan(slots []store.ExpectedSlot) (first, last store.ExpectedSlot) {
 // bookFileName is the templated name for a file holding the given books:
 // a single number, or the range it spans ("c001-008") when it holds
 // several. ext includes the dot.
-func (im *Importer) bookFileName(ctx context.Context, ms MediaSettings, series *store.Series, slots []store.ExpectedSlot, group, ext string) string {
+func (im *Importer) bookFileName(ctx context.Context, ms MediaSettings, series *store.Series, slots []store.BookRef, group, ext string) string {
 	first, last := slotSpan(slots)
 	tokens := mediafile.NameTokens{
 		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Group: group,
@@ -237,7 +237,7 @@ func titleCase(s string) string {
 
 // bookDir is where a book of the given edition and version lives inside
 // the series folder, per the configured layout.
-func (im *Importer) bookDir(ctx context.Context, ms MediaSettings, seriesDir string, series *store.Series, sl store.ExpectedSlot) string {
+func (im *Importer) bookDir(ctx context.Context, ms MediaSettings, seriesDir string, series *store.Series, sl store.BookRef) string {
 	tokens := mediafile.NameTokens{
 		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1,
 		Year: series.Year, CollectionID: sl.CollectionID, VersionID: sl.TargetID,

@@ -47,11 +47,11 @@ func TestCustomEditions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	frWorks, _ := st.ListWorks(ctx, frID)
-	if len(frWorks) != 3 {
-		t.Fatalf("variant must clone 3 works, got %d", len(frWorks))
+	frBooks, _ := st.ListBooks(ctx, frID)
+	if len(frBooks) != 3 {
+		t.Fatalf("variant must clone 3 works, got %d", len(frBooks))
 	}
-	for _, w := range frWorks {
+	for _, w := range frBooks {
 		if w.ReleaseDate != "" {
 			t.Fatalf("variant works must not inherit release dates: %+v", w)
 		}
@@ -64,7 +64,7 @@ func TestCustomEditions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if works, _ := st.ListWorks(ctx, scratchID); len(works) != 5 || works[4].SequenceNum != 500 {
+	if works, _ := st.ListBooks(ctx, scratchID); len(works) != 5 || works[4].SequenceNum != 500 {
 		t.Fatalf("scratch edition works wrong: %+v", works)
 	}
 

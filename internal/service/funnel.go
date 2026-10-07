@@ -99,13 +99,13 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 				compatible := 0
 				for _, t := range run.targets {
 					col := collectionByID(run.collections, t.CollectionID)
-					if run.targetWanted[t.ID] != nil && col != nil && editionCompatibleWithEvidence(rc.Parse, *col, evidence) {
+					if run.wantedBooks[t.ID] != nil && col != nil && editionCompatibleWithEvidence(rc.Parse, *col, evidence) {
 						compatible++
 					}
 				}
 				rejectedShown := false
 				for _, t := range run.targets {
-					if run.targetWanted[t.ID] == nil {
+					if run.wantedBooks[t.ID] == nil {
 						continue
 					}
 					col := collectionByID(run.collections, t.CollectionID)
@@ -119,9 +119,9 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 						rejectedShown = true
 					}
 					scoped := *run
-					scoped.target = &TargetSlot{TargetID: t.ID}
+					scoped.target = &SearchScope{TargetID: t.ID}
 					if run.target != nil {
-						scoped.target.WorkID = run.target.WorkID
+						scoped.target.BookID = run.target.BookID
 						scoped.target.All = run.target.All
 						scoped.target.AllBooks = run.target.AllBooks
 					}
@@ -244,7 +244,7 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	rules := ledgerRules(prof, searchLedger)
 
 	// R2 language gate (untagged passes). Soft: record and keep going so
-	// Covered is still computed — a force-grab needs the slot list.
+	// Covered is still computed — a force-grab needs the book list.
 	if !languageCompatible(c.Parse, wantLang) {
 		reject("rejected.language")
 	}
@@ -253,11 +253,11 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	for _, r := range ranges {
 		total += int((int64(r.To)-int64(r.From))/100) + 1
 	}
-	for _, w := range run.units[colID] {
-		if w.CountType != "main" && !c.Parse.Extra && (target == nil || target.WorkID != w.ID) {
+	for _, w := range run.books[colID] {
+		if w.CountType != "main" && !c.Parse.Extra && (target == nil || target.BookID != w.ID) {
 			continue
 		}
-		if w.CountType == "main" && c.Parse.Extra && (target == nil || target.WorkID != w.ID) {
+		if w.CountType == "main" && c.Parse.Extra && (target == nil || target.BookID != w.ID) {
 			continue
 		}
 		hit := len(ranges) == 0 && searchLedger == LedgerVolume && c.Parse.Complete
@@ -269,22 +269,22 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		if !hit {
 			continue
 		}
-		if run.targetWanted[c.TargetID][w.ID] {
-			if target == nil || target.WorkID == 0 {
-				for _, other := range run.units[colID] {
+		if run.wantedBooks[c.TargetID][w.ID] {
+			if target == nil || target.BookID == 0 {
+				for _, other := range run.books[colID] {
 					if other.ID != w.ID && other.NumberKnown && w.NumberKnown && other.SequenceNum == w.SequenceNum && other.CountType == w.CountType {
-						reject("rejected.unit_ambiguous")
+						reject("rejected.book_ambiguous")
 						return
 					}
 				}
 			}
-			c.Coverage = append(c.Coverage, store.ExpectedSlot{Ledger: searchLedger, CollectionID: colID, TargetID: c.TargetID, WorkID: w.ID, Number: w.SequenceNum})
+			c.Coverage = append(c.Coverage, store.BookRef{Ledger: searchLedger, CollectionID: colID, TargetID: c.TargetID, BookID: w.ID, Number: w.SequenceNum})
 		}
 	}
 	if total == 0 {
 		total = len(c.Coverage)
 	}
-	c.RepresentedUnits = total
+	c.RepresentedBooks = total
 	if total > 0 && len(c.Coverage) > 0 && len(c.Coverage)*2 < total {
 		reject("rejected.pack_threshold")
 	}
@@ -296,10 +296,10 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	// Custom formats: matched on every routable candidate (rejected ones
 	// keep their chips), floor-gated softly so force-grab can override.
 	c.evalFormats(prof, run.formats)
-	if prof != nil && prof.UpgradesEnabled && c.TargetID > 0 && (run.target == nil || run.target.WorkID == 0) {
+	if prof != nil && prof.UpgradesEnabled && c.TargetID > 0 && (run.target == nil || run.target.BookID == 0) {
 		filtered := c.Coverage[:0]
 		for _, sl := range c.Coverage {
-			if old, ok := run.ownedScores[c.TargetID][sl.WorkID]; ok {
+			if old, ok := run.ownedScores[c.TargetID][sl.BookID]; ok {
 				min := prof.MinUpgradeScore
 				if min < 1 {
 					min = 1
@@ -325,12 +325,12 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	// Torrent-only health checks (profile rules).
 	if c.Protocol == provider.ProtocolTorrent {
 		if c.Size > 0 && rules.SizeMaxMB > 0 {
-			count := c.RepresentedUnits
+			count := c.RepresentedBooks
 			if count <= 0 {
 				count = len(c.Coverage)
 			}
-			perUnit := c.Size / int64(count)
-			if perUnit < int64(rules.SizeMinMB)<<20 || perUnit > int64(rules.SizeMaxMB)<<20 {
+			perBook := c.Size / int64(count)
+			if perBook < int64(rules.SizeMinMB)<<20 || perBook > int64(rules.SizeMaxMB)<<20 {
 				reject("rejected.size")
 			}
 		}
@@ -414,7 +414,7 @@ func baseLang(lang string) string {
 var hardRejections = map[string]bool{
 	"rejected.numbers_unknown":  true,
 	"rejected.language":         true,
-	"rejected.unit_ambiguous":   true,
+	"rejected.book_ambiguous":   true,
 	"rejected.language_unknown": true,
 	"rejected.no_upgrade":       true,
 	"rejected.target_group":     true,

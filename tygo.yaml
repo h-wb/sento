@@ -50,14 +50,14 @@ packages:
       import type { Result, Step } from "./parse"
       import type { Condition, LedgerRules } from "./profile"
       import type { ExtensionInfo } from "./extensions"
-      import type { Work, ExpectedSlot, DownloadTarget, Binding, Indexer, SiteOverride } from "./store"
+      import type { Book, BookRef, DownloadTarget, Binding, Indexer, SiteOverride } from "./store"
     type_mappings:
       profile.Condition: "Condition"
       profile.LedgerRules: "LedgerRules"
       parse.Result: "Result"
       parse.Step: "Step"
-      store.Work: "Work"
-      store.ExpectedSlot: "ExpectedSlot"
+      store.Book: "Book"
+      store.BookRef: "BookRef"
       store.DownloadTarget: "DownloadTarget"
       store.Binding: "Binding"
       store.Indexer: "Indexer"
@@ -69,12 +69,12 @@ packages:
     output_path: "web/src/types/server.ts"
     frontmatter: |
       /* eslint-disable */
-      import type { ScanResult, SearchResult, TargetSlot } from "./service"
+      import type { ScanResult, SearchResult, SearchScope } from "./service"
       import type { Collection, Series } from "./store"
       import type { RepoStatus } from "./extensions"
     type_mappings:
       extensions.RepoStatus: "RepoStatus"
-      service.TargetSlot: "TargetSlot"
+      service.SearchScope: "SearchScope"
       service.SearchResult: "SearchResult"
       service.ScanResult: "ScanResult"
       store.Series: "Series"

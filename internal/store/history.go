@@ -16,15 +16,16 @@ type Decision struct {
 
 // DecisionBody is the JSON payload of one history event.
 type DecisionBody struct {
-	Event    string         `json:"event"` // grabbed | imported | import_failed | download_failed | blocklisted
-	Ledger   string         `json:"ledger,omitempty"`
-	Title    string         `json:"title,omitempty"` // release title
-	Provider string         `json:"provider,omitempty"`
-	Site     string         `json:"site,omitempty"`
-	Key      string         `json:"key,omitempty"` // external id (infohash / chapter id)
-	Slots    []ExpectedSlot `json:"slots,omitempty"`
-	Error    string         `json:"error,omitempty"`
-	Force    bool           `json:"force,omitempty"`
+	Event    string `json:"event"` // grabbed | imported | import_failed | download_failed | blocklisted
+	Ledger   string `json:"ledger,omitempty"`
+	Title    string `json:"title,omitempty"` // release title
+	Provider string `json:"provider,omitempty"`
+	Site     string `json:"site,omitempty"`
+	Key      string `json:"key,omitempty"` // external id (infohash / chapter id)
+	// "books" is the name in decisions already stored.
+	Books []BookRef `json:"slots,omitempty"`
+	Error string    `json:"error,omitempty"`
+	Force bool      `json:"force,omitempty"`
 }
 
 func (s *Store) AddDecision(ctx context.Context, seriesID int64, body DecisionBody) error {

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('editions retain independent versions, editable units, and mobile layout', async ({
+test('editions retain independent versions, editable books, and mobile layout', async ({
   page,
   request,
 }, testInfo) => {
@@ -30,14 +30,23 @@ test('editions retain independent versions, editable units, and mobile layout', 
     expect(targets.filter((t: { name: string }) => t.name === 'Preferred group')).toHaveLength(1)
     await edition.getByRole('button', { name: /More actions/ }).click()
     await page.getByRole('menuitem', { name: 'Add volume', exact: true }).click()
-    const unit = page.getByRole('dialog', { name: 'Add book', exact: true })
-    await unit.getByRole('textbox', { name: 'Display label', exact: true }).fill('0')
-    await unit.getByRole('button', { name: 'Save book', exact: true }).click()
-    await expect(unit).toBeHidden()
+    const bookDialog = page.getByRole('dialog', { name: 'Add book', exact: true })
+    await bookDialog.getByRole('textbox', { name: 'Display label', exact: true }).fill('0')
+    await bookDialog.getByRole('button', { name: 'Save book', exact: true }).click()
+    await expect(bookDialog).toBeHidden()
     await expect(edition.getByRole('button', { name: /Hide volumes/ })).toBeVisible()
     await expect(edition.getByRole('button', { name: '0', exact: true })).toBeVisible()
     await edition.getByRole('button', { name: '0', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'Volume 0', exact: true })).toBeVisible()
+    // A search from a book names that book of that collected version.
+    const [searched] = await Promise.all([
+      page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith(`/series/${id}/search`)),
+      page.getByRole('dialog', { name: 'Volume 0', exact: true }).getByRole('button', { name: /Search releases/ }).click(),
+    ])
+    const scope = searched.postDataJSON().scope
+    expect(scope.targetId).toBeGreaterThan(0)
+    expect(scope.bookId).toBeGreaterThan(0)
+    expect(scope.all).toBeFalsy()
     await page
       .getByRole('dialog')
       .getByRole('button', { name: 'Close dialog', exact: true })
@@ -73,13 +82,13 @@ test('editions retain independent versions, editable units, and mobile layout', 
       (c: { editionName: string }) => c.editionName === 'Spanish edition',
     )
     expect(spanish.custom).toBe(true)
-    const freshSlots = await (await request.get(`/api/v1/series/${id}/target-slots`)).json()
+    const freshSlots = await (await request.get(`/api/v1/series/${id}/books`)).json()
     expect(
       Object.values(freshSlots)
         .flat()
         .filter(
           (s: unknown) =>
-            (s as { work: { collectionId: number } }).work.collectionId === spanish.id,
+            (s as { book: { collectionId: number } }).book.collectionId === spanish.id,
         ),
     ).toHaveLength(0)
     const chapters = detail.collections.find((c: { type: string }) => c.type === 'chapter')
@@ -99,12 +108,12 @@ test('editions retain independent versions, editable units, and mobile layout', 
     await expect(page.getByRole('button', { name: 'Add chapter', exact: true })).toHaveCount(2)
     await page.getByRole('button', { name: 'Accept new chapters (2)', exact: true }).click()
     await expect(page.getByText('Nothing needs review.', { exact: true })).toBeVisible()
-    const reviewed = await (await request.get(`/api/v1/series/${id}/target-slots`)).json()
+    const reviewed = await (await request.get(`/api/v1/series/${id}/books`)).json()
     expect(
       Object.values(reviewed)
         .flat()
         .some(
-          (book: unknown) => (book as { work: { sequenceNum: number } }).work.sequenceNum === 7050,
+          (book: unknown) => (book as { book: { sequenceNum: number } }).book.sequenceNum === 7050,
         ),
     ).toBe(true)
     await page.getByRole('tab', { name: 'Editions', exact: true }).click()

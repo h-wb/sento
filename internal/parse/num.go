@@ -11,7 +11,7 @@ import (
 // Alpha sub-chapters map a→+10, b→+20 (Mihon convention: 4a ≈ 4.1).
 type Num int64
 
-// MarshalJSON renders plain units (3450 → 34.5) for corpus readability.
+// MarshalJSON renders plain books (3450 → 34.5) for corpus readability.
 func (n Num) MarshalJSON() ([]byte, error) {
 	whole := int64(n) / 100
 	frac := int64(n) % 100
@@ -88,7 +88,7 @@ func (r *Range) UnmarshalJSON(b []byte) error {
 }
 
 // mergeRanges returns rs sorted by start, with overlapping or near-adjacent
-// ranges coalesced — "near" meaning within one whole unit, so [1,2], [3,3]
+// ranges coalesced — "near" meaning within one whole book, so [1,2], [3,3]
 // and [4,5] all fuse into [1,5]. Distinct fractional books never fill gaps.
 // Coalescing is transitive: because the input
 // is sorted first, a range that bridges two others merges all three (the old
