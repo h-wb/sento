@@ -261,32 +261,6 @@ func (s *Server) handleResolveObservation(w http.ResponseWriter, r *http.Request
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-func (s *Server) handleRelations(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	if r.Method == http.MethodGet {
-		data, err := s.store.Relations(r.Context(), id)
-		respondList(w, data, err)
-		return
-	}
-	var b store.WorkRelation
-	if !decodeBody(w, r, &b) {
-		return
-	}
-	var err error
-	if r.Method == http.MethodDelete {
-		err = s.store.DeleteRelation(r.Context(), id, b)
-	} else {
-		err = s.store.SetRelation(r.Context(), id, b)
-	}
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
 
 type UnitMonitorBody struct {
 	TargetID  int64 `json:"targetId"`

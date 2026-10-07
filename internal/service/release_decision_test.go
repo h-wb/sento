@@ -400,16 +400,6 @@ func TestSplitBox(t *testing.T) {
 	if all, _ := st.ListWorks(ctx, omni.ID); len(all) != 4 {
 		t.Fatalf("edition has %d books, want the box and 3 volumes", len(all))
 	}
-	rels, _ := st.Relations(ctx, id)
-	contains := 0
-	for _, r := range rels {
-		if r.FromID == box.ID && r.Relation == "contains" {
-			contains++
-		}
-	}
-	if contains != 3 {
-		t.Errorf("%d contains relations, want 3", contains)
-	}
 	slots, err := lib.TargetSlots(ctx, id)
 	if err != nil {
 		t.Fatal(err)
@@ -431,5 +421,35 @@ func TestSplitBox(t *testing.T) {
 	}
 	if _, err := lib.SplitBox(ctx, id, box.ID, 1); err == nil {
 		t.Error("a box of one volume was accepted")
+	}
+}
+
+// Volumes and chapters are collected independently: a name is one kind.
+func TestLedgerOf(t *testing.T) {
+	titles := []string{"HUNTER x HUNTER"}
+	for name, want := range map[string]string{
+		"Hunter x Hunter v01 (2005) (Digital) (LuCaZ)":                           LedgerVolume,
+		"Hunter x Hunter c401":                                                   LedgerChapter,
+		"Hunter x Hunter 391-400 (TCB)":                                          "", // bare numbers: resolved elsewhere
+		"Hunter x Hunter Vol.5 Ch.34":                                            LedgerChapter,
+		"Hunter x Hunter v01 c001-008":                                           LedgerVolume,
+		"[VIZ Media] Hunter x Hunter Volumes 01-38 ¦ Chapters 001-410 [Digital]": LedgerVolume,
+		"Hunter x Hunter Chapters 12-14":                                         LedgerChapter,
+	} {
+		p := parse.ParseAnchored(name, parse.ChannelTorrent, titles)
+		got := ledgerOf(p)
+		if want == "" {
+			continue
+		}
+		if got != want {
+			t.Errorf("%q is %q, want %q (volumes %v chapters %v)", name, got, want, p.Volumes, p.Chapters)
+		}
+		other := LedgerChapter
+		if want == LedgerChapter {
+			other = LedgerVolume
+		}
+		if len(bookRanges(p, want)) == 0 || len(bookRanges(p, other)) != 0 {
+			t.Errorf("%q should offer %s numbers only", name, want)
+		}
 	}
 }

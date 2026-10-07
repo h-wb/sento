@@ -39,10 +39,10 @@ func (c *ReleaseCandidate) explain() {
 		}
 	}
 	switch {
-	case len(c.Parse.Volumes) > 0:
+	case ledgerOf(c.Parse) == LedgerVolume:
 		d.Kind = "Volume"
 		d.NumberSource = "release name"
-	case len(c.Parse.Chapters) > 0:
+	case ledgerOf(c.Parse) == LedgerChapter:
 		d.Kind = "Chapter"
 		d.NumberSource = "release name"
 	case c.cand.Source != nil && c.cand.Source.ChapterNumber > 0:
@@ -50,9 +50,6 @@ func (c *ReleaseCandidate) explain() {
 		d.NumberSource = "source listing"
 	case c.Parse.Complete:
 		d.Kind = "Complete pack"
-	}
-	if len(c.Parse.Volumes) > 0 && len(c.Parse.Chapters) > 0 {
-		d.Kind = "Volumes and chapters"
 	}
 	if c.Parse.ContentType != parse.ContentManga {
 		d.Kind = string(c.Parse.ContentType)

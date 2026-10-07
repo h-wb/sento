@@ -306,48 +306,6 @@ func (s *Store) ResolveObservation(ctx context.Context, seriesID, id int64, acce
 	return tx.Commit()
 }
 
-type WorkRelation struct {
-	FromID   int64  `json:"fromId"`
-	ToID     int64  `json:"toId"`
-	Relation string `json:"relation"`
-}
-
-func (s *Store) SetRelation(ctx context.Context, seriesID int64, r WorkRelation) error {
-	if r.FromID == r.ToID {
-		return apperr.Invalidf("choose two different units")
-	}
-	for _, id := range []int64{r.FromID, r.ToID} {
-		w, err := s.GetWork(ctx, id)
-		if err != nil {
-			return err
-		}
-		c, err := s.GetCollection(ctx, w.CollectionID)
-		if err != nil {
-			return err
-		}
-		if c.SeriesID != seriesID {
-			return ErrNotFound
-		}
-	}
-	if r.Relation != "contains" && r.Relation != "equivalent" && r.Relation != "revision" {
-		return apperr.Invalidf("invalid relationship")
-	}
-	if r.Relation != "equivalent" {
-		n, err := get[int](ctx, s, `WITH RECURSIVE reachable(id) AS (SELECT to_id FROM work_relations WHERE from_id=? AND relation=? UNION SELECT rel.to_id FROM work_relations rel JOIN reachable reach ON rel.from_id=reach.id WHERE rel.relation=?) SELECT COUNT(*) FROM reachable WHERE id=?`, r.ToID, r.Relation, r.Relation, r.FromID)
-		if err != nil {
-			return err
-		}
-		if *n > 0 {
-			return apperr.Invalidf("relationship would create a cycle")
-		}
-	}
-	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO work_relations(from_id,to_id,relation) VALUES(?,?,?) ON CONFLICT DO NOTHING`), r.FromID, r.ToID, r.Relation)
-	return err
-}
-func (s *Store) Relations(ctx context.Context, seriesID int64) ([]WorkRelation, error) {
-	return list[WorkRelation](ctx, s, `SELECT from_id,to_id,relation FROM work_relations WHERE from_id IN(SELECT w.id FROM works w JOIN collections c ON c.id=w.collection_id WHERE c.series_id=?)`, seriesID)
-}
-
 func (s *Store) SetBindingEdition(ctx context.Context, seriesID, bindingID, cid int64) error {
 	if cid > 0 {
 		c, err := s.GetCollection(ctx, cid)
@@ -361,22 +319,6 @@ func (s *Store) SetBindingEdition(ctx context.Context, seriesID, bindingID, cid 
 	return s.touch(ctx, `UPDATE source_bindings SET trust_chapters=CASE WHEN collection_id=? THEN trust_chapters ELSE FALSE END,collection_id=? WHERE id=? AND series_id=?`, cid, cid, bindingID, seriesID)
 }
 
-func (s *Store) DeleteRelation(ctx context.Context, seriesID int64, r WorkRelation) error {
-	for _, id := range []int64{r.FromID, r.ToID} {
-		w, e := s.GetWork(ctx, id)
-		if e != nil {
-			return e
-		}
-		c, e := s.GetCollection(ctx, w.CollectionID)
-		if e != nil {
-			return e
-		}
-		if c.SeriesID != seriesID {
-			return ErrNotFound
-		}
-	}
-	return s.touch(ctx, `DELETE FROM work_relations WHERE from_id=? AND to_id=? AND relation=?`, r.FromID, r.ToID, r.Relation)
-}
 func (s *Store) ResetWork(ctx context.Context, seriesID, id int64) error {
 	w, err := s.GetWork(ctx, id)
 	if err != nil {

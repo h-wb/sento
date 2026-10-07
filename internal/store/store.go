@@ -538,16 +538,8 @@ func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID in
 		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO external_refs(provider,kind,external_id,local_id,last_seen) SELECT provider,kind,external_id,?,last_seen FROM external_refs WHERE kind='work' AND local_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
 			return nil, err
 		}
-		for _, column := range []string{"from_id", "to_id"} {
-			if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO work_relations(from_id,to_id,relation) SELECT `+map[string]string{"from_id": "? ,to_id", "to_id": "from_id, ?"}[column]+`,relation FROM work_relations WHERE `+column+`=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
-				return nil, err
-			}
-		}
 	}
 	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='collection' AND local_id=?) OR (kind='work' AND local_id IN(SELECT id FROM works WHERE collection_id=?))`), fromID, fromID); err != nil {
-		return nil, err
-	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM work_relations WHERE from_id=to_id`); err != nil {
 		return nil, err
 	}
 	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM collections WHERE id=?`), fromID); err != nil {

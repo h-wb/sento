@@ -47,3 +47,28 @@ func TestRender(t *testing.T) {
 		t.Errorf("lang traversal: %q", got)
 	}
 }
+
+// A file holding several books is named for the range it spans.
+func TestRenderRange(t *testing.T) {
+	tmpl := "{Series Title} c{chapter:000} [{lang}].cbz"
+	base := NameTokens{SeriesTitle: "HUNTER×HUNTER", Lang: "en", Volume: -1}
+	for name, tc := range map[string]struct {
+		start, end int64
+		want       string
+	}{
+		"single":            {100, 0, "HUNTER×HUNTER c001 [en].cbz"},
+		"end equals start":  {100, 100, "HUNTER×HUNTER c001 [en].cbz"},
+		"range":             {100, 800, "HUNTER×HUNTER c001-008 [en].cbz"},
+		"fractional bounds": {1250, 1400, "HUNTER×HUNTER c012.5-014 [en].cbz"},
+	} {
+		tokens := base
+		tokens.Chapter, tokens.ChapterEnd = tc.start, tc.end
+		if got := Render(tmpl, tokens); got != tc.want {
+			t.Errorf("%s: %q, want %q", name, got, tc.want)
+		}
+	}
+	vol := NameTokens{SeriesTitle: "X", Volume: 100, VolumeEnd: 3800, Chapter: -1}
+	if got := Render("{Series Title} v{volume:00}.cbz", vol); got != "X v01-38.cbz" {
+		t.Errorf("volume range: %q", got)
+	}
+}

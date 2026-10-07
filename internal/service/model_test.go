@@ -595,29 +595,6 @@ func TestModelFileReviewPreservesPinsInOtherVersions(t *testing.T) {
 	}
 }
 
-func TestModelRelationshipsCanBeCorrectedWithoutOwnershipSideEffects(t *testing.T) {
-	_, st, id, _, ws, _ := modelFixture(t)
-	ctx := context.Background()
-	a := store.WorkRelation{FromID: ws[0].ID, ToID: ws[1].ID, Relation: "contains"}
-	if err := st.SetRelation(ctx, id, a); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetRelation(ctx, id, store.WorkRelation{FromID: ws[1].ID, ToID: ws[0].ID, Relation: "contains"}); err == nil {
-		t.Fatal("containment cycle allowed")
-	}
-	cv, _ := st.Coverage(ctx, id)
-	if len(cv) != 0 {
-		t.Fatal("relationship fabricated ownership")
-	}
-	if err := st.DeleteRelation(ctx, id, a); err != nil {
-		t.Fatal(err)
-	}
-	relations, _ := st.Relations(ctx, id)
-	if len(relations) != 0 {
-		t.Fatal("relationship correction failed")
-	}
-}
-
 func TestCatalogIdentityCorrectionRequiresCoverageReview(t *testing.T) {
 	_, st, id, c, ws, target := modelFixture(t)
 	ctx := context.Background()

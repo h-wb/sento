@@ -8,7 +8,6 @@ import type {
   AssetCoverage,
   ExpectedSlot,
   UnitObservation,
-  WorkRelation,
 } from './types/store'
 import type { UnitSlot } from './types/service'
 // Typed client for the Sento API. All payload types are generated from the
@@ -198,8 +197,6 @@ export const api = {
     }),
   resetUnit: (id: number, uid: number) =>
     request<void>(`/series/${id}/units/${uid}/catalog-reset`, { method: 'POST' }),
-  deleteRelation: (id: number, relation: WorkRelation) =>
-    request<void>(`/series/${id}/relations`, { method: 'DELETE', body: JSON.stringify(relation) }),
   deleteUnit: (id: number, uid: number) =>
     request<void>(`/series/${id}/units/${uid}`, { method: 'DELETE' }),
   editEdition: (id: number, cid: number, patch: CollectionMetadataPatch) =>
@@ -238,12 +235,6 @@ export const api = {
     request<void>(`/series/${id}/observations/${oid}`, {
       method: 'PUT',
       body: JSON.stringify({ accept }),
-    }),
-  relations: (id: number) => request<WorkRelation[]>(`/series/${id}/relations`),
-  saveRelation: (id: number, relation: WorkRelation) =>
-    request<void>(`/series/${id}/relations`, {
-      method: 'POST',
-      body: JSON.stringify(relation),
     }),
 
   status: () => request<SystemStatus>('/system/status'),

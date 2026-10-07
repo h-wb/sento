@@ -158,9 +158,10 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 	return res, nil
 }
 
-// linksFor maps a parsed file onto slot links: volumes to the routed
-// volume collection, integer chapters to the first monitored chapter
-// collection (language-matched when the filename is tagged).
+// linksFor maps a parsed file onto slot links: a volume file to the routed
+// volume collection, a chapter file to the first monitored chapter
+// collection (language-matched when the filename is tagged). A file is one
+// or the other (bookRanges).
 func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chapters []store.Collection) []store.SlotLink {
 	if parsed.ContentType != parse.ContentManga || !parsed.Anchored || parsed.TitleLeftover != "" {
 		return nil
@@ -170,7 +171,7 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 		kind   string
 		cols   []store.Collection
 		ranges []parse.Range
-	}{{"volume", vols, parsed.Volumes}, {"chapter", chapters, parsed.Chapters}} {
+	}{{"volume", vols, bookRanges(parsed, LedgerVolume)}, {"chapter", chapters, bookRanges(parsed, LedgerChapter)}} {
 		if len(axis.ranges) == 0 {
 			continue
 		}

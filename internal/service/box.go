@@ -15,9 +15,8 @@ const maxBoxVolumes = 100
 // Catalogs list a box set as the single thing you buy (one entry, one
 // ISBN); releases and readers deal in the books inside it. The split adds
 // volumes 1..count to the same edition, carrying the box's ISBN and
-// publication date, links each to the box with a "contains" relation,
-// moves the box out of the main run ("other") and stops collecting it in
-// every version of the edition. The box entry stays, with its catalog
+// publication date, moves the box out of the main run ("other") and stops
+// collecting it in every version of the edition. The box entry stays, with its catalog
 // link. Running it again only adds what
 // is missing.
 func (l *Library) SplitBox(ctx context.Context, seriesID, workID int64, count int) ([]store.Work, error) {
@@ -66,9 +65,6 @@ func (l *Library) SplitBox(ctx context.Context, seriesID, workID int64, count in
 				return nil, err
 			}
 			w = *saved
-		}
-		if err := l.store.SetRelation(ctx, seriesID, store.WorkRelation{FromID: box.ID, ToID: w.ID, Relation: "contains"}); err != nil {
-			return nil, err
 		}
 		volumes = append(volumes, w)
 	}

@@ -411,3 +411,24 @@ func TestSeriesFolders(t *testing.T) {
 		t.Error("a top folder escaping the library was accepted")
 	}
 }
+
+// An archive holding several books is named and titled for its range,
+// not for the first book in it.
+func TestMultiBookFileIsNamedForItsRange(t *testing.T) {
+	_, st, id, c, ws, target := modelFixture(t)
+	ctx := context.Background()
+	im := NewImporter(st, nil, t.TempDir(), nil)
+	series, _ := st.GetSeries(ctx, id)
+	ms := DefaultMediaSettings()
+	slots := []store.ExpectedSlot{modelSlot(c, ws[1], target), modelSlot(c, ws[0], target)}
+	if got := im.bookFileName(ctx, ms, series, slots, "", ".cbz"); !strings.Contains(got, "v01-02") {
+		t.Errorf("range name = %q", got)
+	}
+	if got := im.bookFileName(ctx, ms, series, slots[:1], "", ".cbz"); !strings.Contains(got, "v02") || strings.Contains(got, "-") {
+		t.Errorf("single name = %q", got)
+	}
+	info := im.packInfo(ctx, series, slots, "", "")
+	if info.Title != "Volumes 1–2" || info.Number != "" {
+		t.Errorf("pack info = %+v", info)
+	}
+}

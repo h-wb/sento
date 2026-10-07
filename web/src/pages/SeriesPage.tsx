@@ -1,5 +1,5 @@
 import EditionManager, { type EditionSection } from '../components/EditionManager'
-import { EditorModal, Relationships } from '../components/EditionDialogs'
+import { EditorModal } from '../components/EditionDialogs'
 import SourceMappings from '../components/SourceMappings'
 import OrganizeFiles from '../components/OrganizeFiles'
 import { useCallback, useState } from 'react'
@@ -61,7 +61,6 @@ export default function SeriesPage() {
   const [tab, setTab] = useState<string | null>(
     new URLSearchParams(window.location.search).get('view') === 'review' ? 'review' : 'editions',
   )
-  const [relationships, setRelationships] = useState(false)
   const [organize, setOrganize] = useState(false)
 
   const queryClient = useQueryClient()
@@ -76,11 +75,6 @@ export default function SeriesPage() {
     refetchInterval: 15000,
   })
   const reviewCount = review.data?.length ?? 0
-  const allSlots = useQuery({
-    queryKey: ['series', seriesID, 'target-slots'],
-    queryFn: () => api.targetSlots(seriesID),
-    enabled: relationships,
-  })
   const slotsQuery = useQuery({
     queryKey: ['series', seriesID, 'edition-overview'],
     queryFn: () => api.editionOverview(seriesID),
@@ -314,8 +308,6 @@ export default function SeriesPage() {
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item onClick={() => setRelationships(true)}>Content relationships</Menu.Item>
-              <Menu.Divider />
               <Menu.Item
                 color="red"
                 leftSection={<IconTrash size={15} />}
@@ -435,14 +427,6 @@ export default function SeriesPage() {
       </Tabs>
 
       {organize && <OrganizeFiles seriesID={seriesID} onClose={() => setOrganize(false)} />}
-      {relationships && (
-        <Relationships
-          seriesID={seriesID}
-          units={Object.values(allSlots.data ?? {}).flat()}
-          collections={collections}
-          close={() => setRelationships(false)}
-        />
-      )}
       <SlotModal
         seriesID={seriesID}
         sel={slotSel}

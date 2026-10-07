@@ -32,11 +32,15 @@ type NameTokens struct {
 	SeriesID    int64
 	Volume      int64 // hundredths; <0 = absent
 	Chapter     int64 // hundredths; <0 = absent
-	Edition     string
-	Lang        string
-	Group       string
-	ISBN        string
-	Year        int
+	// VolumeEnd and ChapterEnd make the number a range ("c001-008") for a
+	// file that holds several books; at or below the start = a single one.
+	VolumeEnd  int64
+	ChapterEnd int64
+	Edition    string
+	Lang       string
+	Group      string
+	ISBN       string
+	Year       int
 	// Folder-layout tokens: what tells two copies of a book apart.
 	Publisher    string
 	Medium       string
@@ -75,9 +79,9 @@ func Render(template string, t NameTokens) string {
 		case "seriesid":
 			return fmt.Sprintf("%d", t.SeriesID)
 		case "volume":
-			return renderNum(t.Volume, pad)
+			return renderSpan(t.Volume, t.VolumeEnd, pad)
 		case "chapter":
-			return renderNum(t.Chapter, pad)
+			return renderSpan(t.Chapter, t.ChapterEnd, pad)
 		case "edition":
 			return sanitize(t.Edition)
 		case "lang":
@@ -118,6 +122,14 @@ func Render(template string, t NameTokens) string {
 // RenderPlainNum renders a hundredths number in plain units ("34", "34.5").
 func RenderPlainNum(hundredths int64) string {
 	return renderNum(hundredths, 0)
+}
+
+// renderSpan renders a number, or "first-last" when end lies beyond it.
+func renderSpan(start, end int64, pad int) string {
+	if start < 0 || end <= start {
+		return renderNum(start, pad)
+	}
+	return renderNum(start, pad) + "-" + renderNum(end, pad)
 }
 
 func renderNum(hundredths int64, pad int) string {

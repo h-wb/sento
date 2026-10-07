@@ -192,9 +192,9 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 // coverageRanges extracts the ledger-relevant number ranges of a candidate.
 func (s *SearchService) coverageRanges(searchLedger string, rc *ReleaseCandidate) []parse.Range {
 	if searchLedger == LedgerVolume {
-		return rc.Parse.Volumes
+		return bookRanges(rc.Parse, LedgerVolume)
 	}
-	ranges := rc.Parse.Chapters
+	ranges := bookRanges(rc.Parse, LedgerChapter)
 	// Source corroboration for terse names ("1184"): the extension's own
 	// recognition.
 	if len(ranges) == 0 && rc.cand.Source != nil && rc.cand.Source.ChapterNumber > 0 {

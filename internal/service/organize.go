@@ -131,25 +131,12 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePl
 		}
 		release, group := f.Claims.Title, f.Facts.Group
 		p.name = reHashSuffix.ReplaceAllString(strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path)), "") + ext
-		if len(slots) == 1 {
-			p.info = im.bookInfo(ctx, series, slots[0], release, group)
-			if ms.RenameImports {
-				col, _ := im.store.GetCollection(ctx, slots[0].CollectionID)
-				tokens := mediafile.NameTokens{SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Group: group, Volume: -1, Chapter: -1, Year: series.Year}
-				if col != nil {
-					tokens.Edition, tokens.Lang = col.EditionName, col.Language
-				}
-				tmpl := ms.VolumeFile
-				if slots[0].Ledger == "volume" {
-					tokens.Volume = slots[0].Number
-				} else {
-					tokens.Chapter, tmpl = slots[0].Number, ms.ChapterFile
-				}
-				rendered := mediafile.Render(tmpl, tokens)
-				p.name = strings.TrimSuffix(rendered, filepath.Ext(rendered)) + ext
-			}
-		} else {
+		p.info = im.bookInfo(ctx, series, slots[0], release, group)
+		if len(slots) > 1 {
 			p.info = im.packInfo(ctx, series, slots, release, group)
+		}
+		if ms.RenameImports {
+			p.name = im.bookFileName(ctx, ms, series, slots, group, ext)
 		}
 		seriesDir := volumesDir
 		if slots[0].Ledger == "chapter" {

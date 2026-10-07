@@ -220,7 +220,6 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 // item expects — ledger-aware: volume slots get volume naming.
 func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stream io.Reader) error {
 	ms := LoadMediaSettings(ctx, im.store)
-	naming := ms.Naming()
 	series, err := im.store.GetSeries(ctx, item.SeriesID)
 	if err != nil {
 		return err
@@ -229,46 +228,24 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	if err != nil {
 		return err
 	}
-	first := slots[0]
-	isVolume := first.Ledger == "volume"
-
-	// Both ledgers carry a real collection id now; its identity names the file.
-	lang := "en"
-	editionName := ""
-	if col, err := im.store.GetCollection(ctx, first.CollectionID); err == nil {
-		editionName, lang = col.EditionName, col.Language
-	}
-
+	first, _ := slotSpan(slots)
 	seriesDir, err := im.seriesDir(ctx, series, ms, first.Ledger)
 	if err != nil {
 		return err
 	}
 
-	var destPath string
-	info := im.bookInfo(ctx, series, first, item.Title, releaseGroup(item))
-	if isVolume {
-		fileName := mediafile.Render(naming.VolumeFile, mediafile.NameTokens{
-			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
-			Volume: first.Number, Chapter: -1, Edition: editionName, Lang: lang,
-		})
-		if !ms.RenameImports {
-			fileName = mediafile.Sanitize(item.Title) + ".cbz"
-		}
-		destPath = filepath.Join(seriesDir, fileName)
-	} else {
-		fileName := mediafile.Render(naming.ChapterFile, mediafile.NameTokens{
-			SeriesTitle: series.Title, SeriesID: series.MangaBakaID,
-			Volume: -1, Chapter: first.Number, Edition: editionName, Lang: lang,
-		})
-		if !ms.RenameImports {
-			fileName = mediafile.Sanitize(item.Title) + ".cbz"
-		}
-		destPath = seriesDir
-		if naming.ChapterDir != "" {
-			destPath = filepath.Join(destPath, naming.ChapterDir)
-		}
-		destPath = filepath.Join(destPath, fileName)
+	// One book, or an archive holding several (a volume's worth of
+	// chapters): named and tagged for what it actually holds.
+	group := releaseGroup(item)
+	info := im.bookInfo(ctx, series, first, item.Title, group)
+	if len(slots) > 1 {
+		info = im.packInfo(ctx, series, slots, item.Title, group)
 	}
+	fileName := mediafile.Sanitize(item.Title) + ".cbz"
+	if ms.RenameImports {
+		fileName = im.bookFileName(ctx, ms, series, slots, group, ".cbz")
+	}
+	destPath := filepath.Join(seriesDir, fileName)
 
 	writeInfo := &info
 	if !ms.WriteComicInfo {
@@ -311,7 +288,6 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 // Payload data is never moved or modified (seeding, spec.md §7).
 func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir string, files []string) error {
 	ms := LoadMediaSettings(ctx, im.store)
-	naming := ms.Naming()
 	series, err := im.store.GetSeries(ctx, item.SeriesID)
 	if err != nil {
 		return err
@@ -384,10 +360,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			}
 			continue
 		}
-		ranges := res.Volumes
-		if expected[0].Ledger == "chapter" {
-			ranges = res.Chapters
-		}
+		ranges := bookRanges(res, expected[0].Ledger)
 		var covered []store.ExpectedSlot
 		for _, sl := range expected {
 			w, e := im.store.GetWork(ctx, sl.WorkID)
@@ -421,22 +394,8 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 		}
 		// A pack stays one asset with several verified coverage links.
 		name := filepath.Base(rel)
-		if ms.RenameImports && len(covered) == 1 {
-			sl := covered[0]
-			col, e := im.store.GetCollection(ctx, sl.CollectionID)
-			if e != nil {
-				return e
-			}
-			token := mediafile.NameTokens{SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Edition: col.EditionName, Lang: col.Language, Group: res.Group, Volume: -1, Chapter: -1}
-			tmpl := naming.VolumeFile
-			if sl.Ledger == "volume" {
-				token.Volume = sl.Number
-			} else {
-				token.Chapter = sl.Number
-				tmpl = naming.ChapterFile
-			}
-			name = mediafile.Render(tmpl, token)
-			name = strings.TrimSuffix(name, filepath.Ext(name)) + ext
+		if ms.RenameImports {
+			name = im.bookFileName(ctx, ms, series, covered, res.Group, ext)
 		}
 		// Identical bytes can serve several confirmed versions. Keep one
 		// archive with all coverage links; different releases get different

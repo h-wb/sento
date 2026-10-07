@@ -33,11 +33,6 @@ export interface UnitObservation {
   number: number /* int64 */;
   state: string;
 }
-export interface WorkRelation {
-  fromId: number /* int64 */;
-  toId: number /* int64 */;
-  relation: string;
-}
 
 //////////
 // source: catalog_edit.go

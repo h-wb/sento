@@ -142,7 +142,50 @@ func (im *Importer) packInfo(ctx context.Context, series *store.Series, slots []
 	info := im.bookInfo(ctx, series, store.ExpectedSlot{Ledger: slots[0].Ledger, CollectionID: slots[0].CollectionID}, release, group)
 	info.Number, info.Volume, info.Count = "", "", ""
 	info.Summary = series.Description
+	first, last := slotSpan(slots)
+	kind := "Volumes"
+	if first.Ledger == "chapter" {
+		kind = "Chapters"
+	}
+	info.Title = kind + " " + mediafile.RenderPlainNum(first.Number) + "–" + mediafile.RenderPlainNum(last.Number)
 	return info
+}
+
+// slotSpan returns the lowest- and highest-numbered of the books a file
+// holds.
+func slotSpan(slots []store.ExpectedSlot) (first, last store.ExpectedSlot) {
+	first, last = slots[0], slots[0]
+	for _, sl := range slots[1:] {
+		if sl.Number < first.Number {
+			first = sl
+		}
+		if sl.Number > last.Number {
+			last = sl
+		}
+	}
+	return first, last
+}
+
+// bookFileName is the templated name for a file holding the given books:
+// a single number, or the range it spans ("c001-008") when it holds
+// several. ext includes the dot.
+func (im *Importer) bookFileName(ctx context.Context, ms MediaSettings, series *store.Series, slots []store.ExpectedSlot, group, ext string) string {
+	first, last := slotSpan(slots)
+	tokens := mediafile.NameTokens{
+		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Group: group,
+		Volume: -1, Chapter: -1, Year: series.Year,
+	}
+	if col, err := im.store.GetCollection(ctx, first.CollectionID); err == nil {
+		tokens.Edition, tokens.Lang = col.EditionName, col.Language
+	}
+	tmpl := ms.VolumeFile
+	if first.Ledger == "volume" {
+		tokens.Volume, tokens.VolumeEnd = first.Number, last.Number
+	} else {
+		tokens.Chapter, tokens.ChapterEnd, tmpl = first.Number, last.Number, ms.ChapterFile
+	}
+	rendered := mediafile.Render(tmpl, tokens)
+	return strings.TrimSuffix(rendered, filepath.Ext(rendered)) + ext
 }
 
 // installProcessed writes src to dest as a clean, tagged CBZ. A book with
