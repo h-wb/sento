@@ -448,8 +448,19 @@ func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64
 	if err != nil {
 		return err
 	}
+	// Discovery answers which books exist; it must not depend on a book
+	// already being wanted. An empty or fully collected chapter edition
+	// still checks its sources, and the search then runs on what that found.
+	var notes []string
+	if len(run.versions) > 0 && len(run.wantedBooks) == 0 && s.discovers(run) {
+		s.discover(ctx, run)
+		if run, err = s.prepare(ctx, seriesID, searchLedger, version); err != nil {
+			return err
+		}
+		notes = append(notes, "Checked the linked sources for new chapters.")
+	}
 	if len(run.versions) > 0 && len(run.wantedBooks) == 0 {
-		emit(SearchEvent{Type: "sites", Ledger: searchLedger, BindingNotes: []string{"No books can be acquired in this selection. Check the edition’s book statuses, or open a specific book to search for another copy."}})
+		emit(SearchEvent{Type: "sites", Ledger: searchLedger, BindingNotes: append(notes, "No books can be acquired in this selection. Check the edition’s book statuses, or open a specific book to search for another copy.")})
 		emit(SearchEvent{Type: "done", Ledger: searchLedger})
 		return nil
 	}
@@ -470,6 +481,49 @@ func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64
 	}
 	emit(SearchEvent{Type: "done", Ledger: searchLedger})
 	return nil
+}
+
+// discovers reports whether this run covers a chapter edition that learns
+// its books from a linked source.
+func (s *SearchService) discovers(run *searchRun) bool {
+	if run.ledger != LedgerChapter || (run.scope != nil && run.scope.BookID != 0) {
+		return false
+	}
+	scoped := int64(0)
+	if run.scope != nil {
+		for _, v := range run.versions {
+			if v.ID == run.scope.VersionID {
+				scoped = v.EditionID
+			}
+		}
+	}
+	for _, eid := range run.sourceEditions {
+		col := editionByID(run.editions, eid)
+		if col != nil && col.Type == LedgerChapter && col.DiscoverChapters && (run.scope == nil || scoped == eid) {
+			return true
+		}
+	}
+	return false
+}
+
+// discover queries the source providers only to record the chapters they
+// list (observeCandidates); the candidates themselves are discarded.
+func (s *SearchService) discover(ctx context.Context, run *searchRun) {
+	ch := make(chan SearchEvent)
+	var wg sync.WaitGroup
+	for _, p := range s.registry.All() {
+		if _, ok := p.(provider.MangaResolver); !ok {
+			continue
+		}
+		wg.Add(1)
+		go func(p provider.Provider) {
+			defer wg.Done()
+			s.streamProvider(ctx, p, run, ch, &wg)
+		}(p)
+	}
+	go func() { wg.Wait(); close(ch) }()
+	for range ch {
+	}
 }
 
 // FindCandidates runs the unified search and collects the whole stream

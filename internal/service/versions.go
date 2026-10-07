@@ -272,6 +272,9 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 				best = max(best, scores[fid])
 				known = known && byFile[fid].Facts.FactsKnown
 			}
+			if len(sl.FileIDs) > 0 {
+				sl.CurrentScore = best
+			}
 			pinned = pinnedBooks[sl.Book.ID]
 			if sl.State == "owned" && sl.Monitored && !storageUnavailable && prof != nil && prof.UpgradesEnabled && known && !pinned && (prof.UpgradeUntilScore == 0 || best < prof.UpgradeUntilScore) {
 				sl.State = "upgrade_eligible"

@@ -199,16 +199,15 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 		if err != nil {
 			continue
 		}
-		for _, w := range works {
-			if !w.NumberKnown {
-				continue
-			}
-			for _, r := range axis.ranges {
-				if w.SequenceNum >= int64(r.From) && w.SequenceNum <= int64(r.To) {
-					links = append(links, store.BookLink{Ledger: axis.kind, EditionID: col.ID, BookID: w.ID, VersionID: versionID, Number: w.SequenceNum})
-					break
-				}
-			}
+		// Two books sharing a number (revisions, a bonus numbered like a
+		// volume) cannot be told apart by a file name: leave the file for
+		// review instead of confirming it as both.
+		matched, ambiguous := resolveBooks(works, axis.ranges, parsed.Extra)
+		if ambiguous {
+			continue
+		}
+		for _, w := range matched {
+			links = append(links, store.BookLink{Ledger: axis.kind, EditionID: col.ID, BookID: w.ID, VersionID: versionID, Number: w.SequenceNum})
 		}
 	}
 	return links

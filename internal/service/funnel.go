@@ -254,28 +254,20 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		total += int((int64(r.To)-int64(r.From))/100) + 1
 	}
 	for _, w := range run.books[colID] {
-		if w.CountType != "main" && !c.Parse.Extra && (scope == nil || scope.BookID != w.ID) {
+		// Opening a search from a specific book names it outright, so the
+		// kind rule only applies to books reached by number.
+		if !bookKindFits(w, c.Parse.Extra) && (scope == nil || scope.BookID != w.ID) {
 			continue
 		}
-		if w.CountType == "main" && c.Parse.Extra && (scope == nil || scope.BookID != w.ID) {
-			continue
-		}
-		hit := len(ranges) == 0 && searchLedger == LedgerVolume && c.Parse.Complete
-		for _, r := range ranges {
-			if w.NumberKnown && w.SequenceNum >= int64(r.From) && w.SequenceNum <= int64(r.To) {
-				hit = true
-			}
-		}
+		hit := (len(ranges) == 0 && searchLedger == LedgerVolume && c.Parse.Complete) || inRanges(w, ranges)
 		if !hit {
 			continue
 		}
 		if run.wantedBooks[c.VersionID][w.ID] {
 			if scope == nil || scope.BookID == 0 {
-				for _, other := range run.books[colID] {
-					if other.ID != w.ID && other.NumberKnown && w.NumberKnown && other.SequenceNum == w.SequenceNum && other.CountType == w.CountType {
-						reject("rejected.book_ambiguous")
-						return
-					}
+				if sharesNumber(run.books[colID], w) {
+					reject("rejected.book_ambiguous")
+					return
 				}
 			}
 			c.Coverage = append(c.Coverage, store.BookRef{Ledger: searchLedger, EditionID: colID, VersionID: c.VersionID, BookID: w.ID, Number: w.SequenceNum})

@@ -80,24 +80,30 @@ func NewTorrent(entries func(ctx context.Context) ([]IndexerEntry, error), clien
 }
 
 // clientFor picks the download client for a release from the indexer it
-// came from: the client that indexer names, or the default (first) one.
-// A named client that no longer exists is an error, not a silent fallback:
-// sending a release to the wrong client is exactly what naming one is
-// meant to prevent.
+// came from: the client that indexer names, or the default (first) one
+// when it names none. Anything short of knowing the indexer's choice is an
+// error, not a fallback to the default: sending a release to the wrong
+// client is exactly what naming one is meant to prevent. With a single
+// client there is nothing to choose between.
 func (p *TorrentProvider) clientFor(ctx context.Context, siteID string) (TorrentClient, error) {
 	if len(p.clients) == 0 {
 		return TorrentClient{}, fmt.Errorf("no download client is configured")
 	}
-	wanted := ""
-	if p.entries == nil {
+	if len(p.clients) == 1 || p.entries == nil {
 		return p.clients[0], nil
 	}
-	if entries, err := p.entries(ctx); err == nil {
-		for _, e := range entries {
-			if e.EntryID() == siteID {
-				wanted = e.DownloadClient
-			}
+	entries, err := p.entries(ctx)
+	if err != nil {
+		return TorrentClient{}, fmt.Errorf("looking up this indexer's download client: %w", err)
+	}
+	wanted, known := "", false
+	for _, e := range entries {
+		if e.EntryID() == siteID {
+			wanted, known = e.DownloadClient, true
 		}
+	}
+	if !known {
+		return TorrentClient{}, fmt.Errorf("the indexer this release came from no longer exists, so its download client is unknown; search again")
 	}
 	if wanted == "" {
 		return p.clients[0], nil
