@@ -240,7 +240,7 @@ func titleCase(s string) string {
 func (im *Importer) bookDir(ctx context.Context, ms MediaSettings, seriesDir string, series *store.Series, sl store.BookRef) string {
 	tokens := mediafile.NameTokens{
 		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1,
-		Year: series.Year, CollectionID: sl.CollectionID, VersionID: sl.TargetID,
+		Year: series.Year, CollectionID: sl.CollectionID, VersionID: sl.VersionID,
 		Type: "Volumes",
 	}
 	if sl.Ledger == "chapter" {
@@ -249,7 +249,7 @@ func (im *Importer) bookDir(ctx context.Context, ms MediaSettings, seriesDir str
 	if col, err := im.store.GetCollection(ctx, sl.CollectionID); err == nil {
 		tokens.Edition, tokens.Lang, tokens.Publisher, tokens.Medium = col.EditionName, col.Language, col.Publisher, col.Medium
 	}
-	if t, err := im.store.GetTarget(ctx, sl.TargetID); err == nil && !t.IsDefault {
+	if t, err := im.store.GetVersion(ctx, sl.VersionID); err == nil && !t.IsDefault {
 		tokens.Version = t.Name
 	}
 	return filepath.Join(append([]string{seriesDir}, mediafile.RenderFolder(ms.BookFolder, tokens)...)...)

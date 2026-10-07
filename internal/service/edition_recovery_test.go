@@ -18,17 +18,17 @@ import (
 )
 
 func TestEditionDisappearanceSuspendsCollection(t *testing.T) {
-	lib, st, id, c, _, target := modelFixture(t)
+	lib, st, id, c, _, version := modelFixture(t)
 	ctx := context.Background()
 	p := testProvider()
 	if err := st.ReconcileMetadata(ctx, id, p.series, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	slots, err := lib.VersionBooks(ctx, id)
+	slots, err := lib.BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, sl := range slots[target.ID] {
+	for _, sl := range slots[version.ID] {
 		if sl.Wanted || sl.Monitored || sl.Reason == "" {
 			t.Fatalf("stale parent remained collectible: %+v", sl)
 		}
@@ -36,35 +36,35 @@ func TestEditionDisappearanceSuspendsCollection(t *testing.T) {
 	if err = st.EditCollection(ctx, id, c.ID, store.CollectionMetadataPatch{MakeLocal: true}); err != nil {
 		t.Fatal(err)
 	}
-	slots, err = lib.VersionBooks(ctx, id)
+	slots, err = lib.BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slots[target.ID][0].Wanted {
+	if !slots[version.ID][0].Wanted {
 		t.Fatal("explicit local continuation did not restore intent")
 	}
 }
 
 func TestContentsSurviveTargetDeletionAndPolicyChanges(t *testing.T) {
-	lib, st, id, c, ws, target := modelFixture(t)
+	lib, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
-	target.ID = 0
-	target.Name = "Group A"
-	target.RequiredGroup = "^A$"
-	tid, err := st.SaveTarget(ctx, id, target)
+	version.ID = 0
+	version.Name = "Group A"
+	version.RequiredGroup = "^A$"
+	tid, err := st.SaveVersion(ctx, id, version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	target.ID = tid
-	fid := ownedModelFile(t, st, id, c, ws[0], target)
+	version.ID = tid
+	fid := ownedModelFile(t, st, id, c, ws[0], version)
 	if err = st.SetAssetFacts(ctx, fid, store.AssetFacts{Language: "en", Group: "A", FactsKnown: true}, ""); err != nil {
 		t.Fatal(err)
 	}
-	target.RequiredGroup = "^B$"
-	if _, err = st.SaveTarget(ctx, id, target); err != nil {
+	version.RequiredGroup = "^B$"
+	if _, err = st.SaveVersion(ctx, id, version); err != nil {
 		t.Fatal(err)
 	}
-	slots, err := lib.VersionBooks(ctx, id)
+	slots, err := lib.BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,21 +72,21 @@ func TestContentsSurviveTargetDeletionAndPolicyChanges(t *testing.T) {
 	if sl.State != "unsatisfactory" || !sl.Wanted || len(sl.OnDiskFileIDs) != 1 || len(sl.FileIDs) != 0 {
 		t.Fatalf("lost on-disk distinction: %+v", sl)
 	}
-	if err = st.DeleteTarget(ctx, id, tid); err != nil {
+	if err = st.DeleteVersion(ctx, id, tid); err != nil {
 		t.Fatal(err)
 	}
 	contents, err := st.Contents(ctx, id)
 	if err != nil || len(contents) != 1 {
 		t.Fatalf("target deletion lost intrinsic contents: %v %v", contents, err)
 	}
-	target.ID = 0
-	target.Name = "New A copy"
-	target.RequiredGroup = "^A$"
-	tid, err = st.SaveTarget(ctx, id, target)
+	version.ID = 0
+	version.Name = "New A copy"
+	version.RequiredGroup = "^A$"
+	tid, err = st.SaveVersion(ctx, id, version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	slots, err = lib.VersionBooks(ctx, id)
+	slots, err = lib.BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,9 +100,9 @@ func TestContentsSurviveTargetDeletionAndPolicyChanges(t *testing.T) {
 }
 
 func TestUnavailableRootBlocksRedownloadButMissingArchiveDoesNot(t *testing.T) {
-	lib, st, id, c, ws, target := modelFixture(t)
+	lib, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
-	ownedModelFile(t, st, id, c, ws[0], target)
+	ownedModelFile(t, st, id, c, ws[0], version)
 	files, _ := st.ListFiles(ctx, id)
 	root := filepath.Dir(files[0].Path)
 	if err := st.SetSeriesPath(ctx, id, root); err != nil {
@@ -115,11 +115,11 @@ func TestUnavailableRootBlocksRedownloadButMissingArchiveDoesNot(t *testing.T) {
 	if err := st.CheckFilePresence(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	slots, err := lib.VersionBooks(ctx, id)
+	slots, err := lib.BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, sl := range slots[target.ID] {
+	for _, sl := range slots[version.ID] {
 		if sl.Wanted || sl.State != "storage_unavailable" {
 			t.Fatalf("storage outage became missing: %+v", sl)
 		}
@@ -133,32 +133,32 @@ func TestUnavailableRootBlocksRedownloadButMissingArchiveDoesNot(t *testing.T) {
 	if err = st.CheckFilePresence(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	slots, err = lib.VersionBooks(ctx, id)
+	slots, err = lib.BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slots[target.ID][0].Wanted {
+	if !slots[version.ID][0].Wanted {
 		t.Fatal("a genuinely missing file was not wanted")
 	}
 }
 
 func TestBulkMonitoringRollsBackForeignBook(t *testing.T) {
-	lib, st, id, _, ws, target := modelFixture(t)
+	lib, st, id, _, ws, version := modelFixture(t)
 	ctx := context.Background()
-	if err := st.BulkMonitor(ctx, id, target.ID, []int64{ws[0].ID, 999999}, false); err == nil {
+	if err := st.BulkMonitor(ctx, id, version.ID, []int64{ws[0].ID, 999999}, false); err == nil {
 		t.Fatal("foreign book accepted")
 	}
-	slots, err := lib.VersionBooks(ctx, id)
+	slots, err := lib.BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slots[target.ID][0].Monitored {
+	if !slots[version.ID][0].Monitored {
 		t.Fatal("partial bulk edit committed")
 	}
-	if err = st.BulkMonitor(ctx, id, target.ID, []int64{ws[0].ID, ws[1].ID}, false); err != nil {
+	if err = st.BulkMonitor(ctx, id, version.ID, []int64{ws[0].ID, ws[1].ID}, false); err != nil {
 		t.Fatal(err)
 	}
-	books, err := lib.TargetBooks(ctx, id, target.ID)
+	books, err := lib.VersionBooks(ctx, id, version.ID)
 	paused := 0
 	for _, b := range books {
 		if b.State == "unmonitored" {
@@ -168,7 +168,7 @@ func TestBulkMonitoringRollsBackForeignBook(t *testing.T) {
 	if err != nil || paused != 2 {
 		t.Fatalf("paused books: %d of %d, %v", paused, len(books), err)
 	}
-	if _, err = lib.TargetBooks(ctx, id, target.ID+999); err == nil {
+	if _, err = lib.VersionBooks(ctx, id, version.ID+999); err == nil {
 		t.Fatal("books of an unknown version should not be found")
 	}
 }
@@ -213,7 +213,7 @@ func (p *recoveryProvider) Fetch(ctx context.Context, key string) (*provider.Pay
 }
 
 func TestImportReviewRetainsClaimsAndCompletesExistingPayload(t *testing.T) {
-	_, st, id, c, ws, target := modelFixture(t)
+	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "unknown.cbz"), []byte("archive"), 0600); err != nil {
@@ -221,7 +221,7 @@ func TestImportReviewRetainsClaimsAndCompletesExistingPayload(t *testing.T) {
 	}
 	p := &recoveryProvider{payloadProvider: payloadProvider{dir: dir, files: []string{"unknown.cbz"}}}
 	reg := provider.NewRegistry(p)
-	plan := []store.BookRef{modelRef(c, ws[0], target)}
+	plan := []store.BookRef{modelRef(c, ws[0], version)}
 	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: id, ProviderID: p.ID(), Protocol: p.Protocol(), ReleaseKey: "review-offer", Title: "ONE PIECE v01"}, plan)
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +238,7 @@ func TestImportReviewRetainsClaimsAndCompletesExistingPayload(t *testing.T) {
 		t.Fatalf("review became terminal: %+v", queue)
 	}
 	pending, err := st.PendingBooks(ctx, id)
-	if err != nil || !pending[store.BookKey(target.ID, ws[0].ID)] {
+	if err != nil || !pending[store.BookKey(version.ID, ws[0].ID)] {
 		t.Fatal("review released its reservation")
 	}
 	files, err := st.ListFiles(ctx, id)
@@ -260,11 +260,11 @@ func TestImportReviewRetainsClaimsAndCompletesExistingPayload(t *testing.T) {
 }
 
 func TestTransientProviderErrorBacksOffAndRetainsClaims(t *testing.T) {
-	_, st, id, c, ws, target := modelFixture(t)
+	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	p := &recoveryProvider{stateErr: errors.New("client unavailable")}
 	reg := provider.NewRegistry(p)
-	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: id, ProviderID: p.ID(), Protocol: p.Protocol(), ReleaseKey: "transient"}, []store.BookRef{modelRef(c, ws[0], target)})
+	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: id, ProviderID: p.ID(), Protocol: p.Protocol(), ReleaseKey: "transient"}, []store.BookRef{modelRef(c, ws[0], version)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,13 +296,13 @@ func TestTransientProviderErrorBacksOffAndRetainsClaims(t *testing.T) {
 		t.Fatal("worker resurrected cancelled job")
 	}
 	pending, _ := st.PendingBooks(ctx, id)
-	if pending[store.BookKey(target.ID, ws[0].ID)] {
+	if pending[store.BookKey(version.ID, ws[0].ID)] {
 		t.Fatal("cancel left a reservation")
 	}
 }
 
 func TestFileFactsAreSpecificAndManualCorrectionsSurviveRetry(t *testing.T) {
-	_, st, id, c, ws, target := modelFixture(t)
+	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
 	snap, _ := json.Marshal(ReleaseCandidate{Title: "ONE PIECE v01 [Advertised]", Parse: parse.Result{Group: "Advertised", Language: "fr"}})
@@ -311,7 +311,7 @@ func TestFileFactsAreSpecificAndManualCorrectionsSurviveRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	item := store.QueueItem{SeriesID: id, Protocol: "torrent", ReleaseKey: "facts", Snapshot: snap}
-	plan := []store.BookRef{modelRef(c, ws[0], target)}
+	plan := []store.BookRef{modelRef(c, ws[0], version)}
 	if err := im.recordAsset(ctx, item, path, plan, parse.Result{Group: "Actual", Language: "en"}); err != nil {
 		t.Fatal(err)
 	}
@@ -343,11 +343,11 @@ func TestChapterExtrasZeroAndReadOnlyLedger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	targets, _ := st.ListTargets(ctx, id)
-	var target store.DownloadTarget
-	for _, v := range targets {
+	versions, _ := st.ListVersions(ctx, id)
+	var version store.CollectedVersion
+	for _, v := range versions {
 		if v.CollectionID == c.ID {
-			target = v
+			version = v
 		}
 	}
 	var zero, bonus int64
@@ -365,27 +365,27 @@ func TestChapterExtrasZeroAndReadOnlyLedger(t *testing.T) {
 			bonus = wid
 		}
 	}
-	slots, err := lib.VersionBooks(ctx, id)
+	slots, err := lib.BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range slots[target.ID] {
+	for _, s := range slots[version.ID] {
 		if s.Monitored {
 			t.Fatal("cutoff zero or excluded bonus was collected by default")
 		}
 	}
-	target.IncludeExtras = true
-	if _, err = st.SaveTarget(ctx, id, target); err != nil {
+	version.IncludeExtras = true
+	if _, err = st.SaveVersion(ctx, id, version); err != nil {
 		t.Fatal(err)
 	}
-	if err = st.BulkMonitor(ctx, id, target.ID, []int64{zero}, true); err != nil {
+	if err = st.BulkMonitor(ctx, id, version.ID, []int64{zero}, true); err != nil {
 		t.Fatal(err)
 	}
-	slots, err = lib.VersionBooks(ctx, id)
+	slots, err = lib.BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range slots[target.ID] {
+	for _, s := range slots[version.ID] {
 		if (s.Book.ID == zero || s.Book.ID == bonus) && !s.Monitored {
 			t.Fatal("explicit zero/extra collection was ignored")
 		}
@@ -431,14 +431,14 @@ func TestTrustedChaptersRequireVerifiedBindingAndDoNotFillGaps(t *testing.T) {
 }
 
 func TestConcurrentBookDeletionAndReservationDoNotLeaveDanglingPlan(t *testing.T) {
-	_, st, id, c, ws, target := modelFixture(t)
+	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	start := make(chan struct{})
 	done := make(chan error, 2)
 	go func() { <-start; done <- st.DeleteBook(ctx, id, ws[0].ID) }()
 	go func() {
 		<-start
-		_, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: id, ProviderID: "race", Protocol: "torrent", ReleaseKey: "race"}, []store.BookRef{modelRef(c, ws[0], target)})
+		_, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: id, ProviderID: "race", Protocol: "torrent", ReleaseKey: "race"}, []store.BookRef{modelRef(c, ws[0], version)})
 		done <- err
 	}()
 	close(start)
@@ -450,7 +450,7 @@ func TestConcurrentBookDeletionAndReservationDoNotLeaveDanglingPlan(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pending[store.BookKey(target.ID, ws[0].ID)] {
+	if pending[store.BookKey(version.ID, ws[0].ID)] {
 		w, e := st.GetBook(ctx, ws[0].ID)
 		if e != nil || w.SyncState == "retired" {
 			t.Fatalf("reservation refers to deleted/retired work: %+v %v", w, e)
@@ -474,10 +474,10 @@ func TestLedgerReadsDoNotInferNewChapters(t *testing.T) {
 	if _, err = conn.ExecContext(ctx, fmt.Sprintf(`UPDATE series SET total_chapters=1300 WHERE id=%d`, id)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = st.ListTargets(ctx, id); err != nil {
+	if _, err = st.ListVersions(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = lib.VersionBooks(ctx, id); err != nil {
+	if _, err = lib.BooksByVersion(ctx, id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = lib.EditionOverview(ctx, id); err != nil {

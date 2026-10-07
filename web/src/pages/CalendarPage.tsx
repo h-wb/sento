@@ -68,7 +68,7 @@ export default function CalendarPage() {
               <Stack gap={6}>
                 {list.map((e) => (
                   <Card
-                    key={`${e.targetId}-${e.bookId}`}
+                    key={`${e.versionId}-${e.bookId}`}
                     withBorder
                     padding="xs"
                     component={Link}

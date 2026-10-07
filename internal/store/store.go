@@ -168,7 +168,7 @@ type File struct {
 }
 
 type BookLink struct {
-	TargetID     int64
+	VersionID    int64 `db:"target_id"`
 	BookID       int64 `db:"work_id"`
 	FileID       int64
 	Ledger       string
@@ -501,7 +501,7 @@ func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID in
 		mapping[w.ID] = matches[0]
 		used[matches[0]] = true
 	}
-	targets, err := s.ListTargets(ctx, seriesID)
+	versions, err := s.ListVersions(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -516,7 +516,7 @@ func (s *Store) MergeCollection(ctx context.Context, seriesID, fromID, intoID in
 
 	// Preserve acquisition policies as independent versions rather than
 	// combining different policies into one default.
-	for _, t := range targets {
+	for _, t := range versions {
 		if t.CollectionID != fromID {
 			continue
 		}
@@ -600,7 +600,7 @@ func (s *Store) ListBooks(ctx context.Context, collectionID int64) ([]Book, erro
 	return list[Book](ctx, s, `SELECT `+workColumns+` FROM works WHERE collection_id=? ORDER BY sequence_num, id`, collectionID)
 }
 
-// SetCollectionCutoff changes the default target’s exclusive chapter cutoff.
+// SetCollectionCutoff changes the default version’s exclusive chapter cutoff.
 func (s *Store) SetCollectionCutoff(ctx context.Context, seriesID, collectionID, cutoff int64) error {
 	c, err := s.GetCollection(ctx, collectionID)
 	if err != nil {
@@ -701,13 +701,13 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 	}
 	for _, l := range links {
 		var valid int
-		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), l.BookID, l.TargetID, l.CollectionID, f.SeriesID).Scan(&valid); err != nil {
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), l.BookID, l.VersionID, l.CollectionID, f.SeriesID).Scan(&valid); err != nil {
 			return 0, err
 		}
 		if valid != 1 {
 			return 0, apperr.Invalidf("file mapping does not belong to this edition/version")
 		}
-		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,evidence) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`), fileID, l.TargetID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
+		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,evidence) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`), fileID, l.VersionID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
 			return 0, err
 		}
 		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,evidence) VALUES(?,?,?) ON CONFLICT DO NOTHING`), fileID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
@@ -768,8 +768,8 @@ func (s *Store) LowestOwnedChapters(ctx context.Context, seriesID int64) (map[in
 
 // BookKey identifies one book of one collected version: the book of
 // wanting, reserving and owning.
-func BookKey(targetID, workID int64) string {
-	return fmt.Sprintf("%d/%d", targetID, workID)
+func BookKey(versionID, workID int64) string {
+	return fmt.Sprintf("%d/%d", versionID, workID)
 }
 
 // --- bindings ---

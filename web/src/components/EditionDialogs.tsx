@@ -18,7 +18,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import type {
   Collection,
-  DownloadTarget,
+  CollectedVersion,
   Book,
   CatalogLinkPreview,
   File as SeriesFile,
@@ -47,15 +47,15 @@ function useEditor() {
     },
   }
 }
-export function TargetEditor({
+export function VersionEditor({
   value,
   chapter,
   save,
   close,
 }: {
-  value: DownloadTarget
+  value: CollectedVersion
   chapter: boolean
-  save: (v: DownloadTarget) => Promise<void>
+  save: (v: CollectedVersion) => Promise<void>
   close: () => void
 }) {
   const [v, set] = useState(value)
@@ -66,7 +66,7 @@ export function TargetEditor({
       dirty={JSON.stringify(v) !== JSON.stringify(value)}
       busy={edit.busy}
       onClose={close}
-      title={v.id ? 'Collection settings' : 'Keep an additional copy'}
+      title={v.id ? 'Collection settings' : 'Keep an additional version'}
     >
       <form
         onSubmit={(e) => {
@@ -506,7 +506,7 @@ export function CatalogLink({
 export function MappingEditor({
   seriesID,
   value,
-  targets,
+  versions,
   existing,
   books,
   collections,
@@ -515,7 +515,7 @@ export function MappingEditor({
 }: {
   seriesID: number
   value: SeriesFile
-  targets: DownloadTarget[]
+  versions: CollectedVersion[]
   existing: import('../types/store').AssetCoverage[]
   books: BookStatus[]
   collections: Collection[]
@@ -523,23 +523,23 @@ export function MappingEditor({
   close: () => void
 }) {
   const initial = existing.map((a) => ({
-    targetId: a.targetId,
+    versionId: a.versionId,
     bookId: a.bookId,
-    collectionId: targets.find((t) => t.id === a.targetId)?.collectionId ?? 0,
+    collectionId: versions.find((t) => t.id === a.versionId)?.collectionId ?? 0,
     number: books.find((s) => s.book.id === a.bookId)?.book.sequenceNum ?? 0,
     ledger:
-      collections.find((c) => c.id === targets.find((t) => t.id === a.targetId)?.collectionId)
+      collections.find((c) => c.id === versions.find((t) => t.id === a.versionId)?.collectionId)
         ?.type ?? 'volume',
   }))
   const [draft, setDraft] = useState(initial)
-  const [target, setTarget] = useState<string | null>(
-    existing[0] ? String(existing[0].targetId) : null,
+  const [version, setVersion] = useState<string | null>(
+    existing[0] ? String(existing[0].versionId) : null,
   )
   const edit = useEditor()
   const [language, setLanguage] = useState(value.facts?.language ?? '')
   const [group, setGroup] = useState(value.facts?.group ?? '')
-  const t = targets.find((t) => String(t.id) === target)
-  const chosen = draft.filter((s) => s.targetId === t?.id).map((s) => String(s.bookId))
+  const t = versions.find((t) => String(t.id) === version)
+  const chosen = draft.filter((s) => s.versionId === t?.id).map((s) => String(s.bookId))
   return (
     <EditorModal
       dirty={
@@ -590,27 +590,27 @@ export function MappingEditor({
         </Group>
         <Select
           label="Collected version"
-          data={targets.map((t) => ({
+          data={versions.map((t) => ({
             value: String(t.id),
             label: `${editionLabel(collections.find((c) => c.id === t.collectionId)!)} · ${t.name}`,
           }))}
-          value={target}
-          onChange={setTarget}
+          value={version}
+          onChange={setVersion}
         />
         <MultiSelect
           label="Books in this file"
           searchable
           disabled={!t}
           data={books
-            .filter((s) => s.targetId === t?.id)
+            .filter((s) => s.versionId === t?.id)
             .map((s) => ({ value: String(s.book.id), label: s.book.sequenceStr }))}
           value={chosen}
           onChange={(ids) => {
             if (!t) return
             setDraft([
-              ...draft.filter((s) => s.targetId !== t.id),
+              ...draft.filter((s) => s.versionId !== t.id),
               ...ids.map((id) => ({
-                targetId: t.id,
+                versionId: t.id,
                 bookId: Number(id),
                 collectionId: t.collectionId,
                 number: books.find((s) => s.book.id === Number(id))?.book.sequenceNum ?? 0,
@@ -621,8 +621,8 @@ export function MappingEditor({
         />
         <Stack gap={2}>
           {draft.map((s) => (
-            <Text size="xs" key={`${s.targetId}-${s.bookId}`}>
-              {targets.find((t) => t.id === s.targetId)?.name} ·{' '}
+            <Text size="xs" key={`${s.versionId}-${s.bookId}`}>
+              {versions.find((t) => t.id === s.versionId)?.name} ·{' '}
               {books.find((u) => u.book.id === s.bookId)?.book.sequenceStr}
             </Text>
           ))}

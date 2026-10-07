@@ -28,7 +28,7 @@ func (l *Library) Calendar(ctx context.Context, from, to string) ([]store.Calend
 			}
 			bySeries[e.SeriesID] = slots
 		}
-		book, ok := slots[store.BookKey(e.TargetID, e.BookID)]
+		book, ok := slots[store.BookKey(e.VersionID, e.BookID)]
 		if !ok || !book.Monitored {
 			continue
 		}

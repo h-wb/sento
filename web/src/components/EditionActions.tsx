@@ -138,7 +138,7 @@ function MergePreview({
         {p && (
           <>
             <Text size="sm">
-              {p.localBooks.length} books · {p.fileCount} files · {p.localTargets.length} versions
+              {p.localBooks.length} books · {p.fileCount} files · {p.localVersions.length} versions
             </Text>
             {p.localBooks.map((w) => (
               <Text size="xs" key={w.id}>
@@ -148,7 +148,7 @@ function MergePreview({
                   : 'No match'}
               </Text>
             ))}
-            {p.localTargets.map((t) => (
+            {p.localVersions.map((t) => (
               <Text size="xs" key={t.id}>
                 Version: {t.name}
                 {t.requiredGroup ? ` · group ${t.requiredGroup}` : ''}

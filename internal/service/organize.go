@@ -71,14 +71,14 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePl
 	if err != nil {
 		return nil, nil, ms, err
 	}
-	targets, err := im.store.ListTargets(ctx, seriesID)
+	versions, err := im.store.ListVersions(ctx, seriesID)
 	if err != nil {
 		return nil, nil, ms, err
 	}
-	defaultTarget := map[int64]int64{} // collection → its default version
-	for _, t := range targets {
+	defaultVersion := map[int64]int64{} // collection → its default version
+	for _, t := range versions {
 		if t.IsDefault {
-			defaultTarget[t.CollectionID] = t.ID
+			defaultVersion[t.CollectionID] = t.ID
 		}
 	}
 
@@ -92,7 +92,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePl
 	for _, f := range files {
 		p := filePlan{file: f, FileChange: FileChange{FileID: f.ID, From: rel(f.Path), To: rel(f.Path)}}
 		// The books this file holds, once each, filed under the edition's
-		// default version unless only an additional copy claims it.
+		// default version unless only an additional version claims it.
 		var slots []store.BookRef
 		seen := map[int64]bool{}
 		for _, c := range coverage {
@@ -109,7 +109,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePl
 			}
 			seen[c.BookID] = true
 			slots = append(slots, store.BookRef{
-				Ledger: col.Type, CollectionID: col.ID, Number: w.SequenceNum, BookID: w.ID, TargetID: defaultTarget[col.ID],
+				Ledger: col.Type, CollectionID: col.ID, Number: w.SequenceNum, BookID: w.ID, VersionID: defaultVersion[col.ID],
 			})
 		}
 		sort.Slice(slots, func(i, j int) bool { return slots[i].Number < slots[j].Number })

@@ -77,11 +77,11 @@ func (l *Library) SplitBox(ctx context.Context, seriesID, workID int64, count in
 			return nil, err
 		}
 	}
-	targets, err := l.store.ListTargets(ctx, seriesID)
+	versions, err := l.store.ListVersions(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	for _, t := range targets {
+	for _, t := range versions {
 		if t.CollectionID != col.ID {
 			continue
 		}

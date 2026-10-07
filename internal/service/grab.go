@@ -95,7 +95,7 @@ func (s *SearchService) Grab(ctx context.Context, seriesID int64, searchLedger s
 func grabKeys(c ReleaseCandidate) []string {
 	keys := make([]string, 0, len(c.Coverage))
 	for _, sl := range c.Coverage {
-		keys = append(keys, store.BookKey(sl.TargetID, sl.BookID))
+		keys = append(keys, store.BookKey(sl.VersionID, sl.BookID))
 	}
 	return keys
 }

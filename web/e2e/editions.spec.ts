@@ -20,14 +20,14 @@ test('editions retain independent versions, editable books, and mobile layout', 
       .filter({ hasText: 'Standard Edition' })
       .first()
     await edition.getByRole('button', { name: /More actions/ }).click()
-    await page.getByRole('menuitem', { name: 'Keep an additional copy', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Keep an additional copy', exact: true })
+    await page.getByRole('menuitem', { name: 'Keep an additional version', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Keep an additional version', exact: true })
     await dialog.getByRole('textbox', { name: 'Version name', exact: true }).fill('Preferred group')
     await dialog.getByRole('textbox', { name: 'Required release group', exact: true }).fill('LuCaZ')
     await dialog.getByRole('button', { name: 'Save version', exact: true }).click()
     await expect(dialog).toBeHidden()
-    const targets = await (await request.get(`/api/v1/series/${id}/targets`)).json()
-    expect(targets.filter((t: { name: string }) => t.name === 'Preferred group')).toHaveLength(1)
+    const versions = await (await request.get(`/api/v1/series/${id}/versions`)).json()
+    expect(versions.filter((t: { name: string }) => t.name === 'Preferred group')).toHaveLength(1)
     await edition.getByRole('button', { name: /More actions/ }).click()
     await page.getByRole('menuitem', { name: 'Add volume', exact: true }).click()
     const bookDialog = page.getByRole('dialog', { name: 'Add book', exact: true })
@@ -44,7 +44,7 @@ test('editions retain independent versions, editable books, and mobile layout', 
       page.getByRole('dialog', { name: 'Volume 0', exact: true }).getByRole('button', { name: /Search releases/ }).click(),
     ])
     const scope = searched.postDataJSON().scope
-    expect(scope.targetId).toBeGreaterThan(0)
+    expect(scope.versionId).toBeGreaterThan(0)
     expect(scope.bookId).toBeGreaterThan(0)
     expect(scope.all).toBeFalsy()
     await page

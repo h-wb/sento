@@ -314,7 +314,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	case body.Grab != "":
 		matches := []service.ReleaseCandidate{}
 		for _, c := range result.Candidates {
-			if c.GUID == body.Grab && (body.GrabProvider == "" || body.GrabProvider == c.Provider) && (body.GrabTargetID == 0 || body.GrabTargetID == c.TargetID) {
+			if c.GUID == body.Grab && (body.GrabProvider == "" || body.GrabProvider == c.Provider) && (body.GrabVersionID == 0 || body.GrabVersionID == c.VersionID) {
 				matches = append(matches, c)
 			}
 		}

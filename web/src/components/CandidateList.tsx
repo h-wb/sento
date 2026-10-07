@@ -20,7 +20,7 @@ import classes from './CandidateList.module.css'
 import { useConfirmAction } from './ConfirmAction'
 import { fmtNum, fmtSize, type ReleaseCandidate } from '../api'
 
-const releaseKey = (c: ReleaseCandidate) => `${c.provider}/${c.guid}/${c.targetId ?? 0}`
+const releaseKey = (c: ReleaseCandidate) => `${c.provider}/${c.guid}/${c.versionId ?? 0}`
 const rangeLabel = (label: string, ranges?: [number, number][]) =>
   ranges?.length
     ? `${label} ${ranges.map(([from, to]) => (from === to ? from : `${from}–${to}`)).join(', ')}`
@@ -122,7 +122,7 @@ export default function CandidateList({
         c.scanlator,
         c.parse.language,
         c.editionSnapshot?.editionName,
-        c.targetSnapshot?.name,
+        c.versionSnapshot?.name,
       ]
         .join(' ')
         .toLowerCase()
@@ -446,7 +446,7 @@ function ReleaseRow({
                     : decision?.kind || 'Unclassified'}
                   {state === 'ready' && ` · Rank score ${c.score}`}
                   {c.editionSnapshot && ` · ${c.editionSnapshot.editionName}`}
-                  {c.targetSnapshot && !c.targetSnapshot.isDefault && ` · ${c.targetSnapshot.name}`}
+                  {c.versionSnapshot && !c.versionSnapshot.isDefault && ` · ${c.versionSnapshot.name}`}
                 </Text>
               )}
             </div>

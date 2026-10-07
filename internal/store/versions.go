@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-type DownloadTarget struct {
+type CollectedVersion struct {
 	IncludeExtras  bool   `json:"includeExtras"`
 	ID             int64  `json:"id"`
 	CollectionID   int64  `json:"collectionId"`
@@ -23,15 +23,15 @@ type DownloadTarget struct {
 	AcquireUnknown bool   `json:"acquireUnknown"`
 }
 
-const targetColumns = `id,collection_id,name,is_default,monitored,COALESCE(profile_id,0) AS profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras`
+const versionColumns = `id,collection_id,name,is_default,monitored,COALESCE(profile_id,0) AS profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras`
 
-func (s *Store) ListTargets(ctx context.Context, seriesID int64) ([]DownloadTarget, error) {
-	return list[DownloadTarget](ctx, s, `SELECT `+targetColumns+` FROM download_targets WHERE collection_id IN(SELECT id FROM collections WHERE series_id=?) ORDER BY collection_id,is_default DESC,id`, seriesID)
+func (s *Store) ListVersions(ctx context.Context, seriesID int64) ([]CollectedVersion, error) {
+	return list[CollectedVersion](ctx, s, `SELECT `+versionColumns+` FROM download_targets WHERE collection_id IN(SELECT id FROM collections WHERE series_id=?) ORDER BY collection_id,is_default DESC,id`, seriesID)
 }
-func (s *Store) GetTarget(ctx context.Context, id int64) (*DownloadTarget, error) {
-	return get[DownloadTarget](ctx, s, `SELECT `+targetColumns+` FROM download_targets WHERE id=?`, id)
+func (s *Store) GetVersion(ctx context.Context, id int64) (*CollectedVersion, error) {
+	return get[CollectedVersion](ctx, s, `SELECT `+versionColumns+` FROM download_targets WHERE id=?`, id)
 }
-func (s *Store) SaveTarget(ctx context.Context, seriesID int64, t DownloadTarget) (int64, error) {
+func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVersion) (int64, error) {
 	c, err := s.GetCollection(ctx, t.CollectionID)
 	if err != nil {
 		return 0, err
@@ -75,7 +75,7 @@ func (s *Store) SaveTarget(ctx context.Context, seriesID int64, t DownloadTarget
 		return id, tx.Commit()
 	}
 
-	old, err := s.GetTarget(ctx, t.ID)
+	old, err := s.GetVersion(ctx, t.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -105,8 +105,8 @@ func (s *Store) SaveTarget(ctx context.Context, seriesID int64, t DownloadTarget
 
 	return t.ID, err
 }
-func (s *Store) DeleteTarget(ctx context.Context, seriesID, id int64) error {
-	t, err := s.GetTarget(ctx, id)
+func (s *Store) DeleteVersion(ctx context.Context, seriesID, id int64) error {
+	t, err := s.GetVersion(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func (s *Store) DeleteTarget(ctx context.Context, seriesID, id int64) error {
 	if pending {
 		return apperr.Conflictf("collection has pending downloads")
 	}
-	// Target deletion drops references, never assets or files.
+	// Version deletion drops references, never assets or files.
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -160,12 +160,12 @@ type AssetFacts struct {
 	ReleaseKey  string            `json:"releaseKey,omitempty"`
 }
 type AssetCoverage struct {
-	Evidence string `json:"evidence"`
-	FileID   int64  `json:"fileId"`
-	TargetID int64  `json:"targetId"`
-	BookID   int64  `json:"bookId" db:"work_id"`
-	Verified bool   `json:"verified"`
-	Pinned   bool   `json:"pinned"`
+	Evidence  string `json:"evidence"`
+	FileID    int64  `json:"fileId"`
+	VersionID int64  `json:"versionId" db:"target_id"`
+	BookID    int64  `json:"bookId" db:"work_id"`
+	Verified  bool   `json:"verified"`
+	Pinned    bool   `json:"pinned"`
 }
 
 func (s *Store) Coverage(ctx context.Context, seriesID int64) ([]AssetCoverage, error) {
@@ -178,7 +178,7 @@ func (s *Store) PinCoverage(ctx context.Context, seriesID int64, a AssetCoverage
 	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,pinned)
  SELECT c.file_id,t.id,c.work_id,? FROM asset_contents c JOIN works w ON w.id=c.work_id JOIN download_targets t ON t.collection_id=w.collection_id JOIN files f ON f.id=c.file_id
  WHERE c.file_id=? AND t.id=? AND c.work_id=? AND f.series_id=?
- ON CONFLICT(file_id,target_id,work_id) DO UPDATE SET pinned=excluded.pinned`), a.Pinned, a.FileID, a.TargetID, a.BookID, seriesID)
+ ON CONFLICT(file_id,target_id,work_id) DO UPDATE SET pinned=excluded.pinned`), a.Pinned, a.FileID, a.VersionID, a.BookID, seriesID)
 	return err
 }
 func (s *Store) FileFacts(ctx context.Context, id int64) (AssetFacts, error) {
@@ -208,7 +208,7 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Boo
 		return ErrNotFound
 	}
 	for _, sl := range slots {
-		t, err := s.GetTarget(ctx, sl.TargetID)
+		t, err := s.GetVersion(ctx, sl.VersionID)
 		if err != nil {
 			return err
 		}
@@ -238,7 +238,7 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Boo
 	}
 	for _, sl := range slots {
 		var valid int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), sl.BookID, sl.TargetID, sl.CollectionID, seriesID).Scan(&valid); err != nil {
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), sl.BookID, sl.VersionID, sl.CollectionID, seriesID).Scan(&valid); err != nil {
 			return err
 		}
 		if valid != 1 {
@@ -274,7 +274,7 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Boo
 		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,verified,evidence) VALUES(?,?,TRUE,'manual') ON CONFLICT DO NOTHING`), fileID, sl.BookID); err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,pinned,evidence) VALUES(?,?,?,? ,'manual') ON CONFLICT DO NOTHING`), fileID, sl.TargetID, sl.BookID, pins[BookKey(sl.TargetID, sl.BookID)]); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,pinned,evidence) VALUES(?,?,?,? ,'manual') ON CONFLICT DO NOTHING`), fileID, sl.VersionID, sl.BookID, pins[BookKey(sl.VersionID, sl.BookID)]); err != nil {
 			return err
 		}
 	}
@@ -290,8 +290,8 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Boo
 	return tx.Commit()
 }
 
-func (s *Store) SetBookMonitored(ctx context.Context, seriesID, targetID, workID int64, monitored bool) error {
-	t, err := s.GetTarget(ctx, targetID)
+func (s *Store) SetBookMonitored(ctx context.Context, seriesID, versionID, workID int64, monitored bool) error {
+	t, err := s.GetVersion(ctx, versionID)
 	if err != nil {
 		return err
 	}
@@ -306,14 +306,14 @@ func (s *Store) SetBookMonitored(ctx context.Context, seriesID, targetID, workID
 	if c.SeriesID != seriesID || w.CollectionID != c.ID {
 		return ErrNotFound
 	}
-	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO unit_overrides(target_id,work_id,monitored) VALUES(?,?,?) ON CONFLICT(target_id,work_id) DO UPDATE SET monitored=excluded.monitored`), targetID, workID, monitored)
+	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO unit_overrides(target_id,work_id,monitored) VALUES(?,?,?) ON CONFLICT(target_id,work_id) DO UPDATE SET monitored=excluded.monitored`), versionID, workID, monitored)
 	return err
 }
-func (s *Store) BookOverrides(ctx context.Context, targetID int64) (map[int64]bool, error) {
+func (s *Store) BookOverrides(ctx context.Context, versionID int64) (map[int64]bool, error) {
 	rows, err := list[struct {
 		WorkID    int64
 		Monitored bool
-	}](ctx, s, `SELECT work_id,monitored FROM unit_overrides WHERE target_id=?`, targetID)
+	}](ctx, s, `SELECT work_id,monitored FROM unit_overrides WHERE target_id=?`, versionID)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +343,7 @@ func (s *Store) BulkMonitor(ctx context.Context, sid, tid int64, ids []int64, mo
 	if len(ids) == 0 || len(ids) > 10000 {
 		return apperr.Invalidf("select between 1 and 10,000 books")
 	}
-	t, err := s.GetTarget(ctx, tid)
+	t, err := s.GetVersion(ctx, tid)
 	if err != nil {
 		return err
 	}

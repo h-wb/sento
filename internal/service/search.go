@@ -45,9 +45,9 @@ func (s *SearchService) HasSourceProvider() bool {
 // SearchScope scopes an interactive search to one collected version: one
 // of its books (WorkID), or every wanted book of it (All).
 type SearchScope struct {
-	TargetID int64 `json:"targetId"`
-	BookID   int64 `json:"bookId,omitempty"`
-	All      bool  `json:"all,omitempty"`
+	VersionID int64 `json:"versionId"`
+	BookID    int64 `json:"bookId,omitempty"`
+	All       bool  `json:"all,omitempty"`
 	// AllBooks widens an edition-wide search from the wanted books to
 	// every book of the version, owned and paused ones included: looking
 	// for a better copy, or at what exists before collecting.
@@ -61,33 +61,33 @@ type ReleaseCandidate struct {
 	// when the release name did not state it.
 	languageSource string
 
-	Decision         ReleaseDecision       `json:"decision"`
-	ScoreParts       []ScorePart           `json:"scoreParts,omitempty"`
-	ParseTrace       []parse.Step          `json:"parseTrace,omitempty"`
-	TargetSnapshot   *store.DownloadTarget `json:"targetSnapshot,omitempty"`
-	FormatSnapshot   []profile.Format      `json:"formatSnapshot,omitempty"`
-	PolicySnapshot   *profile.Profile      `json:"policySnapshot,omitempty"`
-	EditionSnapshot  *store.Collection     `json:"editionSnapshot,omitempty"`
-	RepresentedBooks int                   `json:"representedBooks"`
-	TargetID         int64                 `json:"targetId,omitempty"`
-	Coverage         []store.BookRef       `json:"coverage,omitempty"`
-	ProfileID        int64                 `json:"profileId,omitempty"`
-	GUID             string                `json:"guid"`
-	Provider         string                `json:"provider"`
-	Protocol         string                `json:"protocol"`
-	Site             string                `json:"site"`
-	SiteID           string                `json:"siteId"`
-	Title            string                `json:"title"`
-	URL              string                `json:"url,omitempty"` // release page on the indexer/source site
-	Size             int64                 `json:"size,omitempty"`
-	Seeders          int                   `json:"seeders,omitempty"`
-	Scanlator        string                `json:"scanlator,omitempty"`
-	CollectionID     int64                 `json:"collectionId,omitempty"`
-	Score            int                   `json:"score"`
-	Formats          []FormatHit           `json:"formats,omitempty"`     // matched custom formats
-	FormatScore      int                   `json:"formatScore,omitempty"` // their summed score
-	Rejections       []string              `json:"rejections,omitempty"`
-	Parse            parse.Result          `json:"parse"`
+	Decision         ReleaseDecision         `json:"decision"`
+	ScoreParts       []ScorePart             `json:"scoreParts,omitempty"`
+	ParseTrace       []parse.Step            `json:"parseTrace,omitempty"`
+	VersionSnapshot  *store.CollectedVersion `json:"versionSnapshot,omitempty"`
+	FormatSnapshot   []profile.Format        `json:"formatSnapshot,omitempty"`
+	PolicySnapshot   *profile.Profile        `json:"policySnapshot,omitempty"`
+	EditionSnapshot  *store.Collection       `json:"editionSnapshot,omitempty"`
+	RepresentedBooks int                     `json:"representedBooks"`
+	VersionID        int64                   `json:"versionId,omitempty"`
+	Coverage         []store.BookRef         `json:"coverage,omitempty"`
+	ProfileID        int64                   `json:"profileId,omitempty"`
+	GUID             string                  `json:"guid"`
+	Provider         string                  `json:"provider"`
+	Protocol         string                  `json:"protocol"`
+	Site             string                  `json:"site"`
+	SiteID           string                  `json:"siteId"`
+	Title            string                  `json:"title"`
+	URL              string                  `json:"url,omitempty"` // release page on the indexer/source site
+	Size             int64                   `json:"size,omitempty"`
+	Seeders          int                     `json:"seeders,omitempty"`
+	Scanlator        string                  `json:"scanlator,omitempty"`
+	CollectionID     int64                   `json:"collectionId,omitempty"`
+	Score            int                     `json:"score"`
+	Formats          []FormatHit             `json:"formats,omitempty"`     // matched custom formats
+	FormatScore      int                     `json:"formatScore,omitempty"` // their summed score
+	Rejections       []string                `json:"rejections,omitempty"`
+	Parse            parse.Result            `json:"parse"`
 	cand             provider.Candidate
 }
 
@@ -295,22 +295,22 @@ type SearchEvent struct {
 // searchRun is the resolved context of one search, shared by all provider
 // goroutines (read-only after prepare).
 type searchRun struct {
-	targets        []store.DownloadTarget
-	books          map[int64][]store.Book
-	wantedBooks    map[int64]map[int64]bool
-	targetProfiles map[int64]*profile.Profile
-	sourceEditions map[int64]int64
-	ownedScores    map[int64]map[int64]int
-	seriesID       int64
-	ledger         string
-	target         *SearchScope
-	titles         []string
-	sites          []siteState
-	allowed        map[string]map[string]bool
-	priorities     map[[2]string]int
-	searched       []string
-	collections    []store.Collection
-	blocked        map[string]bool // "protocol/externalKey" bans
+	versions        []store.CollectedVersion
+	books           map[int64][]store.Book
+	wantedBooks     map[int64]map[int64]bool
+	versionProfiles map[int64]*profile.Profile
+	sourceEditions  map[int64]int64
+	ownedScores     map[int64]map[int64]int
+	seriesID        int64
+	ledger          string
+	scope           *SearchScope
+	titles          []string
+	sites           []siteState
+	allowed         map[string]map[string]bool
+	priorities      map[[2]string]int
+	searched        []string
+	collections     []store.Collection
+	blocked         map[string]bool // "protocol/externalKey" bans
 	// profiles is the effective release profile per collection id, with
 	// the series-level profile under key 0 (nil map = built-ins).
 	profiles map[int64]*profile.Profile
@@ -325,7 +325,7 @@ func (run *searchRun) profileFor(collectionID int64) *profile.Profile {
 	return run.profiles[0]
 }
 
-func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedger string, target *SearchScope) (*searchRun, error) {
+func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedger string, version *SearchScope) (*searchRun, error) {
 	if s.registry.Empty() {
 		return nil, apperr.Unavailablef("no search providers configured")
 	}
@@ -338,7 +338,7 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 		return nil, err
 	}
 	run := &searchRun{
-		seriesID: seriesID, ledger: searchLedger, target: target,
+		seriesID: seriesID, ledger: searchLedger, scope: version,
 		titles: titles, sites: sites,
 		allowed: map[string]map[string]bool{}, priorities: map[[2]string]int{},
 	}
@@ -358,7 +358,7 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 	if run.profiles, run.formats, err = s.profiles.EffectiveProfiles(ctx, seriesID); err != nil {
 		return nil, err
 	}
-	if err = s.prepareTargets(ctx, run); err != nil {
+	if err = s.prepareVersions(ctx, run); err != nil {
 		return nil, err
 	}
 	return run, nil
@@ -441,14 +441,14 @@ func (s *SearchService) streamProvider(ctx context.Context, p provider.Provider,
 
 // FindCandidatesStream runs the unified search for one ledger, emitting a
 // batch per search book as it completes. emit is always called from this
-// goroutine. With a target, only that book counts as wanted (interactive
+// goroutine. With a version, only that book counts as wanted (interactive
 // search, any book state).
-func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64, searchLedger string, target *SearchScope, emit func(SearchEvent)) error {
-	run, err := s.prepare(ctx, seriesID, searchLedger, target)
+func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64, searchLedger string, version *SearchScope, emit func(SearchEvent)) error {
+	run, err := s.prepare(ctx, seriesID, searchLedger, version)
 	if err != nil {
 		return err
 	}
-	if len(run.targets) > 0 && len(run.wantedBooks) == 0 {
+	if len(run.versions) > 0 && len(run.wantedBooks) == 0 {
 		emit(SearchEvent{Type: "sites", Ledger: searchLedger, BindingNotes: []string{"No books can be acquired in this selection. Check the edition’s book statuses, or open a specific book to search for another copy."}})
 		emit(SearchEvent{Type: "done", Ledger: searchLedger})
 		return nil
@@ -474,9 +474,9 @@ func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64
 
 // FindCandidates runs the unified search and collects the whole stream
 // into one result (scheduler, auto-grab and grab-by-GUID paths).
-func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, searchLedger string, target *SearchScope) (*SearchResult, error) {
+func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, searchLedger string, version *SearchScope) (*SearchResult, error) {
 	result := &SearchResult{Ledger: searchLedger, Candidates: []ReleaseCandidate{}}
-	err := s.FindCandidatesStream(ctx, seriesID, searchLedger, target, func(ev SearchEvent) {
+	err := s.FindCandidatesStream(ctx, seriesID, searchLedger, version, func(ev SearchEvent) {
 		switch ev.Type {
 		case "sites":
 			result.Searched = ev.Searched

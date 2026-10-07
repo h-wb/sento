@@ -5,7 +5,7 @@ import "context"
 // CalendarEntry is one dated volume release of a monitored collection.
 type CalendarEntry struct {
 	BookID       int64  `json:"bookId" db:"work_id"`
-	TargetID     int64  `json:"targetId"`
+	VersionID    int64  `json:"versionId" db:"target_id"`
 	VersionName  string `json:"versionName"`
 	SeriesID     int64  `json:"seriesId"`
 	SeriesTitle  string `json:"seriesTitle"`

@@ -185,14 +185,14 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 			continue
 		}
 		col := matches[0]
-		targets, err := sc.store.ListTargets(ctx, col.SeriesID)
+		versions, err := sc.store.ListVersions(ctx, col.SeriesID)
 		if err != nil {
 			continue
 		}
-		var targetID int64
-		for _, target := range targets {
-			if target.CollectionID == col.ID && target.IsDefault {
-				targetID = target.ID
+		var versionID int64
+		for _, version := range versions {
+			if version.CollectionID == col.ID && version.IsDefault {
+				versionID = version.ID
 			}
 		}
 		works, err := sc.store.ListBooks(ctx, col.ID)
@@ -205,7 +205,7 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 			}
 			for _, r := range axis.ranges {
 				if w.SequenceNum >= int64(r.From) && w.SequenceNum <= int64(r.To) {
-					links = append(links, store.BookLink{Ledger: axis.kind, CollectionID: col.ID, BookID: w.ID, TargetID: targetID, Number: w.SequenceNum})
+					links = append(links, store.BookLink{Ledger: axis.kind, CollectionID: col.ID, BookID: w.ID, VersionID: versionID, Number: w.SequenceNum})
 					break
 				}
 			}

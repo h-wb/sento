@@ -1,7 +1,7 @@
 import type { ReviewItem } from './types/store'
 import type { EditionOverview, FileChange, HealthReport, OrganizeResult } from './types/service'
 import type {
-  DownloadTarget,
+  CollectedVersion,
   Book,
   CollectionMetadataPatch,
   CatalogLinkPreview,
@@ -129,12 +129,12 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ collectionId }),
     }),
-  bookMonitor: (id: number, targetId: number, bookId: number, monitored: boolean) =>
+  bookMonitor: (id: number, versionId: number, bookId: number, monitored: boolean) =>
     request<void>(`/series/${id}/book-monitor`, {
       method: 'PUT',
-      body: JSON.stringify({ targetId, bookId, monitored }),
+      body: JSON.stringify({ versionId, bookId, monitored }),
     }),
-  targets: (id: number) => request<DownloadTarget[]>(`/series/${id}/targets`),
+  versions: (id: number) => request<CollectedVersion[]>(`/series/${id}/versions`),
   correctFileFacts: (id: number, fid: number, patch: { language?: string; group?: string }) =>
     request<void>(`/series/${id}/files/${fid}/facts`, {
       method: 'PATCH',
@@ -150,8 +150,8 @@ export const api = {
   editionOverview: (id: number) => request<EditionOverview>(`/series/${id}/edition-overview`),
   // Older servers answered this route with a paged object. Say so instead
   // of letting the page fail on a shape it cannot read.
-  targetBooks: async (id: number, target: number) => {
-    const books = await request<BookStatus[]>(`/series/${id}/targets/${target}/books`)
+  versionBooksOf: async (id: number, version: number) => {
+    const books = await request<BookStatus[]>(`/series/${id}/versions/${version}/books`)
     if (!Array.isArray(books)) {
       throw new Error(
         'The Sento server is older than this page and returned books in an outdated format. Restart or update the server, then reload.',
@@ -159,8 +159,8 @@ export const api = {
     }
     return books.map((b) => ({ ...b, fileIds: b.fileIds ?? [], onDiskFileIds: b.onDiskFileIds ?? [] }))
   },
-  bulkMonitor: (id: number, target: number, bookIds: number[], monitored: boolean) =>
-    request<void>(`/series/${id}/targets/${target}/monitor`, {
+  bulkMonitor: (id: number, version: number, bookIds: number[], monitored: boolean) =>
+    request<void>(`/series/${id}/versions/${version}/monitor`, {
       method: 'POST',
       body: JSON.stringify({ bookIds, monitored }),
     }),
@@ -174,13 +174,13 @@ export const api = {
     request<void>(`/queue/${id}/retry`, { method: 'POST', body: JSON.stringify({ remoteId }) }),
   cancelQueue: (id: number) => request<void>(`/queue/${id}/cancel`, { method: 'POST' }),
   versionBooks: (id: number) => request<Record<string, BookStatus[]>>(`/series/${id}/books`),
-  saveTarget: (id: number, target: DownloadTarget) =>
-    request<DownloadTarget>(`/series/${id}/targets${target.id ? `/${target.id}` : ''}`, {
-      method: target.id ? 'PUT' : 'POST',
-      body: JSON.stringify(target),
+  saveVersion: (id: number, version: CollectedVersion) =>
+    request<CollectedVersion>(`/series/${id}/versions${version.id ? `/${version.id}` : ''}`, {
+      method: version.id ? 'PUT' : 'POST',
+      body: JSON.stringify(version),
     }),
-  deleteTarget: (id: number, tid: number) =>
-    request<void>(`/series/${id}/targets/${tid}`, { method: 'DELETE' }),
+  deleteVersion: (id: number, tid: number) =>
+    request<void>(`/series/${id}/versions/${tid}`, { method: 'DELETE' }),
   saveBook: (id: number, book: Book) =>
     request<Book>(`/series/${id}/books${book.id ? `/${book.id}` : ''}`, {
       method: book.id ? 'PUT' : 'POST',

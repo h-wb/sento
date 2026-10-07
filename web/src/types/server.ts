@@ -21,7 +21,7 @@ export interface ObservationReviewBody {
   accept: boolean;
 }
 export interface BookMonitorBody {
-  targetId: number /* int64 */;
+  versionId: number /* int64 */;
   bookId: number /* int64 */;
   monitored: boolean;
 }
@@ -63,7 +63,7 @@ export interface SeriesDetail {
  */
 export interface SearchBody {
   grabProvider?: string;
-  grabTargetId?: number /* int64 */;
+  grabVersionId?: number /* int64 */;
   ledger: string;
   dryRun: boolean;
   scope?: SearchScope;

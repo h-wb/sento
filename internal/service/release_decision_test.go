@@ -13,11 +13,11 @@ import (
 )
 
 func TestReleaseClassificationAndDecisionEvidence(t *testing.T) {
-	_, st, id, _, _, target := modelFixture(t)
+	_, st, id, _, _, version := modelFixture(t)
 	ctx := context.Background()
 	svc := NewSearchService(st, provider.NewRegistry())
-	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &SearchScope{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}, priorities: map[[2]string]int{{"torrent", "site"}: 5}}
-	if err := svc.prepareTargets(ctx, run); err != nil {
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, scope: &SearchScope{VersionID: version.ID, All: true}, titles: []string{"ONE PIECE"}, priorities: map[[2]string]int{{"torrent", "site"}: 5}}
+	if err := svc.prepareVersions(ctx, run); err != nil {
 		t.Fatal(err)
 	}
 	cases := []struct {
@@ -80,10 +80,10 @@ func TestReleaseClassificationAndDecisionEvidence(t *testing.T) {
 }
 
 func TestExtraReleaseDoesNotClaimRegularVolume(t *testing.T) {
-	_, st, id, c, works, target := modelFixture(t)
+	_, st, id, c, works, version := modelFixture(t)
 	ctx := context.Background()
-	target.IncludeExtras = true
-	if _, err := st.SaveTarget(ctx, id, target); err != nil {
+	version.IncludeExtras = true
+	if _, err := st.SaveVersion(ctx, id, version); err != nil {
 		t.Fatal(err)
 	}
 	extra, err := st.SaveBook(ctx, id, store.Book{CollectionID: c.ID, SequenceNum: 100, SequenceStr: "1 bonus", CountType: "extra", NumberKnown: true})
@@ -91,8 +91,8 @@ func TestExtraReleaseDoesNotClaimRegularVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewSearchService(st, provider.NewRegistry())
-	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &SearchScope{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
-	if err = svc.prepareTargets(ctx, run); err != nil {
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, scope: &SearchScope{VersionID: version.ID, All: true}, titles: []string{"ONE PIECE"}}
+	if err = svc.prepareVersions(ctx, run); err != nil {
 		t.Fatal(err)
 	}
 	out, _ := svc.process(run, []provider.Candidate{{Provider: "torrent", Protocol: "torrent", Title: "ONE PIECE Special v01 [English Digital]", Torrent: &provider.TorrentRef{GUID: "bonus", Size: 100 << 20, Seeders: 30}}})
@@ -116,7 +116,7 @@ func TestEditionAmbiguity(t *testing.T) {
 	run := func(collected ...int64) *searchRun {
 		r := &searchRun{collections: []store.Collection{paper, digital, french, chapters}}
 		for _, id := range []int64{1, 2, 3, 4} {
-			r.targets = append(r.targets, store.DownloadTarget{ID: id, CollectionID: id, Monitored: slices.Contains(collected, id)})
+			r.versions = append(r.versions, store.CollectedVersion{ID: id, CollectionID: id, Monitored: slices.Contains(collected, id)})
 		}
 		return r
 	}
@@ -159,22 +159,22 @@ func TestEditionAmbiguity(t *testing.T) {
 // End to end: an ambiguous release is offered for review with its books,
 // never as ready, and a stated language makes it ready.
 func TestAmbiguousEditionIsReviewable(t *testing.T) {
-	_, st, id, c, _, target := modelFixture(t)
+	_, st, id, c, _, version := modelFixture(t)
 	ctx := context.Background()
 	french, err := st.AddCustomCollection(ctx, store.Collection{SeriesID: id, EditionName: "Standard Edition", Language: "fr", Monitored: true}, c.ID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	targets, err := st.ListTargets(ctx, id)
+	versions, err := st.ListVersions(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	collecting := false
-	for _, other := range targets {
+	for _, other := range versions {
 		if other.CollectionID == french {
 			collecting = true
 			other.Monitored = true
-			if _, err = st.SaveTarget(ctx, id, other); err != nil {
+			if _, err = st.SaveVersion(ctx, id, other); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -182,13 +182,13 @@ func TestAmbiguousEditionIsReviewable(t *testing.T) {
 	if !collecting {
 		t.Fatal("the French edition has no collected version")
 	}
-	target.AllowUnknown = true
-	if _, err = st.SaveTarget(ctx, id, target); err != nil {
+	version.AllowUnknown = true
+	if _, err = st.SaveVersion(ctx, id, version); err != nil {
 		t.Fatal(err)
 	}
 	svc := NewSearchService(st, provider.NewRegistry())
-	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &SearchScope{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
-	if err = svc.prepareTargets(ctx, run); err != nil {
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, scope: &SearchScope{VersionID: version.ID, All: true}, titles: []string{"ONE PIECE"}}
+	if err = svc.prepareVersions(ctx, run); err != nil {
 		t.Fatal(err)
 	}
 	search := func(title string) ReleaseCandidate {
@@ -215,14 +215,14 @@ func TestAmbiguousEditionIsReviewable(t *testing.T) {
 // A name without a language takes it from the evidence around it, in
 // order: indexer section, English-only publisher, indexer default.
 func TestLanguageEvidenceForUntaggedReleases(t *testing.T) {
-	_, st, id, c, _, target := modelFixture(t)
+	_, st, id, c, _, version := modelFixture(t)
 	ctx := context.Background()
 	if _, err := st.AddCustomCollection(ctx, store.Collection{SeriesID: id, EditionName: "Standard Edition", Language: "fr", Monitored: true}, c.ID, 0); err != nil {
 		t.Fatal(err)
 	}
 	svc := NewSearchService(st, provider.NewRegistry())
-	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &SearchScope{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
-	if err := svc.prepareTargets(ctx, run); err != nil {
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, scope: &SearchScope{VersionID: version.ID, All: true}, titles: []string{"ONE PIECE"}}
+	if err := svc.prepareVersions(ctx, run); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -257,20 +257,20 @@ func TestLanguageEvidenceForUntaggedReleases(t *testing.T) {
 // An edition-wide search covers the wanted books; AllBooks widens it to
 // every book, so a paused edition can still be browsed.
 func TestEditionSearchScope(t *testing.T) {
-	_, st, id, _, works, target := modelFixture(t)
+	_, st, id, _, works, version := modelFixture(t)
 	ctx := context.Background()
-	target.Monitored = false
-	if _, err := st.SaveTarget(ctx, id, target); err != nil {
+	version.Monitored = false
+	if _, err := st.SaveVersion(ctx, id, version); err != nil {
 		t.Fatal(err)
 	}
 	svc := NewSearchService(st, provider.NewRegistry())
 	wanted := func(allBooks bool) int {
 		t.Helper()
-		run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &SearchScope{TargetID: target.ID, All: true, AllBooks: allBooks}, titles: []string{"ONE PIECE"}}
-		if err := svc.prepareTargets(ctx, run); err != nil {
+		run := &searchRun{seriesID: id, ledger: LedgerVolume, scope: &SearchScope{VersionID: version.ID, All: true, AllBooks: allBooks}, titles: []string{"ONE PIECE"}}
+		if err := svc.prepareVersions(ctx, run); err != nil {
 			t.Fatal(err)
 		}
-		return len(run.wantedBooks[target.ID])
+		return len(run.wantedBooks[version.ID])
 	}
 	if got := wanted(false); got != 0 {
 		t.Fatalf("a paused edition wants %d books", got)
@@ -371,15 +371,15 @@ func TestSplitBox(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Collect the edition so "wanted" means something.
-	targets, _ := st.ListTargets(ctx, id)
-	var target store.DownloadTarget
-	for _, tg := range targets {
+	versions, _ := st.ListVersions(ctx, id)
+	var version store.CollectedVersion
+	for _, tg := range versions {
 		if tg.CollectionID == omni.ID {
-			target = tg
+			version = tg
 		}
 	}
-	target.Monitored = true
-	if _, err := st.SaveTarget(ctx, id, target); err != nil {
+	version.Monitored = true
+	if _, err := st.SaveVersion(ctx, id, version); err != nil {
 		t.Fatal(err)
 	}
 	// The fixture's box is itself numbered 1: the split must not mistake it
@@ -400,12 +400,12 @@ func TestSplitBox(t *testing.T) {
 	if all, _ := st.ListBooks(ctx, omni.ID); len(all) != 4 {
 		t.Fatalf("edition has %d books, want the box and 3 volumes", len(all))
 	}
-	slots, err := lib.VersionBooks(ctx, id)
+	slots, err := lib.BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	wanted := 0
-	for _, sl := range slots[target.ID] {
+	for _, sl := range slots[version.ID] {
 		if sl.Book.ID == box.ID && (sl.Monitored || sl.Wanted) {
 			t.Error("the box itself is still collected")
 		}

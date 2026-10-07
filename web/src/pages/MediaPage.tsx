@@ -36,7 +36,7 @@ const tokens: [string, string][] = [
   ['{publisher}', 'edition publisher (folders)'],
   ['{medium}', 'paperback, digital… (folders)'],
   ['{type}', 'Volumes or Chapters (folders)'],
-  ['{version}', 'name of an additional copy; empty for the default one (folders)'],
+  ['{version}', 'name of an additional version; empty for the default one (folders)'],
   ['{collectionId} {versionId}', 'internal ids that never change (folders)'],
 ]
 
@@ -138,7 +138,7 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
           </Group>
           <Select
             label="Folders inside a series"
-            description="How editions and extra copies are separated. Applies to new imports."
+            description="How editions and additional versions are separated. Applies to new imports."
             allowDeselect={false}
             value={layouts.find((l) => l.template === form.bookFolder)?.value ?? 'custom'}
             onChange={(v) => {

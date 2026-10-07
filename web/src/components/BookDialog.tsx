@@ -21,7 +21,7 @@ import { useConfirmAction } from './ConfirmAction'
 export type BookSelection = {
   // The collected version being searched; bookId narrows it to one book,
   // all widens it to every wanted book.
-  targetId: number
+  versionId: number
   bookId?: number
   all?: boolean
   label?: string
@@ -77,7 +77,7 @@ export default function BookDialog({
   // Keyed by book so every open starts fresh (tab choice, search state).
   return (
     <Inner
-      key={`${sel.targetId}-${sel.bookId ?? 'all'}`}
+      key={`${sel.versionId}-${sel.bookId ?? 'all'}`}
       seriesID={seriesID}
       sel={sel}
       files={files}
@@ -123,7 +123,7 @@ function Inner({
   // Streaming search: each provider's batch renders as soon as it lands,
   // so fast extension sources show up while torrent indexers still load.
   const searchScope = (everyBook: boolean) => ({
-    targetId: sel.targetId,
+    versionId: sel.versionId,
     bookId: sel.bookId,
     all: sel.all,
     allBooks: editionWide && everyBook ? true : undefined,
@@ -228,7 +228,7 @@ function Inner({
         ledger: sel.ledger,
         grab: c.guid,
         grabProvider: c.provider,
-        grabTargetId: c.targetId,
+        grabVersionId: c.versionId,
         force,
         scope: searchScope(allBooks),
       })

@@ -97,7 +97,7 @@ func queueVolumes(t *testing.T, st *store.Store, seriesID, collectionID int64, h
 	t.Helper()
 	slots := make([]store.BookRef, 0, len(numbers))
 	for _, n := range numbers {
-		targets, err := st.ListTargets(context.Background(), seriesID)
+		versions, err := st.ListVersions(context.Background(), seriesID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,10 +105,10 @@ func queueVolumes(t *testing.T, st *store.Store, seriesID, collectionID int64, h
 		if err != nil {
 			t.Fatal(err)
 		}
-		var targetID, workID int64
-		for _, target := range targets {
-			if target.CollectionID == collectionID && target.IsDefault {
-				targetID = target.ID
+		var versionID, workID int64
+		for _, version := range versions {
+			if version.CollectionID == collectionID && version.IsDefault {
+				versionID = version.ID
 			}
 		}
 		for _, work := range works {
@@ -116,7 +116,7 @@ func queueVolumes(t *testing.T, st *store.Store, seriesID, collectionID int64, h
 				workID = work.ID
 			}
 		}
-		slots = append(slots, store.BookRef{Ledger: "volume", CollectionID: collectionID, Number: n, TargetID: targetID, BookID: workID})
+		slots = append(slots, store.BookRef{Ledger: "volume", CollectionID: collectionID, Number: n, VersionID: versionID, BookID: workID})
 	}
 	raw, _ := json.Marshal(slots)
 	id, err := st.AddQueueItem(context.Background(), store.QueueItem{
@@ -413,12 +413,12 @@ func TestSeriesFolders(t *testing.T) {
 // An archive holding several books is named and titled for its range,
 // not for the first book in it.
 func TestMultiBookFileIsNamedForItsRange(t *testing.T) {
-	_, st, id, c, ws, target := modelFixture(t)
+	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	im := NewImporter(st, nil, t.TempDir(), nil)
 	series, _ := st.GetSeries(ctx, id)
 	ms := DefaultMediaSettings()
-	slots := []store.BookRef{modelRef(c, ws[1], target), modelRef(c, ws[0], target)}
+	slots := []store.BookRef{modelRef(c, ws[1], version), modelRef(c, ws[0], version)}
 	if got := im.bookFileName(ctx, ms, series, slots, "", ".cbz"); !strings.Contains(got, "v01-02") {
 		t.Errorf("range name = %q", got)
 	}

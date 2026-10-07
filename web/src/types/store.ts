@@ -9,7 +9,7 @@
  */
 export interface CalendarEntry {
   bookId: number /* int64 */;
-  targetId: number /* int64 */;
+  versionId: number /* int64 */;
   versionName: string;
   seriesId: number /* int64 */;
   seriesTitle: string;
@@ -50,8 +50,8 @@ export interface CollectionMetadataPatch {
   reset: string[];
 }
 export interface CatalogLinkPreview {
-  localTargets: DownloadTarget[];
-  catalogTargets: DownloadTarget[];
+  localVersions: CollectedVersion[];
+  catalogVersions: CollectedVersion[];
   fileCount: number /* int */;
   pending: boolean;
   localBooks: Book[];
@@ -147,7 +147,7 @@ export interface AssetContent {
   evidence: string;
 }
 export interface BookOverride {
-  TargetID: number /* int64 */;
+  VersionID: number /* int64 */;
   BookID: number /* int64 */;
   Monitored: boolean;
 }
@@ -200,7 +200,7 @@ export const QueueCancelled = "cancelled";
  * BookRef records explicit version and book coverage for a pending grab.
  */
 export interface BookRef {
-  targetId?: number /* int64 */;
+  versionId?: number /* int64 */;
   bookId?: number /* int64 */;
   ledger: string;
   collectionId: number /* int64 */;
@@ -328,7 +328,7 @@ export interface File {
   addedAt: string;
 }
 export interface BookLink {
-  TargetID: number /* int64 */;
+  VersionID: number /* int64 */;
   BookID: number /* int64 */;
   FileID: number /* int64 */;
   Ledger: string;
@@ -364,9 +364,9 @@ export interface AddSeriesParams {
 }
 
 //////////
-// source: targets.go
+// source: versions.go
 
-export interface DownloadTarget {
+export interface CollectedVersion {
   includeExtras: boolean;
   id: number /* int64 */;
   collectionId: number /* int64 */;
@@ -399,7 +399,7 @@ export interface AssetFacts {
 export interface AssetCoverage {
   evidence: string;
   fileId: number /* int64 */;
-  targetId: number /* int64 */;
+  versionId: number /* int64 */;
   bookId: number /* int64 */;
   verified: boolean;
   pinned: boolean;

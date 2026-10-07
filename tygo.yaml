@@ -50,7 +50,7 @@ packages:
       import type { Result, Step } from "./parse"
       import type { Condition, LedgerRules } from "./profile"
       import type { ExtensionInfo } from "./extensions"
-      import type { Book, BookRef, DownloadTarget, Binding, Indexer, SiteOverride } from "./store"
+      import type { Book, BookRef, CollectedVersion, Binding, Indexer, SiteOverride } from "./store"
     type_mappings:
       profile.Condition: "Condition"
       profile.LedgerRules: "LedgerRules"
@@ -58,7 +58,7 @@ packages:
       parse.Step: "Step"
       store.Book: "Book"
       store.BookRef: "BookRef"
-      store.DownloadTarget: "DownloadTarget"
+      store.CollectedVersion: "CollectedVersion"
       store.Binding: "Binding"
       store.Indexer: "Indexer"
       store.SiteOverride: "SiteOverride"

@@ -78,7 +78,7 @@ func (c *ReleaseCandidate) explain() {
 		"rejected.language":          "The stated language does not match this edition.",
 		"rejected.language_unknown":  "This version requires a confirmed language.",
 		"rejected.book_ambiguous":    "Several books share this number. Search from the specific book to disambiguate.",
-		"rejected.target_group":      "The release group does not match this copy’s required group.",
+		"rejected.version_group":     "The release group does not match this version’s required group.",
 		"rejected.no_upgrade":        "This release does not improve the existing copy enough.",
 		"rejected.format_score":      "The release does not meet the profile’s minimum format score.",
 		"rejected.pack_threshold":    fmt.Sprintf("Only %d of %d represented books are wanted; automatic packs require at least half.", len(c.Coverage), c.RepresentedBooks),

@@ -5,8 +5,8 @@ import (
 	"github.com/h-wb/sento/internal/apperr"
 )
 
-type TargetSummary struct {
-	TargetID      int64  `json:"targetId"`
+type VersionSummary struct {
+	VersionID     int64  `json:"versionId"`
 	CollectionID  int64  `json:"collectionId"`
 	Total         int    `json:"total"`
 	Owned         int    `json:"owned"`
@@ -17,10 +17,10 @@ type TargetSummary struct {
 	ProfileSource string `json:"profileSource"`
 }
 type EditionOverview struct {
-	Targets      []TargetSummary `json:"targets"`
-	BooksOnDisk  int             `json:"booksOnDisk"`
-	WantedCopies int             `json:"wantedCopies"`
-	ReviewFiles  int             `json:"reviewFiles"`
+	Versions     []VersionSummary `json:"versions"`
+	BooksOnDisk  int              `json:"booksOnDisk"`
+	WantedCopies int              `json:"wantedCopies"`
+	ReviewFiles  int              `json:"reviewFiles"`
 }
 
 func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverview, error) {
@@ -32,10 +32,10 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 	if err != nil {
 		return nil, err
 	}
-	out := &EditionOverview{Targets: []TargetSummary{}}
+	out := &EditionOverview{Versions: []VersionSummary{}}
 	unique := map[int64]bool{}
-	for _, t := range v.Targets {
-		row := TargetSummary{TargetID: t.ID, CollectionID: t.CollectionID, Total: len(v.Status[t.ID]), ProfileSource: "instance default"}
+	for _, t := range v.Versions {
+		row := VersionSummary{VersionID: t.ID, CollectionID: t.CollectionID, Total: len(v.Status[t.ID]), ProfileSource: "instance default"}
 		c := collectionByID(v.Collections, t.CollectionID)
 		if series.ProfileID > 0 {
 			row.ProfileSource = "series"
@@ -65,7 +65,7 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 				row.Review++
 			}
 		}
-		out.Targets = append(out.Targets, row)
+		out.Versions = append(out.Versions, row)
 	}
 	out.BooksOnDisk = len(unique)
 	files, err := l.store.ListFiles(ctx, sid)
@@ -80,11 +80,11 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 	return out, nil
 }
 
-// TargetBooks lists every book of one collected version with its ledger
+// VersionBooks lists every book of one collected version with its ledger
 // state. The list is not paged: the ledger is evaluated whole either way,
 // and the Editions view needs all of it to draw the overview grid, count
 // each state and select ranges.
-func (l *Library) TargetBooks(ctx context.Context, sid, tid int64) ([]BookStatus, error) {
+func (l *Library) VersionBooks(ctx context.Context, sid, tid int64) ([]BookStatus, error) {
 	v, err := loadLedger(ctx, l.store, sid)
 	if err != nil {
 		return nil, err

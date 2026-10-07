@@ -1,6 +1,6 @@
 import {
   EditorModal,
-  TargetEditor,
+  VersionEditor,
   BookEditor,
   EditionEditor,
   CatalogLink,
@@ -27,7 +27,7 @@ import {
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, fmtSize } from '../api'
-import type { Collection, DownloadTarget, Book, File as SeriesFile } from '../types/store'
+import type { Collection, CollectedVersion, Book, File as SeriesFile } from '../types/store'
 import type { BookSelection } from './BookDialog'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
@@ -55,9 +55,9 @@ export default function EditionManager({
 }: Props) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})
-  const targets = useQuery({
-    queryKey: ['series', seriesID, 'targets'],
-    queryFn: () => api.targets(seriesID),
+  const versions = useQuery({
+    queryKey: ['series', seriesID, 'versions'],
+    queryFn: () => api.versions(seriesID),
   })
   const overview = useQuery({
     queryKey: ['series', seriesID, 'edition-overview'],
@@ -68,7 +68,7 @@ export default function EditionManager({
     queryFn: () => api.coverage(seriesID),
   })
   const [chosen, setChosen] = useState<Record<number, string>>({})
-  const [target, setTarget] = useState<DownloadTarget | null>(null)
+  const [version, setVersion] = useState<CollectedVersion | null>(null)
   const [book, setBook] = useState<Book | null>(null)
   const [edition, setEdition] = useState<Collection | null>(null)
   const [link, setLink] = useState<Collection | null>(null)
@@ -96,7 +96,7 @@ export default function EditionManager({
       setBusy(false)
     }
   }
-  const allTargets = targets.data ?? []
+  const allVersions = versions.data ?? []
   const visible = collections
     .filter((c) => c.syncState !== 'superseded')
     .sort(
@@ -105,7 +105,7 @@ export default function EditionManager({
         Number(a.type === 'chapter') - Number(b.type === 'chapter') ||
         a.editionName.localeCompare(b.editionName),
     )
-  const pending = targets.isPending || overview.isPending
+  const pending = versions.isPending || overview.isPending
   const details = useQuery({
     queryKey: ['series', seriesID, 'version-books'],
     queryFn: () => api.versionBooks(seriesID),
@@ -115,10 +115,10 @@ export default function EditionManager({
   const [otherEditions, setOtherEditions] = useState(false)
   const [language, setLanguage] = useState<string | null>(null)
   const [layout, setLayout] = useState<string | null>(null)
-  const summary = (id: number) => overview.data?.targets.find((t) => t.targetId === id)
+  const summary = (id: number) => overview.data?.versions.find((t) => t.versionId === id)
   const isYours = (c: Collection) =>
     (c.custom && c.numberingSource === 'manual') ||
-    allTargets.some(
+    allVersions.some(
       (t) => t.collectionId === c.id && (t.monitored || (summary(t.id)?.onDisk ?? 0) > 0),
     )
   const yours = visible.filter(isYours)
@@ -130,9 +130,9 @@ export default function EditionManager({
         <>
           <QueryFeedback
             pending={pending}
-            error={targets.error || overview.error}
+            error={versions.error || overview.error}
             onRetry={() => {
-              void targets.refetch()
+              void versions.refetch()
               void overview.refetch()
             }}
           />
@@ -145,7 +145,7 @@ export default function EditionManager({
           )}
           {!pending &&
             yours.map((c) => {
-              const versions = allTargets.filter((t) => t.collectionId === c.id)
+              const versions = allVersions.filter((t) => t.collectionId === c.id)
               const t =
                 versions.find((t) => String(t.id) === chosen[c.id]) ??
                 versions.find((t) => t.isDefault) ??
@@ -166,7 +166,7 @@ export default function EditionManager({
                 onBook({
                   ledger: c.type === 'chapter' ? 'chapter' : 'volume',
                   collectionId: c.id,
-                  targetId: t.id,
+                  versionId: t.id,
                   all: true,
                   number: 0,
                   collectionName: `${editionLabel(c)} · ${t.name}`,
@@ -225,7 +225,7 @@ export default function EditionManager({
                             variant="default"
                             size="xs"
                             visibleFrom="sm"
-                            onClick={() => setTarget(t)}
+                            onClick={() => setVersion(t)}
                           >
                             Collection settings
                           </Button>
@@ -249,7 +249,7 @@ export default function EditionManager({
                           }}
                         >
                           {t && (
-                            <Menu.Item hiddenFrom="sm" onClick={() => setTarget(t)}>
+                            <Menu.Item hiddenFrom="sm" onClick={() => setVersion(t)}>
                               Collection settings
                             </Menu.Item>
                           )}
@@ -262,7 +262,7 @@ export default function EditionManager({
                           {t && (
                             <Menu.Item
                               onClick={() =>
-                                setTarget({
+                                setVersion({
                                   ...t,
                                   id: 0,
                                   name: '',
@@ -271,7 +271,7 @@ export default function EditionManager({
                                 })
                               }
                             >
-                              Keep an additional copy
+                              Keep an additional version
                             </Menu.Item>
                           )}
 
@@ -301,7 +301,7 @@ export default function EditionManager({
                                     'Files stay on disk. Other versions keep their files and ownership.',
                                   label: 'Remove version',
                                   onConfirm: async () => {
-                                    await api.deleteTarget(seriesID, t.id)
+                                    await api.deleteVersion(seriesID, t.id)
                                     await changed()
                                   },
                                 })
@@ -366,7 +366,7 @@ export default function EditionManager({
                           disabled={busy}
                           onChange={(e) =>
                             void run(() =>
-                              api.saveTarget(seriesID, {
+                              api.saveVersion(seriesID, {
                                 ...t,
                                 monitored: e.currentTarget.checked,
                               }),
@@ -380,7 +380,7 @@ export default function EditionManager({
                         key={t.id}
                         seriesID={seriesID}
                         edition={c}
-                        target={t}
+                        version={t}
                         files={files}
                         coverage={coverage.data ?? []}
                         onBook={onBook}
@@ -448,8 +448,8 @@ export default function EditionManager({
                         variant="default"
                         disabled={busy}
                         onClick={() => {
-                          const t = allTargets.find((t) => t.collectionId === c.id && t.isDefault)
-                          if (t) void run(() => api.saveTarget(seriesID, { ...t, monitored: true }))
+                          const t = allVersions.find((t) => t.collectionId === c.id && t.isDefault)
+                          if (t) void run(() => api.saveVersion(seriesID, { ...t, monitored: true }))
                         }}
                       >
                         Collect edition
@@ -538,17 +538,17 @@ export default function EditionManager({
           })()}
         </Stack>
       )}
-      {target && (
-        <TargetEditor
-          key={target.id}
-          value={target}
-          chapter={collections.find((c) => c.id === target.collectionId)?.type === 'chapter'}
+      {version && (
+        <VersionEditor
+          key={version.id}
+          value={version}
+          chapter={collections.find((c) => c.id === version.collectionId)?.type === 'chapter'}
           save={async (value) => {
-            await api.saveTarget(seriesID, value)
+            await api.saveVersion(seriesID, value)
             await changed()
-            setTarget(null)
+            setVersion(null)
           }}
-          close={() => setTarget(null)}
+          close={() => setVersion(null)}
         />
       )}
       {book && (
@@ -636,7 +636,7 @@ export default function EditionManager({
         <MappingEditor
           seriesID={seriesID}
           value={file}
-          targets={allTargets}
+          versions={allVersions}
           existing={coverage.data?.filter((a) => a.fileId === file.id) ?? []}
           books={allBooks}
           collections={collections}

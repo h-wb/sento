@@ -146,16 +146,16 @@ func (s *Store) EditCollection(ctx context.Context, seriesID, cid int64, p Colle
 }
 
 type CatalogLinkPreview struct {
-	LocalTargets   []DownloadTarget `json:"localTargets"`
-	CatalogTargets []DownloadTarget `json:"catalogTargets"`
-	FileCount      int              `json:"fileCount"`
-	Pending        bool             `json:"pending"`
-	LocalBooks     []Book           `json:"localBooks"`
-	CatalogBooks   []Book           `json:"catalogBooks"`
-	Local          *Collection      `json:"local"`
-	Catalog        *Collection      `json:"catalog"`
-	Mapping        map[int64]int64  `json:"mapping"`
-	Unmatched      []int64          `json:"unmatched"`
+	LocalVersions   []CollectedVersion `json:"localVersions"`
+	CatalogVersions []CollectedVersion `json:"catalogVersions"`
+	FileCount       int                `json:"fileCount"`
+	Pending         bool               `json:"pending"`
+	LocalBooks      []Book             `json:"localBooks"`
+	CatalogBooks    []Book             `json:"catalogBooks"`
+	Local           *Collection        `json:"local"`
+	Catalog         *Collection        `json:"catalog"`
+	Mapping         map[int64]int64    `json:"mapping"`
+	Unmatched       []int64            `json:"unmatched"`
 }
 
 func (s *Store) PreviewCatalogLink(ctx context.Context, seriesID, localID, catalogID int64) (*CatalogLinkPreview, error) {
@@ -217,18 +217,18 @@ func (s *Store) previewBookLink(ctx context.Context, seriesID, localID, catalogI
 			out.Unmatched = append(out.Unmatched, a.ID)
 		}
 	}
-	targets, err := s.ListTargets(ctx, seriesID)
+	versions, err := s.ListVersions(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	out.LocalTargets = []DownloadTarget{}
-	out.CatalogTargets = []DownloadTarget{}
-	for _, t := range targets {
+	out.LocalVersions = []CollectedVersion{}
+	out.CatalogVersions = []CollectedVersion{}
+	for _, t := range versions {
 		if t.CollectionID == localID {
-			out.LocalTargets = append(out.LocalTargets, t)
+			out.LocalVersions = append(out.LocalVersions, t)
 		}
 		if t.CollectionID == catalogID {
-			out.CatalogTargets = append(out.CatalogTargets, t)
+			out.CatalogVersions = append(out.CatalogVersions, t)
 		}
 	}
 	n, err := get[int](ctx, s, `SELECT COUNT(DISTINCT file_id) FROM asset_contents WHERE work_id IN(SELECT id FROM works WHERE collection_id=?)`, localID)
@@ -266,7 +266,7 @@ func (s *Store) LinkCatalog(ctx context.Context, seriesID, localID, catalogID in
 	if *n > 0 {
 		return apperr.Conflictf("catalog edition already owns files; merge mappings need review")
 	}
-	versions, err := s.ListTargets(ctx, seriesID)
+	versions, err := s.ListVersions(ctx, seriesID)
 	if err != nil {
 		return err
 	}

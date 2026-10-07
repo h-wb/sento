@@ -235,7 +235,7 @@ export default function SeriesPage() {
                     {wanted}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    Copies wanted
+                    Books wanted
                   </Text>
                 </div>
               </>

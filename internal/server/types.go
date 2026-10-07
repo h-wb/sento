@@ -33,14 +33,14 @@ type SeriesDetail struct {
 
 // SearchBody is POST /series/{id}/search.
 type SearchBody struct {
-	GrabProvider string               `json:"grabProvider,omitempty"`
-	GrabTargetID int64                `json:"grabTargetId,omitempty"`
-	Ledger       string               `json:"ledger"`
-	DryRun       bool                 `json:"dryRun"`
-	Scope        *service.SearchScope `json:"scope"`
-	Grab         string               `json:"grab"` // GUID of one candidate
-	Force        bool                 `json:"force"`
-	Stream       bool                 `json:"stream"`
+	GrabProvider  string               `json:"grabProvider,omitempty"`
+	GrabVersionID int64                `json:"grabVersionId,omitempty"`
+	Ledger        string               `json:"ledger"`
+	DryRun        bool                 `json:"dryRun"`
+	Scope         *service.SearchScope `json:"scope"`
+	Grab          string               `json:"grab"` // GUID of one candidate
+	Force         bool                 `json:"force"`
+	Stream        bool                 `json:"stream"`
 }
 
 // SearchResponse is the non-streaming POST /series/{id}/search reply.

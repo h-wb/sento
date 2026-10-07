@@ -70,7 +70,7 @@ func (im *Importer) normalizeExpected(ctx context.Context, item store.QueueItem)
 		if err != nil {
 			return nil, err
 		}
-		t, err := im.store.GetTarget(ctx, sl.TargetID)
+		t, err := im.store.GetVersion(ctx, sl.VersionID)
 		if err != nil {
 			return nil, err
 		}
@@ -87,7 +87,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 	}
 	links := make([]store.BookLink, 0, len(slots))
 	for _, sl := range slots {
-		links = append(links, store.BookLink{Ledger: sl.Ledger, CollectionID: sl.CollectionID, Number: sl.Number, TargetID: sl.TargetID, BookID: sl.BookID})
+		links = append(links, store.BookLink{Ledger: sl.Ledger, CollectionID: sl.CollectionID, Number: sl.Number, VersionID: sl.VersionID, BookID: sl.BookID})
 	}
 	var snap ReleaseCandidate
 	_ = json.Unmarshal(item.Snapshot, &snap)
@@ -115,11 +115,11 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 	}
 	review := false
 	for _, sl := range slots {
-		target, e := im.store.GetTarget(ctx, sl.TargetID)
+		version, e := im.store.GetVersion(ctx, sl.VersionID)
 		if e != nil {
 			return e
 		}
-		if target.RequiredGroup != "" && !matchGroup(target.RequiredGroup, facts.Group) {
+		if version.RequiredGroup != "" && !matchGroup(version.RequiredGroup, facts.Group) {
 			review = true
 		}
 	}

@@ -6,63 +6,63 @@ import (
 	"strconv"
 )
 
-func (s *Server) handleListTargets(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListVersions(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	data, err := s.store.ListTargets(r.Context(), id)
+	data, err := s.store.ListVersions(r.Context(), id)
 	respondList(w, data, err)
 }
-func (s *Server) handleSaveTarget(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSaveVersion(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	var t store.DownloadTarget
+	var t store.CollectedVersion
 	if !decodeBody(w, r, &t) {
 		return
 	}
 	if r.Method == http.MethodPut {
-		tid, ok := pathID(w, r, "tid")
+		vid, ok := pathID(w, r, "vid")
 		if !ok {
 			return
 		}
-		t.ID = tid
+		t.ID = vid
 	}
-	tid, err := s.store.SaveTarget(r.Context(), id, t)
+	vid, err := s.store.SaveVersion(r.Context(), id, t)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	data, err := s.store.GetTarget(r.Context(), tid)
+	data, err := s.store.GetVersion(r.Context(), vid)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, data)
 }
-func (s *Server) handleDeleteTarget(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDeleteVersion(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	tid, ok := pathID(w, r, "tid")
+	vid, ok := pathID(w, r, "vid")
 	if !ok {
 		return
 	}
-	if err := s.store.DeleteTarget(r.Context(), id, tid); err != nil {
+	if err := s.store.DeleteVersion(r.Context(), id, vid); err != nil {
 		writeErr(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-func (s *Server) handleVersionBooks(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleBooksByVersion(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	data, err := s.library.VersionBooks(r.Context(), id)
+	data, err := s.library.BooksByVersion(r.Context(), id)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -263,7 +263,7 @@ func (s *Server) handleResolveObservation(w http.ResponseWriter, r *http.Request
 }
 
 type BookMonitorBody struct {
-	TargetID  int64 `json:"targetId"`
+	VersionID int64 `json:"versionId"`
 	BookID    int64 `json:"bookId"`
 	Monitored bool  `json:"monitored"`
 }
@@ -277,7 +277,7 @@ func (s *Server) handleBookMonitor(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &b) {
 		return
 	}
-	if err := s.store.SetBookMonitored(r.Context(), id, b.TargetID, b.BookID, b.Monitored); err != nil {
+	if err := s.store.SetBookMonitored(r.Context(), id, b.VersionID, b.BookID, b.Monitored); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -316,16 +316,16 @@ func (s *Server) handleEditionOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, data)
 }
-func (s *Server) handleTargetBooks(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleVersionBooks(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	tid, ok := pathID(w, r, "tid")
+	vid, ok := pathID(w, r, "vid")
 	if !ok {
 		return
 	}
-	data, err := s.library.TargetBooks(r.Context(), id, tid)
+	data, err := s.library.VersionBooks(r.Context(), id, vid)
 	respondList(w, data, err)
 }
 func (s *Server) handleBulkMonitor(w http.ResponseWriter, r *http.Request) {
@@ -333,7 +333,7 @@ func (s *Server) handleBulkMonitor(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	tid, ok := pathID(w, r, "tid")
+	vid, ok := pathID(w, r, "vid")
 	if !ok {
 		return
 	}
@@ -344,7 +344,7 @@ func (s *Server) handleBulkMonitor(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if err := s.store.BulkMonitor(r.Context(), id, tid, body.BookIDs, body.Monitored); err != nil {
+	if err := s.store.BulkMonitor(r.Context(), id, vid, body.BookIDs, body.Monitored); err != nil {
 		writeErr(w, err)
 		return
 	}

@@ -325,11 +325,11 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			}
 		}
 		for _, sl := range expected {
-			for _, book := range view.Status[sl.TargetID] {
+			for _, book := range view.Status[sl.VersionID] {
 				if book.Book.ID == sl.BookID {
 					for _, fid := range book.FileIDs {
 						if belongs[fid] {
-							linked[store.BookKey(sl.TargetID, sl.BookID)] = true
+							linked[store.BookKey(sl.VersionID, sl.BookID)] = true
 						}
 					}
 				}
@@ -426,7 +426,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			return e
 		}
 		for _, sl := range covered {
-			linked[store.BookKey(sl.TargetID, sl.BookID)] = true
+			linked[store.BookKey(sl.VersionID, sl.BookID)] = true
 		}
 	}
 	if len(linked) != len(expected) {
@@ -523,7 +523,7 @@ func (im *Importer) reviewedJobComplete(ctx context.Context, item store.QueueIte
 	}
 	for _, sl := range plan {
 		found := false
-		for _, book := range view.Status[sl.TargetID] {
+		for _, book := range view.Status[sl.VersionID] {
 			if book.Book.ID == sl.BookID {
 				for _, fid := range book.FileIDs {
 					if belongs[fid] {

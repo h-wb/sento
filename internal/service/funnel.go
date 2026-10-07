@@ -97,14 +97,14 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					evidence = run.sourceEditions[cand.Source.BindingID]
 				}
 				compatible := 0
-				for _, t := range run.targets {
+				for _, t := range run.versions {
 					col := collectionByID(run.collections, t.CollectionID)
 					if run.wantedBooks[t.ID] != nil && col != nil && editionCompatibleWithEvidence(rc.Parse, *col, evidence) {
 						compatible++
 					}
 				}
 				rejectedShown := false
-				for _, t := range run.targets {
+				for _, t := range run.versions {
 					if run.wantedBooks[t.ID] == nil {
 						continue
 					}
@@ -112,25 +112,25 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					if col == nil {
 						continue
 					}
-					if !editionCompatibleWithEvidence(rc.Parse, *col, evidence) && run.target == nil {
+					if !editionCompatibleWithEvidence(rc.Parse, *col, evidence) && run.scope == nil {
 						if compatible > 0 || rejectedShown {
 							continue
 						}
 						rejectedShown = true
 					}
 					scoped := *run
-					scoped.target = &SearchScope{TargetID: t.ID}
-					if run.target != nil {
-						scoped.target.BookID = run.target.BookID
-						scoped.target.All = run.target.All
-						scoped.target.AllBooks = run.target.AllBooks
+					scoped.scope = &SearchScope{VersionID: t.ID}
+					if run.scope != nil {
+						scoped.scope.BookID = run.scope.BookID
+						scoped.scope.All = run.scope.All
+						scoped.scope.AllBooks = run.scope.AllBooks
 					}
 					cp := rc
-					cp.TargetID = t.ID
+					cp.VersionID = t.ID
 					cp.CollectionID = col.ID
 					cp.EditionSnapshot = col
-					cp.PolicySnapshot = run.targetProfiles[t.ID]
-					cp.TargetSnapshot = &t
+					cp.PolicySnapshot = run.versionProfiles[t.ID]
+					cp.VersionSnapshot = &t
 					cp.FormatSnapshot = run.formats
 					cp.Rejections = nil
 					cp.Coverage = nil
@@ -155,7 +155,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 							group = cp.Scanlator
 						}
 						if !matchGroup(t.RequiredGroup, group) {
-							cp.Rejections = append(cp.Rejections, "rejected.target_group")
+							cp.Rejections = append(cp.Rejections, "rejected.version_group")
 						}
 					}
 					if !t.AllowUnknown && cp.Parse.Language == "" {
@@ -198,7 +198,7 @@ func (s *SearchService) coverageRanges(searchLedger string, rc *ReleaseCandidate
 // funnel applies hard rejections then scoring (decision-engine.md §3–4),
 // parameterized by ledger and the series' release profile.
 func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []parse.Range) {
-	searchLedger, target := run.ledger, run.target
+	searchLedger, scope := run.ledger, run.scope
 	collections := run.collections
 	reject := func(code string) { c.Rejections = append(c.Rejections, code) }
 
@@ -233,7 +233,7 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	// The routed collection's profile decides scoring and health rules
 	// (collection override > series > instance default).
 	prof := run.profileFor(colID)
-	if p, ok := run.targetProfiles[c.TargetID]; ok {
+	if p, ok := run.versionProfiles[c.VersionID]; ok {
 		prof = p
 	}
 	if prof != nil {
@@ -254,10 +254,10 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		total += int((int64(r.To)-int64(r.From))/100) + 1
 	}
 	for _, w := range run.books[colID] {
-		if w.CountType != "main" && !c.Parse.Extra && (target == nil || target.BookID != w.ID) {
+		if w.CountType != "main" && !c.Parse.Extra && (scope == nil || scope.BookID != w.ID) {
 			continue
 		}
-		if w.CountType == "main" && c.Parse.Extra && (target == nil || target.BookID != w.ID) {
+		if w.CountType == "main" && c.Parse.Extra && (scope == nil || scope.BookID != w.ID) {
 			continue
 		}
 		hit := len(ranges) == 0 && searchLedger == LedgerVolume && c.Parse.Complete
@@ -269,8 +269,8 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		if !hit {
 			continue
 		}
-		if run.wantedBooks[c.TargetID][w.ID] {
-			if target == nil || target.BookID == 0 {
+		if run.wantedBooks[c.VersionID][w.ID] {
+			if scope == nil || scope.BookID == 0 {
 				for _, other := range run.books[colID] {
 					if other.ID != w.ID && other.NumberKnown && w.NumberKnown && other.SequenceNum == w.SequenceNum && other.CountType == w.CountType {
 						reject("rejected.book_ambiguous")
@@ -278,7 +278,7 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 					}
 				}
 			}
-			c.Coverage = append(c.Coverage, store.BookRef{Ledger: searchLedger, CollectionID: colID, TargetID: c.TargetID, BookID: w.ID, Number: w.SequenceNum})
+			c.Coverage = append(c.Coverage, store.BookRef{Ledger: searchLedger, CollectionID: colID, VersionID: c.VersionID, BookID: w.ID, Number: w.SequenceNum})
 		}
 	}
 	if total == 0 {
@@ -296,10 +296,10 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	// Custom formats: matched on every routable candidate (rejected ones
 	// keep their chips), floor-gated softly so force-grab can override.
 	c.evalFormats(prof, run.formats)
-	if prof != nil && prof.UpgradesEnabled && c.TargetID > 0 && (run.target == nil || run.target.BookID == 0) {
+	if prof != nil && prof.UpgradesEnabled && c.VersionID > 0 && (run.scope == nil || run.scope.BookID == 0) {
 		filtered := c.Coverage[:0]
 		for _, sl := range c.Coverage {
-			if old, ok := run.ownedScores[c.TargetID][sl.BookID]; ok {
+			if old, ok := run.ownedScores[c.VersionID][sl.BookID]; ok {
 				min := prof.MinUpgradeScore
 				if min < 1 {
 					min = 1
@@ -417,7 +417,7 @@ var hardRejections = map[string]bool{
 	"rejected.book_ambiguous":   true,
 	"rejected.language_unknown": true,
 	"rejected.no_upgrade":       true,
-	"rejected.target_group":     true,
+	"rejected.version_group":    true,
 	"rejected.content_type":     true,
 	"rejected.series_match":     true,
 	"rejected.edition_routing":  true,

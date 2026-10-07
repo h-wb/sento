@@ -68,7 +68,7 @@ func (s *Store) SeriesBooks(ctx context.Context, seriesID int64) ([]Book, error)
 }
 
 type BookOverride struct {
-	TargetID  int64
+	VersionID int64 `db:"target_id"`
 	BookID    int64 `db:"work_id"`
 	Monitored bool
 }

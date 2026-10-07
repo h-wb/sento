@@ -7,12 +7,12 @@ Sento distinguishes what a book **is**, which releases you want to **keep**, and
 | Series | The manga represented in your library | Local series ID; MangaBaka reference |
 | Collection / edition | A publication run: language, publisher, medium, independent traits, and content variant | Local collection ID |
 | Book | A volume, chapter, extra, special, or revision within an edition | Stable local book ID |
-| Download target / collected version | An independently collected set of releases of one edition | Target ID |
+| Collected version | An independently collected set of releases of one edition | Version ID |
 | Profile | Reusable release eligibility, scoring, and upgrade policy | Profile ID |
 | Queue item | A provider download with a frozen coverage plan and decision snapshot | Queue ID; provider and offer key |
 | File / asset | One physical archive with observed facts and a content hash | File ID and path; SHA-256 identifies bytes |
 | File contents | Confirmed books inside an archive, independent of collection rules | File ID + work ID |
-| Fulfillment | Whether a present, verified asset meets a version’s current rules | Derived; explicit selections and pins use file ID + target ID + work ID |
+| Fulfillment | Whether a present, verified asset meets a version’s current rules | Derived; explicit selections and pins use file ID + version ID + work ID |
 
 ```mermaid
 flowchart LR
@@ -58,7 +58,7 @@ Source discovery is opt-in per chapter edition and requires a verified source li
 
 ## Collected versions and profiles
 
-Every edition has one implicit default version. Its selector is hidden until there are additional copies. Only download targets persist collection intent; collection-level monitoring and cutoff in API responses are projections. Additional versions share its books and carry independent monitoring, per-book intent, required release group, profile assignment, chapter cutoff, and handling of unknown language/dates. Include extras enables bonus/other books; individual overrides can select them separately. “Skip through chapter N” means number > N. Chapter zero remains selectable with an override.
+Every edition has one implicit default version. Its selector is hidden until there are additional versions. Only collected versions persist collection intent; collection-level monitoring and cutoff in API responses are projections. Additional versions share its books and carry independent monitoring, per-book intent, required release group, profile assignment, chapter cutoff, and handling of unknown language/dates. Include extras enables bonus/other books; individual overrides can select them separately. “Skip through chapter N” means number > N. Chapter zero remains selectable with an override.
 
 Profile inheritance is **version → edition → series → instance default**. An unset profile follows its parent; selecting a profile creates an explicit assignment. Profile deletion checks version assignments too.
 
@@ -76,7 +76,7 @@ The ledger is computed from books, monitoring intent, eligible coverage, file pr
 
 Several torrent download clients can be configured (Connections), the default one first. Each torrent indexer may name the client its releases go to — a private tracker that must download through the VPN client, say; indexers that name none use the default. An indexer whose client no longer exists refuses to grab instead of falling back, and is reported on System → Health. The queue stores only the torrent's hash, so status and import look the download up in every client.
 
-Acquisition reserves target/book pairs transactionally before contacting the provider. A second evaluation of the same active provider offer within a series attaches its coverage to the existing job instead of starting another transfer. Other offers cannot reserve the same pending book. Only terminal failure, completion, or cancellation releases reservations. Nonterminal `needs_review`, `retry_wait`, and `dispatch_unknown` retain them. The importer freezes and rereads the combined plan before importing.
+Acquisition reserves version/book pairs transactionally before contacting the provider. A second evaluation of the same active provider offer within a series attaches its coverage to the existing job instead of starting another transfer. Other offers cannot reserve the same pending book. Only terminal failure, completion, or cancellation releases reservations. Nonterminal `needs_review`, `retry_wait`, and `dispatch_unknown` retain them. The importer freezes and rereads the combined plan before importing.
 
 Queue snapshots retain the parsed release, covered memberships, rejection/score details, profile, custom-format definitions, edition, and version settings. They explain the decision without relying on today's settings.
 
@@ -114,10 +114,10 @@ The shared ledger batches works, overrides, facts, coverage, profiles, and pendi
 
 Migration 14 intentionally resets the old library and its downloads, file mappings, bindings, and decision history. Connections, profiles, custom formats, application settings, and physical files remain. Add series again after upgrading and review existing files before counting them as owned.
 
-Migration 15 preserves the current library. It backfills intrinsic asset contents from confirmed coverage, moves collection intent entirely to targets, and adds cached presence, review/retry states, and independent edition traits. Existing file presence starts unknown and is checked during scan, search, or explicit review recheck.
+Migration 15 preserves the current library. It backfills intrinsic asset contents from confirmed coverage, moves collection intent entirely to versions, and adds cached presence, review/retry states, and independent edition traits. Existing file presence starts unknown and is checked during scan, search, or explicit review recheck.
 
-Canonical ownership uses target and work IDs. The old number-based ownership tables and queued-plan adapters are removed. Migrations remain transactional on SQLite and PostgreSQL.
+Canonical ownership uses version and work IDs. The old number-based ownership tables and queued-plan adapters are removed. Migrations remain transactional on SQLite and PostgreSQL.
 
 Deliberate limits: upgrades retain earlier copies; completed downloads are not automatically reused across unrelated editions or series. Explicit file mapping can share confirmed assets. A comprehensive story/chapter ontology and destructive retention rules remain separate future features.
 
-Calendar entries use the same target/book ownership as the ledger, including per-version monitoring and actual file presence. Language, medium, trait, or content corrections invalidate affected coverage for review. Manual file mapping records explicit confirmation of edition coverage; release-group requirements still apply. A generic catalog rename preserves known traits instead of assuming standard volumes.
+Calendar entries use the same version/book ownership as the ledger, including per-version monitoring and actual file presence. Language, medium, trait, or content corrections invalidate affected coverage for review. Manual file mapping records explicit confirmation of edition coverage; release-group requirements still apply. A generic catalog rename preserves known traits instead of assuming standard volumes.

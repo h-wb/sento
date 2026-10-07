@@ -14,7 +14,7 @@ type BookStatus struct {
 	CurrentScore  int     `json:"currentScore"`
 
 	Book         store.Book `json:"book"`
-	TargetID     int64      `json:"targetId"`
+	VersionID    int64      `json:"versionId"`
 	Monitored    bool       `json:"monitored"`
 	Availability string     `json:"availability"`
 	State        string     `json:"state"`
@@ -22,12 +22,12 @@ type BookStatus struct {
 	Wanted       bool       `json:"wanted"`
 }
 
-func versionBooks(t store.DownloadTarget, works []store.Book, coverage []store.AssetCoverage, pending map[string]bool, files map[int64]bool, now time.Time, overrides map[int64]bool, chapter bool) []BookStatus {
+func versionBooks(t store.CollectedVersion, works []store.Book, coverage []store.AssetCoverage, pending map[string]bool, files map[int64]bool, now time.Time, overrides map[int64]bool, chapter bool) []BookStatus {
 	out := make([]BookStatus, 0, len(works))
 	today := now.Format("2006-01-02")
 	byBook := map[int64][]store.AssetCoverage{}
 	for _, a := range coverage {
-		if a.TargetID == t.ID {
+		if a.VersionID == t.ID {
 			byBook[a.BookID] = append(byBook[a.BookID], a)
 		}
 	}
@@ -40,12 +40,12 @@ func versionBooks(t store.DownloadTarget, works []store.Book, coverage []store.A
 				availability = "upcoming"
 			}
 		}
-		slot := BookStatus{Book: w, TargetID: t.ID, Monitored: t.Monitored && (w.CountType == "main" || t.IncludeExtras) && (!chapter || !w.NumberKnown || w.SequenceNum > t.CutoffNum), Availability: availability, FileIDs: []int64{}, OnDiskFileIDs: []int64{}}
+		slot := BookStatus{Book: w, VersionID: t.ID, Monitored: t.Monitored && (w.CountType == "main" || t.IncludeExtras) && (!chapter || !w.NumberKnown || w.SequenceNum > t.CutoffNum), Availability: availability, FileIDs: []int64{}, OnDiskFileIDs: []int64{}}
 		if v, ok := overrides[w.ID]; ok {
 			slot.Monitored = t.Monitored && v
 		}
 		for _, a := range byBook[w.ID] {
-			if a.TargetID == t.ID && a.BookID == w.ID && a.Verified && files[a.FileID] {
+			if a.VersionID == t.ID && a.BookID == w.ID && a.Verified && files[a.FileID] {
 				slot.FileIDs = append(slot.FileIDs, a.FileID)
 			}
 		}
@@ -72,7 +72,7 @@ func versionBooks(t store.DownloadTarget, works []store.Book, coverage []store.A
 
 // ledgerView is loaded once per series and shared by search and UI evaluation.
 type ledgerView struct {
-	Targets     []store.DownloadTarget
+	Versions    []store.CollectedVersion
 	Collections []store.Collection
 	Books       map[int64][]store.Book
 	Status      map[int64][]BookStatus
@@ -84,7 +84,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	if err != nil {
 		return nil, err
 	}
-	targets, err := st.ListTargets(ctx, seriesID)
+	versions, err := st.ListVersions(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -128,11 +128,11 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	for i := range allProfiles {
 		byProfile[allProfiles[i].ID] = &allProfiles[i]
 	}
-	coverageByTarget := map[int64][]store.AssetCoverage{}
+	coverageByVersion := map[int64][]store.AssetCoverage{}
 	for _, a := range coverage {
-		coverageByTarget[a.TargetID] = append(coverageByTarget[a.TargetID], a)
+		coverageByVersion[a.VersionID] = append(coverageByVersion[a.VersionID], a)
 	}
-	view := &ledgerView{Targets: targets, Collections: cols, Books: map[int64][]store.Book{}, Status: map[int64][]BookStatus{}, Profiles: map[int64]*profile.Profile{}}
+	view := &ledgerView{Versions: versions, Collections: cols, Books: map[int64][]store.Book{}, Status: map[int64][]BookStatus{}, Profiles: map[int64]*profile.Profile{}}
 	byCol := map[int64]store.Collection{}
 	for _, c := range cols {
 		byCol[c.ID] = c
@@ -142,10 +142,10 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	}
 	byOverride := map[int64]map[int64]bool{}
 	for _, o := range overrides {
-		if byOverride[o.TargetID] == nil {
-			byOverride[o.TargetID] = map[int64]bool{}
+		if byOverride[o.VersionID] == nil {
+			byOverride[o.VersionID] = map[int64]bool{}
 		}
-		byOverride[o.TargetID][o.BookID] = o.Monitored
+		byOverride[o.VersionID][o.BookID] = o.Monitored
 	}
 	byFile := map[int64]store.File{}
 	present := map[int64]bool{}
@@ -161,27 +161,27 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	for _, c := range contents {
 		byContent[c.BookID] = append(byContent[c.BookID], c)
 	}
-	for _, target := range targets {
-		col := byCol[target.CollectionID]
+	for _, version := range versions {
+		col := byCol[version.CollectionID]
 		prof := profiles[col.ID]
-		if target.ProfileID > 0 {
-			prof = byProfile[target.ProfileID]
+		if version.ProfileID > 0 {
+			prof = byProfile[version.ProfileID]
 		}
-		view.Profiles[target.ID] = prof
+		view.Profiles[version.ID] = prof
 		accepted := []store.AssetCoverage{}
 		scores := map[int64]int{}
 		reasons := map[int64]string{}
-		for _, a := range coverageByTarget[target.ID] {
+		for _, a := range coverageByVersion[version.ID] {
 			f := byFile[a.FileID]
 			facts := f.Facts
 			reason := ""
-			if target.RequiredGroup != "" && !matchGroup(target.RequiredGroup, facts.Group) {
+			if version.RequiredGroup != "" && !matchGroup(version.RequiredGroup, facts.Group) {
 				reason = "Existing copy does not match the required release group"
 			}
 			if a.Evidence != "manual" && facts.Language != "" && facts.Language != "multi" && baseLang(facts.Language) != baseLang(col.Language) {
 				reason = "Existing copy has a different language"
 			}
-			if a.Evidence != "manual" && !target.AllowUnknown && facts.Language == "" {
+			if a.Evidence != "manual" && !version.AllowUnknown && facts.Language == "" {
 				reason = "Existing copy has no confirmed language"
 			}
 			if a.Evidence == "manual" {
@@ -204,7 +204,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 				pinnedBooks[a.BookID] = true
 			}
 		}
-		slots := versionBooks(target, view.Books[col.ID], accepted, pending, present, time.Now(), byOverride[target.ID], col.Type == "chapter")
+		slots := versionBooks(version, view.Books[col.ID], accepted, pending, present, time.Now(), byOverride[version.ID], col.Type == "chapter")
 		for i := range slots {
 			sl := &slots[i]
 			hasReview := false
@@ -226,7 +226,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 				sl.Reason = "Edition is unavailable in the catalog; review it before collecting"
 			case sl.Book.SyncState == "stale" || sl.Book.SyncState == "retired":
 				sl.Reason = "This book is retired or unavailable in the catalog"
-			case !target.Monitored:
+			case !version.Monitored:
 				sl.Reason = "Collecting is paused for this version"
 			case !sl.Monitored:
 				sl.Reason = "This book is excluded from collection rules"
@@ -279,7 +279,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 				sl.Reason = "Current copy is below the upgrade cutoff"
 			}
 		}
-		view.Status[target.ID] = slots
+		view.Status[version.ID] = slots
 	}
 	return view, nil
 }
@@ -298,7 +298,7 @@ func assetScore(f store.AssetFacts, p *profile.Profile, formats []profile.Format
 	return score
 }
 
-func (l *Library) VersionBooks(ctx context.Context, seriesID int64) (map[int64][]BookStatus, error) {
+func (l *Library) BooksByVersion(ctx context.Context, seriesID int64) (map[int64][]BookStatus, error) {
 	view, err := loadLedger(ctx, l.store, seriesID)
 	if err != nil {
 		return nil, err
@@ -306,7 +306,7 @@ func (l *Library) VersionBooks(ctx context.Context, seriesID int64) (map[int64][
 	return view.Status, nil
 }
 
-func (s *SearchService) prepareTargets(ctx context.Context, run *searchRun) error {
+func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) error {
 	if err := s.store.CheckFilePresence(ctx, run.seriesID); err != nil {
 		return err
 	}
@@ -315,9 +315,9 @@ func (s *SearchService) prepareTargets(ctx context.Context, run *searchRun) erro
 		return err
 	}
 	run.collections = view.Collections
-	run.targets = view.Targets
+	run.versions = view.Versions
 	run.books = view.Books
-	run.targetProfiles = view.Profiles
+	run.versionProfiles = view.Profiles
 	run.wantedBooks = map[int64]map[int64]bool{}
 	run.ownedScores = map[int64]map[int64]int{}
 	bindings, err := s.store.ListBindings(ctx, run.seriesID)
@@ -330,27 +330,27 @@ func (s *SearchService) prepareTargets(ctx context.Context, run *searchRun) erro
 			run.sourceEditions[b.ID] = b.CollectionID
 		}
 	}
-	found := run.target == nil
-	for _, t := range view.Targets {
+	found := run.scope == nil
+	for _, t := range view.Versions {
 		col := collectionByID(view.Collections, t.CollectionID)
 		if col.Type != run.ledger {
 			continue
 		}
-		if run.target != nil && run.target.TargetID != t.ID {
+		if run.scope != nil && run.scope.VersionID != t.ID {
 			continue
 		}
-		if run.target != nil && run.target.BookID == 0 {
+		if run.scope != nil && run.scope.BookID == 0 {
 			found = true
 		}
 		wanted := map[int64]bool{}
 		run.ownedScores[t.ID] = map[int64]int{}
 		for _, sl := range view.Status[t.ID] {
 			selected := sl.Wanted
-			if run.target != nil && run.target.AllBooks && run.target.BookID == 0 {
+			if run.scope != nil && run.scope.AllBooks && run.scope.BookID == 0 {
 				selected = sl.State != "storage_unavailable" && sl.State != "needs_review" && sl.State != "pending"
 			}
-			if run.target != nil && run.target.BookID != 0 {
-				selected = run.target.BookID == sl.Book.ID
+			if run.scope != nil && run.scope.BookID != 0 {
+				selected = run.scope.BookID == sl.Book.ID
 				if selected {
 					found = true
 				}

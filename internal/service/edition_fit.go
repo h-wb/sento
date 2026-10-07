@@ -177,7 +177,7 @@ func (run *searchRun) ambiguousEdition(p parse.Result, col store.Collection) boo
 			continue
 		}
 		collected := false
-		for _, t := range run.targets {
+		for _, t := range run.versions {
 			collected = collected || (t.CollectionID == c.ID && t.Monitored)
 		}
 		if !collected || !editionCompatible(p, c) {

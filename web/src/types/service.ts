@@ -4,7 +4,7 @@ import type { SeriesRef } from "./metadata"
 import type { Result, Step } from "./parse"
 import type { Condition, LedgerRules } from "./profile"
 import type { ExtensionInfo } from "./extensions"
-import type { Book, BookRef, DownloadTarget, Binding, Indexer, SiteOverride } from "./store"
+import type { Book, BookRef, CollectedVersion, Binding, Indexer, SiteOverride } from "./store"
 
 //////////
 // source: box.go
@@ -93,8 +93,8 @@ export interface ConnectionTest {
 //////////
 // source: edition_view.go
 
-export interface TargetSummary {
-  targetId: number /* int64 */;
+export interface VersionSummary {
+  versionId: number /* int64 */;
   collectionId: number /* int64 */;
   total: number /* int */;
   owned: number /* int */;
@@ -105,7 +105,7 @@ export interface TargetSummary {
   profileSource: string;
 }
 export interface EditionOverview {
-  targets: TargetSummary[];
+  versions: VersionSummary[];
   booksOnDisk: number /* int */;
   wantedCopies: number /* int */;
   reviewFiles: number /* int */;
@@ -450,7 +450,7 @@ export interface SearchService {
  * of its books (WorkID), or every wanted book of it (All).
  */
 export interface SearchScope {
-  targetId: number /* int64 */;
+  versionId: number /* int64 */;
   bookId?: number /* int64 */;
   all?: boolean;
   /**
@@ -468,12 +468,12 @@ export interface ReleaseCandidate {
   decision: ReleaseDecision;
   scoreParts?: ScorePart[];
   parseTrace?: Step[];
-  targetSnapshot?: DownloadTarget;
+  versionSnapshot?: CollectedVersion;
   formatSnapshot?: any /* profile.Format */[];
   policySnapshot?: any /* profile.Profile */;
   editionSnapshot?: any /* store.Collection */;
   representedBooks: number /* int */;
-  targetId?: number /* int64 */;
+  versionId?: number /* int64 */;
   coverage?: BookRef[];
   profileId?: number /* int64 */;
   guid: string;
@@ -557,14 +557,14 @@ export interface SeriesIndexerView extends IndexerView {
 }
 
 //////////
-// source: targets.go
+// source: versions.go
 
 export interface BookStatus {
   onDiskFileIds: number /* int64 */[];
   reason: string;
   currentScore: number /* int */;
   book: Book;
-  targetId: number /* int64 */;
+  versionId: number /* int64 */;
   monitored: boolean;
   availability: string;
   state: string;

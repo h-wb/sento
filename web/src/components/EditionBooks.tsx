@@ -20,7 +20,7 @@ import { IconDots } from '@tabler/icons-react'
 import { api } from '../api'
 import type {
   Collection,
-  DownloadTarget,
+  CollectedVersion,
   Book,
   File as SeriesFile,
   AssetCoverage,
@@ -109,11 +109,11 @@ const filters: Filter[] = [
   { value: 'review', label: 'Needs attention', tone: 'review', match: (s) => tone(s) === 'review' },
 ]
 
-function bookSelection(c: Collection, t: DownloadTarget, s: BookStatus): BookSelection {
+function bookSelection(c: Collection, t: CollectedVersion, s: BookStatus): BookSelection {
   return {
     ledger: c.type === 'chapter' ? 'chapter' : 'volume',
     collectionId: c.id,
-    targetId: t.id,
+    versionId: t.id,
     bookId: s.book.id,
     number: s.book.sequenceNum,
     label: s.book.sequenceStr,
@@ -127,7 +127,7 @@ function bookSelection(c: Collection, t: DownloadTarget, s: BookStatus): BookSel
 export default function EditionBooks({
   seriesID,
   edition: c,
-  target: t,
+  version: t,
   files,
   coverage,
   onBook,
@@ -138,7 +138,7 @@ export default function EditionBooks({
 }: {
   seriesID: number
   edition: Collection
-  target: DownloadTarget
+  version: CollectedVersion
   files: SeriesFile[]
   coverage: AssetCoverage[]
   onBook: (s: BookSelection) => void
@@ -166,7 +166,7 @@ export default function EditionBooks({
 
   const q = useQuery({
     queryKey: ['series', seriesID, 'books', t.id],
-    queryFn: () => api.targetBooks(seriesID, t.id),
+    queryFn: () => api.versionBooksOf(seriesID, t.id),
   })
   const all = useMemo(() => q.data ?? [], [q.data])
   const active = filters.find((f) => f.value === filter) ?? filters[0]
@@ -460,7 +460,7 @@ export default function EditionBooks({
             const pins = s.fileIds
               .map((fid) =>
                 coverage.find(
-                  (a) => a.fileId === fid && a.targetId === t.id && a.bookId === s.book.id,
+                  (a) => a.fileId === fid && a.versionId === t.id && a.bookId === s.book.id,
                 ),
               )
               .filter((a): a is AssetCoverage => !!a)
