@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/h-wb/sento/internal/apperr"
-	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -215,41 +214,4 @@ func (l *Library) UpdateCollection(ctx context.Context, seriesID, collectionID i
 		}
 	}
 	return nil
-}
-
-// Slots derives every collection's slot view (spec.md §4.2: computed,
-// never stored), keyed by collection id per ledger.
-func (l *Library) Slots(ctx context.Context, seriesID int64) (map[int64][]ledger.VolumeSlot, map[int64][]ledger.ChapterSlot, error) {
-	all, err := l.TargetSlots(ctx, seriesID)
-	if err != nil {
-		return nil, nil, err
-	}
-	targets, err := l.store.ListTargets(ctx, seriesID)
-	if err != nil {
-		return nil, nil, err
-	}
-	collections, err := l.store.ListCollections(ctx, seriesID)
-	if err != nil {
-		return nil, nil, err
-	}
-	volumes := map[int64][]ledger.VolumeSlot{}
-	chapters := map[int64][]ledger.ChapterSlot{}
-	for _, t := range targets {
-		if !t.IsDefault {
-			continue
-		}
-		c := collectionByID(collections, t.CollectionID)
-		if c == nil || c.SyncState == "superseded" {
-			continue
-		}
-		for _, sl := range all[t.ID] {
-			w := sl.Work
-			if c.Type == "chapter" {
-				chapters[c.ID] = append(chapters[c.ID], ledger.ChapterSlot{WorkID: w.ID, SequenceStr: w.SequenceStr, Number: w.SequenceNum, Monitored: sl.Monitored, FileIDs: sl.FileIDs, Wanted: sl.Wanted})
-				continue
-			}
-			volumes[c.ID] = append(volumes[c.ID], ledger.VolumeSlot{WorkID: w.ID, Number: w.SequenceNum, SequenceStr: w.SequenceStr, CountType: w.CountType, ReleaseDate: w.ReleaseDate, Monitored: sl.Monitored, Released: sl.Availability == "released", Availability: sl.Availability, FileIDs: sl.FileIDs, Wanted: sl.Wanted})
-		}
-	}
-	return volumes, chapters, nil
 }

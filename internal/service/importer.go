@@ -329,7 +329,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 				if book.Work.ID == sl.WorkID {
 					for _, fid := range book.FileIDs {
 						if belongs[fid] {
-							linked[store.SlotKey("unit", sl.TargetID, sl.WorkID)] = true
+							linked[store.BookKey(sl.TargetID, sl.WorkID)] = true
 						}
 					}
 				}
@@ -426,7 +426,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			return e
 		}
 		for _, sl := range covered {
-			linked[store.SlotKey("unit", sl.TargetID, sl.WorkID)] = true
+			linked[store.BookKey(sl.TargetID, sl.WorkID)] = true
 		}
 	}
 	if len(linked) != len(expected) {

@@ -32,11 +32,6 @@ packages:
       metadata.Collection: "any /* metadata.Collection */"
       metadata.Work: "any /* metadata.Work */"
 
-  - path: "github.com/h-wb/sento/internal/ledger"
-    output_path: "web/src/types/ledger.ts"
-    frontmatter: |
-      /* eslint-disable */
-
   - path: "github.com/h-wb/sento/internal/extensions"
     output_path: "web/src/types/extensions.ts"
     frontmatter: |
@@ -74,14 +69,11 @@ packages:
     output_path: "web/src/types/server.ts"
     frontmatter: |
       /* eslint-disable */
-      import type { ChapterSlot, VolumeSlot } from "./ledger"
       import type { ScanResult, SearchResult, TargetSlot } from "./service"
       import type { Collection, Series } from "./store"
       import type { RepoStatus } from "./extensions"
     type_mappings:
       extensions.RepoStatus: "RepoStatus"
-      ledger.VolumeSlot: "VolumeSlot"
-      ledger.ChapterSlot: "ChapterSlot"
       service.TargetSlot: "TargetSlot"
       service.SearchResult: "SearchResult"
       service.ScanResult: "ScanResult"

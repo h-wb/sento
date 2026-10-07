@@ -257,7 +257,7 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Exp
 			_ = rows.Close()
 			return err
 		}
-		pins[SlotKey("unit", tid, wid)] = pinned
+		pins[BookKey(tid, wid)] = pinned
 	}
 	err = rows.Err()
 	_ = rows.Close()
@@ -274,7 +274,7 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Exp
 		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,verified,evidence) VALUES(?,?,TRUE,'manual') ON CONFLICT DO NOTHING`), fileID, sl.WorkID); err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,pinned,evidence) VALUES(?,?,?,? ,'manual') ON CONFLICT DO NOTHING`), fileID, sl.TargetID, sl.WorkID, pins[SlotKey("unit", sl.TargetID, sl.WorkID)]); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,pinned,evidence) VALUES(?,?,?,? ,'manual') ON CONFLICT DO NOTHING`), fileID, sl.TargetID, sl.WorkID, pins[BookKey(sl.TargetID, sl.WorkID)]); err != nil {
 			return err
 		}
 	}

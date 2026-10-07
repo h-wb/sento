@@ -105,28 +105,6 @@ func (s *Store) ListQueueItems(ctx context.Context, activeOnly bool) ([]QueueIte
 	return list[QueueItem](ctx, s, q)
 }
 
-// PendingSlotKeys returns slot keys currently held by active queue items of
-// a series (these slots are "pending", not "wanted").
-func (s *Store) PendingSlotKeys(ctx context.Context, seriesID int64) (map[string]bool, error) {
-	raws, err := list[string](ctx, s, `
-		SELECT expected_slots_json FROM queue_items
-		WHERE series_id = ? AND status IN ('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]bool{}
-	for _, raw := range raws {
-		var slots []ExpectedSlot
-		if err := json.Unmarshal([]byte(raw), &slots); err != nil {
-			continue
-		}
-		for _, sl := range slots {
-			out[SlotKey(sl.Ledger, sl.CollectionID, sl.Number)] = true
-		}
-	}
-	return out, nil
-}
-
 // SetSeriesChapterPath records the separate chapter folder ("" = chapters
 // share the series folder).
 func (s *Store) SetSeriesChapterPath(ctx context.Context, seriesID int64, path string) error {
@@ -201,18 +179,7 @@ func (s *Store) PendingUnits(ctx context.Context, seriesID int64) (map[string]bo
 		}
 		for _, sl := range slots {
 			if sl.TargetID > 0 && sl.WorkID > 0 {
-				out[SlotKey("unit", sl.TargetID, sl.WorkID)] = true
-			} else {
-				pairs, e := list[struct {
-					TargetID int64
-					WorkID   int64
-				}](ctx, s, `SELECT t.id AS target_id,w.id AS work_id FROM download_targets t JOIN works w ON w.collection_id=t.collection_id WHERE t.is_default=TRUE AND w.collection_id=? AND w.sequence_num=?`, sl.CollectionID, sl.Number)
-				if e != nil {
-					return nil, e
-				}
-				for _, p := range pairs {
-					out[SlotKey("unit", p.TargetID, p.WorkID)] = true
-				}
+				out[BookKey(sl.TargetID, sl.WorkID)] = true
 			}
 		}
 	}

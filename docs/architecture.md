@@ -39,7 +39,6 @@ graph TD
     subgraph persistence [Persistence]
         store[store<br/>SQL, SQLite + Postgres]
         db[db<br/>open, dialect, migrations]
-        ledger[ledger<br/>slot derivation]
     end
 
     subgraph acquisition [Acquisition]
@@ -70,7 +69,6 @@ graph TD
     server --> service
     server --> scheduler
     server --> store
-    server --> ledger
     server --> provider
     server --> profile
     server --> metadata
@@ -79,7 +77,6 @@ graph TD
     scheduler --> store
 
     service --> store
-    service --> ledger
     service --> provider
     service --> metadata
     service --> parse
@@ -91,7 +88,6 @@ graph TD
     service --> qbittorrent
     service --> extensions
 
-    ledger --> store
     store --> metadata
     store --> profile
 
@@ -127,7 +123,6 @@ Sizes are non-test lines, June 2026 — a proxy for where the complexity is.
 | `internal/db` | 142 | Connection opening, dialect detection, migrations (SQLite or PostgreSQL) |
 | `internal/config` | 141 | YAML + env config; seeds first run only — once saved, the DB wins |
 | `internal/prowlarr` | 135 | Prowlarr API client for the Add Indexer browse assist |
-| `internal/ledger` | 108 | Derives volume/chapter slots from stored metadata + links. Slots are computed, never stored |
 | `internal/metadata` | 87 | `metadata.Provider` interface + types (anti-corruption layer, D13) |
 | `cmd/sento` | 86 | Wiring: config → db → provider → server → scheduler; graceful shutdown |
 | `internal/apperr` | 43 | Error classification sentinels (`ErrNotFound`, `ErrConflict`, …) mapped to HTTP statuses |

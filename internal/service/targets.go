@@ -52,7 +52,7 @@ func targetSlots(t store.DownloadTarget, works []store.Work, coverage []store.As
 		if w.SyncState == "stale" || w.SyncState == "retired" {
 			slot.Monitored = false
 		}
-		if pending[store.SlotKey("unit", t.ID, w.ID)] {
+		if pending[store.BookKey(t.ID, w.ID)] {
 			state = "pending"
 		} else if len(slot.FileIDs) > 0 {
 			state = "owned"
@@ -320,7 +320,6 @@ func (s *SearchService) prepareTargets(ctx context.Context, run *searchRun) erro
 	run.targetProfiles = view.Profiles
 	run.targetWanted = map[int64]map[int64]bool{}
 	run.ownedScores = map[int64]map[int64]int{}
-	run.wanted = map[int64]map[int64]bool{}
 	bindings, err := s.store.ListBindings(ctx, run.seriesID)
 	if err != nil {
 		return err
@@ -337,7 +336,7 @@ func (s *SearchService) prepareTargets(ctx context.Context, run *searchRun) erro
 		if col.Type != run.ledger {
 			continue
 		}
-		if run.target != nil && (run.target.CollectionID != t.CollectionID || (run.target.TargetID != 0 && run.target.TargetID != t.ID) || (run.target.TargetID == 0 && !t.IsDefault)) {
+		if run.target != nil && run.target.TargetID != t.ID {
 			continue
 		}
 		if run.target != nil && run.target.WorkID == 0 {
@@ -347,11 +346,11 @@ func (s *SearchService) prepareTargets(ctx context.Context, run *searchRun) erro
 		run.ownedScores[t.ID] = map[int64]int{}
 		for _, sl := range view.Slots[t.ID] {
 			selected := sl.Wanted
-			if run.target != nil && run.target.AllBooks && run.target.WorkID == 0 && run.target.Number == 0 {
+			if run.target != nil && run.target.AllBooks && run.target.WorkID == 0 {
 				selected = sl.State != "storage_unavailable" && sl.State != "needs_review" && sl.State != "pending"
 			}
-			if run.target != nil && (run.target.WorkID != 0 || run.target.Number != 0) {
-				selected = run.target.WorkID == sl.Work.ID || (run.target.WorkID == 0 && sl.Work.NumberKnown && run.target.Number == sl.Work.SequenceNum)
+			if run.target != nil && run.target.WorkID != 0 {
+				selected = run.target.WorkID == sl.Work.ID
 				if selected {
 					found = true
 				}
@@ -361,10 +360,6 @@ func (s *SearchService) prepareTargets(ctx context.Context, run *searchRun) erro
 			}
 			if selected {
 				wanted[sl.Work.ID] = true
-				if run.wanted[t.CollectionID] == nil {
-					run.wanted[t.CollectionID] = map[int64]bool{}
-				}
-				run.wanted[t.CollectionID][sl.Work.SequenceNum] = true
 			}
 			if sl.State == "upgrade_eligible" {
 				run.ownedScores[t.ID][sl.Work.ID] = sl.CurrentScore

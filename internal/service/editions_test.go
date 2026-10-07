@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -117,33 +116,5 @@ func TestCustomEditions(t *testing.T) {
 	}
 	if err := st.DeleteCustomCollection(ctx, id, frID); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestRouteEditionLanguage(t *testing.T) {
-	en := store.Collection{ID: 1, EditionName: "Standard Edition", Language: "en"}
-	fr := store.Collection{ID: 2, EditionName: "Standard Edition", Language: "fr"}
-	cols := []store.Collection{en, fr}
-	wanted := map[int64]map[int64]bool{1: {100: true}, 2: {100: true}}
-
-	route := func(lang string) int64 {
-		id, ok := routeCollection(parse.Result{Language: lang}, cols, wanted)
-		if !ok {
-			t.Fatalf("routing failed for lang %q", lang)
-		}
-		return id
-	}
-	if got := route("fr"); got != fr.ID {
-		t.Fatalf("FR release must route to the fr edition, got %d", got)
-	}
-	if got := route("en"); got != en.ID {
-		t.Fatalf("EN release must route to the en edition, got %d", got)
-	}
-	if got := route(""); got != en.ID {
-		t.Fatalf("untagged release keeps the first name match, got %d", got)
-	}
-	// No matching language → fall back to all monitored.
-	if got := route("ja"); got != en.ID {
-		t.Fatalf("unmatched language falls back, got %d", got)
 	}
 }

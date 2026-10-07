@@ -91,7 +91,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 		if run.blocked[cand.Protocol+"/"+cand.ExternalKey()] {
 			rc.Rejections = append(rc.Rejections, "rejected.blocklisted") // hard
 		} else {
-			if len(run.targets) > 0 {
+			{
 				evidence := int64(0)
 				if cand.Source != nil {
 					evidence = run.sourceEditions[cand.Source.BindingID]
@@ -119,18 +119,11 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 						rejectedShown = true
 					}
 					scoped := *run
-					scoped.target = &TargetSlot{CollectionID: t.CollectionID, TargetID: t.ID}
+					scoped.target = &TargetSlot{TargetID: t.ID}
 					if run.target != nil {
 						scoped.target.WorkID = run.target.WorkID
-						scoped.target.Number = run.target.Number
 						scoped.target.All = run.target.All
 						scoped.target.AllBooks = run.target.AllBooks
-					}
-					scoped.wanted = map[int64]map[int64]bool{t.CollectionID: {}}
-					for _, w := range run.units[t.CollectionID] {
-						if run.targetWanted[t.ID][w.ID] {
-							scoped.wanted[t.CollectionID][w.SequenceNum] = true
-						}
 					}
 					cp := rc
 					cp.TargetID = t.ID
@@ -140,7 +133,6 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					cp.TargetSnapshot = &t
 					cp.FormatSnapshot = run.formats
 					cp.Rejections = nil
-					cp.Covered = nil
 					cp.Coverage = nil
 					if (evidence != 0 && evidence != col.ID) || !editionCompatibleWithEvidence(cp.Parse, *col, evidence) {
 						if !languageCompatible(cp.Parse, col.Language) {
@@ -177,7 +169,6 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 				}
 				continue
 			}
-			s.funnel(run, &rc, ranges)
 		}
 		rc.applySitePriority(run.priorities[[2]string{rc.Provider, rc.SiteID}])
 		out = append(out, rc)
@@ -208,7 +199,7 @@ func (s *SearchService) coverageRanges(searchLedger string, rc *ReleaseCandidate
 // parameterized by ledger and the series' release profile.
 func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []parse.Range) {
 	searchLedger, target := run.ledger, run.target
-	collections, wanted := run.collections, run.wanted
+	collections := run.collections
 	reject := func(code string) { c.Rejections = append(c.Rejections, code) }
 
 	// An inferred pack runs the whole funnel so its books are known, then
@@ -229,19 +220,9 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		}
 	}
 
-	// Routing: both ledgers route to a collection of their ctype (R6) —
-	// the wanted map only carries collections of the searched ledger.
-	colID := int64(0)
-	if target != nil {
-		colID = target.CollectionID
-	} else {
-		var ok bool
-		colID, ok = routeCollection(c.Parse, collections, wanted)
-		if !ok {
-			reject("rejected.edition_routing")
-			return
-		}
-	}
+	// The release is judged against one collected version at a time: the
+	// caller scoped the run to it.
+	colID := c.CollectionID
 	wantLang := ""
 	for _, col := range collections {
 		if col.ID == colID {
@@ -268,83 +249,55 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		reject("rejected.language")
 	}
 
-	if c.TargetID > 0 {
-		total := 0
-		for _, r := range ranges {
-			total += int((int64(r.To)-int64(r.From))/100) + 1
-		}
-		for _, w := range run.units[colID] {
-			if w.CountType != "main" && !c.Parse.Extra && (target == nil || target.WorkID != w.ID) {
-				continue
-			}
-			if w.CountType == "main" && c.Parse.Extra && (target == nil || target.WorkID != w.ID) {
-				continue
-			}
-			hit := len(ranges) == 0 && searchLedger == LedgerVolume && c.Parse.Complete
-			for _, r := range ranges {
-				if w.NumberKnown && w.SequenceNum >= int64(r.From) && w.SequenceNum <= int64(r.To) {
-					hit = true
-				}
-			}
-			if !hit {
-				continue
-			}
-			if run.targetWanted[c.TargetID][w.ID] {
-				if target == nil || target.WorkID == 0 {
-					for _, other := range run.units[colID] {
-						if other.ID != w.ID && other.NumberKnown && w.NumberKnown && other.SequenceNum == w.SequenceNum && other.CountType == w.CountType {
-							reject("rejected.unit_ambiguous")
-							return
-						}
-					}
-				}
-				c.Covered = append(c.Covered, w.SequenceNum)
-				c.Coverage = append(c.Coverage, store.ExpectedSlot{Ledger: searchLedger, CollectionID: colID, TargetID: c.TargetID, WorkID: w.ID, Number: w.SequenceNum})
-			}
-		}
-		if total == 0 {
-			total = len(c.Coverage)
-		}
-		c.RepresentedUnits = total
-		if total > 0 && len(c.Coverage) > 0 && len(c.Coverage)*2 < total {
-			reject("rejected.pack_threshold")
-		}
-	} else {
-		// R5 slot coverage. A whole-series pack covers everything wanted
-		// (volume ledger only).
-		if len(ranges) == 0 && searchLedger == LedgerVolume && c.Parse.Complete {
-			for n := range wanted[colID] {
-				c.Covered = append(c.Covered, n)
-			}
-		} else {
-			totalCovered := 0
-			for _, r := range ranges {
-				for n := (int64(r.From) + 99) / 100 * 100; n <= int64(r.To); n += 100 {
-					totalCovered++
-					if wanted[colID][n] {
-						c.Covered = append(c.Covered, n)
-					}
-				}
-			}
-			// D12 pack rule: ≥50% of covered slots must be wanted to auto-grab.
-			if totalCovered > 0 && len(c.Covered)*2 < totalCovered && len(c.Covered) > 0 {
-				reject("rejected.pack_threshold")
-			}
-		}
-
+	total := 0
+	for _, r := range ranges {
+		total += int((int64(r.To)-int64(r.From))/100) + 1
 	}
-	if len(c.Covered) == 0 {
+	for _, w := range run.units[colID] {
+		if w.CountType != "main" && !c.Parse.Extra && (target == nil || target.WorkID != w.ID) {
+			continue
+		}
+		if w.CountType == "main" && c.Parse.Extra && (target == nil || target.WorkID != w.ID) {
+			continue
+		}
+		hit := len(ranges) == 0 && searchLedger == LedgerVolume && c.Parse.Complete
+		for _, r := range ranges {
+			if w.NumberKnown && w.SequenceNum >= int64(r.From) && w.SequenceNum <= int64(r.To) {
+				hit = true
+			}
+		}
+		if !hit {
+			continue
+		}
+		if run.targetWanted[c.TargetID][w.ID] {
+			if target == nil || target.WorkID == 0 {
+				for _, other := range run.units[colID] {
+					if other.ID != w.ID && other.NumberKnown && w.NumberKnown && other.SequenceNum == w.SequenceNum && other.CountType == w.CountType {
+						reject("rejected.unit_ambiguous")
+						return
+					}
+				}
+			}
+			c.Coverage = append(c.Coverage, store.ExpectedSlot{Ledger: searchLedger, CollectionID: colID, TargetID: c.TargetID, WorkID: w.ID, Number: w.SequenceNum})
+		}
+	}
+	if total == 0 {
+		total = len(c.Coverage)
+	}
+	c.RepresentedUnits = total
+	if total > 0 && len(c.Coverage) > 0 && len(c.Coverage)*2 < total {
+		reject("rejected.pack_threshold")
+	}
+	if len(c.Coverage) == 0 {
 		reject("rejected.no_coverage")
 		return
 	}
-	sort.Slice(c.Covered, func(i, j int) bool { return c.Covered[i] < c.Covered[j] })
 
 	// Custom formats: matched on every routable candidate (rejected ones
 	// keep their chips), floor-gated softly so force-grab can override.
 	c.evalFormats(prof, run.formats)
 	if prof != nil && prof.UpgradesEnabled && c.TargetID > 0 && (run.target == nil || run.target.WorkID == 0) {
 		filtered := c.Coverage[:0]
-		numbers := []int64{}
 		for _, sl := range c.Coverage {
 			if old, ok := run.ownedScores[c.TargetID][sl.WorkID]; ok {
 				min := prof.MinUpgradeScore
@@ -356,10 +309,8 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 				}
 			}
 			filtered = append(filtered, sl)
-			numbers = append(numbers, sl.Number)
 		}
 		c.Coverage = filtered
-		c.Covered = numbers
 		if len(filtered) == 0 {
 			reject("rejected.no_upgrade")
 			return
@@ -376,7 +327,7 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		if c.Size > 0 && rules.SizeMaxMB > 0 {
 			count := c.RepresentedUnits
 			if count <= 0 {
-				count = len(c.Covered)
+				count = len(c.Coverage)
 			}
 			perUnit := c.Size / int64(count)
 			if perUnit < int64(rules.SizeMinMB)<<20 || perUnit > int64(rules.SizeMaxMB)<<20 {
@@ -393,7 +344,7 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 
 	// Scoring (decision-engine.md §4): the protocol preference comes from
 	// the profile's ledger rules; term scores from the custom formats.
-	score := len(c.Covered) * 1000
+	score := len(c.Coverage) * 1000
 	c.ScoreParts = []ScorePart{{Label: "Wanted books", Value: score}}
 	if c.Protocol == rules.PreferredProtocol {
 		score += 200
@@ -457,71 +408,6 @@ func (c *ReleaseCandidate) evalFormats(prof *profile.Profile, formats []profile.
 func baseLang(lang string) string {
 	base, _, _ := strings.Cut(lang, "-")
 	return strings.ToLower(base)
-}
-
-// routeCollection maps edition hints to a monitored collection (R6) —
-// volume editions and chapter collections alike (the wanted map scopes
-// the candidates to one ctype). A language-tagged release prefers
-// collections of that language (custom fr variants receive FR releases;
-// en/untagged keep the original) — falling back to all monitored when no
-// language matches.
-func routeCollection(p parse.Result, collections []store.Collection,
-	wanted map[int64]map[int64]bool,
-) (int64, bool) {
-	monitored := make([]store.Collection, 0, len(collections))
-	for _, col := range collections {
-		if wanted[col.ID] != nil {
-			monitored = append(monitored, col)
-		}
-	}
-	if len(monitored) == 0 {
-		return 0, false
-	}
-	if p.Language != "" && p.Language != "multi" {
-		var sameLang []store.Collection
-		for _, col := range monitored {
-			if baseLang(col.Language) == baseLang(p.Language) {
-				sameLang = append(sameLang, col)
-			}
-		}
-		if len(sameLang) > 0 {
-			monitored = sameLang
-		}
-	}
-	matchName := func(substr string) (int64, bool) {
-		for _, col := range monitored {
-			if strings.Contains(strings.ToLower(col.EditionName), substr) {
-				return col.ID, true
-			}
-		}
-		return 0, false
-	}
-	switch {
-	case p.Edition.Omnibus:
-		return matchName("omnibus")
-	case p.Edition.BoxSet:
-		return matchName("box")
-	case p.Edition.Colored:
-		if id, ok := matchName("color"); ok {
-			return id, true
-		}
-	case p.Edition.Deluxe:
-		if id, ok := matchName("deluxe"); ok {
-			return id, true
-		}
-	}
-	if id, ok := matchName("standard"); ok {
-		return id, true
-	}
-	// Untagged release, no name hint: the oldest collection wins — stable,
-	// and the original (pre-customs) collection has the lowest id.
-	best := monitored[0]
-	for _, col := range monitored[1:] {
-		if col.ID < best.ID {
-			best = col
-		}
-	}
-	return best.ID, true
 }
 
 // Rejections that survive a force-grab (decision-engine.md §7).

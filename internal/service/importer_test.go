@@ -209,10 +209,9 @@ func TestImportTorrentPayloadIsIdempotent(t *testing.T) {
 			t.Errorf("%s fingerprint %q, payload %q", rel, f.Hash, want)
 		}
 	}
-	links, _ := st.SlotLinks(ctx, seriesID)
-	for _, n := range []int64{100, 200} {
-		if len(links[store.SlotKey("volume", standard, n)]) != 1 {
-			t.Fatalf("volume %d has %d links, want 1", n/100, len(links[store.SlotKey("volume", standard, n)]))
+	for _, b := range booksOf(t, lib, st, seriesID, standard)[:2] {
+		if len(b.OnDiskFileIDs) != 1 {
+			t.Fatalf("volume %s has %d files, want 1", b.Work.SequenceStr, len(b.OnDiskFileIDs))
 		}
 	}
 }
@@ -315,10 +314,9 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 			t.Errorf("payload %s was modified: %v", name, names)
 		}
 	}
-	links, _ := st.SlotLinks(ctx, seriesID)
-	for _, n := range []int64{100, 200} {
-		if len(links[store.SlotKey("volume", standard, n)]) != 1 {
-			t.Fatalf("volume %d lost its file", n/100)
+	for _, b := range booksOf(t, lib, st, seriesID, standard)[:2] {
+		if len(b.OnDiskFileIDs) != 1 {
+			t.Fatalf("volume %s lost its file", b.Work.SequenceStr)
 		}
 	}
 	// Up to date now: a second look finds nothing to do.

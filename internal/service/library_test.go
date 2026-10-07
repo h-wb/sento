@@ -3,10 +3,8 @@ package service
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/h-wb/sento/internal/db/dbtest"
-	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -184,18 +182,14 @@ func TestAddSeriesAndSlots(t *testing.T) {
 			standard = c
 		}
 	}
-	works, err := st.ListWorks(ctx, standard.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	slots := ledger.BuildVolumeSlots(standard, works, nil, nil, time.Now())
+	slots := booksOf(t, lib, st, id, standard.ID)
 	if len(slots) != 3 {
 		t.Fatalf("want 3 slots, got %d", len(slots))
 	}
 	if !slots[0].Wanted || !slots[1].Wanted {
 		t.Errorf("vols 1-2 should be wanted: %+v", slots[:2])
 	}
-	if slots[2].Wanted || slots[2].Released {
+	if slots[2].Wanted || slots[2].Availability == "released" {
 		t.Errorf("vol 3 is unreleased, should not be wanted: %+v", slots[2])
 	}
 
@@ -207,13 +201,11 @@ func TestAddSeriesAndSlots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	links, err := st.SlotLinks(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	slots = ledger.BuildVolumeSlots(standard, works, links, nil, time.Now())
-	if slots[0].Wanted || len(slots[0].FileIDs) != 1 {
-		t.Errorf("vol 1 should be satisfied: %+v", slots[0])
+	slots = booksOf(t, lib, st, id, standard.ID)
+	// The file's path was never checked on disk, which holds the series'
+	// acquisition until it is: the book is claimed and no longer wanted.
+	if slots[0].Wanted || slots[0].State == "missing" {
+		t.Errorf("vol 1 should no longer be wanted: %+v", slots[0])
 	}
 }
 
@@ -230,7 +222,7 @@ func TestChapterSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	slots := ledger.BuildChapterSlots(chapterCollection(t, cols), 1184, nil, nil)
+	slots := booksOf(t, lib, st, id, chapterCollection(t, cols).ID)
 	if len(slots) != 1184 {
 		t.Fatalf("want 1184 slots, got %d", len(slots))
 	}

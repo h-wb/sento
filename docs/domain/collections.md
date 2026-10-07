@@ -62,7 +62,7 @@ Every edition has one implicit default version. Its selector is hidden until the
 
 Profile inheritance is **version → edition → series → instance default**. An unset profile follows its parent; selecting a profile creates an explicit assignment. Profile deletion checks version assignments too.
 
-Availability is `released`, `upcoming`, or `unknown`. Missing dates stay unknown. The version decides whether unknown-date units may be searched. Actual volume 0 never means “search the whole edition”; new requests use `workId` for a unit and `all` for an edition-wide search. Older number-only requests remain supported when unambiguous.
+Availability is `released`, `upcoming`, or `unknown`. Missing dates stay unknown. The version decides whether unknown-date units may be searched. Actual volume 0 never means “search the whole edition”; a search names a collected version, plus `workId` for one book or `all` for the whole version. A book's identity everywhere — wanted, reserved, grabbed, owned — is its id within a collected version, never its displayed number.
 
 Whether a release belongs to an edition is decided by one table of **facets** (`internal/service/edition_fit.go`). A *content* facet changes what is on the pages (omnibus, deluxe, coloured): release and edition must agree, and a mismatch is a hard rejection. A *packaging* facet changes only how the same pages are wrapped or produced (box set, digital rip, print scan): it never excludes a release and only breaks ties between editions of the same language that are both collected. A new trait is a new row of that table, of one kind or the other.
 

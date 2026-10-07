@@ -147,8 +147,8 @@ func TestUnifiedVolumeFunnel(t *testing.T) {
 	if g7 == nil || len(g7.Rejections) != 0 {
 		t.Fatalf("torrent chapter 1056 should be eligible on chapter ledger: %+v", g7)
 	}
-	if g7.Covered[0] != 105600 {
-		t.Errorf("g7 coverage: %v", g7.Covered)
+	if len(g7.Coverage) != 1 || g7.Coverage[0].Number != 105600 || g7.Coverage[0].WorkID == 0 {
+		t.Errorf("g7 coverage: %+v", g7.Coverage)
 	}
 }
 

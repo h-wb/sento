@@ -5,9 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
-	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -59,16 +57,20 @@ func TestScanSeriesFolder(t *testing.T) {
 			standard = c
 		}
 	}
-	works, _ := st.ListWorks(ctx, standard.ID)
-	links, _ := st.SlotLinks(ctx, seriesID)
-	slots := ledger.BuildVolumeSlots(standard, works, links, nil, time.Now())
-	if len(slots[0].FileIDs) == 0 || len(slots[1].FileIDs) == 0 {
+	slots := booksOf(t, lib, st, seriesID, standard.ID)
+	if len(slots[0].OnDiskFileIDs) == 0 || len(slots[1].OnDiskFileIDs) == 0 {
 		t.Errorf("vols 1-2 should be satisfied after scan: %+v", slots[:2])
 	}
 
 	// Chapter 1180 linked to the chapter collection.
 	chapters := chapterCollection(t, cols)
-	if len(links[store.SlotKey("chapter", chapters.ID, 118000)]) != 1 {
+	linked := 0
+	for _, b := range booksOf(t, lib, st, seriesID, chapters.ID) {
+		if b.Work.SequenceNum == 118000 {
+			linked = len(b.OnDiskFileIDs)
+		}
+	}
+	if linked != 1 {
 		t.Errorf("chapter 1180 should be linked")
 	}
 

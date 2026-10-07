@@ -13,7 +13,6 @@ import type { UnitSlot } from './types/service'
 // Typed client for the Sento API. All payload types are generated from the
 // Go structs (mise run gen) into ./types/ — the backend is the schema.
 
-import type { ChapterSlot, VolumeSlot } from './types/ledger'
 import type { SeriesRef } from './types/metadata'
 import type {
   BrowseProwlarrBody,
@@ -27,7 +26,6 @@ import type {
   OverridePatch,
   SearchResponse,
   SeriesDetail,
-  SlotsResponse,
   StatusResponse,
 } from './types/server'
 import type {
@@ -73,7 +71,6 @@ export type {
   ProwlarrIndexer,
   BlocklistEntry,
   CalendarEntry,
-  ChapterSlot,
   Collection,
   CollectionPatch,
   Decision,
@@ -93,13 +90,11 @@ export type {
   SourceManga,
   TargetSlot,
   TaskStatus,
-  VolumeSlot,
   Condition,
   Format,
   Profile,
   ProfileDoc,
 }
-export type Slots = SlotsResponse
 export type SystemStatus = StatusResponse
 export type LookupResult = SeriesRef
 export type SiteOverride = OverridePatch
@@ -261,7 +256,6 @@ export const api = {
       body: JSON.stringify({ profileId }),
     }),
   refreshSeries: (id: number) => request<unknown>(`/series/${id}/refresh`, { method: 'POST' }),
-  slots: (id: number) => request<Slots>(`/series/${id}/slots`),
   updateCollection: (id: number, cid: number, patch: CollectionPatch) =>
     request<void>(`/series/${id}/collections/${cid}`, {
       method: 'PUT',

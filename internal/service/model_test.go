@@ -711,3 +711,25 @@ func fixtureLinks(t *testing.T, st *store.Store, sid, cid int64, numbers ...int6
 	}
 	return links
 }
+
+// booksOf returns the books of an edition's default collected version, in
+// the ledger's order.
+func booksOf(t *testing.T, lib *Library, st *store.Store, sid, cid int64) []UnitSlot {
+	t.Helper()
+	ctx := context.Background()
+	targets, err := st.ListTargets(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := lib.TargetSlots(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range targets {
+		if target.CollectionID == cid && target.IsDefault {
+			return all[target.ID]
+		}
+	}
+	t.Fatalf("edition %d has no default version", cid)
+	return nil
+}

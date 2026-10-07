@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/h-wb/sento/internal/parse"
@@ -219,29 +218,7 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 // collection, used for the import-time cutoff default (§11.4: lowest owned
 // chapter so owned chapters land in-ledger and the frontier continues).
 func (sc *Scanner) LowestOwnedChapters(ctx context.Context, seriesID int64) (map[int64]int64, error) {
-	links, err := sc.store.SlotLinks(ctx, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	lowest := map[int64]int64{}
-	for key := range links {
-		parts := strings.Split(key, "/")
-		if len(parts) != 3 || parts[0] != "chapter" {
-			continue
-		}
-		colID, err := strconv.ParseInt(parts[1], 10, 64)
-		if err != nil {
-			continue
-		}
-		num, err := strconv.ParseInt(parts[2], 10, 64)
-		if err != nil || num <= 0 {
-			continue
-		}
-		if cur, ok := lowest[colID]; !ok || num < cur {
-			lowest[colID] = num
-		}
-	}
-	return lowest, nil
+	return sc.store.LowestOwnedChapters(ctx, seriesID)
 }
 
 // ScanAndAdoptCutoff runs ScanSeriesFolder and, when chapter files were

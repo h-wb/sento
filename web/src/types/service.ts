@@ -446,12 +446,11 @@ export const LedgerChapter = "chapter";
 export interface SearchService {
 }
 /**
- * TargetSlot restricts an interactive search to one slot of a collection
- * (volume or chapter type). Number 0 widens it to every wanted slot of the
- * collection — the per-collection search, where packs shine.
+ * TargetSlot scopes an interactive search to one collected version: one
+ * of its books (WorkID), or every wanted book of it (All).
  */
 export interface TargetSlot {
-  targetId?: number /* int64 */;
+  targetId: number /* int64 */;
   workId?: number /* int64 */;
   all?: boolean;
   /**
@@ -460,8 +459,6 @@ export interface TargetSlot {
    * for a better copy, or at what exists before collecting.
    */
   allBooks?: boolean;
-  collectionId: number /* int64 */;
-  number: number /* int64 */; // hundredths; 0 = whole collection
 }
 /**
  * ReleaseCandidate is one candidate run through the funnel, for either
@@ -490,7 +487,6 @@ export interface ReleaseCandidate {
   seeders?: number /* int */;
   scanlator?: string;
   collectionId?: number /* int64 */;
-  covered?: number /* int64 */[];
   score: number /* int */;
   formats?: FormatHit[]; // matched custom formats
   formatScore?: number /* int */; // their summed score

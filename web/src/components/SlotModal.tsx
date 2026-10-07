@@ -19,7 +19,9 @@ import CandidateList from './CandidateList'
 import { useConfirmAction } from './ConfirmAction'
 
 export type SlotSelection = {
-  targetId?: number
+  // The collected version being searched; workId narrows it to one book,
+  // all widens it to every wanted book.
+  targetId: number
   workId?: number
   all?: boolean
   label?: string
@@ -75,7 +77,7 @@ export default function SlotModal({
   // Keyed by slot so every open starts fresh (tab choice, search state).
   return (
     <Inner
-      key={`${sel.ledger}-${sel.collectionId ?? 0}-${sel.targetId ?? 0}-${sel.workId ?? sel.number}`}
+      key={`${sel.targetId}-${sel.workId ?? 'all'}`}
       seriesID={seriesID}
       sel={sel}
       files={files}
@@ -98,9 +100,9 @@ function Inner({
   onClose: () => void
   onChanged: () => void
 }) {
-  // number 0 = the whole collection (every wanted volume/chapter): the
+  // Without a book, the search covers the whole collected version: the
   // place to grab packs and complete releases.
-  const editionWide = sel.all ?? (!sel.workId && sel.number === 0)
+  const editionWide = sel.all ?? !sel.workId
   const linked = files.filter((f) => sel.fileIds.includes(f.id))
 
   const { confirm, confirmation } = useConfirmAction()
@@ -121,8 +123,6 @@ function Inner({
   // Streaming search: each provider's batch renders as soon as it lands,
   // so fast extension sources show up while torrent indexers still load.
   const slotRef = (everyBook: boolean) => ({
-    collectionId: sel.collectionId ?? 0,
-    number: sel.number,
     targetId: sel.targetId,
     workId: sel.workId,
     all: sel.all,

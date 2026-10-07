@@ -745,37 +745,31 @@ func (s *Store) DeleteFile(ctx context.Context, id int64) (string, error) {
 	return *path, nil
 }
 
-// SlotLinks returns all links for a series keyed by "ledger/collection/number".
-func (s *Store) SlotLinks(ctx context.Context, seriesID int64) (map[string][]int64, error) {
-	links, err := list[SlotLink](ctx, s, `
-		SELECT c.ctype AS ledger,w.collection_id,w.sequence_num AS number,a.file_id
- FROM asset_contents a JOIN works w ON w.id=a.work_id JOIN collections c ON c.id=w.collection_id JOIN files f ON f.id=a.file_id
- WHERE f.series_id=? AND a.verified=TRUE AND f.needs_review=FALSE`, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string][]int64{}
-	for _, l := range links {
-		key := SlotKey(l.Ledger, l.CollectionID, l.Number)
-		out[key] = append(out[key], l.FileID)
-	}
+// LowestOwnedChapters returns, per chapter edition of a series, the lowest
+// numbered chapter a verified file holds.
+func (s *Store) LowestOwnedChapters(ctx context.Context, seriesID int64) (map[int64]int64, error) {
 	rows, err := list[struct {
 		CollectionID int64
-		WorkID       int64
-		FileID       int64
-	}](ctx, s, `SELECT w.collection_id,a.work_id,a.file_id FROM asset_coverage a JOIN works w ON w.id=a.work_id JOIN download_targets t ON t.id=a.target_id JOIN files f ON f.id=a.file_id WHERE f.series_id=? AND t.is_default=TRUE AND a.verified=TRUE`, seriesID)
+		Lowest       int64
+	}](ctx, s, `
+		SELECT w.collection_id, MIN(w.sequence_num) AS lowest
+		FROM asset_contents a JOIN works w ON w.id=a.work_id JOIN collections c ON c.id=w.collection_id JOIN files f ON f.id=a.file_id
+		WHERE f.series_id=? AND c.ctype='chapter' AND a.verified=TRUE AND f.needs_review=FALSE AND w.sequence_num>0
+		GROUP BY w.collection_id`, seriesID)
 	if err != nil {
 		return nil, err
 	}
+	out := map[int64]int64{}
 	for _, r := range rows {
-		key := SlotKey("work", r.CollectionID, r.WorkID)
-		out[key] = append(out[key], r.FileID)
+		out[r.CollectionID] = r.Lowest
 	}
 	return out, nil
 }
 
-func SlotKey(ledger string, collectionID, number int64) string {
-	return fmt.Sprintf("%s/%d/%d", ledger, collectionID, number)
+// BookKey identifies one book of one collected version: the unit of
+// wanting, reserving and owning.
+func BookKey(targetID, workID int64) string {
+	return fmt.Sprintf("%d/%d", targetID, workID)
 }
 
 // --- bindings ---

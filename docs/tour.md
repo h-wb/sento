@@ -26,7 +26,7 @@ with its vocabulary already in place.
       3 bugs fixed, Findings A–D, live-harvest corpus expansion (75→87) +
       2 harvest-driven parser fixes, match validation. Tools: `cmd/harvest`,
       `cmd/matchcheck` (build-tagged).
-- [x] **2 — Profiles & the ledger**: `internal/profile`, `internal/ledger`
+- [x] **2 — Profiles & the ledger**: `internal/profile`
       → domain doc [domain/profiles-ledger.md](domain/profiles-ledger.md)
       — **complete**. Both pure & clean; 1 efficiency lead (matchRegexp).
 - [ ] **3 — Persistence**: `internal/db`, `internal/store`

@@ -238,7 +238,7 @@ func TestImportReviewRetainsClaimsAndCompletesExistingPayload(t *testing.T) {
 		t.Fatalf("review became terminal: %+v", queue)
 	}
 	pending, err := st.PendingUnits(ctx, id)
-	if err != nil || !pending[store.SlotKey("unit", target.ID, ws[0].ID)] {
+	if err != nil || !pending[store.BookKey(target.ID, ws[0].ID)] {
 		t.Fatal("review released its reservation")
 	}
 	files, err := st.ListFiles(ctx, id)
@@ -296,7 +296,7 @@ func TestTransientProviderErrorBacksOffAndRetainsClaims(t *testing.T) {
 		t.Fatal("worker resurrected cancelled job")
 	}
 	pending, _ := st.PendingUnits(ctx, id)
-	if pending[store.SlotKey("unit", target.ID, ws[0].ID)] {
+	if pending[store.BookKey(target.ID, ws[0].ID)] {
 		t.Fatal("cancel left a reservation")
 	}
 }
@@ -450,7 +450,7 @@ func TestConcurrentBookDeletionAndReservationDoNotLeaveDanglingPlan(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pending[store.SlotKey("unit", target.ID, ws[0].ID)] {
+	if pending[store.BookKey(target.ID, ws[0].ID)] {
 		w, e := st.GetWork(ctx, ws[0].ID)
 		if e != nil || w.SyncState == "retired" {
 			t.Fatalf("reservation refers to deleted/retired work: %+v %v", w, e)

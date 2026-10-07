@@ -55,7 +55,6 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Put("/", s.handleUpdateSeries)
 			r.Delete("/", s.handleDeleteSeries)
 			r.Post("/refresh", s.handleRefreshSeries)
-			r.Get("/slots", s.handleSlots)
 			r.Get("/targets", s.handleListTargets)
 			r.Post("/targets", s.handleSaveTarget)
 			r.Put("/targets/{tid}", s.handleSaveTarget)

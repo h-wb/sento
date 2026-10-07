@@ -4,10 +4,8 @@ import (
 	"context"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
-	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -151,31 +149,6 @@ func (s *Server) handleRefreshSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "refreshed"})
-}
-
-// --- slots ---
-
-func (s *Server) handleSlots(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	volumes, chapters, err := s.library.Slots(r.Context(), id)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	out := SlotsResponse{
-		Volumes:  map[string][]ledger.VolumeSlot{},
-		Chapters: map[string][]ledger.ChapterSlot{},
-	}
-	for colID, slots := range volumes {
-		out.Volumes[strconv.FormatInt(colID, 10)] = slots
-	}
-	for colID, slots := range chapters {
-		out.Chapters[strconv.FormatInt(colID, 10)] = slots
-	}
-	writeJSON(w, http.StatusOK, out)
 }
 
 // --- collection updates ---

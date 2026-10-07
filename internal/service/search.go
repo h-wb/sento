@@ -42,19 +42,16 @@ func (s *SearchService) HasSourceProvider() bool {
 	return s.registry.ForProtocol(provider.ProtocolSource) != nil
 }
 
-// TargetSlot restricts an interactive search to one slot of a collection
-// (volume or chapter type). Number 0 widens it to every wanted slot of the
-// collection — the per-collection search, where packs shine.
+// TargetSlot scopes an interactive search to one collected version: one
+// of its books (WorkID), or every wanted book of it (All).
 type TargetSlot struct {
-	TargetID int64 `json:"targetId,omitempty"`
+	TargetID int64 `json:"targetId"`
 	WorkID   int64 `json:"workId,omitempty"`
 	All      bool  `json:"all,omitempty"`
 	// AllBooks widens an edition-wide search from the wanted books to
 	// every book of the version, owned and paused ones included: looking
 	// for a better copy, or at what exists before collecting.
-	AllBooks     bool  `json:"allBooks,omitempty"`
-	CollectionID int64 `json:"collectionId"`
-	Number       int64 `json:"number"` // hundredths; 0 = whole collection
+	AllBooks bool `json:"allBooks,omitempty"`
 }
 
 // ReleaseCandidate is one candidate run through the funnel, for either
@@ -86,7 +83,6 @@ type ReleaseCandidate struct {
 	Seeders          int                   `json:"seeders,omitempty"`
 	Scanlator        string                `json:"scanlator,omitempty"`
 	CollectionID     int64                 `json:"collectionId,omitempty"`
-	Covered          []int64               `json:"covered,omitempty"`
 	Score            int                   `json:"score"`
 	Formats          []FormatHit           `json:"formats,omitempty"`     // matched custom formats
 	FormatScore      int                   `json:"formatScore,omitempty"` // their summed score
@@ -313,7 +309,6 @@ type searchRun struct {
 	allowed        map[string]map[string]bool
 	priorities     map[[2]string]int
 	searched       []string
-	wanted         map[int64]map[int64]bool
 	collections    []store.Collection
 	blocked        map[string]bool // "protocol/externalKey" bans
 	// profiles is the effective release profile per collection id, with

@@ -59,4 +59,4 @@ On-disk contents are independent of fulfillment. A confirmed archive can satisfy
 
 Pending downloads and jobs awaiting review keep reservations. Storage uncertainty blocks acquisition. Wanted therefore means the book is collectible, available under policy, lacks a satisfactory copy (or qualifies for an enabled upgrade), and has no pending claim or unresolved storage/content issue.
 
-`internal/ledger` retains small value types/projections for existing calendar/API consumers. Canonical acquisition identity is `(target ID, work ID)`, never the displayed volume/chapter number.
+Acquisition identity is `(target ID, work ID)`, never the displayed volume/chapter number. The earlier number-keyed slot model (`internal/ledger`, `/series/{id}/slots`, number-only search requests) has been removed.

@@ -18,7 +18,7 @@ func (s *SearchService) GrabBest(ctx context.Context, seriesID int64, searchLedg
 			continue
 		}
 		news := false
-		for _, key := range grabKeys(searchLedger, c) {
+		for _, key := range grabKeys(c) {
 			if !taken[key] {
 				news = true
 				break
@@ -41,7 +41,7 @@ func (s *SearchService) GrabBest(ctx context.Context, seriesID int64, searchLedg
 		if !exists {
 			queued = append(queued, qid)
 		}
-		for _, key := range grabKeys(searchLedger, c) {
+		for _, key := range grabKeys(c) {
 			taken[key] = true
 		}
 	}
@@ -64,15 +64,7 @@ func (s *SearchService) Grab(ctx context.Context, seriesID int64, searchLedger s
 		return 0, apperr.Unavailablef("provider %q is not configured", c.Provider)
 	}
 
-	slots := make([]store.ExpectedSlot, 0, len(c.Covered))
-	for _, n := range c.Covered {
-		slots = append(slots, store.ExpectedSlot{
-			Ledger: searchLedger, CollectionID: c.CollectionID, Number: n,
-		})
-	}
-	if len(c.Coverage) > 0 {
-		slots = c.Coverage
-	}
+	slots := c.Coverage
 	snapshot, _ := json.Marshal(c)
 	qid, created, err := s.store.ReserveQueue(ctx, store.QueueItem{SeriesID: seriesID, Protocol: c.Protocol, ProviderID: c.Provider, ReleaseKey: c.cand.ExternalKey(), Title: c.Title, Snapshot: snapshot}, slots)
 	if err != nil {
@@ -98,23 +90,12 @@ func (s *SearchService) Grab(ctx context.Context, seriesID int64, searchLedger s
 	return qid, err
 }
 
-func grabSlotKey(ledger string, c ReleaseCandidate, n int64) string {
-	if c.TargetID > 0 {
-		return store.SlotKey(ledger, c.TargetID, n)
-	}
-	return store.SlotKey(ledger, c.CollectionID, n)
-}
-
-func grabKeys(ledger string, c ReleaseCandidate) []string {
-	keys := []string{}
-	if len(c.Coverage) > 0 {
-		for _, sl := range c.Coverage {
-			keys = append(keys, store.SlotKey("unit", sl.TargetID, sl.WorkID))
-		}
-		return keys
-	}
-	for _, n := range c.Covered {
-		keys = append(keys, grabSlotKey(ledger, c, n))
+// grabKeys are the books a candidate would claim, for de-duplicating
+// grabs within one sweep.
+func grabKeys(c ReleaseCandidate) []string {
+	keys := make([]string, 0, len(c.Coverage))
+	for _, sl := range c.Coverage {
+		keys = append(keys, store.BookKey(sl.TargetID, sl.WorkID))
 	}
 	return keys
 }

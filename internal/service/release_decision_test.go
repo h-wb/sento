@@ -13,10 +13,10 @@ import (
 )
 
 func TestReleaseClassificationAndDecisionEvidence(t *testing.T) {
-	_, st, id, c, _, target := modelFixture(t)
+	_, st, id, _, _, target := modelFixture(t)
 	ctx := context.Background()
 	svc := NewSearchService(st, provider.NewRegistry())
-	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{CollectionID: c.ID, TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}, priorities: map[[2]string]int{{"torrent", "site"}: 5}}
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}, priorities: map[[2]string]int{{"torrent", "site"}: 5}}
 	if err := svc.prepareTargets(ctx, run); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestExtraReleaseDoesNotClaimRegularVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewSearchService(st, provider.NewRegistry())
-	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{CollectionID: c.ID, TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
 	if err = svc.prepareTargets(ctx, run); err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestAmbiguousEditionIsReviewable(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewSearchService(st, provider.NewRegistry())
-	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{CollectionID: c.ID, TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
 	if err = svc.prepareTargets(ctx, run); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestLanguageEvidenceForUntaggedReleases(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := NewSearchService(st, provider.NewRegistry())
-	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{CollectionID: c.ID, TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{TargetID: target.ID, All: true}, titles: []string{"ONE PIECE"}}
 	if err := svc.prepareTargets(ctx, run); err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestLanguageEvidenceForUntaggedReleases(t *testing.T) {
 // An edition-wide search covers the wanted books; AllBooks widens it to
 // every book, so a paused edition can still be browsed.
 func TestEditionSearchScope(t *testing.T) {
-	_, st, id, c, works, target := modelFixture(t)
+	_, st, id, _, works, target := modelFixture(t)
 	ctx := context.Background()
 	target.Monitored = false
 	if _, err := st.SaveTarget(ctx, id, target); err != nil {
@@ -266,7 +266,7 @@ func TestEditionSearchScope(t *testing.T) {
 	svc := NewSearchService(st, provider.NewRegistry())
 	wanted := func(allBooks bool) int {
 		t.Helper()
-		run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{CollectionID: c.ID, TargetID: target.ID, All: true, AllBooks: allBooks}, titles: []string{"ONE PIECE"}}
+		run := &searchRun{seriesID: id, ledger: LedgerVolume, target: &TargetSlot{TargetID: target.ID, All: true, AllBooks: allBooks}, titles: []string{"ONE PIECE"}}
 		if err := svc.prepareTargets(ctx, run); err != nil {
 			t.Fatal(err)
 		}

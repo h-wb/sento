@@ -23,12 +23,12 @@ func (l *Library) Calendar(ctx context.Context, from, to string) ([]store.Calend
 			slots = map[string]UnitSlot{}
 			for tid, books := range view.Slots {
 				for _, book := range books {
-					slots[store.SlotKey("unit", tid, book.Work.ID)] = book
+					slots[store.BookKey(tid, book.Work.ID)] = book
 				}
 			}
 			bySeries[e.SeriesID] = slots
 		}
-		book, ok := slots[store.SlotKey("unit", e.TargetID, e.WorkID)]
+		book, ok := slots[store.BookKey(e.TargetID, e.WorkID)]
 		if !ok || !book.Monitored {
 			continue
 		}

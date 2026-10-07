@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"github.com/h-wb/sento/internal/extensions"
-	"github.com/h-wb/sento/internal/ledger"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -30,13 +29,6 @@ type DatabaseStatus struct {
 type SeriesDetail struct {
 	Series      *store.Series      `json:"series"`
 	Collections []store.Collection `json:"collections"`
-}
-
-// SlotsResponse is GET /series/{id}/slots: volume and chapter slots, each
-// keyed by collection id.
-type SlotsResponse struct {
-	Volumes  map[string][]ledger.VolumeSlot  `json:"volumes"`
-	Chapters map[string][]ledger.ChapterSlot `json:"chapters"`
 }
 
 // SearchBody is POST /series/{id}/search.

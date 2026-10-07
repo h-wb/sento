@@ -36,7 +36,7 @@ const PAGE_SIZE = 25
 const spans = (ranges?: [number, number][]) =>
   (ranges ?? []).reduce((n, [from, to]) => n + Math.max(1, Math.floor(to - from) + 1), 0)
 const isPack = (c: ReleaseCandidate) =>
-  (c.coverage?.length ?? c.covered?.length ?? 0) > 1 ||
+  (c.coverage?.length ?? 0) > 1 ||
   !!c.parse.complete ||
   spans(c.parse.volumes) > 1 ||
   (!c.parse.volumes?.length && spans(c.parse.chapters) > 1)
@@ -391,7 +391,7 @@ function ReleaseRow({
   ].filter(Boolean)
   const reason = decision?.reasons[0]?.message
   const more = (decision?.reasons.length ?? 1) - 1
-  const matched = c.coverage?.length ?? c.covered?.length ?? 0
+  const matched = c.coverage?.length ?? 0
   return (
     <div className={classes.row} data-testid="release-row" data-status={queued ? 'queued' : state}>
       <Group gap="sm" align="flex-start" className={classes.rowMain}>
