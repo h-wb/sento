@@ -169,6 +169,11 @@ export interface QueueItem {
   retryAt: string;
   providerId?: string;
   releaseKey?: string;
+  /**
+   * DownloadClient is the id of the client the download was sent to,
+   * when the provider has several ("" = unrecorded or not applicable).
+   */
+  downloadClient?: string;
   snapshot: any;
   id: number /* int64 */;
   seriesId: number /* int64 */;

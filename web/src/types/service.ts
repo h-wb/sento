@@ -425,6 +425,11 @@ export interface ScanResult {
   linked: number /* int */;
   unrequested: number /* int */;
   skipped?: string[]; // already known paths
+  /**
+   * Changed counts known files whose pages were replaced on disk; they
+   * were matched again from scratch.
+   */
+  changed: number /* int */;
 }
 
 //////////

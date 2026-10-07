@@ -725,6 +725,21 @@ func (s *Store) ListFiles(ctx context.Context, seriesID int64) ([]File, error) {
 		FROM files WHERE series_id = ? ORDER BY path`, seriesID)
 }
 
+// ForgetFile drops what is recorded about a file whose bytes were replaced
+// on disk: its contents, selections and pins described the old bytes. The
+// file itself is untouched; the caller records it afresh.
+func (s *Store) ForgetFile(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, s.q(`DELETE FROM files WHERE id = ?`), id)
+	return err
+}
+
+// SetFileSize records a file's size after its bytes changed without its
+// pages changing (retagged metadata).
+func (s *Store) SetFileSize(ctx context.Context, id, size int64) error {
+	_, err := s.db.ExecContext(ctx, s.q(`UPDATE files SET size = ? WHERE id = ?`), size, id)
+	return err
+}
+
 // DeleteFile removes a file row (links cascade) and returns its path so
 // the caller can remove it from disk.
 func (s *Store) DeleteFile(ctx context.Context, id int64) (string, error) {

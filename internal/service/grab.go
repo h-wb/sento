@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"github.com/h-wb/sento/internal/provider"
 	"log/slog"
 
 	"github.com/h-wb/sento/internal/apperr"
@@ -64,9 +65,19 @@ func (s *SearchService) Grab(ctx context.Context, seriesID int64, searchLedger s
 		return 0, apperr.Unavailablef("provider %q is not configured", c.Provider)
 	}
 
+	// Choose the download client before anything is reserved or sent, and
+	// keep it with the job: polling and import then ask that client only.
+	client := ""
+	if router, ok := prov.(provider.ClientRouter); ok {
+		var err error
+		if client, err = router.ClientFor(ctx, c.cand); err != nil {
+			return 0, apperr.Unavailablef("%v", err)
+		}
+	}
+
 	slots := c.Coverage
 	snapshot, _ := json.Marshal(c)
-	qid, created, err := s.store.ReserveQueue(ctx, store.QueueItem{SeriesID: seriesID, Protocol: c.Protocol, ProviderID: c.Provider, ReleaseKey: c.cand.ExternalKey(), Title: c.Title, Snapshot: snapshot}, slots)
+	qid, created, err := s.store.ReserveQueue(ctx, store.QueueItem{SeriesID: seriesID, Protocol: c.Protocol, ProviderID: c.Provider, ReleaseKey: c.cand.ExternalKey(), DownloadClient: client, Title: c.Title, Snapshot: snapshot}, slots)
 	if err != nil {
 		return 0, err
 	}
@@ -74,7 +85,7 @@ func (s *SearchService) Grab(ctx context.Context, seriesID int64, searchLedger s
 	if !created {
 		return qid, nil
 	}
-	externalID, err := prov.Grab(ctx, c.cand)
+	externalID, err := prov.Grab(provider.InClient(ctx, client), c.cand)
 	if err != nil {
 		_ = s.store.DeferQueue(ctx, store.QueueItem{ID: qid}, "Submission result is uncertain: "+err.Error())
 		return 0, err

@@ -23,7 +23,7 @@ func (s *Store) CheckFilePresence(ctx context.Context, seriesID int64) error {
 		// A file answers to the folder it lives under: an unreachable
 		// chapter folder says nothing about the volumes.
 		root := series.Path
-		if series.ChapterPath != "" && strings.HasPrefix(f.Path, series.ChapterPath+string(filepath.Separator)) {
+		if series.InChapterFolder(f.Path) {
 			root = series.ChapterPath
 		}
 		if root == "" {
@@ -51,6 +51,12 @@ func (s *Store) CheckFilePresence(ctx context.Context, seriesID int64) error {
 		}
 	}
 	return nil
+}
+
+// InChapterFolder reports whether path lies in the series' separate
+// chapter folder. False when chapters share the series folder.
+func (sr *Series) InChapterFolder(path string) bool {
+	return sr.ChapterPath != "" && strings.HasPrefix(path, sr.ChapterPath+string(filepath.Separator))
 }
 
 type AssetContent struct {

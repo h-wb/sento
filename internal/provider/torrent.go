@@ -116,6 +116,30 @@ func (p *TorrentProvider) clientFor(ctx context.Context, siteID string) (Torrent
 	return TorrentClient{}, fmt.Errorf("the download client this indexer uses no longer exists; choose another on the Indexers page")
 }
 
+// ClientFor names the client a candidate goes to (provider.ClientRouter).
+func (p *TorrentProvider) ClientFor(ctx context.Context, c Candidate) (string, error) {
+	dl, err := p.clientFor(ctx, c.SiteID)
+	return dl.ID, err
+}
+
+// dispatchClient is the client a grab uses: the one already chosen and
+// recorded for the job (InClient), or the indexer's.
+func (p *TorrentProvider) dispatchClient(ctx context.Context, c Candidate) (TorrentClient, error) {
+	if id := boundClient(ctx); id != "" {
+		return p.client(id)
+	}
+	return p.clientFor(ctx, c.SiteID)
+}
+
+func (p *TorrentProvider) client(id string) (TorrentClient, error) {
+	for _, c := range p.clients {
+		if c.ID == id {
+			return c, nil
+		}
+	}
+	return TorrentClient{}, fmt.Errorf("the download client this job was sent to is no longer configured; add it back on the Connections page")
+}
+
 func (p *TorrentProvider) ID() string       { return "torrent" }
 func (p *TorrentProvider) Protocol() string { return ProtocolTorrent }
 
@@ -208,7 +232,7 @@ func (p *TorrentProvider) Grab(ctx context.Context, c Candidate) (string, error)
 	if c.Torrent == nil {
 		return "", fmt.Errorf("torrent: candidate has no torrent ref")
 	}
-	dl, err := p.clientFor(ctx, c.SiteID)
+	dl, err := p.dispatchClient(ctx, c)
 	if err != nil {
 		return "", err
 	}
@@ -312,16 +336,26 @@ func fetchTorrent(ctx context.Context, url string) (data []byte, magnet string, 
 	return data, "", nil
 }
 
-// find looks a download up by infohash in every client: the queue only
-// stores the hash, and a release may have gone to any of them. A client
-// that cannot be asked only matters when the torrent was not found
-// elsewhere — then the answer is unknown, not "gone".
+// find looks a download up by infohash in the client that holds it
+// (InClient). The same torrent in another client is someone else's: it is
+// never adopted. Jobs recorded before clients were tracked are looked up
+// in every client; there, a client that cannot be asked only matters when
+// the torrent was not found elsewhere, and then the answer is unknown,
+// not "gone".
 func (p *TorrentProvider) find(ctx context.Context, externalID string) (*qbittorrent.Torrent, *qbittorrent.Client, error) {
 	if len(p.clients) == 0 {
 		return nil, nil, fmt.Errorf("no download client is configured")
 	}
+	clients := p.clients
+	if id := boundClient(ctx); id != "" {
+		c, err := p.client(id)
+		if err != nil {
+			return nil, nil, err
+		}
+		clients = []TorrentClient{c}
+	}
 	var unreachable error
-	for _, c := range p.clients {
+	for _, c := range clients {
 		torrents, err := c.Client.List(ctx, c.Category)
 		if err != nil {
 			unreachable = fmt.Errorf("%s: %w", c.Name, err)
@@ -373,3 +407,4 @@ func (p *TorrentProvider) Fetch(ctx context.Context, externalID string) (*Payloa
 func (p *TorrentProvider) Cleanup(context.Context, string) error { return nil }
 
 var _ Provider = (*TorrentProvider)(nil)
+var _ ClientRouter = (*TorrentProvider)(nil)

@@ -273,3 +273,29 @@ func (r *Registry) ForProtocol(protocol string) Provider {
 	}
 	return nil
 }
+
+// ClientRouter is implemented by providers that send downloads to one of
+// several download clients. The client is chosen before dispatch and kept
+// with the job; every later call about that job is made with InClient, so
+// it is answered by the client that holds it and no other.
+type ClientRouter interface {
+	// ClientFor names the client a candidate must be sent to.
+	ClientFor(ctx context.Context, c Candidate) (clientID string, err error)
+}
+
+type clientKey struct{}
+
+// InClient binds calls made with the returned context to one download
+// client. An empty id binds nothing (jobs recorded before clients were
+// tracked).
+func InClient(ctx context.Context, clientID string) context.Context {
+	if clientID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, clientKey{}, clientID)
+}
+
+func boundClient(ctx context.Context) string {
+	id, _ := ctx.Value(clientKey{}).(string)
+	return id
+}

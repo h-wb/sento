@@ -60,6 +60,14 @@ export default function QueuePage() {
     refetchInterval: 5000,
   })
   const blocked = useQuery({ queryKey: ['blocklist'], queryFn: api.blocklist })
+  // Which client holds a download only matters when there are several.
+  const connections = useQuery({ queryKey: ['connections'], queryFn: api.connections })
+  const clients = connections.data?.downloadClients ?? []
+  const via = (i: { protocol: string; downloadClient?: string }) => {
+    if (i.protocol === 'source') return 'Source'
+    const client = clients.find((c) => c.id === i.downloadClient)
+    return clients.length > 1 && client ? `Torrent · ${client.name}` : 'Torrent'
+  }
   const items = queue.data ?? []
   const active = items.filter((i) => i.status !== 'imported' && i.status !== 'cancelled')
   const completed = items.filter((i) => i.status === 'imported' || i.status === 'cancelled')
@@ -164,7 +172,7 @@ export default function QueuePage() {
                             {statusLabel[i.status] ?? i.status}
                           </Badge>
                           <Text size="xs" c="dimmed">
-                            {i.protocol === 'source' ? 'Source' : 'Torrent'} ·{' '}
+                            {via(i)} ·{' '}
                             {fmtWhen(i.createdAt)}
                           </Text>
                         </Group>
@@ -274,7 +282,7 @@ export default function QueuePage() {
                           </Table.Td>
                           <Table.Td>
                             <Text size="xs" c="dimmed">
-                              {i.protocol === 'source' ? 'Source' : 'Torrent'}
+                              {via(i)}
                             </Text>
                           </Table.Td>
                           <Table.Td>

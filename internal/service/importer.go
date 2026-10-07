@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/h-wb/sento/internal/apperr"
 	"io"
 	"log/slog"
 	"os"
@@ -67,7 +68,7 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
 
-	items, err := im.store.ListQueueItems(ctx, true)
+	items, err := im.store.ListRunnableQueue(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -75,9 +76,6 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 	for _, item := range items {
 		if ctx.Err() != nil {
 			return imported, ctx.Err() // shutting down: leave the rest queued
-		}
-		if item.Status == store.QueueNeedsReview || item.Status == store.QueueDispatchUnknown {
-			continue
 		}
 		if item.Status == store.QueueRetryWait && item.RetryAt != "" && time.Now().Before(parseTime(item.RetryAt)) {
 			continue
@@ -109,7 +107,7 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 				// Import errors don't — they're usually local (paths,
 				// permissions), not the release's fault.
 				event = "download_failed"
-				_ = im.store.AddBlocklist(ctx, item.Protocol, item.ExternalID, err.Error())
+				_ = im.blockRelease(ctx, item, err.Error())
 			}
 			_ = im.store.AddDecision(ctx, item.SeriesID, store.DecisionBody{
 				Event: event, Title: item.Title, Provider: prov.ID(),
@@ -134,6 +132,8 @@ var errImportReview = errors.New("import needs review")
 var errDispatchUnknown = errors.New("download dispatch needs review")
 
 func (im *Importer) processItem(ctx context.Context, prov provider.Provider, item store.QueueItem) (bool, error) {
+	// Every call about this job goes to the client it was sent to.
+	ctx = provider.InClient(ctx, item.DownloadClient)
 	if item.ExternalID == "" {
 		// Reconcile an uncertain submission with its stable provider key; never submit twice.
 		if item.ReleaseKey != "" {
@@ -341,7 +341,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			return fmt.Errorf("invalid payload path")
 		}
 		ext := strings.ToLower(filepath.Ext(rel))
-		if ext != ".cbz" && ext != ".cbr" {
+		if !mediafile.IsArchive(rel) {
 			continue
 		}
 		if len(preservedHashes) > 0 {
@@ -473,24 +473,44 @@ func parseTime(s string) time.Time {
 // BlocklistQueueItem manually bans a queue item's release and marks the
 // item failed (typically a failed import whose release is actually bad).
 func (im *Importer) BlocklistQueueItem(ctx context.Context, qid int64) error {
-	items, err := im.store.ListQueueItems(ctx, false)
+	item, err := im.store.GetQueueItem(ctx, qid)
 	if err != nil {
 		return err
 	}
-	for _, item := range items {
-		if item.ID != qid {
+	if err := im.blockRelease(ctx, *item, "blocked manually"); err != nil {
+		return err
+	}
+	_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueFailed, "blocked manually")
+	_ = im.store.AddDecision(ctx, item.SeriesID, store.DecisionBody{
+		Event: "blocklisted", Title: item.Title, Key: item.ExternalID,
+	})
+	return nil
+}
+
+// blockRelease bans a job's release under every name it goes by. A search
+// knows a release by what the indexer published (ReleaseKey: often only a
+// link); the job knows it by the torrent hash learned while grabbing
+// (ExternalID). Banning only the hash would let the same listing through
+// on the next search.
+func (im *Importer) blockRelease(ctx context.Context, item store.QueueItem, reason string) error {
+	keys := []string{item.ExternalID}
+	if item.ReleaseKey != "" && item.ReleaseKey != item.ExternalID {
+		keys = append(keys, item.ReleaseKey)
+	}
+	blocked := false
+	for _, key := range keys {
+		if key == "" {
 			continue
 		}
-		if err := im.store.AddBlocklist(ctx, item.Protocol, item.ExternalID, "blocked manually"); err != nil {
+		if err := im.store.AddBlocklist(ctx, item.Protocol, key, reason); err != nil {
 			return err
 		}
-		_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueFailed, "blocked manually")
-		_ = im.store.AddDecision(ctx, item.SeriesID, store.DecisionBody{
-			Event: "blocklisted", Title: item.Title, Key: item.ExternalID,
-		})
-		return nil
+		blocked = true
 	}
-	return store.ErrNotFound
+	if !blocked {
+		return apperr.Invalidf("this job has no release identity to block")
+	}
+	return nil
 }
 
 // Reviewed payloads can complete without redownloading or reparsing names that

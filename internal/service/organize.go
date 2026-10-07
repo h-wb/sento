@@ -44,13 +44,7 @@ type filePlan struct {
 
 var reHashSuffix = regexp.MustCompile(` \[[a-f0-9]{64}\]$`)
 
-func bookArchive(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".cbz", ".cbr", ".zip", ".rar":
-		return true
-	}
-	return false
-}
+func bookArchive(path string) bool { return mediafile.IsArchive(path) }
 
 // organizePlans works out, for every file of a series, where the current
 // settings would put it and what metadata it should carry.
@@ -94,23 +88,36 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePl
 		// The books this file holds, once each, filed under the edition's
 		// default version unless only an additional version claims it.
 		var slots []store.BookRef
-		seen := map[int64]bool{}
+		home := map[int64]int64{} // book → the version it is filed under
 		for _, c := range coverage {
-			if c.FileID != f.ID || !c.Verified || seen[c.BookID] {
+			if c.FileID != f.ID || !c.Verified {
 				continue
 			}
 			w, err := im.store.GetBook(ctx, c.BookID)
 			if err != nil {
 				continue
 			}
-			col, err := im.store.GetEdition(ctx, w.EditionID)
-			if err != nil {
+			// One stable home per book: the default version when it claims
+			// the file, otherwise the oldest additional version that does.
+			chosen, seen := home[c.BookID]
+			switch {
+			case c.VersionID == defaultVersion[w.EditionID]:
+				home[c.BookID] = c.VersionID
+			case !seen || (chosen != defaultVersion[w.EditionID] && c.VersionID < chosen):
+				home[c.BookID] = c.VersionID
+			}
+			if seen {
 				continue
 			}
-			seen[c.BookID] = true
-			slots = append(slots, store.BookRef{
-				Ledger: col.Type, EditionID: col.ID, Number: w.SequenceNum, BookID: w.ID, VersionID: defaultVersion[col.ID],
-			})
+			col, err := im.store.GetEdition(ctx, w.EditionID)
+			if err != nil {
+				delete(home, c.BookID)
+				continue
+			}
+			slots = append(slots, store.BookRef{Ledger: col.Type, EditionID: col.ID, Number: w.SequenceNum, BookID: w.ID})
+		}
+		for i := range slots {
+			slots[i].VersionID = home[slots[i].BookID]
 		}
 		sort.Slice(slots, func(i, j int) bool { return slots[i].Number < slots[j].Number })
 		switch {

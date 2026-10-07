@@ -397,7 +397,8 @@ export default function SeriesPage() {
                       .scanSeries(seriesID)
                       .then((r) =>
                         notify.ok(
-                          `Scan: ${r.scanned} new files, ${r.linked} linked, ${r.unrequested} unrequested`,
+                          `Scan: ${r.scanned} new files, ${r.linked} linked, ${r.unrequested} unrequested` +
+                            (r.changed ? `, ${r.changed} replaced on disk and matched again` : ''),
                         ),
                       ),
                   )

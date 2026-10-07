@@ -149,12 +149,22 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	}
 	byFile := map[int64]store.File{}
 	present := map[int64]bool{}
-	storageUnavailable := false
+	// Storage health is per folder: with chapters in their own folder, an
+	// unreachable chapter folder says nothing about the volumes, and the
+	// other way round. In a shared folder one bad file blocks both.
+	unavailable := map[string]bool{}
 	for _, f := range files {
 		byFile[f.ID] = f
 		present[f.ID] = f.Presence == "present" && !f.NeedsReview
 		if f.Presence == "unavailable" || f.Presence == "unknown" {
-			storageUnavailable = true
+			switch {
+			case series.ChapterPath == "":
+				unavailable[LedgerVolume], unavailable[LedgerChapter] = true, true
+			case series.InChapterFolder(f.Path):
+				unavailable[LedgerChapter] = true
+			default:
+				unavailable[LedgerVolume] = true
+			}
 		}
 	}
 	byContent := map[int64][]store.AssetContent{}
@@ -164,6 +174,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	for _, version := range versions {
 		col := byCol[version.EditionID]
 		prof := profiles[col.ID]
+		storageUnavailable := unavailable[col.Type]
 		if version.ProfileID > 0 {
 			prof = byProfile[version.ProfileID]
 		}

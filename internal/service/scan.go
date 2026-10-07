@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/h-wb/sento/internal/mediafile"
 	"io/fs"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/store"
@@ -27,9 +29,10 @@ type ScanResult struct {
 	Linked      int      `json:"linked"`
 	Unrequested int      `json:"unrequested"`
 	Skipped     []string `json:"skipped,omitempty"` // already known paths
+	// Changed counts known files whose pages were replaced on disk; they
+	// were matched again from scratch.
+	Changed int `json:"changed"`
 }
-
-var scanExts = map[string]bool{".cbz": true, ".cbr": true, ".zip": true, ".pdf": true, ".epub": true}
 
 // ScanSeriesFolder walks dir (default: the series folder, derived from the
 // naming template when unset) and links every archive it can identify.
@@ -90,13 +93,13 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 		}
 	}
 
-	known := map[string]bool{}
+	known := map[string]store.File{}
 	existing, err := sc.store.ListFiles(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
 	for _, f := range existing {
-		known[f.Path] = true
+		known[f.Path] = f
 	}
 
 	res := &ScanResult{}
@@ -107,12 +110,24 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if d.IsDir() || !scanExts[strings.ToLower(filepath.Ext(path))] {
+		if d.IsDir() || !mediafile.IsBook(path) {
 			return nil
 		}
-		if known[path] {
-			res.Skipped = append(res.Skipped, path)
-			return nil
+		if f, ok := known[path]; ok {
+			replaced, err := sc.replaced(ctx, f, d)
+			if err != nil {
+				return err
+			}
+			if !replaced {
+				res.Skipped = append(res.Skipped, path)
+				return nil
+			}
+			// Different pages at a known path: nothing recorded about the
+			// old file holds, manual confirmations included. Match it anew.
+			if err := sc.store.ForgetFile(ctx, f.ID); err != nil {
+				return err
+			}
+			res.Changed++
 		}
 		res.Scanned++
 
@@ -155,6 +170,37 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 		return nil, err
 	}
 	return res, nil
+}
+
+// replaced reports whether a known file now holds different pages. Reading
+// every archive on every scan would be slow, so the fingerprint is only
+// recomputed when the file looks touched: its size differs from the
+// record, or it was modified after it was last checked. Sento's own
+// retagging trips this too and is told apart by the fingerprint, which
+// ignores metadata.
+func (sc *Scanner) replaced(ctx context.Context, f store.File, d fs.DirEntry) (bool, error) {
+	info, err := d.Info()
+	if err != nil || f.Hash == "" || !mediafile.IsArchive(f.Path) {
+		return false, nil
+	}
+	touched := info.Size() != f.Size
+	if checked, e := time.Parse("2006-01-02 15:04:05", f.CheckedAt); e == nil && info.ModTime().UTC().After(checked) {
+		touched = true
+	}
+	if !touched {
+		return false, nil
+	}
+	hash, err := fileHash(f.Path)
+	if err != nil {
+		return false, nil // unreadable right now: presence checks report it
+	}
+	if hash != f.Hash {
+		return true, nil
+	}
+	if info.Size() != f.Size {
+		return false, sc.store.SetFileSize(ctx, f.ID, info.Size())
+	}
+	return false, nil
 }
 
 // linksFor maps a parsed file onto book links: a volume file to the routed

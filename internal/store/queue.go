@@ -37,21 +37,24 @@ func (j JSONText) MarshalJSON() ([]byte, error) {
 }
 
 type QueueItem struct {
-	RetryCount int      `json:"retryCount"`
-	RetryAt    string   `json:"retryAt"`
-	ProviderID string   `json:"providerId,omitempty"`
-	ReleaseKey string   `json:"releaseKey,omitempty"`
-	Snapshot   JSONText `json:"snapshot" db:"snapshot_json" tstype:"any"`
-	ID         int64    `json:"id"`
-	SeriesID   int64    `json:"seriesId"`
-	Protocol   string   `json:"protocol"` // torrent|source
-	ExternalID string   `json:"externalId"`
-	Title      string   `json:"title"`
-	Status     string   `json:"status"`
-	Books      JSONText `json:"books" db:"expected_slots_json" tstype:"BookRef[]"`
-	Error      string   `json:"error,omitempty"`
-	CreatedAt  string   `json:"createdAt"`
-	UpdatedAt  string   `json:"updatedAt,omitempty"`
+	RetryCount int    `json:"retryCount"`
+	RetryAt    string `json:"retryAt"`
+	ProviderID string `json:"providerId,omitempty"`
+	ReleaseKey string `json:"releaseKey,omitempty"`
+	// DownloadClient is the id of the client the download was sent to,
+	// when the provider has several ("" = unrecorded or not applicable).
+	DownloadClient string   `json:"downloadClient,omitempty" db:"download_client"`
+	Snapshot       JSONText `json:"snapshot" db:"snapshot_json" tstype:"any"`
+	ID             int64    `json:"id"`
+	SeriesID       int64    `json:"seriesId"`
+	Protocol       string   `json:"protocol"` // torrent|source
+	ExternalID     string   `json:"externalId"`
+	Title          string   `json:"title"`
+	Status         string   `json:"status"`
+	Books          JSONText `json:"books" db:"expected_slots_json" tstype:"BookRef[]"`
+	Error          string   `json:"error,omitempty"`
+	CreatedAt      string   `json:"createdAt"`
+	UpdatedAt      string   `json:"updatedAt,omitempty"`
 	// Progress is the live download fraction (0–1) for in-flight items,
 	// filled in by the queue handler from the provider. Runtime-only: it is
 	// neither stored nor scanned from the database.
@@ -119,16 +122,32 @@ func (s *Store) UpdateQueueItem(ctx context.Context, id int64, status, errMsg st
 		status, errMsg, utcNow(), id)
 }
 
-func (s *Store) ListQueueItems(ctx context.Context, activeOnly bool) ([]QueueItem, error) {
-	q := `SELECT id, series_id, protocol, external_id, title, status, expected_slots_json,
+const queueColumns = `id, series_id, protocol, external_id, title, status, expected_slots_json,
 	             COALESCE(error,'') AS error, created_at,provider_id,release_key,snapshot_json,
-	             COALESCE(updated_at,'') AS updated_at,retry_count,retry_at
-	      FROM queue_items`
+	             COALESCE(updated_at,'') AS updated_at,retry_count,retry_at,download_client`
+
+// ListQueueItems is the Activity listing: the most recent jobs, newest
+// first. It is a page for people, not a work list (see ListRunnableQueue).
+func (s *Store) ListQueueItems(ctx context.Context, activeOnly bool) ([]QueueItem, error) {
+	q := `SELECT ` + queueColumns + ` FROM queue_items`
 	if activeOnly {
 		q += ` WHERE status IN ('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`
 	}
 	q += ` ORDER BY created_at DESC LIMIT 200`
 	return list[QueueItem](ctx, s, q)
+}
+
+// ListRunnableQueue is the worker's list: every job it can advance, oldest
+// first. Jobs waiting on a person (needs_review, dispatch_unknown) are left
+// out, so no number of them can keep a runnable job from being seen.
+func (s *Store) ListRunnableQueue(ctx context.Context) ([]QueueItem, error) {
+	return list[QueueItem](ctx, s, `SELECT `+queueColumns+` FROM queue_items
+		WHERE status IN ('queued','downloading','importing','retry_wait') ORDER BY created_at, id`)
+}
+
+// GetQueueItem reads one job by id, however old.
+func (s *Store) GetQueueItem(ctx context.Context, id int64) (*QueueItem, error) {
+	return get[QueueItem](ctx, s, `SELECT `+queueColumns+` FROM queue_items WHERE id = ?`, id)
 }
 
 // SetSeriesChapterPath records the separate chapter folder ("" = chapters
@@ -283,7 +302,7 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []BookRef) 
 	var plan []BookRef
 	if created {
 		body, _ := json.Marshal(slots)
-		if err = tx.QueryRowContext(ctx, s.q(`INSERT INTO queue_items(series_id,protocol,external_id,title,status,expected_slots_json,provider_id,release_key,snapshot_json) VALUES(?,?,'',?,'queued',?,?,?,?) RETURNING id`), q.SeriesID, q.Protocol, q.Title, string(body), q.ProviderID, q.ReleaseKey, string(q.Snapshot)).Scan(&id); err != nil {
+		if err = tx.QueryRowContext(ctx, s.q(`INSERT INTO queue_items(series_id,protocol,external_id,title,status,expected_slots_json,provider_id,release_key,snapshot_json,download_client) VALUES(?,?,'',?,'queued',?,?,?,?,?) RETURNING id`), q.SeriesID, q.Protocol, q.Title, string(body), q.ProviderID, q.ReleaseKey, string(q.Snapshot), q.DownloadClient).Scan(&id); err != nil {
 			return 0, false, conflict(err, "release already has an active job")
 		}
 	} else if err != nil {
@@ -349,7 +368,7 @@ func (s *Store) BeginImport(ctx context.Context, id int64) (*QueueItem, error) {
 		return nil, apperr.Conflictf("download is no longer active")
 	}
 	var q QueueItem
-	err = tx.QueryRowContext(ctx, s.q(`SELECT id,series_id,protocol,external_id,title,status,expected_slots_json,provider_id,release_key,snapshot_json,created_at FROM queue_items WHERE id=?`), id).Scan(&q.ID, &q.SeriesID, &q.Protocol, &q.ExternalID, &q.Title, &q.Status, &q.Books, &q.ProviderID, &q.ReleaseKey, &q.Snapshot, &q.CreatedAt)
+	err = tx.QueryRowContext(ctx, s.q(`SELECT id,series_id,protocol,external_id,title,status,expected_slots_json,provider_id,release_key,snapshot_json,created_at,download_client FROM queue_items WHERE id=?`), id).Scan(&q.ID, &q.SeriesID, &q.Protocol, &q.ExternalID, &q.Title, &q.Status, &q.Books, &q.ProviderID, &q.ReleaseKey, &q.Snapshot, &q.CreatedAt, &q.DownloadClient)
 	if err != nil {
 		return nil, err
 	}

@@ -35,6 +35,22 @@ type member struct {
 	zip  *zip.File // nil for RAR members, which are read from the stream
 }
 
+// The formats Sento handles, in one place for scan, import and organize.
+// Archives (zip/cbz, rar/cbr) can be read, fingerprinted and rewritten as
+// a tagged CBZ. Documents are recognised and kept as they are.
+var (
+	archiveExts  = map[string]bool{".cbz": true, ".zip": true, ".cbr": true, ".rar": true}
+	documentExts = map[string]bool{".pdf": true, ".epub": true}
+)
+
+// IsArchive reports whether name is a comic archive Process can rewrite.
+func IsArchive(name string) bool { return archiveExts[strings.ToLower(filepath.Ext(name))] }
+
+// IsBook reports whether name is any book file Sento keeps in a library.
+func IsBook(name string) bool {
+	return IsArchive(name) || documentExts[strings.ToLower(filepath.Ext(name))]
+}
+
 // walk visits every regular file of a zip or RAR archive in archive order.
 // read returns the member's uncompressed content and is only valid during
 // the visit.
