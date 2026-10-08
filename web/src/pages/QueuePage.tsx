@@ -106,24 +106,16 @@ export default function QueuePage() {
     onError: notify.err,
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['blocklist'] }),
   })
+  // The stalled job keeps running and keeps its books until a replacement
+  // is picked in the search; nothing is given up by looking.
   const recover = (item: QueueItem) => {
     const book = item.books?.[0]
     if (!book?.versionId) return
-    confirm({
-      title: 'Find another release?',
-      message: 'Sento will stop tracking this job and release its book reservations. The torrent and its files stay in your download client; pause it there if needed. The next search excludes this release without adding it to your blocklist.',
-      label: 'Stop tracking and search',
-      onConfirm: async () => {
-        await api.cancelQueue(item.id)
-        await queryClient.invalidateQueries({ queryKey: ['queue'] })
-        await queryClient.invalidateQueries({ queryKey: ['series', item.seriesId] })
-        setRecovery({ seriesID: item.seriesId, sel: {
-          versionId: book.versionId!, editionId: book.editionId, ledger: book.ledger as 'volume' | 'chapter',
-          all: true, number: 0, monitored: true, wanted: true, fileIds: [], autoSearch: true,
-          editionLabel: 'Download alternatives', excludeRelease: `${item.providerId}/${item.releaseKey || item.externalId}`,
-        } })
-      },
-    })
+    setRecovery({ seriesID: item.seriesId, sel: {
+      versionId: book.versionId, editionId: book.editionId, ledger: book.ledger as 'volume' | 'chapter',
+      all: true, number: 0, monitored: true, wanted: true, fileIds: [], autoSearch: true,
+      editionLabel: 'Replacement', replaceQueueId: item.id, replaceTitle: item.title,
+    } })
   }
   const recoveryAction = (item: QueueItem) => item.stalled && item.status === 'downloading' ? (
     <Stack gap={4} mt="xs">

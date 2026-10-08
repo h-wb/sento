@@ -177,7 +177,8 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 	for i := range out {
 		out[i].Key = candidateKey(out[i])
 		out[i].ContentKey = out[i].Provider + "/" + out[i].cand.ExternalKey()
-		if run.scope != nil && run.scope.ExcludeRelease != "" && out[i].ContentKey == run.scope.ExcludeRelease {
+		out[i].replaces = run.replaceQueueID
+		if run.excludeRelease != "" && out[i].ContentKey == run.excludeRelease {
 			out[i].Rejections = append(out[i].Rejections, "rejected.previous_download")
 		}
 		out[i].explain()

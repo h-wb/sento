@@ -76,6 +76,7 @@ export default function CandidateList({
   editionWide = false,
   selected,
   onToggle,
+  showAll = false,
 }: {
   candidates: ReleaseCandidate[]
   dropped?: number
@@ -87,6 +88,9 @@ export default function CandidateList({
   editionWide?: boolean
   selected?: Set<string>
   onToggle?: (c: ReleaseCandidate) => void
+  // Open on every release, ruled-out ones included: the question being
+  // answered is why something is not on offer.
+  showAll?: boolean
 }) {
   const { confirm, confirmation } = useConfirmAction()
   const [queued, setQueued] = useState<Set<string>>(new Set())
@@ -95,7 +99,7 @@ export default function CandidateList({
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('')
   // Matches are what the user came for; ruled-out results are one click away.
-  const [state, setState] = useState<'matches' | 'blocked' | 'all'>('matches')
+  const [state, setState] = useState<'matches' | 'blocked' | 'all'>(showAll ? 'all' : 'matches')
   const [reason, setReason] = useState<string | null>(null)
   const [kind, setKind] = useState<'any' | 'packs' | 'singles'>('any')
   const [site, setSite] = useState<string | null>(null)

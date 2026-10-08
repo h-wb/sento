@@ -4,6 +4,12 @@
   font-variant-numeric: tabular-nums; line-height: 1.5; border-radius: var(--mantine-radius-sm);
   border: 1px solid var(--mantine-color-default-border); color: var(--mantine-color-dimmed);
 }
+.book:focus-visible, .book[data-focus] { outline: 2px solid var(--mantine-color-text); outline-offset: 1px; }
+.book:hover { filter: brightness(1.15); }
+.book[data-state='upgrade'], .dot[data-state='upgrade'] {
+  background: var(--mantine-color-violet-filled); border-color: var(--mantine-color-violet-filled);
+  color: var(--mantine-color-white); font-weight: 600;
+}
 .dot { flex: none; width: 10px; height: 10px; border-radius: 3px; border: 1px solid var(--mantine-color-default-border); }
 .book[data-state='planned'], .dot[data-state='planned'] {
   background: var(--mantine-color-blue-filled); border-color: var(--mantine-color-blue-filled);

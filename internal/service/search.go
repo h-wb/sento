@@ -1,6 +1,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -45,10 +46,14 @@ func (s *SearchService) HasSourceProvider() bool {
 // SearchScope scopes an interactive search to one collected version: one
 // of its books (WorkID), or every wanted book of it (All).
 type SearchScope struct {
-	ExcludeRelease string `json:"excludeRelease,omitempty"`
-	VersionID      int64  `json:"versionId"`
-	BookID         int64  `json:"bookId,omitempty"`
-	All            bool   `json:"all,omitempty"`
+	// ReplaceQueueID names a download this search looks to replace. Its
+	// books count as wanted although the job still reserves them, its own
+	// release is ruled out, and the job stops being tracked only when a
+	// replacement claims one of those books.
+	ReplaceQueueID int64 `json:"replaceQueueId,omitempty"`
+	VersionID      int64 `json:"versionId"`
+	BookID         int64 `json:"bookId,omitempty"`
+	All            bool  `json:"all,omitempty"`
 	// AllBooks widens an edition-wide search from the wanted books to
 	// every book of the version, owned and paused ones included: looking
 	// for a better copy, or at what exists before collecting.
@@ -61,6 +66,8 @@ type ReleaseCandidate struct {
 	Key        string          `json:"key"`
 	ContentKey string          `json:"contentKey"`
 	Contents   []store.BookRef `json:"contents,omitempty"`
+	// replaces is the download the search set out to replace, if any.
+	replaces int64
 	// languageSource names where an inferred Parse.Language came from
 	// when the release name did not state it.
 	languageSource string
@@ -303,7 +310,12 @@ type SearchEvent struct {
 // searchRun is the resolved context of one search, shared by all provider
 // goroutines (read-only after prepare).
 type searchRun struct {
-	planBooks       []PlanBook
+	planBooks []PlanBook
+	// Set when the search replaces a download (SearchScope.ReplaceQueueID):
+	// the job, its release's content key, and the books it reserves.
+	replaceQueueID  int64
+	excludeRelease  string
+	replacing       map[string]bool
 	versions        []store.CollectedVersion
 	books           map[int64][]store.Book
 	wantedBooks     map[int64]map[int64]bool
@@ -366,6 +378,21 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 	}
 	if run.profiles, run.formats, err = s.profiles.EffectiveProfiles(ctx, seriesID); err != nil {
 		return nil, err
+	}
+	if version != nil && version.ReplaceQueueID > 0 {
+		old, err := s.store.GetQueueItem(ctx, version.ReplaceQueueID)
+		if err != nil {
+			return nil, err
+		}
+		if old.SeriesID != seriesID {
+			return nil, apperr.Invalidf("that download belongs to another series")
+		}
+		run.replaceQueueID = old.ID
+		run.excludeRelease = old.ProviderID + "/" + cmp.Or(old.ReleaseKey, old.ExternalID)
+		run.replacing = map[string]bool{}
+		for _, ref := range queueBooks(old) {
+			run.replacing[refKey(ref)] = true
+		}
 	}
 	if err = s.prepareVersions(ctx, run); err != nil {
 		return nil, err
@@ -505,6 +532,12 @@ func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64
 	for ev := range ch {
 		candidates = append(candidates, ev.Candidates...)
 		complete = complete && ev.Error == ""
+		// A provisional plan with every batch, so the view fills in while
+		// slower sources are still answering.
+		if ev.Type == "batch" {
+			plan := BuildPlan(candidates, run.planBooks, false)
+			ev.Plan = &plan
+		}
 		emit(ev)
 	}
 	plan := BuildPlan(candidates, run.planBooks, complete && ctx.Err() == nil)

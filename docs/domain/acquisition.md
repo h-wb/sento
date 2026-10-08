@@ -10,8 +10,8 @@ The pack rule applies to a job's share as well as to the release: the default pl
 
 Search availability is a timestamped observation, separate from ownership: available, outside policy, no seeders reported, not found in this search, or unknown after source failures. A proposed download does not establish ownership.
 
-The common interaction is a coverage summary and editable selection of releases, with raw release details and rejected candidates available below. Submission searches and evaluates again and reports each release's outcome; it never silently substitutes a different release.
+The common interaction is a coverage summary and editable selection of releases, with raw release details and rejected candidates available below. A provisional plan accompanies each batch of results so the view fills in during the search; it becomes editable when the search ends. Submission searches and evaluates again and reports each release's outcome; it never silently substitutes a different release.
 
-Stall detection reports sustained lack of progress, excluding deliberate pauses and queued/checking states. Recovery is guided: searching alternatives does not remove a torrent or its files. A person can stop Sento tracking the old job before selecting a replacement. No automatic destructive replacement is performed.
+Stall detection reports sustained lack of progress, excluding deliberate pauses and queued/checking states. Recovery is guided: a replacement search treats the stalled job's books as wanted and rules out the job's own release, while the job keeps running and keeps its reservations. Sento stops tracking the old job only when a chosen replacement claims one of its books; a search that finds nothing changes nothing. The torrent and its files are never removed from the client, and no replacement is made automatically.
 
 Loose-image imports must map a folder confidently to one book, order and validate its pages, build a staged CBZ, and pass through the normal non-overwriting import path. The source pages remain untouched for seeding. Ambiguous folders require review.

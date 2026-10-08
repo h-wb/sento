@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  Alert,
   Badge,
   Button,
   Card,
@@ -21,7 +22,10 @@ import type { AcquisitionPlan as Plan } from '../types/service'
 import { useConfirmAction } from './ConfirmAction'
 
 export type BookSelection = {
-  excludeRelease?: string
+  // A download this search looks to replace: it keeps running until a
+  // release is picked here.
+  replaceQueueId?: number
+  replaceTitle?: string
   // The collected version being searched; bookId narrows it to one book,
   // all widens it to every wanted book.
   versionId: number
@@ -128,7 +132,7 @@ function Inner({
   // Streaming search: each provider's batch renders as soon as it lands,
   // so fast extension sources show up while torrent indexers still load.
   const searchScope = (everyBook: boolean) => ({
-    excludeRelease: sel.excludeRelease,
+    replaceQueueId: sel.replaceQueueId,
     versionId: sel.versionId,
     bookId: sel.bookId,
     all: sel.all,
@@ -173,9 +177,10 @@ function Inner({
                   dropped: prev.dropped + (ev.dropped ?? 0),
                   notes: [...prev.notes, ...(ev.bindingNotes ?? [])],
                   errors: ev.error ? [...prev.errors, ev.error] : prev.errors,
+                  plan: ev.plan ?? prev.plan,
                 }
               case 'done':
-                return { ...prev, pending: [], done: true, plan: ev.plan }
+                return { ...prev, pending: [], done: true, plan: ev.plan ?? prev.plan }
               case 'error':
                 return {
                   ...prev,
@@ -303,19 +308,27 @@ function Inner({
           </Group>
         )}
 
+        {sel.replaceQueueId && (
+          <Alert color="blue" title="Finding a replacement" styles={{ message: { overflowWrap: 'anywhere' } }}>
+            {sel.replaceTitle ? `“${sel.replaceTitle}” keeps` : 'The stalled download keeps'} downloading while you look. When you
+            download a release here for the same books, Sento stops tracking the old one. Its torrent and files stay in
+            your download client.
+          </Alert>
+        )}
         <Tabs value={tab} onChange={setTab}>
-          <Tabs.List>
-            <Tabs.Tab value="search" leftSection={<IconListSearch size={14} />}>
-              Search
-            </Tabs.Tab>
-            {!editionWide && (
+          {/* A whole-edition search has nothing but results to show. */}
+          {!editionWide && (
+            <Tabs.List>
+              <Tabs.Tab value="search" leftSection={<IconListSearch size={14} />}>
+                Search
+              </Tabs.Tab>
               <Tabs.Tab value="files" leftSection={<IconFile size={14} />}>
                 Files ({linked.length})
               </Tabs.Tab>
-            )}
-          </Tabs.List>
+            </Tabs.List>
+          )}
 
-          <Tabs.Panel value="search" pt="sm">
+          <Tabs.Panel value="search" pt={editionWide ? 0 : 'sm'}>
             <Stack gap="sm">
               {!result && !searching && (
                 <Button
@@ -337,6 +350,11 @@ function Inner({
                           ? 'Search stopped. Results already received are still available.'
                           : `Searched ${result.searched.length} ${result.searched.length === 1 ? 'source' : 'sources'}`}
                     </Text>
+                    {result.queries.length > 0 && (
+                      <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                        for {result.queries.join(' · ')}
+                      </Text>
+                    )}
                     {result.pending.map((p) => (
                       <Badge
                         key={p}
@@ -410,12 +428,12 @@ function Inner({
                         {sel.ledger}s and that its source matches the correct title.
                       </Text>
                     )}
-                  {result.queries.length > 0 && (
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>Titles searched: {result.queries.join(' · ')}</Text>
-                  )}
                   {/* One book needs a choice of release, not a plan. */}
-                  {result.plan && result.plan.books.length > 1 && !searching && !result.stopped ? (
-                    <AcquisitionPlan key={result.plan.searchedAt} plan={result.plan} candidates={result.candidates}
+                  {result.plan && result.plan.books.length > 1 ? (
+                    // Each batch brings a fresh provisional plan; nothing is
+                    // editable until the search ends, so remounting is safe.
+                    <AcquisitionPlan key={`${result.plan.searchedAt}/${result.candidates.length}/${searching}`}
+                      plan={result.plan} candidates={result.candidates} searching={searching}
                       seriesID={seriesID} ledger={sel.ledger} scope={searchScope(allBooks)} busy={busy}
                       onGrab={grab} onChanged={onChanged} onBusyChange={setBusy} />
                   ) : result.candidates.length > 0 && (

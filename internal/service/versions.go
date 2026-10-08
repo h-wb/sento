@@ -372,6 +372,11 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 					selected = false
 				}
 			}
+			// A book reserved by the download being replaced is still wanted.
+			if sl.State == "pending" && run.replacing[store.BookKey(t.ID, sl.Book.ID)] &&
+				(run.scope.BookID == 0 || run.scope.BookID == sl.Book.ID) {
+				selected = true
+			}
 			if selected {
 				wanted[sl.Book.ID] = true
 				run.planBooks = append(run.planBooks, PlanBook{

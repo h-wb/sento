@@ -52,18 +52,25 @@ for (const width of [390, 1280]) {
       await expect(plan.getByRole('button', { name: 'Download 3 volumes' })).toBeVisible()
       expect(await plan.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
       await page.screenshot({ path: testInfo.outputPath('plan.png'), fullPage: true, animations: 'disabled' })
+      // The shelf answers "why is this book not in the plan?" in one click.
+      await plan.getByRole('button', { name: 'volume 3: Will download' }).click()
+      await expect(page.getByText('Releases containing volume 3')).toBeVisible()
+      await expect(page.getByTestId('release-row')).toHaveCount(1)
+      await page.getByRole('button', { name: 'Show all releases' }).click()
       await plan.getByRole('button', { name: 'Download 3 volumes' }).click()
-      await expect(plan.getByText(/Queued for download/)).toBeVisible()
+      await expect(plan.getByText('Queued', { exact: true })).toBeVisible()
+      await expect(plan.getByText('Failed', { exact: true })).toBeVisible()
       await expect(plan.getByText(/Release no longer meets the profile/)).toBeVisible()
+      await expect(plan.getByRole('link', { name: 'Follow in Activity' })).toBeVisible()
       expect(submitted?.picks.map((p) => p.books.map((b) => b.bookId))).toEqual([[1, 2], [3]])
     } finally { await request.delete(`/api/v1/series/${id}/`) }
   })
 }
 
-test('stalled download recovery is explicit and excludes the old release', async ({ page }) => {
+test('looking for a replacement leaves the stalled download alone', async ({ page }) => {
   let cancelled = false
-  let scope: { excludeRelease: string } | undefined
-  await page.route('**/api/v1/queue?all=1', (route) => route.fulfill({ json: cancelled ? [] : [{
+  let scope: { replaceQueueId: number } | undefined
+  await page.route('**/api/v1/queue?all=1', (route) => route.fulfill({ json: [{
     id: 910, seriesId: 901, providerId: 'torrent', protocol: 'torrent', releaseKey: 'old-hash',
     title: 'Stalled release', status: 'downloading', stalled: true, progress: 0.2,
     books: [{ versionId: 10, bookId: 20, editionId: 30, ledger: 'volume', number: 100 }],
@@ -76,9 +83,9 @@ test('stalled download recovery is explicit and excludes the old release', async
   })
   await page.goto('/queue')
   await page.getByRole('button', { name: 'Find another release' }).click()
+  await expect(page.getByText(/keeps downloading while you look/)).toBeVisible()
+  await expect(page.getByText(/torrent and files stay/)).toBeVisible()
+  await expect.poll(() => scope?.replaceQueueId).toBe(910)
+  // Only the server retires the old job, and only when a replacement is picked.
   expect(cancelled).toBe(false)
-  await expect(page.getByText(/torrent and its files stay/)).toBeVisible()
-  await page.getByRole('button', { name: 'Stop tracking and search' }).click()
-  await expect.poll(() => scope?.excludeRelease).toBe('torrent/old-hash')
-  expect(cancelled).toBe(true)
 })

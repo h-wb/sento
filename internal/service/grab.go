@@ -127,6 +127,9 @@ func (s *SearchService) grabClaims(ctx context.Context, seriesID int64, searchLe
 		}
 	}
 
+	if err := s.retire(ctx, c.replaces, slots); err != nil {
+		return 0, err
+	}
 	snapshot, _ := json.Marshal(c)
 	qid, created, err := s.store.ReserveQueue(ctx, store.QueueItem{SeriesID: seriesID, Protocol: c.Protocol, ProviderID: c.Provider, ReleaseKey: c.cand.ExternalKey(), DownloadClient: client, Title: c.Title, Snapshot: snapshot}, slots)
 	if err != nil {
@@ -150,4 +153,35 @@ func (s *SearchService) grabClaims(ctx context.Context, seriesID int64, searchLe
 		})
 	}
 	return qid, err
+}
+
+// retire stops tracking the download a search set out to replace, at the
+// moment a replacement claims one of its books and not before: a search
+// that finds nothing leaves the old job running. Only Sento's record and
+// reservations go; the torrent and its files stay in the client.
+func (s *SearchService) retire(ctx context.Context, queueID int64, claims []store.BookRef) error {
+	if queueID == 0 {
+		return nil
+	}
+	old, err := s.store.GetQueueItem(ctx, queueID)
+	if err != nil {
+		return err
+	}
+	switch old.Status {
+	case store.QueueImported, store.QueueFailed, store.QueueCancelled:
+		return nil
+	}
+	held := queueBooks(old)
+	if !slices.ContainsFunc(claims, func(ref store.BookRef) bool {
+		return slices.ContainsFunc(held, func(h store.BookRef) bool { return refKey(h) == refKey(ref) })
+	}) {
+		return nil
+	}
+	return s.store.CancelQueue(ctx, queueID)
+}
+
+func queueBooks(q *store.QueueItem) []store.BookRef {
+	var refs []store.BookRef
+	_ = json.Unmarshal(q.Books, &refs)
+	return refs
 }

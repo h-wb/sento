@@ -140,3 +140,63 @@ func TestPlanSubmissionRechecksOwnershipAndUsesClaims(t *testing.T) {
 		t.Fatalf("queued the reserved book again: %+v", again)
 	}
 }
+
+// A replacement search sees the stalled job's books as wanted, rules out the
+// job's own release, and keeps the job until a replacement claims its books.
+func TestReplacementKeepsOldDownloadUntilPicked(t *testing.T) {
+	_, st, id, edition, books, version := modelFixture(t)
+	ctx := context.Background()
+	prov := &payloadProvider{}
+	svc := NewSearchService(st, provider.NewRegistry(prov))
+	offer := func(hash string) provider.Candidate {
+		return provider.Candidate{Provider: prov.ID(), Protocol: "torrent", SiteID: "1", Title: "ONE PIECE v01 (Digital) [English]", Torrent: &provider.TorrentRef{GUID: hash, InfoHash: hash, Seeders: 20, Size: 100 << 20}}
+	}
+	search := func(scope *SearchScope) []ReleaseCandidate {
+		t.Helper()
+		run, err := svc.prepare(ctx, id, "volume", scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, _ := svc.process(run, []provider.Candidate{offer("old"), offer("new")})
+		return out
+	}
+	pick := func(cs []ReleaseCandidate, guid string) ReleaseCandidate {
+		t.Helper()
+		for _, c := range cs {
+			if c.GUID == guid {
+				return c
+			}
+		}
+		t.Fatalf("no candidate %q", guid)
+		return ReleaseCandidate{}
+	}
+	scope := &SearchScope{VersionID: version.ID, All: true}
+	oldID, err := svc.Grab(ctx, id, "volume", pick(search(scope), "old"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := pick(search(scope), "new"); !slices.Contains(c.Rejections, "rejected.no_coverage") {
+		t.Fatalf("reserved book offered without a replacement scope: %+v", c.Rejections)
+	}
+
+	scope.ReplaceQueueID = oldID
+	found := search(scope)
+	if c := pick(found, "old"); !slices.Contains(c.Rejections, "rejected.previous_download") {
+		t.Fatalf("old release not ruled out: %+v", c.Rejections)
+	}
+	replacement := pick(found, "new")
+	want := modelRef(edition, books[0], version)
+	if len(replacement.Rejections) > 0 || !slices.Contains(replacement.Coverage, want) {
+		t.Fatalf("replacement: %+v %+v", replacement.Rejections, replacement.Coverage)
+	}
+	if job, _ := st.GetQueueItem(ctx, oldID); job.Status == store.QueueCancelled {
+		t.Fatal("searching alone cancelled the old download")
+	}
+	out := svc.SubmitPlan(ctx, id, "volume", scope, found, []PlanPick{{Key: replacement.Key, Books: []store.BookRef{want}}})
+	if len(out) != 1 || out[0].Status != "queued" || out[0].QueueID == oldID {
+		t.Fatalf("submission: %+v", out)
+	}
+	if job, _ := st.GetQueueItem(ctx, oldID); job.Status != store.QueueCancelled {
+		t.Fatalf("old download still tracked: %s", job.Status)
+	}
+}

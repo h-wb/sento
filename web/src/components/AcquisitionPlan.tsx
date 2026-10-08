@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Alert, Badge, Button, Checkbox, Group, Paper, Stack, Text, Tooltip } from '@mantine/core'
+import { Link } from 'react-router-dom'
+import { Alert, Anchor, Badge, Button, Checkbox, Group, Paper, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
 import { api, fmtNum, fmtSize, type ReleaseCandidate } from '../api'
 import type { AcquisitionPlan as Plan, PlanBook, PlanOutcome, PlanPick, SearchScope } from '../types/service'
 import type { BookRef } from '../types/store'
@@ -14,6 +15,7 @@ const SHELF_LIMIT = 80
 // "planned" is the selection itself; the rest are search observations.
 const states: [string, string][] = [
   ['planned', 'Will download'],
+  ['upgrade', 'Will upgrade'],
   ['available', 'Available, not selected'],
   ['outside_profile', 'Found, needs review'],
   ['no_seeders', 'No seeders reported'],
@@ -33,11 +35,18 @@ const ranges = (books: PlanBook[]) => {
   }
   return out.join(', ')
 }
+const outcomeBadges: Record<string, [string, string]> = {
+  queued: ['blue', 'Queued'],
+  skipped: ['gray', 'Skipped'],
+  failed: ['red', 'Failed'],
+}
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
-export default function AcquisitionPlan({ plan, candidates, seriesID, ledger, scope, busy, onGrab, onChanged, onBusyChange }: {
+export default function AcquisitionPlan({ plan, candidates, searching = false, seriesID, ledger, scope, busy, onGrab, onChanged, onBusyChange }: {
   plan: Plan
   candidates: ReleaseCandidate[]
+  // Sources are still answering: the plan is provisional and read-only.
+  searching?: boolean
   seriesID: number
   ledger: 'volume' | 'chapter'
   scope: SearchScope
@@ -51,6 +60,8 @@ export default function AcquisitionPlan({ plan, candidates, seriesID, ledger, sc
   const [listed, setListed] = useState(() => plan.picks.map((p) => p.key))
   const [selected, setSelected] = useState(() => new Set(plan.picks.map((p) => p.key)))
   const [browsing, setBrowsing] = useState(false)
+  // A book picked on the shelf narrows the release list to what holds it.
+  const [focus, setFocus] = useState<PlanBook | null>(null)
   const [sending, setSending] = useState(false)
   const [outcomes, setOutcomes] = useState<PlanOutcome[] | null>(null)
   const [error, setError] = useState('')
@@ -82,9 +93,17 @@ export default function AcquisitionPlan({ plan, candidates, seriesID, ledger, sc
   const unknownSizes = sizes.filter((n) => !n).length
   const noun = ledger === 'volume' ? 'volume' : 'chapter'
   const short = ledger === 'volume' ? 'Vol.' : 'Ch.'
-  const stateOf = (b: PlanBook) => (assigned.has(bookKey(b.book)) ? 'planned' : b.availability)
-  const upgrades = plan.books.filter((b) => assigned.has(bookKey(b.book)) && b.ownership === 'upgrade_eligible').length
-  const locked = busy || sending || outcomes !== null
+  const stateOf = (b: PlanBook) =>
+    !assigned.has(bookKey(b.book)) ? b.availability : b.ownership === 'upgrade_eligible' ? 'upgrade' : 'planned'
+  const stateLabel = (state: string) =>
+    searching && state === 'unknown' ? 'Still searching' : (states.find(([s]) => s === state)?.[1] ?? state)
+  const upgrades = plan.books.filter((b) => stateOf(b) === 'upgrade').length
+  const locked = busy || sending || searching || outcomes !== null
+  const outcomeOf = new Map((outcomes ?? []).map((o) => [o.key, o]))
+  const queuedCount = (outcomes ?? []).filter((o) => o.status === 'queued').length
+  const holds = (c: ReleaseCandidate, b: PlanBook) =>
+    [...(c.contents ?? []), ...(c.coverage ?? [])].some((ref) => bookKey(ref) === bookKey(b.book))
+  const listedCandidates = focus ? candidates.filter((c) => holds(c, focus)) : candidates
   const toggle = (c: ReleaseCandidate) => {
     setListed((before) => (before.includes(c.key) ? before : [...before, c.key]))
     setSelected((before) => {
@@ -127,18 +146,22 @@ export default function AcquisitionPlan({ plan, candidates, seriesID, ledger, sc
             </div>
             {!outcomes && (
               <Button size="sm" disabled={locked || assigned.size === 0 || picks.length > 200} loading={sending} onClick={() => void submit()}>
-                Download {count(assigned.size, noun)}
+                {searching ? 'Searching…' : `Download ${count(assigned.size, noun)}`}
               </Button>
             )}
           </Group>
 
           {total > 0 && total <= SHELF_LIMIT && (
-            <div className={classes.shelf} aria-hidden>
+            <div className={classes.shelf}>
               {plan.books.map((b) => {
                 const state = stateOf(b)
+                const on = focus !== null && bookKey(focus.book) === bookKey(b.book)
                 return (
-                  <Tooltip key={bookKey(b.book)} label={`${short} ${bookName(b)} — ${states.find(([s]) => s === state)?.[1] ?? state}`} openDelay={200}>
-                    <span className={classes.book} data-state={state}>{bookName(b)}</span>
+                  <Tooltip key={bookKey(b.book)} label={`${short} ${bookName(b)} — ${stateLabel(state)}. Show its releases.`} openDelay={200}>
+                    <UnstyledButton className={classes.book} data-state={state} data-focus={on || undefined} aria-pressed={on}
+                      aria-label={`${noun} ${bookName(b)}: ${stateLabel(state)}`} onClick={() => setFocus(on ? null : b)}>
+                      {bookName(b)}
+                    </UnstyledButton>
                   </Tooltip>
                 )
               })}
@@ -146,26 +169,28 @@ export default function AcquisitionPlan({ plan, candidates, seriesID, ledger, sc
           )}
           {total > 0 && (
             <Group gap="md" style={{ rowGap: 4 }}>
-              {states.map(([state, label]) => {
+              {states.map(([state]) => {
                 const books = plan.books.filter((b) => stateOf(b) === state)
                 if (!books.length) return null
                 return (
                   <Group key={state} gap={6} wrap="nowrap" align="center" maw="100%">
                     <span className={classes.dot} data-state={state} />
                     <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-                      {label} · {total <= SHELF_LIMIT ? books.length : ranges(books)}
+                      {stateLabel(state)} · {total <= SHELF_LIMIT ? books.length : ranges(books)}
                     </Text>
                   </Group>
                 )
               })}
             </Group>
           )}
-          {!plan.complete && <Text size="sm" c="orange">Some sources could not be checked, so this plan may be missing releases.</Text>}
+          {!plan.complete && !searching && <Text size="sm" c="orange">Some sources could not be checked, so this plan may be missing releases.</Text>}
 
           {rows.length > 0 && (
             <div className={classes.picks}>
               {rows.map(({ c, on, books }) => {
                 const extra = Math.max(0, c.representedBooks - books.length)
+                const outcome = outcomeOf.get(c.key)
+                const [color, word] = outcomeBadges[outcome?.status ?? ''] ?? ['gray', outcome?.status]
                 return (
                   <div key={c.key} className={classes.pick} data-off={on && books.length > 0 ? undefined : true}>
                     <Checkbox checked={on} disabled={locked} onChange={() => toggle(c)} aria-label={`Include ${c.title}`} mt={2} />
@@ -184,7 +209,11 @@ export default function AcquisitionPlan({ plan, candidates, seriesID, ledger, sc
                       {books.length > 0 && books.length * 2 < c.representedBooks && (
                         <Text size="xs" c="orange">Mostly books you don’t need, so it is only downloaded because you chose it.</Text>
                       )}
+                      {outcome && outcome.status !== 'queued' && (
+                        <Text size="xs" c={outcome.status === 'failed' ? 'red' : 'dimmed'} style={{ overflowWrap: 'anywhere' }}>{outcome.message}</Text>
+                      )}
                     </div>
+                    {outcome && <Badge variant="light" color={color} style={{ flex: 'none' }}>{word}</Badge>}
                   </div>
                 )
               })}
@@ -193,16 +222,16 @@ export default function AcquisitionPlan({ plan, candidates, seriesID, ledger, sc
 
           {error && <Alert color="red" role="alert" styles={{ message: { overflowWrap: 'anywhere' } }}>{error}</Alert>}
           {outcomes ? (
-            <Stack gap={4} aria-live="polite">
-              {outcomes.map((o) => <Text key={o.key} size="sm" c={o.status === 'failed' ? 'red' : undefined} style={{ overflowWrap: 'anywhere' }}>
-                {o.message} — {o.title || 'Selected release'}
-              </Text>)}
-              <Text size="xs" c="dimmed">Search again to see current availability.</Text>
-            </Stack>
+            <Text size="sm" aria-live="polite">
+              {queuedCount > 0 ? `${count(queuedCount, 'download')} queued` : 'Nothing was queued'}
+              {queuedCount < outcomes.length && ` · ${outcomes.length - queuedCount} not queued, see above`}.{' '}
+              {queuedCount > 0 && <><Anchor component={Link} to="/queue" size="sm">Follow in Activity</Anchor>.{' '}</>}
+              <Text span size="sm" c="dimmed">Search again to see what is still available.</Text>
+            </Text>
           ) : (
             <Group justify="space-between" gap="xs">
               <Text size="xs" c="dimmed">
-                Searched at {new Date(plan.searchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Each release is checked again before it is queued.
+                {searching ? 'Filling in as sources answer.' : `Searched at ${new Date(plan.searchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Each release is checked again before it is queued.`}
               </Text>
               {rows.length > 0 && (
                 <Button variant="subtle" size="compact-xs" aria-expanded={browsing} onClick={() => setBrowsing(!browsing)}>
@@ -213,7 +242,18 @@ export default function AcquisitionPlan({ plan, candidates, seriesID, ledger, sc
           )}
         </Stack>
       </Paper>
-      {(browsing || rows.length === 0) && <CandidateList candidates={candidates} onGrab={onGrab} busy={locked} editionWide selected={selected} onToggle={toggle} />}
+      {focus && (
+        <Group gap="xs">
+          <Text size="sm">
+            {listedCandidates.length ? `Releases containing ${noun} ${bookName(focus)}` : `No release in this search contains ${noun} ${bookName(focus)}.`}
+          </Text>
+          <Button variant="subtle" size="compact-xs" onClick={() => setFocus(null)}>Show all releases</Button>
+        </Group>
+      )}
+      {(browsing || focus || rows.length === 0) && (listedCandidates.length > 0 || !focus) && (
+        <CandidateList key={focus ? bookKey(focus.book) : 'all'} candidates={listedCandidates} onGrab={onGrab} busy={locked}
+          searching={searching} editionWide selected={selected} onToggle={toggle} showAll={!!focus} />
+      )}
     </Stack>
   )
 }

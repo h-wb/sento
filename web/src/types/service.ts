@@ -503,7 +503,13 @@ export interface SearchService {
  * of its books (WorkID), or every wanted book of it (All).
  */
 export interface SearchScope {
-  excludeRelease?: string;
+  /**
+   * ReplaceQueueID names a download this search looks to replace. Its
+   * books count as wanted although the job still reserves them, its own
+   * release is ruled out, and the job stops being tracked only when a
+   * replacement claims one of those books.
+   */
+  replaceQueueId?: number /* int64 */;
   versionId: number /* int64 */;
   bookId?: number /* int64 */;
   all?: boolean;
