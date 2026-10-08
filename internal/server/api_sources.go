@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -309,12 +310,24 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var queued []int64
+	var outcomes []service.PlanOutcome
 	switch {
 	case body.DryRun:
+	case body.Picks != nil:
+		if len(body.Picks) == 0 || len(body.Picks) > 200 {
+			writeError(w, http.StatusBadRequest, "select between 1 and 200 releases")
+			return
+		}
+		outcomes = s.search.SubmitPlan(r.Context(), id, body.Ledger, body.Scope, result.Candidates, body.Picks)
+		for _, outcome := range outcomes {
+			if outcome.QueueID > 0 {
+				queued = append(queued, outcome.QueueID)
+			}
+		}
 	case body.Grab != "":
 		matches := []service.ReleaseCandidate{}
 		for _, c := range result.Candidates {
-			if c.GUID == body.Grab && (body.GrabProvider == "" || body.GrabProvider == c.Provider) && (body.GrabVersionID == 0 || body.GrabVersionID == c.VersionID) {
+			if c.GUID == body.Grab && (body.GrabSiteID == "" || body.GrabSiteID == c.SiteID) && (body.GrabProvider == "" || body.GrabProvider == c.Provider) && (body.GrabVersionID == 0 || body.GrabVersionID == c.VersionID) {
 				matches = append(matches, c)
 			}
 		}
@@ -336,7 +349,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	default:
 		queued = s.search.GrabBest(r.Context(), id, body.Ledger, result.Candidates)
 	}
-	writeJSON(w, http.StatusOK, SearchResponse{SearchResult: *result, Queued: queued})
+	writeJSON(w, http.StatusOK, SearchResponse{SearchResult: *result, Queued: queued, Outcomes: outcomes})
 }
 
 // streamSearch writes NDJSON SearchEvents, flushing after each so the UI
@@ -423,8 +436,15 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 	// Enrich in-flight items with live progress. Progress() is an in-memory
 	// read with no side effects, so it's safe per request (unlike State).
 	for i := range items {
+		observed, _ := time.Parse(time.RFC3339, items[i].ObservedAt)
+		if time.Since(observed) > 5*time.Minute {
+			items[i].Stalled = false
+		}
 		if items[i].Status != store.QueueDownloading {
 			continue
+		}
+		if items[i].ObservedAt != "" {
+			items[i].Progress = &items[i].DownloadProgress
 		}
 		prov := s.registry.Get(items[i].ProviderID)
 		if pr, ok := prov.(provider.Progresser); ok {

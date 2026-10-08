@@ -158,10 +158,12 @@ func (c Candidate) ExternalKey() string {
 }
 
 type DownloadState struct {
-	Done     bool
-	InFlight bool
-	Detail   string // provider-specific state name (DOWNLOADING, ERROR, …)
-	Progress float64
+	StallEligible bool // actively waiting for data, not paused/queued/checking
+	Transferring  bool
+	Done          bool
+	InFlight      bool
+	Detail        string // provider-specific state name (DOWNLOADING, ERROR, …)
+	Progress      float64
 }
 
 // Payload hands finished bytes to the importer: either a single archive

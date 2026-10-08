@@ -23,6 +23,7 @@ type TorrentProvider struct {
 	// sections caches each indexer's category names by endpoint URL: they
 	// only change when the indexer is reconfigured upstream.
 	sections sync.Map // string → map[int]string
+	searches sync.Map // endpoint + credential → *torrentSearchCache
 }
 
 // sectionNames returns an indexer's category names, fetched once. A
@@ -180,11 +181,7 @@ func (p *TorrentProvider) Search(ctx context.Context, req SearchRequest) ([]Cand
 			// Books only: unrestricted, a general tracker fills its result
 			// cap with films and games of the same name and the actual
 			// volumes never arrive.
-			releases, err := torznab.New(e.URL, e.APIKey).Search(ctx, req.Query, torznab.CategoryBooks)
-			if err != nil {
-				ch <- res{err: fmt.Errorf("%s: %w", e.Name, err)}
-				return
-			}
+			releases, err := p.searchAliases(ctx, e, req)
 			names := p.sectionNames(ctx, e)
 			cands := make([]Candidate, 0, len(releases))
 			for _, rel := range releases {
@@ -208,19 +205,19 @@ func (p *TorrentProvider) Search(ctx context.Context, req SearchRequest) ([]Cand
 					},
 				})
 			}
-			ch <- res{cands: cands}
+			ch <- res{cands: cands, err: err}
 		}(e)
 	}
 	var out []Candidate
-	var firstErr error
+	var searchErrors []error
 	for range active {
 		rr := <-ch
-		if rr.err != nil && firstErr == nil {
-			firstErr = rr.err
+		if rr.err != nil {
+			searchErrors = append(searchErrors, rr.err)
 		}
 		out = append(out, rr.cands...)
 	}
-	return out, firstErr
+	return out, errors.Join(searchErrors...)
 }
 
 // Test verifies one entry's endpoint (caps request).
@@ -380,11 +377,22 @@ func (p *TorrentProvider) State(ctx context.Context, externalID string) (Downloa
 		return DownloadState{}, nil
 	}
 	return DownloadState{
-		Done:     t.Completed(),
-		InFlight: !t.Completed(),
-		Detail:   t.State,
-		Progress: t.Progress,
+		StallEligible: !t.Completed() && torrentCanStall(t.State),
+		Transferring:  t.DownloadSpeed > 0,
+		Done:          t.Completed(),
+		InFlight:      !t.Completed(),
+		Detail:        t.State,
+		Progress:      t.Progress,
 	}, nil
+}
+
+func torrentCanStall(state string) bool {
+	switch state {
+	case "downloading", "stalledDL", "metaDL", "forcedDL", "forcedMetaDL":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *TorrentProvider) Fetch(ctx context.Context, externalID string) (*Payload, error) {

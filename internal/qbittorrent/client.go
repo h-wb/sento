@@ -177,12 +177,13 @@ func truncate(b []byte, n int) string {
 }
 
 type Torrent struct {
-	Hash        string  `json:"hash"`
-	Name        string  `json:"name"`
-	Progress    float64 `json:"progress"`
-	State       string  `json:"state"`
-	SavePath    string  `json:"save_path"`
-	ContentPath string  `json:"content_path"`
+	DownloadSpeed int64   `json:"dlspeed"`
+	Hash          string  `json:"hash"`
+	Name          string  `json:"name"`
+	Progress      float64 `json:"progress"`
+	State         string  `json:"state"`
+	SavePath      string  `json:"save_path"`
+	ContentPath   string  `json:"content_path"`
 }
 
 // Completed reports whether the torrent has finished downloading

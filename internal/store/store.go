@@ -151,6 +151,7 @@ type Book struct {
 }
 
 type File struct {
+	ContentBooks  []BookRef  `json:"-" db:"-"` // intrinsic contents, without version selections
 	Claims        AssetFacts `json:"claims" db:"claims_json"`
 	Presence      string     `json:"presence"`
 	PresenceError string     `json:"presenceError"`
@@ -642,6 +643,9 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 	for _, l := range links {
 		cids = append(cids, l.EditionID)
 	}
+	for _, b := range f.ContentBooks {
+		cids = append(cids, b.EditionID)
+	}
 	if err = s.lockEditions(ctx, tx, true, cids...); err != nil {
 		return 0, err
 	}
@@ -716,6 +720,18 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 
 	}
 
+	for _, b := range f.ContentBooks {
+		var valid int
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND c.id=? AND c.series_id=?`), b.BookID, b.EditionID, f.SeriesID).Scan(&valid); err != nil {
+			return 0, err
+		}
+		if valid != 1 {
+			return 0, apperr.Invalidf("file contents do not belong to this series and edition")
+		}
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,evidence) VALUES(?,?,?) ON CONFLICT DO NOTHING`), fileID, b.BookID, orDefault(f.Provenance, "observed")); err != nil {
+			return 0, err
+		}
+	}
 	return fileID, tx.Commit()
 }
 

@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Chip,
+  Checkbox,
   Group,
   Pagination,
   SegmentedControl,
@@ -20,7 +21,7 @@ import classes from './CandidateList.module.css'
 import { useConfirmAction } from './ConfirmAction'
 import { fmtNum, fmtSize, type ReleaseCandidate } from '../api'
 
-const releaseKey = (c: ReleaseCandidate) => `${c.provider}/${c.guid}/${c.versionId ?? 0}`
+const releaseKey = (c: ReleaseCandidate) => c.key || `${c.provider}/${c.siteId}/${c.guid}/${c.versionId ?? 0}`
 const rangeLabel = (label: string, ranges?: [number, number][]) =>
   ranges?.length
     ? `${label} ${ranges.map(([from, to]) => (from === to ? from : `${from}–${to}`)).join(', ')}`
@@ -54,6 +55,8 @@ const reasonNames: Record<string, string> = {
   'rejected.content_type': 'Not manga',
   'rejected.numbers_unknown': 'No book number',
   'rejected.pack_unverified': 'Contents not confirmed',
+  'rejected.pack_threshold': 'Mostly books you have',
+  'rejected.previous_download': 'Download being replaced',
   'rejected.no_coverage': 'Not needed',
   'rejected.book_ambiguous': 'Ambiguous book',
   'rejected.blocklisted': 'On your blocklist',
@@ -72,6 +75,8 @@ export default function CandidateList({
   busy = false,
   searching = false,
   editionWide = false,
+  selected,
+  onToggle,
 }: {
   candidates: ReleaseCandidate[]
   dropped?: number
@@ -81,6 +86,8 @@ export default function CandidateList({
   // A whole-edition search mixes packs with single books: offer to
   // separate them and show what each release covers up front.
   editionWide?: boolean
+  selected?: Set<string>
+  onToggle?: (c: ReleaseCandidate) => void
 }) {
   const { confirm, confirmation } = useConfirmAction()
   const [queued, setQueued] = useState<Set<string>>(new Set())
@@ -333,6 +340,8 @@ export default function CandidateList({
               showBooks={editionWide}
               loading={active === releaseKey(c)}
               onGrab={onGrab ? requestDownload : undefined}
+              selected={selected?.has(c.key)}
+              onToggle={onToggle ? () => onToggle(c) : undefined}
             />
           ))}
         </div>
@@ -357,6 +366,8 @@ function ReleaseRow({
   busy,
   loading,
   onGrab,
+  selected,
+  onToggle,
 }: {
   c: ReleaseCandidate
   queued: boolean
@@ -364,6 +375,8 @@ function ReleaseRow({
   busy: boolean
   loading: boolean
   onGrab?: (c: ReleaseCandidate, force: boolean) => void
+  selected?: boolean
+  onToggle?: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const decision = c.decision
@@ -395,6 +408,7 @@ function ReleaseRow({
   return (
     <div className={classes.row} data-testid="release-row" data-status={queued ? 'queued' : state}>
       <Group gap="sm" align="flex-start" className={classes.rowMain}>
+        {onToggle && state === 'ready' && <Checkbox checked={selected ?? false} onChange={onToggle} disabled={busy || queued} aria-label={`Include ${c.title}`} mt={4} />}
         <UnstyledButton
           className={classes.summary}
           aria-expanded={expanded}

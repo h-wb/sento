@@ -69,12 +69,14 @@ packages:
     output_path: "web/src/types/server.ts"
     frontmatter: |
       /* eslint-disable */
-      import type { ScanResult, SearchResult, SearchScope } from "./service"
+      import type { ScanResult, SearchResult, SearchScope, PlanPick, PlanOutcome } from "./service"
       import type { Edition, Series } from "./store"
       import type { RepoStatus } from "./extensions"
     type_mappings:
       extensions.RepoStatus: "RepoStatus"
       service.SearchScope: "SearchScope"
+      service.PlanPick: "PlanPick"
+      service.PlanOutcome: "PlanOutcome"
       service.SearchResult: "SearchResult"
       service.ScanResult: "ScanResult"
       store.Series: "Series"

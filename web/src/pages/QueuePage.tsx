@@ -1,4 +1,6 @@
 import ReviewInbox from '../components/ReviewInbox'
+import BookDialog, { type BookSelection } from '../components/BookDialog'
+import type { QueueItem } from '../types/store'
 import { useState } from 'react'
 import {
   Anchor,
@@ -48,10 +50,18 @@ const statusLabel: Record<string, string> = {
   cancelled: 'Cancelled',
 }
 
+function downloadLabel(item: QueueItem) {
+  if (item.status !== 'downloading') return statusLabel[item.status] ?? item.status
+  if (item.stalled) return 'Stalled'
+  const states: Record<string, string> = { pausedDL: 'Paused in client', stoppedDL: 'Paused in client', queuedDL: 'Queued in client', checkingDL: 'Checking files', checkingResumeData: 'Checking files', moving: 'Moving files', missingFiles: 'Files missing', error: 'Client error' }
+  return states[item.downloadState] ?? 'Downloading'
+}
+
 export default function QueuePage() {
   usePageTitle('Activity')
   const small = useMediaQuery('(max-width: 48em)')
   const [tab, setTab] = useState<string | null>('queue')
+  const [recovery, setRecovery] = useState<{ seriesID: number; sel: BookSelection } | null>(null)
   const queryClient = useQueryClient()
   const { confirm, confirmation } = useConfirmAction()
   const queue = useQuery({
@@ -96,6 +106,31 @@ export default function QueuePage() {
     onError: notify.err,
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['blocklist'] }),
   })
+  const recover = (item: QueueItem) => {
+    const book = item.books?.[0]
+    if (!book?.versionId) return
+    confirm({
+      title: 'Find another release?',
+      message: 'Sento will stop tracking this job and release its book reservations. The torrent and its files stay in your download client; pause it there if needed. The next search excludes this release without adding it to your blocklist.',
+      label: 'Stop tracking and search',
+      onConfirm: async () => {
+        await api.cancelQueue(item.id)
+        await queryClient.invalidateQueries({ queryKey: ['queue'] })
+        await queryClient.invalidateQueries({ queryKey: ['series', item.seriesId] })
+        setRecovery({ seriesID: item.seriesId, sel: {
+          versionId: book.versionId!, editionId: book.editionId, ledger: book.ledger as 'volume' | 'chapter',
+          all: true, number: 0, monitored: true, wanted: true, fileIds: [], autoSearch: true,
+          editionLabel: 'Download alternatives', excludeRelease: `${item.providerId}/${item.releaseKey || item.externalId}`,
+        } })
+      },
+    })
+  }
+  const recoveryAction = (item: QueueItem) => item.stalled && item.status === 'downloading' ? (
+    <Stack gap={4} mt="xs">
+      <Text size="xs" c="orange">No progress for at least 20 minutes.</Text>
+      <Button variant="default" size="compact-xs" style={{ alignSelf: 'flex-start' }} onClick={() => recover(item)}>Find another release</Button>
+    </Stack>
+  ) : null
   return (
     <>
       <PageHeader
@@ -169,7 +204,7 @@ export default function QueuePage() {
                       <Card key={i.id} padding="md">
                         <Group justify="space-between" mb="xs">
                           <Badge size="sm" variant="dot" color={statusColor[i.status] ?? 'gray'}>
-                            {statusLabel[i.status] ?? i.status}
+                            {downloadLabel(i)}
                           </Badge>
                           <Text size="xs" c="dimmed">
                             {via(i)} ·{' '}
@@ -207,6 +242,7 @@ export default function QueuePage() {
                             <ErrorDetails error={i.error} title="Download error" />
                           </div>
                         )}
+                        {recoveryAction(i)}
                         {i.status === 'failed' && (
                           <Button
                             size="xs"
@@ -292,8 +328,9 @@ export default function QueuePage() {
                                 variant="dot"
                                 color={statusColor[i.status] ?? 'gray'}
                               >
-                                {statusLabel[i.status] ?? i.status}
+                                {downloadLabel(i)}
                               </Badge>
+                              {recoveryAction(i)}
                               {i.status === 'downloading' && i.progress != null && (
                                 <Group gap={8} wrap="nowrap" maw={160}>
                                   <Progress
@@ -377,6 +414,7 @@ export default function QueuePage() {
         </Tabs.Panel>
       </Tabs>
       {confirmation}
+      {recovery && <BookDialog seriesID={recovery.seriesID} sel={recovery.sel} files={[]} onClose={() => setRecovery(null)} onChanged={() => { void queryClient.invalidateQueries({ queryKey: ['queue'] }); void queryClient.invalidateQueries({ queryKey: ['series'] }) }} />}
     </>
   )
 }

@@ -1,0 +1,5 @@
+ALTER TABLE queue_items ADD COLUMN download_progress REAL NOT NULL DEFAULT 0;
+ALTER TABLE queue_items ADD COLUMN progress_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE queue_items ADD COLUMN observed_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE queue_items ADD COLUMN download_state TEXT NOT NULL DEFAULT '';
+ALTER TABLE queue_items ADD COLUMN stalled INTEGER NOT NULL DEFAULT FALSE;

@@ -374,6 +374,10 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 			}
 			if selected {
 				wanted[sl.Book.ID] = true
+				run.planBooks = append(run.planBooks, PlanBook{
+					Book:  store.BookRef{VersionID: t.ID, BookID: sl.Book.ID, EditionID: col.ID, Ledger: col.Type, Number: sl.Book.SequenceNum},
+					Label: sl.Book.SequenceStr, Ownership: sl.State,
+				})
 			}
 			if sl.State == "upgrade_eligible" {
 				run.ownedScores[t.ID][sl.Book.ID] = sl.CurrentScore

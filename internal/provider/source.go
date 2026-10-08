@@ -469,7 +469,7 @@ func (p *SourceProvider) State(ctx context.Context, externalID string) (Download
 	p.mu.Lock()
 	job, ok := p.jobs[externalID]
 	if ok && job.running {
-		st := DownloadState{InFlight: true, Detail: "downloading"}
+		st := DownloadState{InFlight: true, Detail: "downloading", StallEligible: true}
 		if job.total > 0 {
 			st.Progress = float64(job.done) / float64(job.total)
 		}

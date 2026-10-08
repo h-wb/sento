@@ -80,7 +80,7 @@ func (im *Importer) normalizeExpected(ctx context.Context, item store.QueueItem)
 	}
 	return slots, nil
 }
-func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path string, slots []store.BookRef, parsed any) error {
+func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path string, slots []store.BookRef, parsed any, contents ...[]store.BookRef) error {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return err
@@ -123,7 +123,11 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 			review = true
 		}
 	}
-	_, err = im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol, Facts: facts, Claims: claims, Hash: hash, NeedsReview: review}, parsed, links)
+	var contentBooks []store.BookRef
+	for _, refs := range contents {
+		contentBooks = append(contentBooks, refs...)
+	}
+	_, err = im.store.AddFile(ctx, store.File{ContentBooks: contentBooks, SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol, Facts: facts, Claims: claims, Hash: hash, NeedsReview: review}, parsed, links)
 	if err == nil && review {
 		return fmt.Errorf("file's observed release group differs from the requested copy; confirm its facts in review")
 	}

@@ -67,6 +67,7 @@ func (c *ReleaseCandidate) explain() {
 		d.Warnings = append(d.Warnings, "Release quality is unspecified.")
 	}
 	labels := map[string]string{
+		"rejected.previous_download": "This is the download you are looking to replace. It is excluded from this search only.",
 		"rejected.content_type":      "Classified as " + string(c.Parse.ContentType) + ", not manga.",
 		"rejected.series_match":      "The release name does not identify this series unambiguously.",
 		"rejected.edition_routing":   "The release states a different edition than this one.",

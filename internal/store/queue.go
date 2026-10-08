@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/h-wb/sento/internal/apperr"
+	"sort"
 	"strings"
 	"time"
 )
@@ -37,10 +38,15 @@ func (j JSONText) MarshalJSON() ([]byte, error) {
 }
 
 type QueueItem struct {
-	RetryCount int    `json:"retryCount"`
-	RetryAt    string `json:"retryAt"`
-	ProviderID string `json:"providerId,omitempty"`
-	ReleaseKey string `json:"releaseKey,omitempty"`
+	DownloadProgress float64 `json:"downloadProgress"`
+	ProgressAt       string  `json:"progressAt"`
+	ObservedAt       string  `json:"observedAt"`
+	DownloadState    string  `json:"downloadState"`
+	Stalled          bool    `json:"stalled"`
+	RetryCount       int     `json:"retryCount"`
+	RetryAt          string  `json:"retryAt"`
+	ProviderID       string  `json:"providerId,omitempty"`
+	ReleaseKey       string  `json:"releaseKey,omitempty"`
 	// DownloadClient is the id of the client the download was sent to,
 	// when the provider has several ("" = unrecorded or not applicable).
 	DownloadClient string   `json:"downloadClient,omitempty" db:"download_client"`
@@ -124,7 +130,8 @@ func (s *Store) UpdateQueueItem(ctx context.Context, id int64, status, errMsg st
 
 const queueColumns = `id, series_id, protocol, external_id, title, status, expected_slots_json,
 	             COALESCE(error,'') AS error, created_at,provider_id,release_key,snapshot_json,
-	             COALESCE(updated_at,'') AS updated_at,retry_count,retry_at,download_client`
+	             COALESCE(updated_at,'') AS updated_at,retry_count,retry_at,download_client,
+	             download_progress,progress_at,observed_at,download_state,stalled`
 
 // ListQueueItems is the Activity listing: the most recent jobs, newest
 // first. It is a page for people, not a work list (see ListRunnableQueue).
@@ -165,7 +172,7 @@ func (s *Store) SetSeriesPath(ctx context.Context, seriesID int64, path string) 
 // SeriesTitles returns the primary title plus every alias from the cached
 // provider payload — anchoring and source binding match releases named in
 // any language (Japscan lists French titles, raws use kana, …).
-func (s *Store) SeriesTitles(ctx context.Context, seriesID int64) ([]string, error) {
+func (s *Store) SeriesTitles(ctx context.Context, seriesID int64, preferredLanguage ...string) ([]string, error) {
 	row, err := get[struct {
 		Title   string
 		RawJSON string `db:"raw_json"`
@@ -197,12 +204,23 @@ func (s *Store) SeriesTitles(ctx context.Context, seriesID int64) ([]string, err
 		} `json:"secondary_titles"`
 	}
 	if json.Unmarshal([]byte(row.RawJSON), &raw) == nil {
+		for _, lang := range preferredLanguage {
+			for _, t := range raw.Secondary[lang] {
+				add(t.Title)
+			}
+		}
 		add(raw.NativeTitle)
 		add(raw.RomanizedTitle)
 		for _, t := range raw.Titles {
 			add(t.Title)
 		}
-		for _, list := range raw.Secondary {
+		languages := make([]string, 0, len(raw.Secondary))
+		for lang := range raw.Secondary {
+			languages = append(languages, lang)
+		}
+		sort.Strings(languages)
+		for _, lang := range languages {
+			list := raw.Secondary[lang]
 			for _, t := range list {
 				add(t.Title)
 			}
@@ -377,7 +395,7 @@ func (s *Store) BeginImport(ctx context.Context, id int64) (*QueueItem, error) {
 
 func (s *Store) DeferQueue(ctx context.Context, q QueueItem, reason string) error {
 	delay := 30 * time.Second * time.Duration(1<<min(q.RetryCount, 6))
-	return s.touch(ctx, `UPDATE queue_items SET status='retry_wait',error=?,retry_count=retry_count+1,retry_at=?,updated_at=? WHERE id=? AND status NOT IN('cancelled','imported')`, reason, time.Now().UTC().Add(delay).Format("2006-01-02 15:04:05"), utcNow(), q.ID)
+	return s.touch(ctx, `UPDATE queue_items SET status='retry_wait',error=?,retry_count=retry_count+1,retry_at=?,updated_at=?,progress_at='',stalled=FALSE WHERE id=? AND status NOT IN('cancelled','imported')`, reason, time.Now().UTC().Add(delay).Format("2006-01-02 15:04:05"), utcNow(), q.ID)
 }
 func (s *Store) ResumeQueue(ctx context.Context, id int64, remoteID string) error {
 	if remoteID != "" {

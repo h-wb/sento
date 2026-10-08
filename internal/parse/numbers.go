@@ -17,7 +17,8 @@ type extraction struct {
 
 var (
 	// Volume markers: v01, vol. 1, Volume 01, Tome 1, T01, 第1巻 (ranges allowed).
-	reVolMarker = regexp.MustCompile(`(?i)\b(?:vol(?:ume)?s?|tomes?)\.?\s*(\d+(?:\.\d+)?)(?:\s*[-–~]\s*(?:v(?:ol(?:ume)?)?\.?\s*)?(\d+(?:\.\d+)?))?|\b[vV](\d+(?:\.\d+)?)(?:\s*[-–~]\s*[vV]?(\d+(?:\.\d+)?))?|\b[tT](\d+)(?:\s*[-–~]\s*[tT]?(\d+))?\b`)
+	reVolMarker = regexp.MustCompile(`(?i)\b(?:vol(?:ume)?s?|t[o0]mes?|tomos?|band|bände)\.?\s*(\d+(?:\.\d+)?)(?:\s*(?:[-–~]|à|au|to)\s*(?:(?:v(?:ol(?:ume)?)?|t(?:ome)?|tomo|band)\.?\s*)?(\d+(?:\.\d+)?))?|\b[vV](\d+(?:\.\d+)?)(?:\s*[-–~]\s*[vV]?(\d+(?:\.\d+)?))?|\b[tT](\d+)(?:\s*(?:[-–~]|à|au|to)\s*[tT]?(\d+))?\b`)
+	reVolList   = regexp.MustCompile(`(?i)\b(?:vol(?:ume)?s?|t[o0]mes?|tomos?|band|[tv])\.?\s*(\d+(?:\.\d+)?(?:\s*(?:,|&|et|und|y)\s*(?:[tv]\s*)?\d+(?:\.\d+)?)+)`)
 	reVolJP     = regexp.MustCompile(`第?(\d+)(?:\s*[-–~]\s*(\d+))?巻`)
 	// Chapter markers: c001, ch. 4, Chapter 1184, Episode 12, #34, 第12話.
 	reChMarker = regexp.MustCompile(`(?i)\b(?:ch(?:apitres?|ap(?:ters?)?|s)?|episodes?|ep)\.?\s*(\d+(?:\.\d+)?)([a-z])?(?:\s*[-–~]\s*(?:ch?\.?\s*)?(\d+(?:\.\d+)?))?|\b[cC](\d+(?:\.\d+)?)(?:\s*[-–~]\s*[cC]?(\d+(?:\.\d+)?))?\b|#(\d+(?:\.\d+)?)`)
@@ -86,6 +87,16 @@ func extractNumbers(text string, res *Result) extraction {
 	for _, m := range reChJP.FindAllStringSubmatchIndex(string(buf), -1) {
 		if r, ok := rangeFrom(group(buf, m, 1), group(buf, m, 2)); ok {
 			consume(m[0:2], r, "chapter")
+		}
+	}
+
+	// Explicit lists keep their gaps: “Tomes 2, 4 et 7” is not 2–7.
+	for _, m := range reVolList.FindAllStringSubmatchIndex(string(buf), -1) {
+		body := group(buf, m, 1)
+		for _, n := range reBare.FindAllStringSubmatch(body, -1) {
+			if r, ok := rangeFrom(n[1], ""); ok {
+				consume(m[0:2], r, "volume")
+			}
 		}
 	}
 

@@ -16,9 +16,12 @@ import { IconFile, IconListSearch, IconRefresh, IconSearch, IconTrash } from '@t
 import { api, fmtNum, fmtSize, type ReleaseCandidate, type SeriesFile } from '../api'
 import { notify } from '../ui'
 import CandidateList from './CandidateList'
+import AcquisitionPlan from './AcquisitionPlan'
+import type { AcquisitionPlan as Plan } from '../types/service'
 import { useConfirmAction } from './ConfirmAction'
 
 export type BookSelection = {
+  excludeRelease?: string
   // The collected version being searched; bookId narrows it to one book,
   // all widens it to every wanted book.
   versionId: number
@@ -40,6 +43,8 @@ export type BookSelection = {
 
 // Accumulated state of one streaming search: batches land per provider.
 type StreamResult = {
+  plan?: Plan
+  queries: string[]
   searched: string[]
   pending: string[] // "provider/site" entries still searching
   candidates: ReleaseCandidate[]
@@ -123,6 +128,7 @@ function Inner({
   // Streaming search: each provider's batch renders as soon as it lands,
   // so fast extension sources show up while torrent indexers still load.
   const searchScope = (everyBook: boolean) => ({
+    excludeRelease: sel.excludeRelease,
     versionId: sel.versionId,
     bookId: sel.bookId,
     all: sel.all,
@@ -134,6 +140,7 @@ function Inner({
     searchController.current = controller
     setSearching(true)
     setResult({
+      queries: [],
       searched: [],
       pending: [],
       candidates: [],
@@ -160,6 +167,7 @@ function Inner({
               case 'batch':
                 return {
                   ...prev,
+                  queries: [...new Set([...prev.queries, ...(ev.queries ?? [])])],
                   pending: prev.pending.filter((p) => !(ev.sites ?? []).includes(p)),
                   candidates: [...prev.candidates, ...(ev.candidates ?? [])],
                   dropped: prev.dropped + (ev.dropped ?? 0),
@@ -167,7 +175,7 @@ function Inner({
                   errors: ev.error ? [...prev.errors, ev.error] : prev.errors,
                 }
               case 'done':
-                return { ...prev, pending: [], done: true }
+                return { ...prev, pending: [], done: true, plan: ev.plan }
               case 'error':
                 return {
                   ...prev,
@@ -228,6 +236,7 @@ function Inner({
         ledger: sel.ledger,
         grab: c.guid,
         grabProvider: c.provider,
+        grabSiteId: c.siteId,
         grabVersionId: c.versionId,
         force,
         scope: searchScope(allBooks),
@@ -401,7 +410,14 @@ function Inner({
                         {sel.ledger}s and that its source matches the correct title.
                       </Text>
                     )}
-                  {result.candidates.length > 0 && (
+                  {result.queries.length > 0 && (
+                    <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>Titles searched: {result.queries.join(' · ')}</Text>
+                  )}
+                  {result.plan && !searching && !result.stopped ? (
+                    <AcquisitionPlan key={result.plan.searchedAt} plan={result.plan} candidates={result.candidates}
+                      seriesID={seriesID} ledger={sel.ledger} scope={searchScope(allBooks)} busy={busy}
+                      onGrab={grab} onChanged={onChanged} onBusyChange={setBusy} />
+                  ) : result.candidates.length > 0 && (
                     <CandidateList
                       candidates={result.candidates}
                       dropped={result.dropped}

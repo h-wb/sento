@@ -45,9 +45,10 @@ func (s *SearchService) HasSourceProvider() bool {
 // SearchScope scopes an interactive search to one collected version: one
 // of its books (WorkID), or every wanted book of it (All).
 type SearchScope struct {
-	VersionID int64 `json:"versionId"`
-	BookID    int64 `json:"bookId,omitempty"`
-	All       bool  `json:"all,omitempty"`
+	ExcludeRelease string `json:"excludeRelease,omitempty"`
+	VersionID      int64  `json:"versionId"`
+	BookID         int64  `json:"bookId,omitempty"`
+	All            bool   `json:"all,omitempty"`
 	// AllBooks widens an edition-wide search from the wanted books to
 	// every book of the version, owned and paused ones included: looking
 	// for a better copy, or at what exists before collecting.
@@ -57,6 +58,9 @@ type SearchScope struct {
 // ReleaseCandidate is one candidate run through the funnel, for either
 // ledger.
 type ReleaseCandidate struct {
+	Key        string          `json:"key"`
+	ContentKey string          `json:"contentKey"`
+	Contents   []store.BookRef `json:"contents,omitempty"`
 	// languageSource names where an inferred Parse.Language came from
 	// when the release name did not state it.
 	languageSource string
@@ -101,6 +105,8 @@ type FormatHit struct {
 // SearchResult carries candidates plus diagnostics so empty results can
 // explain themselves.
 type SearchResult struct {
+	Plan           *AcquisitionPlan   `json:"plan,omitempty"`
+	Queries        []string           `json:"queries,omitempty"`
 	Ledger         string             `json:"ledger"`
 	Candidates     []ReleaseCandidate `json:"candidates"`
 	Searched       []string           `json:"searched"`
@@ -281,6 +287,8 @@ func hasLatin(s string) bool {
 // search book finishes (a single extension source, or one provider's
 // indexer sweep), "done" closes the stream.
 type SearchEvent struct {
+	Plan         *AcquisitionPlan   `json:"plan,omitempty"`
+	Queries      []string           `json:"queries,omitempty"`
 	Type         string             `json:"type" tstype:"'sites' | 'batch' | 'done' | 'error'"`
 	Ledger       string             `json:"ledger,omitempty"`
 	Searched     []string           `json:"searched,omitempty"`
@@ -295,6 +303,7 @@ type SearchEvent struct {
 // searchRun is the resolved context of one search, shared by all provider
 // goroutines (read-only after prepare).
 type searchRun struct {
+	planBooks       []PlanBook
 	versions        []store.CollectedVersion
 	books           map[int64][]store.Book
 	wantedBooks     map[int64]map[int64]bool
@@ -361,6 +370,18 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 	if err = s.prepareVersions(ctx, run); err != nil {
 		return nil, err
 	}
+	if version != nil {
+		for _, v := range run.versions {
+			if v.ID == version.VersionID {
+				if col := editionByID(run.editions, v.EditionID); col != nil {
+					run.titles, err = s.store.SeriesTitles(ctx, seriesID, baseLang(col.Language))
+					if err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+	}
 	return run, nil
 }
 
@@ -370,6 +391,9 @@ func (s *SearchService) searchOnce(ctx context.Context, p provider.Provider, run
 	allowed map[string]map[string]bool, siteNames []string, bindings []provider.Binding,
 ) SearchEvent {
 	ev := SearchEvent{Type: "batch", Provider: p.ID(), Sites: siteNames}
+	if p.Protocol() == provider.ProtocolTorrent {
+		ev.Queries = provider.TorrentQueries(provider.SearchRequest{Query: textQuery(run.titles[0]), Titles: run.titles})
+	}
 	cands, err := p.Search(ctx, provider.SearchRequest{
 		SeriesID: run.seriesID, Query: textQuery(run.titles[0]), Titles: run.titles,
 		Allowed: allowed, Bindings: bindings,
@@ -476,10 +500,15 @@ func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64
 		}(p)
 	}
 	go func() { wg.Wait(); close(ch) }()
+	var candidates []ReleaseCandidate
+	complete := len(run.searched) > 0
 	for ev := range ch {
+		candidates = append(candidates, ev.Candidates...)
+		complete = complete && ev.Error == ""
 		emit(ev)
 	}
-	emit(SearchEvent{Type: "done", Ledger: searchLedger})
+	plan := BuildPlan(candidates, run.planBooks, complete && ctx.Err() == nil)
+	emit(SearchEvent{Type: "done", Ledger: searchLedger, Plan: &plan})
 	return nil
 }
 
@@ -536,12 +565,15 @@ func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, sear
 			result.Searched = ev.Searched
 			result.BindingNotes = append(result.BindingNotes, ev.BindingNotes...)
 		case "batch":
+			result.Queries = append(result.Queries, ev.Queries...)
 			result.Candidates = append(result.Candidates, ev.Candidates...)
 			result.Dropped += ev.Dropped
 			result.BindingNotes = append(result.BindingNotes, ev.BindingNotes...)
 			if ev.Error != "" {
 				result.ProviderErrors = append(result.ProviderErrors, ev.Error)
 			}
+		case "done":
+			result.Plan = ev.Plan
 		}
 	})
 	if err != nil {

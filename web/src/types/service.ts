@@ -189,6 +189,10 @@ export interface HealthService {
 }
 
 //////////
+// source: image_import.go
+
+
+//////////
 // source: importer.go
 
 /**
@@ -371,6 +375,39 @@ export interface OrganizeResult {
 }
 
 //////////
+// source: plan.go
+
+/**
+ * Plans are search observations, never persisted ownership or reservations.
+ */
+export interface AcquisitionPlan {
+  searchedAt: string;
+  complete: boolean;
+  picks: PlanPick[];
+  books: PlanBook[];
+  size: number /* int64 */;
+  unknownSizes: number /* int */;
+}
+export interface PlanBook {
+  book: BookRef;
+  label: string;
+  ownership: string;
+  availability: string;
+}
+export interface PlanPick {
+  key: string;
+  books: BookRef[];
+  additionalBooks: number /* int */;
+}
+export interface PlanOutcome {
+  key: string;
+  title: string;
+  status: string;
+  message: string;
+  queueId?: number /* int64 */;
+}
+
+//////////
 // source: profiles.go
 
 /**
@@ -466,6 +503,7 @@ export interface SearchService {
  * of its books (WorkID), or every wanted book of it (All).
  */
 export interface SearchScope {
+  excludeRelease?: string;
   versionId: number /* int64 */;
   bookId?: number /* int64 */;
   all?: boolean;
@@ -481,6 +519,9 @@ export interface SearchScope {
  * ledger.
  */
 export interface ReleaseCandidate {
+  key: string;
+  contentKey: string;
+  contents?: BookRef[];
   decision: ReleaseDecision;
   scoreParts?: ScorePart[];
   parseTrace?: Step[];
@@ -522,6 +563,8 @@ export interface FormatHit {
  * explain themselves.
  */
 export interface SearchResult {
+  plan?: AcquisitionPlan;
+  queries?: string[];
   ledger: string;
   candidates: ReleaseCandidate[];
   searched: string[];
@@ -536,6 +579,8 @@ export interface SearchResult {
  * indexer sweep), "done" closes the stream.
  */
 export interface SearchEvent {
+  plan?: AcquisitionPlan;
+  queries?: string[];
   type: 'sites' | 'batch' | 'done' | 'error';
   ledger?: string;
   searched?: string[];

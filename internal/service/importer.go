@@ -156,6 +156,9 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 	if err != nil {
 		return false, err
 	}
+	if err := im.store.ObserveDownload(ctx, item, state.Progress, state.Detail, state.StallEligible, state.Transferring, time.Now()); err != nil {
+		return false, err
+	}
 
 	switch {
 	case state.Done:
@@ -300,6 +303,11 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	if err != nil {
 		return err
 	}
+	archives, cleanup, err := payloadArchives(ctx, dir, files, titles)
+	defer cleanup()
+	if err != nil {
+		return err
+	}
 	seriesDir, err := im.seriesDir(ctx, series, ms, expected[0].Ledger)
 	if err != nil {
 		return err
@@ -336,16 +344,14 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			}
 		}
 	}
-	for _, rel := range files {
-		if filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(filepath.Clean(rel), ".."+string(filepath.Separator)) {
-			return fmt.Errorf("invalid payload path")
-		}
+	for _, archive := range archives {
+		rel, src := archive.name, archive.path
 		ext := strings.ToLower(filepath.Ext(rel))
 		if !mediafile.IsArchive(rel) {
 			continue
 		}
 		if len(preservedHashes) > 0 {
-			hash, e := fileHash(filepath.Join(dir, rel))
+			hash, e := fileHash(src)
 			if e != nil {
 				return e
 			}
@@ -354,40 +360,22 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			}
 		}
 		res := parse.ParseAnchored(filepath.Base(rel), parse.ChannelFile, titles)
-		if !res.Anchored || res.TitleLeftover != "" || res.ContentType != parse.ContentManga {
-			if err := im.importReviewFile(ctx, item, seriesDir, filepath.Join(dir, rel), res, ms.AlwaysCopy); err != nil {
+		if archive.review || !res.Anchored || res.TitleLeftover != "" || res.ContentType != parse.ContentManga {
+			if err := im.importReviewFile(ctx, item, seriesDir, src, res, ms.AlwaysCopy); err != nil {
 				return err
 			}
 			continue
 		}
-		ranges := bookRanges(res, expected[0].Ledger)
-		var covered []store.BookRef
-		for _, sl := range expected {
-			w, e := im.store.GetBook(ctx, sl.BookID)
-			if e != nil {
-				return e
-			}
-			col, e := im.store.GetEdition(ctx, sl.EditionID)
-			if e != nil {
-				return e
-			}
-			if !editionCompatible(res, *col) {
-				continue
-			}
-			for _, r := range ranges {
-				if w.NumberKnown && w.SequenceNum >= int64(r.From) && w.SequenceNum <= int64(r.To) {
-					covered = append(covered, sl)
-					break
-				}
-			}
+		contents, covered, e := im.fileBooks(ctx, res, expected)
+		if e != nil {
+			return e
 		}
 		if len(covered) == 0 {
-			if err := im.importReviewFile(ctx, item, seriesDir, filepath.Join(dir, rel), res, ms.AlwaysCopy); err != nil {
+			if err := im.importReviewFile(ctx, item, seriesDir, src, res, ms.AlwaysCopy); err != nil {
 				return err
 			}
 			continue
 		}
-		src := filepath.Join(dir, rel)
 		hash, e := fileHash(src)
 		if e != nil {
 			return e
@@ -395,7 +383,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 		// A pack stays one asset with several verified coverage links.
 		name := filepath.Base(rel)
 		if ms.RenameImports {
-			name = im.bookFileName(ctx, ms, series, covered, res.Group, ext)
+			name = im.bookFileName(ctx, ms, series, contents, res.Group, ext)
 		}
 		// Identical bytes can serve several confirmed versions. Keep one
 		// archive with all coverage links; different releases get different
@@ -411,9 +399,9 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			return e
 		}
 		if ms.WriteComicInfo {
-			info := im.packInfo(ctx, series, covered, item.Title, res.Group)
-			if len(covered) == 1 {
-				info = im.bookInfo(ctx, series, covered[0], item.Title, res.Group)
+			info := im.packInfo(ctx, series, contents, item.Title, res.Group)
+			if len(contents) == 1 {
+				info = im.bookInfo(ctx, series, contents[0], item.Title, res.Group)
 			}
 			e = installProcessed(src, dest, hash, info)
 		} else {
@@ -422,7 +410,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 		if e != nil {
 			return e
 		}
-		if e = im.recordAsset(ctx, item, dest, covered, res); e != nil {
+		if e = im.recordAsset(ctx, item, dest, covered, res, contents); e != nil {
 			return e
 		}
 		for _, sl := range covered {

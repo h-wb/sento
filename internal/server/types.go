@@ -33,6 +33,8 @@ type SeriesDetail struct {
 
 // SearchBody is POST /series/{id}/search.
 type SearchBody struct {
+	Picks         []service.PlanPick   `json:"picks,omitempty"`
+	GrabSiteID    string               `json:"grabSiteId,omitempty"`
 	GrabProvider  string               `json:"grabProvider,omitempty"`
 	GrabVersionID int64                `json:"grabVersionId,omitempty"`
 	Ledger        string               `json:"ledger"`
@@ -45,6 +47,7 @@ type SearchBody struct {
 
 // SearchResponse is the non-streaming POST /series/{id}/search reply.
 type SearchResponse struct {
+	Outcomes             []service.PlanOutcome `json:"outcomes,omitempty"`
 	service.SearchResult `tstype:",extends"`
 	Queued               []int64 `json:"queued"`
 }

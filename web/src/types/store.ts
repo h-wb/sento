@@ -165,6 +165,11 @@ export interface BookOverride {
  */
 export type JSONText = string /* []byte */;
 export interface QueueItem {
+  downloadProgress: number /* float64 */;
+  progressAt: string;
+  observedAt: string;
+  downloadState: string;
+  stalled: boolean;
   retryCount: number /* int */;
   retryAt: string;
   providerId?: string;

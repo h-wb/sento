@@ -134,6 +134,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					cp.FormatSnapshot = run.formats
 					cp.Rejections = nil
 					cp.Coverage = nil
+					cp.Contents = nil
 					if (evidence != 0 && evidence != col.ID) || !editionCompatibleWithEvidence(cp.Parse, *col, evidence) {
 						if !languageCompatible(cp.Parse, col.Language) {
 							cp.Rejections = append(cp.Rejections, "rejected.language")
@@ -174,6 +175,11 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 		out = append(out, rc)
 	}
 	for i := range out {
+		out[i].Key = candidateKey(out[i])
+		out[i].ContentKey = out[i].Provider + "/" + out[i].cand.ExternalKey()
+		if run.scope != nil && run.scope.ExcludeRelease != "" && out[i].ContentKey == run.scope.ExcludeRelease {
+			out[i].Rejections = append(out[i].Rejections, "rejected.previous_download")
+		}
 		out[i].explain()
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
@@ -263,6 +269,7 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		if !hit {
 			continue
 		}
+		c.Contents = append(c.Contents, store.BookRef{Ledger: searchLedger, EditionID: colID, VersionID: c.VersionID, BookID: w.ID, Number: w.SequenceNum})
 		if run.wantedBooks[c.VersionID][w.ID] {
 			if scope == nil || scope.BookID == 0 {
 				if sharesNumber(run.books[colID], w) {
@@ -277,7 +284,7 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		total = len(c.Coverage)
 	}
 	c.RepresentedBooks = total
-	if total > 0 && len(c.Coverage) > 0 && len(c.Coverage)*2 < total {
+	if len(c.Coverage) > 0 && belowPackThreshold(len(c.Coverage), total) {
 		reject("rejected.pack_threshold")
 	}
 	if len(c.Coverage) == 0 {
@@ -404,17 +411,18 @@ func baseLang(lang string) string {
 
 // Rejections that survive a force-grab (decision-engine.md §7).
 var hardRejections = map[string]bool{
-	"rejected.numbers_unknown":  true,
-	"rejected.language":         true,
-	"rejected.book_ambiguous":   true,
-	"rejected.language_unknown": true,
-	"rejected.no_upgrade":       true,
-	"rejected.version_group":    true,
-	"rejected.content_type":     true,
-	"rejected.series_match":     true,
-	"rejected.edition_routing":  true,
-	"rejected.no_coverage":      true,
-	"rejected.blocklisted":      true,
+	"rejected.previous_download": true,
+	"rejected.numbers_unknown":   true,
+	"rejected.language":          true,
+	"rejected.book_ambiguous":    true,
+	"rejected.language_unknown":  true,
+	"rejected.no_upgrade":        true,
+	"rejected.version_group":     true,
+	"rejected.content_type":      true,
+	"rejected.series_match":      true,
+	"rejected.edition_routing":   true,
+	"rejected.no_coverage":       true,
+	"rejected.blocklisted":       true,
 }
 
 func editionByID(cols []store.Edition, id int64) *store.Edition {
