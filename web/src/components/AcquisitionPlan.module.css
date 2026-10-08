@@ -1,0 +1,22 @@
+.shelf { display: flex; flex-wrap: wrap; gap: 4px; }
+.book {
+  min-width: 30px; padding: 2px 6px; text-align: center; font-size: var(--mantine-font-size-xs);
+  font-variant-numeric: tabular-nums; line-height: 1.5; border-radius: var(--mantine-radius-sm);
+  border: 1px solid var(--mantine-color-default-border); color: var(--mantine-color-dimmed);
+}
+.dot { flex: none; width: 10px; height: 10px; border-radius: 3px; border: 1px solid var(--mantine-color-default-border); }
+.book[data-state='planned'], .dot[data-state='planned'] {
+  background: var(--mantine-color-blue-filled); border-color: var(--mantine-color-blue-filled);
+  color: var(--mantine-color-white); font-weight: 600;
+}
+.book[data-state='available'], .dot[data-state='available'] { border-color: var(--mantine-color-blue-filled); color: var(--mantine-color-text); }
+.book[data-state='outside_profile'], .dot[data-state='outside_profile'],
+.book[data-state='no_seeders'], .dot[data-state='no_seeders'] { border-color: var(--mantine-color-orange-6); color: var(--mantine-color-orange-6); }
+.book[data-state='not_found'], .dot[data-state='not_found'] { border-style: dashed; }
+.book[data-state='unknown'], .dot[data-state='unknown'] { border-style: dotted; }
+.picks { border: 1px solid var(--mantine-color-default-border); border-radius: var(--mantine-radius-md); overflow: hidden; }
+.pick { display: flex; gap: var(--mantine-spacing-sm); align-items: flex-start; padding: 8px 12px; border-top: 1px solid var(--mantine-color-default-border); }
+.pick:first-child { border-top: 0; }
+.pick[data-off] .pickBody { opacity: 0.55; }
+.pickBody { min-width: 0; flex: 1; }
+.pickBooks { flex: none; }

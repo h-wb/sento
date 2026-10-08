@@ -5,7 +5,6 @@ import {
   Badge,
   Button,
   Chip,
-  Checkbox,
   Group,
   Pagination,
   SegmentedControl,
@@ -408,7 +407,6 @@ function ReleaseRow({
   return (
     <div className={classes.row} data-testid="release-row" data-status={queued ? 'queued' : state}>
       <Group gap="sm" align="flex-start" className={classes.rowMain}>
-        {onToggle && state === 'ready' && <Checkbox checked={selected ?? false} onChange={onToggle} disabled={busy || queued} aria-label={`Include ${c.title}`} mt={4} />}
         <UnstyledButton
           className={classes.summary}
           aria-expanded={expanded}
@@ -470,6 +468,12 @@ function ReleaseRow({
           <Badge variant="light" color="blue">
             Queued
           </Badge>
+        ) : onToggle && state === 'ready' ? (
+          // Inside a download plan a ready release joins the plan instead
+          // of starting its own download.
+          <Button size="xs" variant={selected ? 'light' : 'default'} disabled={busy} aria-pressed={selected ?? false} onClick={onToggle}>
+            {selected ? 'In plan' : 'Add to plan'}
+          </Button>
         ) : onGrab && state !== 'blocked' ? (
           <Button
             size="xs"

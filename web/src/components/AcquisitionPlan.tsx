@@ -1,18 +1,39 @@
 import { useMemo, useState } from 'react'
-import { Alert, Button, Checkbox, Group, Paper, Stack, Text } from '@mantine/core'
+import { Alert, Badge, Button, Checkbox, Group, Paper, Stack, Text, Tooltip } from '@mantine/core'
 import { api, fmtNum, fmtSize, type ReleaseCandidate } from '../api'
-import type { AcquisitionPlan as Plan, PlanOutcome, PlanPick, SearchScope } from '../types/service'
+import type { AcquisitionPlan as Plan, PlanBook, PlanOutcome, PlanPick, SearchScope } from '../types/service'
 import type { BookRef } from '../types/store'
 import CandidateList from './CandidateList'
+import classes from './AcquisitionPlan.module.css'
 
 const bookKey = (b: BookRef) => `${b.versionId}/${b.bookId}`
-const availabilityLabels: Record<string, string> = {
-  available: 'Available',
-  not_found: 'Not found in this search',
-  unknown: 'Availability unknown',
-  no_seeders: 'No seeders reported',
-  outside_profile: 'Found, needs review',
+// Past this many books the shelf stops being readable at a glance; the
+// legend spells the ranges out instead.
+const SHELF_LIMIT = 80
+// What a search says about a book, in the order the legend lists it.
+// "planned" is the selection itself; the rest are search observations.
+const states: [string, string][] = [
+  ['planned', 'Will download'],
+  ['available', 'Available, not selected'],
+  ['outside_profile', 'Found, needs review'],
+  ['no_seeders', 'No seeders reported'],
+  ['not_found', 'Not found in this search'],
+  ['unknown', 'Not checked'],
+]
+const bookName = (b: PlanBook) => b.label || fmtNum(b.book.number)
+// "1–3, 5": consecutive whole numbers collapse into a range.
+const ranges = (books: PlanBook[]) => {
+  const sorted = [...books].sort((a, b) => a.book.number - b.book.number)
+  const out: string[] = []
+  let start = 0
+  for (let i = 1; i <= sorted.length; i++) {
+    if (i < sorted.length && sorted[i].book.number - sorted[i - 1].book.number === 100) continue
+    out.push(start === i - 1 ? bookName(sorted[start]) : `${bookName(sorted[start])}–${bookName(sorted[i - 1])}`)
+    start = i
+  }
+  return out.join(', ')
 }
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
 export default function AcquisitionPlan({ plan, candidates, seriesID, ledger, scope, busy, onGrab, onChanged, onBusyChange }: {
   plan: Plan
@@ -25,108 +46,151 @@ export default function AcquisitionPlan({ plan, candidates, seriesID, ledger, sc
   onChanged: () => void
   onBusyChange: (busy: boolean) => void
 }) {
+  // Releases listed in the plan keep their place when unticked, so a
+  // choice can be undone where it was made.
+  const [listed, setListed] = useState(() => plan.picks.map((p) => p.key))
   const [selected, setSelected] = useState(() => new Set(plan.picks.map((p) => p.key)))
-  const [choosing, setChoosing] = useState(false)
+  const [browsing, setBrowsing] = useState(false)
   const [sending, setSending] = useState(false)
   const [outcomes, setOutcomes] = useState<PlanOutcome[] | null>(null)
   const [error, setError] = useState('')
-  const releases = useMemo(() => [...new Map(candidates.map((c) => [c.key, c])).values()], [candidates])
-  // Preserve the planner's order when assigning overlapping books to jobs.
-  const chosen = [...selected].flatMap((key) => {
-    const release = releases.find((c) => c.key === key)
-    return release ? [release] : []
-  })
+  const releases = useMemo(() => new Map(candidates.map((c) => [c.key, c])), [candidates])
+  const known = useMemo(() => new Map(plan.books.map((b) => [bookKey(b.book), b])), [plan.books])
+
+  // Overlapping books go to the first selected release that has them, in
+  // the planner's order.
   const assigned = new Set<string>()
-  const content = new Set<string>()
-  let size = 0, unknownSizes = 0
-  const picks: PlanPick[] = chosen.map((c) => {
-    const books = (c.coverage ?? []).filter((b) => {
+  // The same torrent offered by two indexers is one download.
+  const content = new Map<string, number>()
+  const rows = listed.flatMap((key) => {
+    const c = releases.get(key)
+    if (!c) return []
+    const on = selected.has(key)
+    const books = !on ? [] : (c.coverage ?? []).filter((b) => {
       if (assigned.has(bookKey(b))) return false
       assigned.add(bookKey(b))
       return true
     })
-    if (books.length > 0 && !content.has(c.contentKey || c.key)) {
-      content.add(c.contentKey || c.key)
-      if (c.size) size += c.size
-      else unknownSizes++
-    }
-    return { key: c.key, books, additionalBooks: Math.max(0, c.representedBooks - books.length) }
+    if (books.length > 0 && !content.has(c.contentKey || c.key)) content.set(c.contentKey || c.key, c.size ?? 0)
+    return [{ c, on, books }]
   })
+  const picks: PlanPick[] = rows.filter((r) => r.books.length > 0)
+    .map((r) => ({ key: r.c.key, books: r.books, additionalBooks: Math.max(0, r.c.representedBooks - r.books.length) }))
+
+  const sizes = [...content.values()]
+  const size = sizes.reduce((sum, n) => sum + n, 0)
+  const unknownSizes = sizes.filter((n) => !n).length
   const noun = ledger === 'volume' ? 'volume' : 'chapter'
+  const short = ledger === 'volume' ? 'Vol.' : 'Ch.'
+  const stateOf = (b: PlanBook) => (assigned.has(bookKey(b.book)) ? 'planned' : b.availability)
   const upgrades = plan.books.filter((b) => assigned.has(bookKey(b.book)) && b.ownership === 'upgrade_eligible').length
-  const remaining = plan.books.filter((b) => !assigned.has(bookKey(b.book)))
   const locked = busy || sending || outcomes !== null
-  const toggle = (c: ReleaseCandidate) => setSelected((before) => {
-    const next = new Set(before)
-    if (next.has(c.key)) next.delete(c.key)
-    else next.add(c.key)
-    return next
-  })
-  const numbers = (refs: BookRef[]) => refs.map((b) => {
-    const known = plan.books.find((p) => bookKey(p.book) === bookKey(b))
-    return known?.label || fmtNum(b.number)
-  }).join(', ')
+  const toggle = (c: ReleaseCandidate) => {
+    setListed((before) => (before.includes(c.key) ? before : [...before, c.key]))
+    setSelected((before) => {
+      const next = new Set(before)
+      if (next.has(c.key)) next.delete(c.key)
+      else next.add(c.key)
+      return next
+    })
+  }
+  const named = (refs: BookRef[]) =>
+    ranges(refs.map((b) => known.get(bookKey(b)) ?? { book: b, label: '', ownership: '', availability: '' }))
   const submit = async () => {
     setSending(true)
     onBusyChange(true)
     setError('')
     try {
-      const response = await api.search(seriesID, { ledger, scope, picks: picks.filter((p) => p.books.length > 0) })
+      const response = await api.search(seriesID, { ledger, scope, picks })
       setOutcomes(response.outcomes ?? [])
       onChanged()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally { setSending(false); onBusyChange(false) }
   }
+  const total = plan.books.length
   return (
     <Stack gap="md">
       <Paper withBorder p="md" data-testid="acquisition-plan">
         <Stack gap="sm">
           <Group justify="space-between" align="flex-start">
             <div>
-              <Text fw={600}>{assigned.size} {noun}{assigned.size === 1 ? '' : 's'} selected in {content.size} release{content.size === 1 ? '' : 's'}</Text>
+              <Text fw={600}>
+                {total > 0 ? `${assigned.size} of ${count(total, `wanted ${noun}`)} selected` : `${count(assigned.size, noun)} selected`}
+              </Text>
               <Text size="sm" c="dimmed">
-                {size > 0 ? fmtSize(size) : 'Size unknown'}{size > 0 && unknownSizes > 0 ? ' + unknown sizes' : ''}
-                {upgrades > 0 && ` · ${upgrades} upgrade${upgrades === 1 ? '' : 's'}`}
+                {assigned.size === 0 ? 'Nothing will be downloaded yet.' : <>
+                  {count(content.size, 'release')} · {size > 0 ? fmtSize(size) : 'size unknown'}{size > 0 && unknownSizes > 0 ? ' + unknown sizes' : ''}
+                  {upgrades > 0 && ` · ${count(upgrades, 'upgrade')}`}
+                </>}
               </Text>
             </div>
-            <Button variant="subtle" size="xs" onClick={() => setChoosing(!choosing)}>
-              {choosing ? 'Hide release choices' : 'Choose releases'}
-            </Button>
+            {!outcomes && (
+              <Button size="sm" disabled={locked || assigned.size === 0 || picks.length > 200} loading={sending} onClick={() => void submit()}>
+                Download {count(assigned.size, noun)}
+              </Button>
+            )}
           </Group>
-          {!plan.complete && <Text size="sm" c="orange">Some sources could not be checked. This plan uses the results received.</Text>}
-          {chosen.map((c, i) => (
-            <Group key={c.key} align="flex-start" wrap="nowrap">
-              <Checkbox checked disabled={locked} onChange={() => toggle(c)} aria-label={`Include ${c.title}`} mt={3} />
-              <div style={{ minWidth: 0 }}>
-                <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>
-                  {picks[i].books.length ? `Collects ${noun}${picks[i].books.length === 1 ? '' : 's'} ${numbers(picks[i].books)}` : 'Already covered by another selection; will not download'}
-                </Text>
-                <Text size="xs" c="dimmed" lineClamp={2} title={c.title} style={{ overflowWrap: 'anywhere' }}>{c.title}</Text>
-                <Text size="xs" c="dimmed">
-                  {c.site} · {c.size ? fmtSize(c.size) : 'Size unknown'}
-                  {picks[i].additionalBooks > 0 && ` · Also contains ${picks[i].additionalBooks} book${picks[i].additionalBooks === 1 ? '' : 's'} outside this job’s selection`}
-                </Text>
-                {picks[i].books.length > 0 && picks[i].books.length * 2 < c.representedBooks && (
-                  <Text size="xs" c="orange">
-                    Less than half of this pack is needed, so it is only downloaded when you choose it.
-                  </Text>
-                )}
-              </div>
-            </Group>
-          ))}
-          {remaining.length > 0 && (
-            <Stack gap={4}>
-              {Object.entries(availabilityLabels).map(([state, label]) => {
-                const books = remaining.filter((b) => b.availability === state)
-                if (!books.length) return null
-                return <Text key={state} size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-                  {label}: {books.slice(0, 20).map((b) => b.label || fmtNum(b.book.number)).join(', ')}
-                  {books.length > 20 && ` and ${books.length - 20} more`}
-                </Text>
+
+          {total > 0 && total <= SHELF_LIMIT && (
+            <div className={classes.shelf} aria-hidden>
+              {plan.books.map((b) => {
+                const state = stateOf(b)
+                return (
+                  <Tooltip key={bookKey(b.book)} label={`${short} ${bookName(b)} — ${states.find(([s]) => s === state)?.[1] ?? state}`} openDelay={200}>
+                    <span className={classes.book} data-state={state}>{bookName(b)}</span>
+                  </Tooltip>
+                )
               })}
-            </Stack>
+            </div>
           )}
+          {total > 0 && (
+            <Group gap="md" style={{ rowGap: 4 }}>
+              {states.map(([state, label]) => {
+                const books = plan.books.filter((b) => stateOf(b) === state)
+                if (!books.length) return null
+                return (
+                  <Group key={state} gap={6} wrap="nowrap" align="center" maw="100%">
+                    <span className={classes.dot} data-state={state} />
+                    <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                      {label} · {total <= SHELF_LIMIT ? books.length : ranges(books)}
+                    </Text>
+                  </Group>
+                )
+              })}
+            </Group>
+          )}
+          {!plan.complete && <Text size="sm" c="orange">Some sources could not be checked, so this plan may be missing releases.</Text>}
+
+          {rows.length > 0 && (
+            <div className={classes.picks}>
+              {rows.map(({ c, on, books }) => {
+                const extra = Math.max(0, c.representedBooks - books.length)
+                return (
+                  <div key={c.key} className={classes.pick} data-off={on && books.length > 0 ? undefined : true}>
+                    <Checkbox checked={on} disabled={locked} onChange={() => toggle(c)} aria-label={`Include ${c.title}`} mt={2} />
+                    <div className={classes.pickBody}>
+                      <Group gap={8} wrap="nowrap" align="baseline">
+                        <Badge variant="light" color={books.length ? 'blue' : 'gray'} className={classes.pickBooks}>
+                          {books.length ? `${short} ${named(books)}` : on ? 'Nothing new' : 'Not selected'}
+                        </Badge>
+                        <Text size="sm" fw={500} lineClamp={1} title={c.title} style={{ overflowWrap: 'anywhere' }}>{c.title}</Text>
+                      </Group>
+                      <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                        {c.site} · {c.size ? fmtSize(c.size) : 'Size unknown'}
+                        {on && books.length === 0 && ' · Everything in it is covered by the releases above'}
+                        {books.length > 0 && extra > 0 && ` · Pack also holds ${count(extra, 'book')} you don’t need from it`}
+                      </Text>
+                      {books.length > 0 && books.length * 2 < c.representedBooks && (
+                        <Text size="xs" c="orange">Mostly books you don’t need, so it is only downloaded because you chose it.</Text>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           {error && <Alert color="red" role="alert" styles={{ message: { overflowWrap: 'anywhere' } }}>{error}</Alert>}
           {outcomes ? (
             <Stack gap={4} aria-live="polite">
@@ -135,15 +199,21 @@ export default function AcquisitionPlan({ plan, candidates, seriesID, ledger, sc
               </Text>)}
               <Text size="xs" c="dimmed">Search again to see current availability.</Text>
             </Stack>
-          ) : <Group justify="space-between">
-            <Text size="xs" c="dimmed">Checked {new Date(plan.searchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Choices are checked again before download.</Text>
-            <Button size="sm" disabled={locked || assigned.size === 0 || picks.length > 200} loading={sending} onClick={() => void submit()}>
-              Download {assigned.size} {noun}{assigned.size === 1 ? '' : 's'}
-            </Button>
-          </Group>}
+          ) : (
+            <Group justify="space-between" gap="xs">
+              <Text size="xs" c="dimmed">
+                Searched at {new Date(plan.searchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Each release is checked again before it is queued.
+              </Text>
+              {rows.length > 0 && (
+                <Button variant="subtle" size="compact-xs" aria-expanded={browsing} onClick={() => setBrowsing(!browsing)}>
+                  {browsing ? 'Hide all releases' : `Browse all ${count(candidates.length, 'release')}`}
+                </Button>
+              )}
+            </Group>
+          )}
         </Stack>
       </Paper>
-      {(choosing || chosen.length === 0) && <CandidateList candidates={candidates} onGrab={onGrab} busy={locked} editionWide selected={selected} onToggle={toggle} />}
+      {(browsing || rows.length === 0) && <CandidateList candidates={candidates} onGrab={onGrab} busy={locked} editionWide selected={selected} onToggle={toggle} />}
     </Stack>
   )
 }

@@ -413,7 +413,8 @@ function Inner({
                   {result.queries.length > 0 && (
                     <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>Titles searched: {result.queries.join(' · ')}</Text>
                   )}
-                  {result.plan && !searching && !result.stopped ? (
+                  {/* One book needs a choice of release, not a plan. */}
+                  {result.plan && result.plan.books.length > 1 && !searching && !result.stopped ? (
                     <AcquisitionPlan key={result.plan.searchedAt} plan={result.plan} candidates={result.candidates}
                       seriesID={seriesID} ledger={sel.ledger} scope={searchScope(allBooks)} busy={busy}
                       onGrab={grab} onChanged={onChanged} onBusyChange={setBusy} />
