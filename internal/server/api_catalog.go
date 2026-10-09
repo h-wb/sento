@@ -164,6 +164,14 @@ func (s *Server) handleCatalogLink(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, data)
 		return
 	}
+	if r.URL.Query().Get("decline") == "1" {
+		if err := s.store.DeclineCatalogLink(r.Context(), id, cid, b.CatalogID); err != nil {
+			writeErr(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if err := s.store.LinkCatalog(r.Context(), id, cid, b.CatalogID); err != nil {
 		writeErr(w, err)
 		return

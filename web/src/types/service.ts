@@ -500,7 +500,7 @@ export interface SearchService {
 }
 /**
  * SearchScope scopes an interactive search to one collected version: one
- * of its books (WorkID), or every wanted book of it (All).
+ * of its books (BookID), or every wanted book of it (All).
  */
 export interface SearchScope {
   /**

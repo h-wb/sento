@@ -17,11 +17,11 @@ func (s *Store) lockEditions(ctx context.Context, tx *sql.Tx, allowPending bool,
 			continue
 		}
 		var sid int64
-		query := `SELECT series_id FROM collections WHERE id=?`
+		query := `SELECT series_id FROM editions WHERE id=?`
 		if s.pg {
 			query += ` FOR UPDATE`
 		} else {
-			if _, err := tx.ExecContext(ctx, s.q(`UPDATE collections SET id=id WHERE id=?`), id); err != nil {
+			if _, err := tx.ExecContext(ctx, s.q(`UPDATE editions SET id=id WHERE id=?`), id); err != nil {
 				return err
 			}
 		}
@@ -31,7 +31,7 @@ func (s *Store) lockEditions(ctx context.Context, tx *sql.Tx, allowPending bool,
 		if allowPending {
 			continue
 		}
-		rows, err := tx.QueryContext(ctx, s.q(`SELECT expected_slots_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`), sid)
+		rows, err := tx.QueryContext(ctx, s.q(`SELECT books_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`), sid)
 		if err != nil {
 			return err
 		}

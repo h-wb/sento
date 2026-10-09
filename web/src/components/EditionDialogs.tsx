@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useUnsavedChanges } from '../useUnsavedChanges'
 import {
   Alert,
@@ -406,18 +406,30 @@ export function CatalogLink({
   seriesID,
   value,
   editions,
+  catalogId,
   done,
   close,
 }: {
   seriesID: number
   value: Edition
   editions: Edition[]
+  // A suggested catalog edition: preselected, its matches shown at once.
+  catalogId?: number
   done: () => Promise<void>
   close: () => void
 }) {
-  const [id, setID] = useState<string | null>(null)
+  const [id, setID] = useState<string | null>(catalogId ? String(catalogId) : null)
   const [preview, setPreview] = useState<CatalogLinkPreview | null>(null)
   const edit = useEditor()
+  const loadPreview = (catalog: number) =>
+    edit.run(async () => setPreview(await api.catalogLinkPreview(seriesID, value.id, catalog)))
+  useEffect(() => {
+    if (catalogId) void loadPreview(catalogId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const added = preview
+    ? preview.catalogBooks.filter((b) => !Object.values(preview.mapping).includes(b.id)).length
+    : 0
   return (
     <Modal
       opened
@@ -428,7 +440,8 @@ export function CatalogLink({
     >
       <Stack>
         <Text size="sm">
-          Your edition keeps its local identity, files, and edits. Review the proposed book matches
+          Your edition becomes this catalog edition and follows MangaBaka from now on. Its files,
+          collected versions, and the fields you edited by hand are kept. Review the book matches
           before linking.
         </Text>
         <Select
@@ -452,19 +465,16 @@ export function CatalogLink({
           variant="default"
           disabled={!id}
           loading={edit.busy}
-          onClick={() =>
-            void edit.run(async () =>
-              setPreview(await api.catalogLinkPreview(seriesID, value.id, Number(id))),
-            )
-          }
+          onClick={() => void loadPreview(Number(id))}
         >
           Preview matches
         </Button>
         {preview && (
           <>
             <Text size="sm">
-              {Object.keys(preview.mapping).length} books matched; {preview.unmatched.length} local
-              books remain unmatched.
+              {Object.keys(preview.mapping).length} of your books match the catalog
+              {preview.unmatched.length > 0 && `; ${preview.unmatched.length} do not and stay as they are`}
+              {added > 0 && `; ${added} more from the catalog will be added`}.
             </Text>
             <Stack gap={4}>
               {preview.localBooks.map((w) => (
@@ -477,7 +487,7 @@ export function CatalogLink({
               ))}
             </Stack>
             <Text size="xs" c="dimmed">
-              Unmatched local books stay intact. The unused catalog row is retired after linking.
+              The separate catalog entry is folded into your edition, so it appears once.
             </Text>
           </>
         )}

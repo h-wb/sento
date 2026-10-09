@@ -468,7 +468,7 @@ func TestLedgerReadsDoNotInferNewChapters(t *testing.T) {
 		t.Fatal(err)
 	}
 	var before, after int
-	if err = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM works`).Scan(&before); err != nil {
+	if err = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM books`).Scan(&before); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = conn.ExecContext(ctx, fmt.Sprintf(`UPDATE series SET total_chapters=1300 WHERE id=%d`, id)); err != nil {
@@ -483,7 +483,7 @@ func TestLedgerReadsDoNotInferNewChapters(t *testing.T) {
 	if _, err = lib.EditionOverview(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	if err = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM works`).Scan(&after); err != nil {
+	if err = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM books`).Scan(&after); err != nil {
 		t.Fatal(err)
 	}
 	if before != after {
@@ -492,7 +492,7 @@ func TestLedgerReadsDoNotInferNewChapters(t *testing.T) {
 	if err = st.EnsureModels(ctx, id); err != nil {
 		t.Fatal(err)
 	}
-	if err = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM works`).Scan(&after); err != nil {
+	if err = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM books`).Scan(&after); err != nil {
 		t.Fatal(err)
 	}
 	if after <= before {

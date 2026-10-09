@@ -61,24 +61,24 @@ func (sr *Series) InChapterFolder(path string) bool {
 
 type AssetContent struct {
 	FileID   int64  `json:"fileId"`
-	BookID   int64  `json:"bookId" db:"work_id"`
+	BookID   int64  `json:"bookId"`
 	Verified bool   `json:"verified"`
 	Evidence string `json:"evidence"`
 }
 
 func (s *Store) Contents(ctx context.Context, seriesID int64) ([]AssetContent, error) {
-	return list[AssetContent](ctx, s, `SELECT c.file_id,c.work_id,c.verified,c.evidence FROM asset_contents c JOIN files f ON f.id=c.file_id WHERE f.series_id=?`, seriesID)
+	return list[AssetContent](ctx, s, `SELECT c.file_id,c.book_id,c.verified,c.evidence FROM asset_contents c JOIN files f ON f.id=c.file_id WHERE f.series_id=?`, seriesID)
 }
 func (s *Store) SeriesBooks(ctx context.Context, seriesID int64) ([]Book, error) {
-	return list[Book](ctx, s, `SELECT `+workColumns+` FROM works WHERE collection_id IN(SELECT id FROM collections WHERE series_id=?) ORDER BY sequence_num,count_type,id`, seriesID)
+	return list[Book](ctx, s, `SELECT `+bookColumns+` FROM books WHERE edition_id IN(SELECT id FROM editions WHERE series_id=?) ORDER BY sequence_num,count_type,id`, seriesID)
 }
 
 type BookOverride struct {
-	VersionID int64 `db:"target_id"`
-	BookID    int64 `db:"work_id"`
+	VersionID int64
+	BookID    int64
 	Monitored bool
 }
 
 func (s *Store) SeriesBookOverrides(ctx context.Context, seriesID int64) ([]BookOverride, error) {
-	return list[BookOverride](ctx, s, `SELECT target_id,work_id,monitored FROM unit_overrides WHERE target_id IN(SELECT t.id FROM download_targets t JOIN collections c ON c.id=t.collection_id WHERE c.series_id=?)`, seriesID)
+	return list[BookOverride](ctx, s, `SELECT version_id,book_id,monitored FROM book_overrides WHERE version_id IN(SELECT t.id FROM versions t JOIN editions c ON c.id=t.edition_id WHERE c.series_id=?)`, seriesID)
 }

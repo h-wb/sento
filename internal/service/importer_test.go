@@ -105,7 +105,7 @@ func queueVolumes(t *testing.T, st *store.Store, seriesID, editionID int64, hash
 		if err != nil {
 			t.Fatal(err)
 		}
-		var versionID, workID int64
+		var versionID, bookID int64
 		for _, version := range versions {
 			if version.EditionID == editionID && version.IsDefault {
 				versionID = version.ID
@@ -113,10 +113,10 @@ func queueVolumes(t *testing.T, st *store.Store, seriesID, editionID int64, hash
 		}
 		for _, work := range works {
 			if work.SequenceNum == n {
-				workID = work.ID
+				bookID = work.ID
 			}
 		}
-		slots = append(slots, store.BookRef{Ledger: "volume", EditionID: editionID, Number: n, VersionID: versionID, BookID: workID})
+		slots = append(slots, store.BookRef{Ledger: "volume", EditionID: editionID, Number: n, VersionID: versionID, BookID: bookID})
 	}
 	raw, _ := json.Marshal(slots)
 	id, err := st.AddQueueItem(context.Background(), store.QueueItem{

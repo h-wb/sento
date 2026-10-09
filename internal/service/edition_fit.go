@@ -173,7 +173,7 @@ func (run *searchRun) ambiguousEdition(p parse.Result, col store.Edition) bool {
 	fits := []store.Edition{col}
 	otherLanguage := false
 	for _, c := range run.editions {
-		if c.ID == col.ID || c.Type != col.Type || c.SyncState == "stale" || c.SyncState == "superseded" {
+		if c.ID == col.ID || c.Type != col.Type || c.SyncState == "stale" {
 			continue
 		}
 		collected := false

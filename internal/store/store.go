@@ -118,12 +118,12 @@ type Edition struct {
 	SyncState        string           `json:"syncState"`
 	ID               int64            `json:"id"`
 	SeriesID         int64            `json:"seriesId"`
-	ProviderID       string           `json:"-" db:"mb_collection_id"`
+	ProviderID       string           `json:"-"`
 	EditionName      string           `json:"editionName"`
 	Language         string           `json:"language"`
 	Publisher        string           `json:"publisher"`
 	Medium           string           `json:"medium"`
-	Type             string           `json:"type" db:"ctype"`
+	Type             string           `json:"type"`
 	Monitored        bool             `json:"monitored"`
 	CountMain        int              `json:"countMain"`
 	CountExtra       int              `json:"countExtra"`
@@ -132,7 +132,7 @@ type Edition struct {
 	EndDate          string           `json:"endDate,omitempty"`
 	Custom           bool             `json:"custom"`
 	ProfileID        int64            `json:"profileId,omitempty" db:"profile_id"` // 0 = inherit from series
-	CutoffNum        int64            `json:"cutoffNum" db:"cutoff_num"`           // chapter ctype: skip through this number (exclusive cutoff)
+	CutoffNum        int64            `json:"cutoffNum" db:"cutoff_num"`           // chapter editions: skip through this number (exclusive cutoff)
 }
 
 type Book struct {
@@ -141,7 +141,7 @@ type Book struct {
 	Revision    string `json:"revision,omitempty"`
 	SyncState   string `json:"syncState"`
 	ID          int64  `json:"id"`
-	EditionID   int64  `json:"editionId" db:"collection_id"`
+	EditionID   int64  `json:"editionId"`
 	SequenceNum int64  `json:"sequenceNum"` // hundredths
 	SequenceStr string `json:"sequenceStr" db:"sequence_string"`
 	CountType   string `json:"countType"`
@@ -169,17 +169,17 @@ type File struct {
 }
 
 type BookLink struct {
-	VersionID int64 `db:"target_id"`
-	BookID    int64 `db:"work_id"`
+	VersionID int64
+	BookID    int64
 	FileID    int64
 	Ledger    string
-	EditionID int64 `db:"collection_id"`
+	EditionID int64
 	Number    int64
 }
 
 type Binding struct {
 	TrustChapters  bool   `json:"trustChapters"`
-	EditionID      int64  `json:"editionId" db:"collection_id"`
+	EditionID      int64  `json:"editionId"`
 	ID             int64  `json:"id"`
 	SeriesID       int64  `json:"seriesId"`
 	SourceID       string `json:"sourceId"`
@@ -216,7 +216,7 @@ func (s *Store) DeleteSeries(ctx context.Context, id int64) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='collection' AND local_id IN(SELECT id FROM collections WHERE series_id=?)) OR (kind='work' AND local_id IN(SELECT w.id FROM works w JOIN collections c ON c.id=w.collection_id WHERE c.series_id=?))`), id, id); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='edition' AND local_id IN(SELECT id FROM editions WHERE series_id=?)) OR (kind='book' AND local_id IN(SELECT w.id FROM books w JOIN editions c ON c.id=w.edition_id WHERE c.series_id=?))`), id, id); err != nil {
 		return err
 	}
 	res, err := tx.ExecContext(ctx, s.q(`DELETE FROM series WHERE id=?`), id)
@@ -295,8 +295,8 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 		monitored := p.MonitorAll && col.Type == "volume" || monitor[col.ProviderID]
 		var colID int64
 		if err := tx.QueryRowContext(ctx, s.q(`
-			INSERT INTO collections (series_id, mb_collection_id, edition_name, language,
-				publisher, medium, ctype, count_main, count_extra, count_other,
+			INSERT INTO editions (series_id, provider_id, edition_name, language,
+				publisher, medium, type, count_main, count_extra, count_other,
 				start_date, end_date, raw_json, updated_at,numbering_source,edition_traits,content_variant)
 			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'catalog',?,?) RETURNING id`),
 			seriesID, col.ProviderID, col.EditionName, col.Language, col.Publisher,
@@ -304,14 +304,14 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 			col.StartDate, col.EndDate, string(col.RawJSON), utcNow(), metadata.TraitsJSON(metadata.EditionTraits(col.EditionName)), metadata.ContentVariant(col.EditionName)).Scan(&colID); err != nil {
 			return 0, fmt.Errorf("inserting edition %q: %w", col.EditionName, err)
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO download_targets(collection_id,name,is_default,monitored) VALUES(?,'Default',TRUE,?)`), colID, monitored); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored) VALUES(?,'Default',TRUE,?)`), colID, monitored); err != nil {
 			return 0, err
 		}
 		if chapterColID == 0 && col.Type == "chapter" && strings.EqualFold(col.Language, lang) {
 			chapterColID = colID
 		}
 		for _, w := range p.Works[col.ProviderID] {
-			if err := s.upsertWork(ctx, tx, colID, w); err != nil {
+			if err := s.upsertBook(ctx, tx, colID, w); err != nil {
 				return 0, err
 			}
 		}
@@ -326,15 +326,15 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 	}
 	if chapterColID != 0 {
 		if _, err := tx.ExecContext(ctx, s.q(`
-			UPDATE download_targets SET monitored=?,cutoff_num=? WHERE collection_id=? AND is_default=TRUE`),
+			UPDATE versions SET monitored=?,cutoff_num=? WHERE edition_id=? AND is_default=TRUE`),
 			!p.MonitorNone, cutoff, chapterColID); err != nil {
 			return 0, fmt.Errorf("adopting chapter edition: %w", err)
 		}
 	} else {
-		if err = tx.QueryRowContext(ctx, s.q(`INSERT INTO collections(series_id,edition_name,language,ctype,custom,updated_at,numbering_source) VALUES(?,'Chapters',?,'chapter',TRUE,?,'series_count') RETURNING id`), seriesID, lang, utcNow()).Scan(&chapterColID); err != nil {
+		if err = tx.QueryRowContext(ctx, s.q(`INSERT INTO editions(series_id,edition_name,language,type,custom,updated_at,numbering_source) VALUES(?,'Chapters',?,'chapter',TRUE,?,'series_count') RETURNING id`), seriesID, lang, utcNow()).Scan(&chapterColID); err != nil {
 			return 0, err
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO download_targets(collection_id,name,is_default,monitored,cutoff_num) VALUES(?,'Default',TRUE,?,?)`), chapterColID, !p.MonitorNone, cutoff); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored,cutoff_num) VALUES(?,'Default',TRUE,?,?)`), chapterColID, !p.MonitorNone, cutoff); err != nil {
 			return 0, err
 		}
 	}
@@ -344,21 +344,21 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 
 // --- collections / works ---
 
-const collectionColumns = `
-	id, series_id, COALESCE(mb_collection_id,'') AS mb_collection_id,
-	edition_name, language, publisher, medium, ctype, EXISTS(SELECT 1 FROM download_targets t WHERE t.collection_id=collections.id AND t.monitored=TRUE) AS monitored,
+const editionColumns = `
+	id, series_id, COALESCE(provider_id,'') AS provider_id,
+	edition_name, language, publisher, medium, type, EXISTS(SELECT 1 FROM versions t WHERE t.edition_id=editions.id AND t.monitored=TRUE) AS monitored,
 	COALESCE(count_main,0) AS count_main, COALESCE(count_extra,0) AS count_extra,
 	COALESCE(count_other,0) AS count_other,
 	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date, custom,
-	COALESCE(profile_id,0) AS profile_id, COALESCE((SELECT t.cutoff_num FROM download_targets t WHERE t.collection_id=collections.id AND t.is_default=TRUE),0) AS cutoff_num,sync_state,discover_chapters,edition_traits,content_variant,numbering_source`
+	COALESCE(profile_id,0) AS profile_id, COALESCE((SELECT t.cutoff_num FROM versions t WHERE t.edition_id=editions.id AND t.is_default=TRUE),0) AS cutoff_num,sync_state,discover_chapters,edition_traits,content_variant,numbering_source`
 
 func (s *Store) ListEditions(ctx context.Context, seriesID int64) ([]Edition, error) {
-	return list[Edition](ctx, s, `SELECT `+collectionColumns+`
-		FROM collections WHERE series_id = ? ORDER BY edition_name, language, medium`, seriesID)
+	return list[Edition](ctx, s, `SELECT `+editionColumns+`
+		FROM editions WHERE series_id = ? ORDER BY edition_name, language, medium`, seriesID)
 }
 
 func (s *Store) GetEdition(ctx context.Context, id int64) (*Edition, error) {
-	return get[Edition](ctx, s, `SELECT `+collectionColumns+` FROM collections WHERE id = ?`, id)
+	return get[Edition](ctx, s, `SELECT `+editionColumns+` FROM editions WHERE id = ?`, id)
 }
 
 func (s *Store) SetEditionMonitored(ctx context.Context, seriesID, editionID int64, monitored bool) error {
@@ -369,7 +369,7 @@ func (s *Store) SetEditionMonitored(ctx context.Context, seriesID, editionID int
 	if c.SeriesID != seriesID {
 		return ErrNotFound
 	}
-	if _, err := s.db.ExecContext(ctx, s.q(`UPDATE download_targets SET monitored=? WHERE is_default=TRUE AND collection_id IN(SELECT id FROM collections WHERE id=? AND series_id=?)`), monitored, editionID, seriesID); err != nil {
+	if _, err := s.db.ExecContext(ctx, s.q(`UPDATE versions SET monitored=? WHERE is_default=TRUE AND edition_id IN(SELECT id FROM editions WHERE id=? AND series_id=?)`), monitored, editionID, seriesID); err != nil {
 		return err
 	}
 	return nil
@@ -386,7 +386,7 @@ func (s *Store) AddCustomEdition(ctx context.Context, c Edition, basedOn int64, 
 	defer func() { _ = tx.Rollback() }()
 
 	var duplicate int
-	if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM collections WHERE series_id=? AND custom=TRUE AND edition_name=? AND language=? AND publisher=? AND medium=? AND ctype=?`), c.SeriesID, c.EditionName, c.Language, c.Publisher, c.Medium, orDefault(c.Type, "volume")).Scan(&duplicate); err != nil {
+	if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM editions WHERE series_id=? AND custom=TRUE AND edition_name=? AND language=? AND publisher=? AND medium=? AND type=?`), c.SeriesID, c.EditionName, c.Language, c.Publisher, c.Medium, orDefault(c.Type, "volume")).Scan(&duplicate); err != nil {
 		return 0, err
 	}
 	if duplicate > 0 {
@@ -395,8 +395,8 @@ func (s *Store) AddCustomEdition(ctx context.Context, c Edition, basedOn int64, 
 	ctype := orDefault(c.Type, "volume")
 	var colID int64
 	err = tx.QueryRowContext(ctx, s.q(`
-		INSERT INTO collections (series_id, edition_name, language, publisher, medium,
-			ctype, custom, updated_at,edition_traits,content_variant)
+		INSERT INTO editions (series_id, edition_name, language, publisher, medium,
+			type, custom, updated_at,edition_traits,content_variant)
 		VALUES (?,?,?,?,?,?,TRUE,?,?,?) RETURNING id`),
 		c.SeriesID, c.EditionName, c.Language, c.Publisher, c.Medium, ctype,
 		utcNow(), metadata.TraitsJSON(metadata.EditionTraits(c.EditionName)), metadata.ContentVariant(c.EditionName)).Scan(&colID)
@@ -407,30 +407,30 @@ func (s *Store) AddCustomEdition(ctx context.Context, c Edition, basedOn int64, 
 		return 0, fmt.Errorf("inserting local edition: %w", err)
 	}
 
-	if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO download_targets(collection_id,name,is_default,monitored,cutoff_num) VALUES(?,'Default',TRUE,?,?)`), colID, c.Monitored, c.CutoffNum); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored,cutoff_num) VALUES(?,'Default',TRUE,?,?)`), colID, c.Monitored, c.CutoffNum); err != nil {
 		return 0, err
 	}
 
 	if basedOn > 0 {
 		var sourceType string
-		if err := tx.QueryRowContext(ctx, s.q(`SELECT ctype FROM collections WHERE id=? AND series_id=?`), basedOn, c.SeriesID).Scan(&sourceType); err != nil {
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT type FROM editions WHERE id=? AND series_id=?`), basedOn, c.SeriesID).Scan(&sourceType); err != nil {
 			return 0, ErrNotFound
 		}
 		if sourceType != ctype {
 			return 0, apperr.Invalidf("clone must have the same book type")
 		}
 		if _, err := tx.ExecContext(ctx, s.q(`
-			INSERT INTO works (collection_id, sequence_num, sequence_string, count_type, number_known, revision)
+			INSERT INTO books (edition_id, sequence_num, sequence_string, count_type, number_known, revision)
 			SELECT ?, sequence_num, sequence_string, count_type, number_known, revision
-			FROM works WHERE collection_id = ?
-			  AND collection_id IN (SELECT id FROM collections WHERE series_id = ?)`),
+			FROM books WHERE edition_id = ?
+			  AND edition_id IN (SELECT id FROM editions WHERE series_id = ?)`),
 			colID, basedOn, c.SeriesID); err != nil {
 			return 0, fmt.Errorf("cloning works: %w", err)
 		}
 	} else if ctype == "volume" {
 		for i := 1; i <= volumes; i++ {
 			if _, err := tx.ExecContext(ctx, s.q(`
-				INSERT INTO works (collection_id, sequence_num, sequence_string, count_type)
+				INSERT INTO books (edition_id, sequence_num, sequence_string, count_type)
 				VALUES (?,?,?,'main')`), colID, int64(i)*100, fmt.Sprintf("%d", i)); err != nil {
 				return 0, fmt.Errorf("generating work %d: %w", i, err)
 			}
@@ -522,28 +522,28 @@ func (s *Store) MergeEditions(ctx context.Context, seriesID, fromID, intoID int6
 			continue
 		}
 		name := t.Name + " (merged " + fmt.Sprint(t.ID) + ")"
-		if _, err = tx.ExecContext(ctx, s.q(`UPDATE download_targets SET collection_id=?,name=?,is_default=FALSE WHERE id=?`), intoID, name, t.ID); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`UPDATE versions SET edition_id=?,name=?,is_default=FALSE WHERE id=?`), intoID, name, t.ID); err != nil {
 			return nil, err
 		}
 	}
 	for oldID, newID := range mapping {
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,verified,pinned,evidence,selected) SELECT file_id,target_id,?,verified,pinned,evidence,selected FROM asset_coverage WHERE work_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,verified,pinned,evidence,selected) SELECT file_id,version_id,?,verified,pinned,evidence,selected FROM asset_coverage WHERE book_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
 			return nil, err
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,verified,evidence) SELECT file_id,?,verified,evidence FROM asset_contents WHERE work_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,book_id,verified,evidence) SELECT file_id,?,verified,evidence FROM asset_contents WHERE book_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
 			return nil, err
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO unit_overrides(target_id,work_id,monitored) SELECT target_id,?,monitored FROM unit_overrides WHERE work_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO book_overrides(version_id,book_id,monitored) SELECT version_id,?,monitored FROM book_overrides WHERE book_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
 			return nil, err
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO external_refs(provider,kind,external_id,local_id,last_seen) SELECT provider,kind,external_id,?,last_seen FROM external_refs WHERE kind='work' AND local_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO external_refs(provider,kind,external_id,local_id,last_seen) SELECT provider,kind,external_id,?,last_seen FROM external_refs WHERE kind='book' AND local_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
 			return nil, err
 		}
 	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='collection' AND local_id=?) OR (kind='work' AND local_id IN(SELECT id FROM works WHERE collection_id=?))`), fromID, fromID); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='edition' AND local_id=?) OR (kind='book' AND local_id IN(SELECT id FROM books WHERE edition_id=?))`), fromID, fromID); err != nil {
 		return nil, err
 	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM collections WHERE id=?`), fromID); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM editions WHERE id=?`), fromID); err != nil {
 		return nil, err
 	}
 	return []int64{}, tx.Commit()
@@ -569,7 +569,7 @@ func (s *Store) DeleteCustomEdition(ctx context.Context, seriesID, editionID int
 	if pending {
 		return apperr.Conflictf("edition has pending downloads")
 	}
-	n, err := get[int](ctx, s, `SELECT COUNT(*) FROM asset_contents a JOIN works w ON w.id=a.work_id WHERE w.collection_id=?`, editionID)
+	n, err := get[int](ctx, s, `SELECT COUNT(*) FROM asset_contents a JOIN books w ON w.id=a.book_id WHERE w.edition_id=?`, editionID)
 	if err != nil {
 		return err
 	}
@@ -585,20 +585,20 @@ func (s *Store) DeleteCustomEdition(ctx context.Context, seriesID, editionID int
 		return err
 	}
 
-	if _, err = tx.ExecContext(ctx, s.q(`UPDATE source_bindings SET collection_id=0 WHERE collection_id=?`), editionID); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`UPDATE source_bindings SET edition_id=0 WHERE edition_id=?`), editionID); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='collection' AND local_id=?) OR (kind='work' AND local_id IN(SELECT id FROM works WHERE collection_id=?))`), editionID, editionID); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='edition' AND local_id=?) OR (kind='book' AND local_id IN(SELECT id FROM books WHERE edition_id=?))`), editionID, editionID); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM collections WHERE id = ?`), editionID); err != nil {
+	if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM editions WHERE id = ?`), editionID); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
 func (s *Store) ListBooks(ctx context.Context, editionID int64) ([]Book, error) {
-	return list[Book](ctx, s, `SELECT `+workColumns+` FROM works WHERE collection_id=? ORDER BY sequence_num, id`, editionID)
+	return list[Book](ctx, s, `SELECT `+bookColumns+` FROM books WHERE edition_id=? ORDER BY sequence_num, id`, editionID)
 }
 
 // SetEditionCutoff changes the default version’s exclusive chapter cutoff.
@@ -610,7 +610,7 @@ func (s *Store) SetEditionCutoff(ctx context.Context, seriesID, editionID, cutof
 	if c.SeriesID != seriesID {
 		return ErrNotFound
 	}
-	if err := s.touch(ctx, `UPDATE download_targets SET cutoff_num=? WHERE collection_id=? AND is_default=TRUE`, cutoff, editionID); err != nil && err != ErrNotFound {
+	if err := s.touch(ctx, `UPDATE versions SET cutoff_num=? WHERE edition_id=? AND is_default=TRUE`, cutoff, editionID); err != nil && err != ErrNotFound {
 		return err
 	}
 	return nil
@@ -705,16 +705,16 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 	}
 	for _, l := range links {
 		var valid int
-		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), l.BookID, l.VersionID, l.EditionID, f.SeriesID).Scan(&valid); err != nil {
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM books w JOIN versions t ON t.edition_id=w.edition_id JOIN editions c ON c.id=w.edition_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), l.BookID, l.VersionID, l.EditionID, f.SeriesID).Scan(&valid); err != nil {
 			return 0, err
 		}
 		if valid != 1 {
 			return 0, apperr.Invalidf("file mapping does not belong to this edition/version")
 		}
-		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,evidence) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`), fileID, l.VersionID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
+		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,evidence) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`), fileID, l.VersionID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
 			return 0, err
 		}
-		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,evidence) VALUES(?,?,?) ON CONFLICT DO NOTHING`), fileID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
+		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,book_id,evidence) VALUES(?,?,?) ON CONFLICT DO NOTHING`), fileID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
 			return 0, err
 		}
 
@@ -722,13 +722,13 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 
 	for _, b := range f.ContentBooks {
 		var valid int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND c.id=? AND c.series_id=?`), b.BookID, b.EditionID, f.SeriesID).Scan(&valid); err != nil {
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM books w JOIN editions c ON c.id=w.edition_id WHERE w.id=? AND c.id=? AND c.series_id=?`), b.BookID, b.EditionID, f.SeriesID).Scan(&valid); err != nil {
 			return 0, err
 		}
 		if valid != 1 {
 			return 0, apperr.Invalidf("file contents do not belong to this series and edition")
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,evidence) VALUES(?,?,?) ON CONFLICT DO NOTHING`), fileID, b.BookID, orDefault(f.Provenance, "observed")); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,book_id,evidence) VALUES(?,?,?) ON CONFLICT DO NOTHING`), fileID, b.BookID, orDefault(f.Provenance, "observed")); err != nil {
 			return 0, err
 		}
 	}
@@ -780,27 +780,27 @@ func (s *Store) DeleteFile(ctx context.Context, id int64) (string, error) {
 // numbered chapter a verified file holds.
 func (s *Store) LowestOwnedChapters(ctx context.Context, seriesID int64) (map[int64]int64, error) {
 	rows, err := list[struct {
-		CollectionID int64
-		Lowest       int64
+		EditionID int64
+		Lowest    int64
 	}](ctx, s, `
-		SELECT w.collection_id, MIN(w.sequence_num) AS lowest
-		FROM asset_contents a JOIN works w ON w.id=a.work_id JOIN collections c ON c.id=w.collection_id JOIN files f ON f.id=a.file_id
-		WHERE f.series_id=? AND c.ctype='chapter' AND a.verified=TRUE AND f.needs_review=FALSE AND w.sequence_num>0
-		GROUP BY w.collection_id`, seriesID)
+		SELECT w.edition_id, MIN(w.sequence_num) AS lowest
+		FROM asset_contents a JOIN books w ON w.id=a.book_id JOIN editions c ON c.id=w.edition_id JOIN files f ON f.id=a.file_id
+		WHERE f.series_id=? AND c.type='chapter' AND a.verified=TRUE AND f.needs_review=FALSE AND w.sequence_num>0
+		GROUP BY w.edition_id`, seriesID)
 	if err != nil {
 		return nil, err
 	}
 	out := map[int64]int64{}
 	for _, r := range rows {
-		out[r.CollectionID] = r.Lowest
+		out[r.EditionID] = r.Lowest
 	}
 	return out, nil
 }
 
 // BookKey identifies one book of one collected version: the book of
 // wanting, reserving and owning.
-func BookKey(versionID, workID int64) string {
-	return fmt.Sprintf("%d/%d", versionID, workID)
+func BookKey(versionID, bookID int64) string {
+	return fmt.Sprintf("%d/%d", versionID, bookID)
 }
 
 // --- bindings ---
@@ -809,7 +809,7 @@ func (s *Store) ListBindings(ctx context.Context, seriesID int64) ([]Binding, er
 	return list[Binding](ctx, s, `
 		SELECT id, series_id, source_id, source_manga_key,
 		       COALESCE(source_name,'') AS source_name,
-		       COALESCE(manga_title,'') AS manga_title, state, priority,collection_id,trust_chapters
+		       COALESCE(manga_title,'') AS manga_title, state, priority,edition_id,trust_chapters
 		FROM source_bindings WHERE series_id = ? ORDER BY priority, id`, seriesID)
 }
 
@@ -828,14 +828,14 @@ func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
 	state := orDefault(b.State, "active")
 	var id int64
 	err := s.db.QueryRowContext(ctx, s.q(`
-		INSERT INTO source_bindings (series_id, source_id, source_manga_key, source_name, manga_title, state, priority,collection_id,trust_chapters)
+		INSERT INTO source_bindings (series_id, source_id, source_manga_key, source_name, manga_title, state, priority,edition_id,trust_chapters)
 		VALUES (?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(series_id, source_id, source_manga_key) DO UPDATE SET
 			source_name = excluded.source_name,
 			manga_title = excluded.manga_title,
 			state = excluded.state,
 			trust_chapters=excluded.trust_chapters,
- collection_id=CASE WHEN excluded.collection_id>0 THEN excluded.collection_id ELSE source_bindings.collection_id END
+ edition_id=CASE WHEN excluded.edition_id>0 THEN excluded.edition_id ELSE source_bindings.edition_id END
 		RETURNING id`),
 		b.SeriesID, b.SourceID, b.SourceMangaKey, b.SourceName, b.MangaTitle, state, b.Priority, b.EditionID, b.TrustChapters).Scan(&id)
 	if err != nil {

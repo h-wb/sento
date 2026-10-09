@@ -19,11 +19,11 @@ const maxBoxVolumes = 100
 // collecting it in every version of the edition. The box entry stays, with its catalog
 // link. Running it again only adds what
 // is missing.
-func (l *Library) SplitBox(ctx context.Context, seriesID, workID int64, count int) ([]store.Book, error) {
+func (l *Library) SplitBox(ctx context.Context, seriesID, bookID int64, count int) ([]store.Book, error) {
 	if count < 2 || count > maxBoxVolumes {
 		return nil, apperr.Invalidf("a box holds between 2 and %d volumes", maxBoxVolumes)
 	}
-	box, err := l.store.GetBook(ctx, workID)
+	box, err := l.store.GetBook(ctx, bookID)
 	if err != nil {
 		return nil, err
 	}

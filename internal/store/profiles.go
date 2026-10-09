@@ -167,7 +167,7 @@ func (s *Store) CountProfileUses(ctx context.Context, id int64) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, s.q(`
 		SELECT (SELECT COUNT(*) FROM series WHERE profile_id = ?)
-		     + (SELECT COUNT(*) FROM collections WHERE profile_id = ?) + (SELECT COUNT(*) FROM download_targets WHERE profile_id=?)`), id, id, id).Scan(&n)
+		     + (SELECT COUNT(*) FROM editions WHERE profile_id = ?) + (SELECT COUNT(*) FROM versions WHERE profile_id=?)`), id, id, id).Scan(&n)
 	return n, err
 }
 
@@ -178,7 +178,7 @@ func (s *Store) SetEditionProfile(ctx context.Context, seriesID, editionID, prof
 	if profileID > 0 {
 		v = profileID
 	}
-	return s.touch(ctx, `UPDATE collections SET profile_id = ? WHERE id = ? AND series_id = ?`,
+	return s.touch(ctx, `UPDATE editions SET profile_id = ? WHERE id = ? AND series_id = ?`,
 		v, editionID, seriesID)
 }
 

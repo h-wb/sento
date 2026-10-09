@@ -232,7 +232,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 			case !series.Monitored:
 				sl.Monitored = false
 				sl.Reason = "Automatic downloads are paused for this series"
-			case col.SyncState == "stale" || col.SyncState == "superseded":
+			case col.SyncState == "stale":
 				sl.Monitored = false
 				sl.Reason = "Edition is unavailable in the catalog; review it before collecting"
 			case sl.Book.SyncState == "stale" || sl.Book.SyncState == "retired":

@@ -11,8 +11,8 @@ Sento distinguishes what a book **is**, which releases you want to **keep**, and
 | Profile | Reusable release eligibility, scoring, and upgrade policy | Profile ID |
 | Queue item | A provider download with a frozen coverage plan and decision snapshot | Queue ID; provider and offer key |
 | File / asset | One physical archive with observed facts and a content hash | File ID and path; SHA-256 identifies bytes |
-| File contents | Confirmed books inside an archive, independent of edition rules | File ID + work ID |
-| Fulfillment | Whether a present, verified asset meets a version’s current rules | Derived; explicit selections and pins use file ID + version ID + work ID |
+| File contents | Confirmed books inside an archive, independent of edition rules | File ID + book ID |
+| Fulfillment | Whether a present, verified asset meets a version’s current rules | Derived; explicit selections and pins use file ID + version ID + book ID |
 
 ```mermaid
 flowchart LR
@@ -34,9 +34,13 @@ flowchart LR
 
 Names, numbers, dates, publishers, and ISBNs are facts, not primary keys. Refresh resolves known MangaBaka references and aliases first. Exact descriptors are fallback evidence only when one already-linked row matches. Ambiguity creates a separate catalog row rather than guessing.
 
-Existing work rows act as **stable collection memberships**. A MangaBaka work can belong to several collections: each membership retains its own local ID, and `external_refs` records the shared upstream work reference. This preserves installed library IDs and allows edition-specific numbering and overrides without conflating ownership. Sento does not automatically treat shared external IDs as equivalent file coverage.
+Book rows are **stable memberships of an edition**. A MangaBaka work can belong to several of its collections: each membership is its own book with its own local ID, and `external_refs` records the shared upstream reference. This preserves installed library IDs and allows edition-specific numbering and overrides without conflating ownership. Sento does not automatically treat shared external IDs as equivalent file coverage.
 
-A local edition remains local when similar catalog data appears. **Link to catalog** shows book matches before attaching references. The local edition, IDs, files, versions, and field overrides survive. Unmatched local books remain. The unused catalog row is retained as `superseded`, and verified source mappings move to the linked edition. Linking refuses pending downloads, existing catalog ownership, and additional catalog versions that need separate review.
+A local edition stands in for a publication the catalog does not list yet. It is never adopted silently: when a refresh brings a catalog edition of the same type and language, with compatible traits and at least half of the local books matching, **Review** offers to link the two (best candidate only). "Not the same edition" records the answer so the offer is not repeated; the manual **Link to catalog** stays available.
+
+Linking turns the local edition into that catalog edition. Its ID, files, collected versions and hand-edited fields survive; it takes the catalog's references, name, publisher, medium and any trait it had left unspecified, without sending files back to review. Books are matched by number (by label when unnumbered), kind, revision and ISBN; catalog books it lacked are added at once and unmatched local books remain. Verified source mappings move over and the separate catalog row is deleted, so the edition exists once. Linking refuses pending downloads, a catalog edition that already owns files, and one with additional collected versions.
+
+An edition is either local (`custom`, `sync_state = local`) or catalog-backed (`linked`, or `stale` when its entry disappears); a linked edition is a catalog edition whoever created it.
 
 Metadata edits override only changed fields. Other fields continue receiving catalog updates. **Use catalog values** clears overrides and refreshes metadata. Edition traits (`standard`, `omnibus`, `boxset`, `deluxe`) can combine: a deluxe omnibus and a box of standard books are valid. Standard and omnibus numbering are mutually exclusive. An empty trait list is unspecified. Content variant is `unknown`, `original`, or `colored`. A generic name does not establish standard/original identity. Traits and variant are separate from the editable display name.
 
@@ -108,7 +112,7 @@ Transient client errors back off from 30 seconds up to 32 minutes. If dispatch s
 
 Your editions contains selected editions, local publications, and editions with files. Other editions is a collapsed catalog chooser. Additional copies and metadata operations live in the edition action menu. The profile summary explains inheritance. Book lists load every book of a version at once: state counts double as filters, long editions open as a colour-coded grid (a dense list is the alternative view), and monitoring actions apply to a filter, a number range, or a selection. The series page has one tab row: Editions, Files, Review, Indexers, History. Review combines files, jobs, and chapter observations and shows a count when something is waiting; file mappings are edited from Files; source edition mappings sit under Indexers.
 
-The shared ledger batches works, overrides, facts, coverage, profiles, and pending work per series. It computes a complete consistent series view per request; the book list is returned whole and filtered in the browser. A book on disk can be unsatisfactory for a particular copy without disappearing from the library. New versions reuse qualifying verified files. Series totals count unique books on disk and wanted copies separately.
+The shared ledger batches books, overrides, facts, coverage, profiles, and pending work per series. It computes a complete consistent series view per request; the book list is returned whole and filtered in the browser. A book on disk can be unsatisfactory for a particular copy without disappearing from the library. New versions reuse qualifying verified files. Series totals count unique books on disk and wanted copies separately.
 
 ## Migration and compatibility
 
@@ -116,7 +120,9 @@ Migration 14 intentionally resets the old library and its downloads, file mappin
 
 Migration 15 preserves the current library. It backfills intrinsic asset contents from confirmed coverage, moves edition intent entirely to versions, and adds cached presence, review/retry states, and independent edition traits. Existing file presence starts unknown and is checked during scan, search, or explicit review recheck.
 
-Canonical ownership uses version and work IDs. The old number-based ownership tables and queued-plan adapters are removed. Migrations remain transactional on SQLite and PostgreSQL.
+Canonical ownership uses version and book IDs. The old number-based ownership tables and queued-plan adapters are removed. Migrations remain transactional on SQLite and PostgreSQL.
+
+Migration 20 makes a linked edition a catalog edition and removes the leftover duplicate rows earlier links kept. Migration 21 renames the schema to the vocabulary used everywhere else: tables `editions`, `books`, `versions`, `book_reservations`, `book_overrides` and `book_observations`, with `edition_id`, `book_id` and `version_id` columns. "Collection" and "work" now only name MangaBaka's own records (`internal/metadata`).
 
 Deliberate limits: upgrades retain earlier copies; completed downloads are not automatically reused across unrelated editions or series. Explicit file mapping can share confirmed assets. A comprehensive story/chapter ontology and destructive retention rules remain separate future features.
 

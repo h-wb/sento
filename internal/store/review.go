@@ -1,6 +1,10 @@
 package store
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"strings"
+)
 
 type ReviewItem struct {
 	Status      string `json:"status"`
@@ -11,9 +15,49 @@ type ReviewItem struct {
 	ItemID      int64  `json:"itemId"`
 	Title       string `json:"title"`
 	Detail      string `json:"detail"`
+	// RelatedID is the catalog edition of an "edition" item (ItemID is the
+	// local one).
+	RelatedID int64 `json:"relatedId,omitempty" db:"-"`
 }
 
 func (s *Store) ReviewItems(ctx context.Context, sid int64) ([]ReviewItem, error) {
+	items, err := s.reviewRows(ctx, sid)
+	if err != nil {
+		return nil, err
+	}
+	links, err := s.LinkSuggestions(ctx, sid)
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range links {
+		series, err := s.GetSeries(ctx, l.SeriesID)
+		if err != nil {
+			return nil, err
+		}
+		detail := fmt.Sprintf("MangaBaka lists “%s”, which looks like this edition.", editionText(l.catalog))
+		if l.LocalBooks > 0 {
+			detail += fmt.Sprintf(" %d of your %d books match its %d.", l.Matched, l.LocalBooks, l.CatalogBooks)
+		}
+		items = append(items, ReviewItem{
+			ID: fmt.Sprintf("edition-%d-%d", l.LocalID, l.CatalogID), Kind: "edition", Status: "link",
+			SeriesID: l.SeriesID, SeriesTitle: series.Title, ItemID: l.LocalID, RelatedID: l.CatalogID,
+			Title: editionText(l.local), Detail: detail,
+		})
+	}
+	return items, nil
+}
+
+func editionText(e *Edition) string {
+	parts := []string{e.EditionName, e.Language}
+	for _, p := range []string{e.Publisher, e.Medium} {
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+func (s *Store) reviewRows(ctx context.Context, sid int64) ([]ReviewItem, error) {
 	return list[ReviewItem](ctx, s, `
  SELECT 'file-'||CAST(f.id AS TEXT) AS id,'file' AS kind,f.series_id,s.title AS series_title,f.id AS item_id,f.path AS title,
  CASE WHEN f.presence='unavailable' THEN 'Storage unavailable: '||f.presence_error WHEN f.presence='unknown' THEN 'File presence has not been checked' ELSE 'Confirm the edition and books in this file' END AS detail, f.presence AS status
@@ -23,6 +67,6 @@ func (s *Store) ReviewItems(ctx context.Context, sid int64) ([]ReviewItem, error
  FROM queue_items q JOIN series s ON s.id=q.series_id WHERE (?=0 OR s.id=?) AND q.status IN('needs_review','dispatch_unknown','failed','retry_wait')
  UNION ALL
  SELECT 'chapter-'||CAST(o.id AS TEXT),'chapter',c.series_id,s.title,o.id,o.label,'New chapter from '||o.source,o.state
- FROM unit_observations o JOIN collections c ON c.id=o.collection_id JOIN series s ON s.id=c.series_id WHERE (?=0 OR s.id=?) AND o.state='pending'
+ FROM book_observations o JOIN editions c ON c.id=o.edition_id JOIN series s ON s.id=c.series_id WHERE (?=0 OR s.id=?) AND o.state='pending'
  ORDER BY series_title,kind,item_id LIMIT 500`, sid, sid, sid, sid, sid, sid)
 }

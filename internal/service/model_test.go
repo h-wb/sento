@@ -141,9 +141,98 @@ func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
 	if lc.EditionName != label || lc.ProviderID != c.ProviderID || after[0].ID != before[0].ID {
 		t.Fatalf("link changed local identity: %+v %+v", lc, after)
 	}
-	retired, _ := st.GetEdition(ctx, c.ID)
-	if retired.SyncState != "superseded" {
-		t.Fatal("duplicate catalog row not retired")
+	if lc.Custom || lc.SyncState != "linked" {
+		t.Fatalf("linked edition still counts as local: %+v", lc)
+	}
+	if _, err = st.GetEdition(ctx, c.ID); err == nil {
+		t.Fatal("unused catalog row left behind")
+	}
+	editions, _ := st.ListEditions(ctx, id)
+	for _, e := range editions {
+		if e.ProviderID == c.ProviderID && e.ID != local {
+			t.Fatalf("refresh recreated the catalog edition: %+v", e)
+		}
+	}
+	// A linked edition is a catalog edition: it goes stale with its entry.
+	if err = st.ReconcileMetadata(ctx, id, p.series, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if lc, _ = st.GetEdition(ctx, local); lc.SyncState != "stale" {
+		t.Fatalf("linked edition did not go stale: %s", lc.SyncState)
+	}
+}
+
+func TestModelCatalogLinkIsSuggestedAndCompletesTheEdition(t *testing.T) {
+	_, st, id, c, _, _ := modelFixture(t)
+	ctx := context.Background()
+	local, err := st.AddCustomEdition(ctx, store.Edition{SeriesID: id, EditionName: "Ma collection", Language: c.Language, Monitored: true}, c.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	books, _ := st.ListBooks(ctx, local)
+	if err = st.DeleteBook(ctx, id, books[2].ID); err != nil {
+		t.Fatal(err)
+	}
+	suggested := func() []store.LinkSuggestion {
+		t.Helper()
+		out, err := st.LinkSuggestions(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	got := suggested()
+	if len(got) != 1 || got[0].LocalID != local || got[0].CatalogID != c.ID || got[0].Matched != 2 {
+		t.Fatalf("suggestions: %+v", got)
+	}
+	review, err := st.ReviewItems(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range review {
+		found = found || (item.Kind == "edition" && item.ItemID == local && item.RelatedID == c.ID)
+	}
+	if !found {
+		t.Fatalf("suggestion missing from review: %+v", review)
+	}
+	if err = st.DeclineCatalogLink(ctx, id, local, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	// The next-best catalog edition may be offered instead; this one is not.
+	for _, again := range suggested() {
+		if again.CatalogID == c.ID {
+			t.Fatalf("declined link suggested again: %+v", again)
+		}
+	}
+
+	// Declining only silences the prompt; the link itself stays available.
+	if err = st.LinkCatalog(ctx, id, local, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	linked, _ := st.GetEdition(ctx, local)
+	after, _ := st.ListBooks(ctx, local)
+	if linked.EditionName != c.EditionName || linked.Publisher != c.Publisher || linked.Medium != c.Medium {
+		t.Fatalf("catalog descriptors not adopted: %+v", linked)
+	}
+	if len(after) != 3 || after[0].ID != books[0].ID {
+		t.Fatalf("catalog-only book missing or local ids changed: %+v", after)
+	}
+	for _, b := range after {
+		if b.ProviderID == "" {
+			t.Fatalf("book left without a catalog reference: %+v", b)
+		}
+	}
+	// The next refresh finds everything in place and adds nothing.
+	p := testProvider()
+	if err = st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := st.ListBooks(ctx, local); len(again) != 3 {
+		t.Fatalf("refresh duplicated books: %+v", again)
+	}
+	if got = suggested(); len(got) != 0 {
+		t.Fatalf("linked edition still suggested: %+v", got)
 	}
 }
 
@@ -732,32 +821,4 @@ func booksOf(t *testing.T, lib *Library, st *store.Store, sid, cid int64) []Book
 	}
 	t.Fatalf("edition %d has no default version", cid)
 	return nil
-}
-
-// Queue items, decisions and snapshots stored before the rename wrote
-// "workId": they must still say which book they are about.
-func TestBookRefReadsItsOldFieldName(t *testing.T) {
-	var old, current store.BookRef
-	if err := json.Unmarshal([]byte(`{"targetId":4,"workId":7,"ledger":"volume","collectionId":1,"number":100}`), &old); err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal([]byte(`{"targetId":4,"bookId":7,"ledger":"volume","collectionId":1,"number":100}`), &current); err != nil {
-		t.Fatal(err)
-	}
-	if old != current || old.BookID != 7 || old.VersionID != 4 || old.EditionID != 1 || old.Number != 100 {
-		t.Fatalf("old %+v, current %+v", old, current)
-	}
-	raw, _ := json.Marshal(current)
-	if !strings.Contains(string(raw), `"bookId":7`) || strings.Contains(string(raw), "workId") {
-		t.Fatalf("written form: %s", raw)
-	}
-	// The version was "targetId" in those records.
-	var legacy store.BookRef
-	if err := json.Unmarshal([]byte(`{"targetId":4,"workId":7}`), &legacy); err != nil || legacy.VersionID != 4 || legacy.BookID != 7 {
-		t.Fatalf("legacy names: %+v %v", legacy, err)
-	}
-	var list []store.BookRef
-	if err := json.Unmarshal([]byte(`[{"workId":1},{"bookId":2}]`), &list); err != nil || len(list) != 2 || list[0].BookID != 1 || list[1].BookID != 2 {
-		t.Fatalf("list: %+v %v", list, err)
-	}
 }

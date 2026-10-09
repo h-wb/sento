@@ -5,7 +5,8 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
-import type { ReviewItem } from '../types/store'
+import type { Edition, ReviewItem } from '../types/store'
+import { CatalogLink } from './EditionDialogs'
 
 export default function ReviewInbox({
   seriesID = 0,
@@ -24,6 +25,7 @@ export default function ReviewInbox({
   const [error, setError] = useState('')
   const [remote, setRemote] = useState<ReviewItem | null>(null)
   const [remoteID, setRemoteID] = useState('')
+  const [link, setLink] = useState<{ item: ReviewItem; editions: Edition[] } | null>(null)
   const { confirm, confirmation } = useConfirmAction()
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true)
@@ -45,7 +47,8 @@ export default function ReviewInbox({
   return (
     <Stack gap="sm">
       <Text size="sm" c="dimmed">
-        Resolve file matches, new chapters, and downloads that need attention. Existing downloads
+        Resolve file matches, new chapters, catalog editions that match yours, and downloads that
+        need attention. Existing downloads
         stay reserved until you resolve or cancel them.
       </Text>
       <QueryFeedback pending={q.isPending} error={q.error} onRetry={() => void q.refetch()} />
@@ -101,7 +104,9 @@ export default function ReviewInbox({
                 ? 'New chapter'
                 : i.kind === 'file'
                   ? 'File review'
-                  : 'Download'}
+                  : i.kind === 'edition'
+                    ? 'Catalog edition available'
+                    : 'Download'}
             </Text>
             <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>
               {i.kind === 'file' ? i.title.split(/[\\/]/).pop() : i.title}
@@ -146,6 +151,31 @@ export default function ReviewInbox({
                     Review files
                   </Button>
                 ))}
+              {i.kind === 'edition' && (
+                <>
+                  <Button
+                    size="xs"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () =>
+                        setLink({ item: i, editions: (await api.getSeries(i.seriesId)).editions }),
+                      )
+                    }
+                  >
+                    Review and link
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(() => api.declineCatalogLink(i.seriesId, i.itemId, i.relatedId ?? 0))
+                    }
+                  >
+                    Not the same edition
+                  </Button>
+                </>
+              )}
               {i.kind === 'chapter' && (
                 <>
                   <Button
@@ -258,6 +288,22 @@ export default function ReviewInbox({
           </Button>
         </Stack>
       </Modal>
+      {link && link.editions.some((e) => e.id === link.item.itemId) && (
+        <CatalogLink
+          seriesID={link.item.seriesId}
+          value={link.editions.find((e) => e.id === link.item.itemId)!}
+          editions={link.editions}
+          catalogId={link.item.relatedId}
+          done={async () => {
+            setLink(null)
+            await Promise.all([
+              qc.invalidateQueries({ queryKey: ['review'] }),
+              qc.invalidateQueries({ queryKey: ['series'] }),
+            ])
+          }}
+          close={() => setLink(null)}
+        />
+      )}
       {confirmation}
     </Stack>
   )

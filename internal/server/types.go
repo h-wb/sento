@@ -25,7 +25,7 @@ type DatabaseStatus struct {
 }
 
 // SeriesDetail is GET /series/{id}. The editions list carries both
-// volume editions and chapter editions (ctype distinguishes them).
+// volume editions and chapter editions (type distinguishes them).
 type SeriesDetail struct {
 	Series   *store.Series   `json:"series"`
 	Editions []store.Edition `json:"editions"`

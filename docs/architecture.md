@@ -132,7 +132,7 @@ Sizes are non-test lines, June 2026 — a proxy for where the complexity is.
 ## Architectural invariants
 
 - **Slots are computed, never stored.** `ledger` derives them from
-  metadata + links; the DB stores facts (series, collections, works,
+  metadata + links; the DB stores facts (series, editions, books,
   file↔slot links, monitoring overrides), not the ledger itself.
 - **Providers are uniform.** The funnel and importer never know which
   protocol a candidate came from; only the payload shape differs

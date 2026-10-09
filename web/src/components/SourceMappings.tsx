@@ -33,7 +33,7 @@ export default function SourceMappings({
     }
   }
   const active = (bindings.data ?? []).filter((b) => b.state === 'active')
-  const choices = editions.filter((c) => c.syncState !== 'superseded')
+  const choices = editions
   if (!active.length) return null
   return (
     <Card withBorder>

@@ -44,7 +44,7 @@ func (s *SearchService) HasSourceProvider() bool {
 }
 
 // SearchScope scopes an interactive search to one collected version: one
-// of its books (WorkID), or every wanted book of it (All).
+// of its books (BookID), or every wanted book of it (All).
 type SearchScope struct {
 	// ReplaceQueueID names a download this search looks to replace. Its
 	// books count as wanted although the job still reserves them, its own

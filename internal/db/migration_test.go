@@ -63,7 +63,7 @@ func TestEditionMigrationResetsLibrary(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = conn.Close() }()
-	for _, table := range []string{"series", "collections", "works", "files", "queue_items", "asset_coverage", "download_targets"} {
+	for _, table := range []string{"series", "editions", "books", "files", "queue_items", "asset_coverage", "versions"} {
 		var count int
 		if err := conn.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("%s was not reset: %d %v", table, count, err)

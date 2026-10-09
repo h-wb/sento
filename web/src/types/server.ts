@@ -52,7 +52,7 @@ export interface DatabaseStatus {
 }
 /**
  * SeriesDetail is GET /series/{id}. The editions list carries both
- * volume editions and chapter editions (ctype distinguishes them).
+ * volume editions and chapter editions (type distinguishes them).
  */
 export interface SeriesDetail {
   series?: Series;

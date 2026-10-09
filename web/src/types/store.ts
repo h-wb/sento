@@ -62,6 +62,18 @@ export interface CatalogLinkPreview {
   unmatched: number /* int64 */[];
 }
 /**
+ * LinkSuggestion is a catalog edition that looks like the one a local
+ * edition has been standing in for.
+ */
+export interface LinkSuggestion {
+  seriesId: number /* int64 */;
+  localId: number /* int64 */;
+  catalogId: number /* int64 */;
+  matched: number /* int */;
+  localBooks: number /* int */;
+  catalogBooks: number /* int */;
+}
+/**
  * EditionTraitList stores known traits; [] explicitly means unspecified.
  */
 export type EditionTraitList = string[];
@@ -229,6 +241,11 @@ export interface ReviewItem {
   itemId: number /* int64 */;
   title: string;
   detail: string;
+  /**
+   * RelatedID is the catalog edition of an "edition" item (ItemID is the
+   * local one).
+   */
+  relatedId?: number /* int64 */;
 }
 
 //////////
@@ -305,7 +322,7 @@ export interface Edition {
   endDate?: string;
   custom: boolean;
   profileId?: number /* int64 */; // 0 = inherit from series
-  cutoffNum: number /* int64 */; // chapter ctype: skip through this number (exclusive cutoff)
+  cutoffNum: number /* int64 */; // chapter editions: skip through this number (exclusive cutoff)
 }
 export interface Book {
   providerId?: string;

@@ -97,9 +97,7 @@ export default function EditionManager({
     }
   }
   const allVersions = versions.data ?? []
-  const visible = editions
-    .filter((c) => c.syncState !== 'superseded')
-    .sort(
+  const visible = [...editions].sort(
       (a, b) =>
         Number(b.monitored) - Number(a.monitored) ||
         Number(a.type === 'chapter') - Number(b.type === 'chapter') ||

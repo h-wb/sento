@@ -51,7 +51,7 @@ A `Profile` does two jobs:
 
 ## Shared ledger
 
-`internal/service/versions.go` loads works, acquisition versions, per-book overrides, verified file contents, selections/pins, stored presence, pending jobs, and effective profiles in batches. `targetSlots` evaluates each version/book pair. GETs never initialize chapters or check paths.
+`internal/service/versions.go` loads books, collected versions, per-book overrides, verified file contents, selections/pins, stored presence, pending jobs, and effective profiles in batches. `targetSlots` evaluates each version/book pair. GETs never initialize chapters or check paths.
 
 Monitoring is gated by the series, parent edition, work, version, extras rule, exclusive chapter cutoff, and individual overrides. Retired or catalog-missing publications stop automation. Availability stays released, upcoming, or unknown; unknown dates follow the version’s explicit policy.
 

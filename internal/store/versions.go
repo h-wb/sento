@@ -12,7 +12,7 @@ import (
 type CollectedVersion struct {
 	IncludeExtras  bool   `json:"includeExtras"`
 	ID             int64  `json:"id"`
-	EditionID      int64  `json:"editionId" db:"collection_id"`
+	EditionID      int64  `json:"editionId"`
 	Name           string `json:"name"`
 	IsDefault      bool   `json:"isDefault"`
 	Monitored      bool   `json:"monitored"`
@@ -23,13 +23,13 @@ type CollectedVersion struct {
 	AcquireUnknown bool   `json:"acquireUnknown"`
 }
 
-const versionColumns = `id,collection_id,name,is_default,monitored,COALESCE(profile_id,0) AS profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras`
+const versionColumns = `id,edition_id,name,is_default,monitored,COALESCE(profile_id,0) AS profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras`
 
 func (s *Store) ListVersions(ctx context.Context, seriesID int64) ([]CollectedVersion, error) {
-	return list[CollectedVersion](ctx, s, `SELECT `+versionColumns+` FROM download_targets WHERE collection_id IN(SELECT id FROM collections WHERE series_id=?) ORDER BY collection_id,is_default DESC,id`, seriesID)
+	return list[CollectedVersion](ctx, s, `SELECT `+versionColumns+` FROM versions WHERE edition_id IN(SELECT id FROM editions WHERE series_id=?) ORDER BY edition_id,is_default DESC,id`, seriesID)
 }
 func (s *Store) GetVersion(ctx context.Context, id int64) (*CollectedVersion, error) {
-	return get[CollectedVersion](ctx, s, `SELECT `+versionColumns+` FROM download_targets WHERE id=?`, id)
+	return get[CollectedVersion](ctx, s, `SELECT `+versionColumns+` FROM versions WHERE id=?`, id)
 }
 func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVersion) (int64, error) {
 	c, err := s.GetEdition(ctx, t.EditionID)
@@ -68,7 +68,7 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 			return 0, e
 		}
 		var id int64
-		e = tx.QueryRowContext(ctx, s.q(`INSERT INTO download_targets(collection_id,name,monitored,profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id`), t.EditionID, t.Name, t.Monitored, prof, t.CutoffNum, t.RequiredGroup, t.AllowUnknown, t.AcquireUnknown, t.IncludeExtras).Scan(&id)
+		e = tx.QueryRowContext(ctx, s.q(`INSERT INTO versions(edition_id,name,monitored,profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id`), t.EditionID, t.Name, t.Monitored, prof, t.CutoffNum, t.RequiredGroup, t.AllowUnknown, t.AcquireUnknown, t.IncludeExtras).Scan(&id)
 		if e != nil {
 			return 0, conflict(e, "a collected version already uses this name")
 		}
@@ -98,7 +98,7 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 	if err = s.lockEditions(ctx, tx, monitorOnly, c.ID); err != nil {
 		return 0, err
 	}
-	_, err = tx.ExecContext(ctx, s.q(`UPDATE download_targets SET name=?,monitored=?,profile_id=?,cutoff_num=?,required_group=?,allow_unknown=?,acquire_unknown=?,include_extras=? WHERE id=?`), t.Name, t.Monitored, prof, t.CutoffNum, t.RequiredGroup, t.AllowUnknown, t.AcquireUnknown, t.IncludeExtras, t.ID)
+	_, err = tx.ExecContext(ctx, s.q(`UPDATE versions SET name=?,monitored=?,profile_id=?,cutoff_num=?,required_group=?,allow_unknown=?,acquire_unknown=?,include_extras=? WHERE id=?`), t.Name, t.Monitored, prof, t.CutoffNum, t.RequiredGroup, t.AllowUnknown, t.AcquireUnknown, t.IncludeExtras, t.ID)
 	if err == nil {
 		err = tx.Commit()
 	}
@@ -136,7 +136,7 @@ func (s *Store) DeleteVersion(ctx context.Context, seriesID, id int64) error {
 	if err = s.lockEditions(ctx, tx, false, c.ID); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM download_targets WHERE id=?`), id); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM versions WHERE id=?`), id); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -162,23 +162,23 @@ type AssetFacts struct {
 type AssetCoverage struct {
 	Evidence  string `json:"evidence"`
 	FileID    int64  `json:"fileId"`
-	VersionID int64  `json:"versionId" db:"target_id"`
-	BookID    int64  `json:"bookId" db:"work_id"`
+	VersionID int64  `json:"versionId"`
+	BookID    int64  `json:"bookId"`
 	Verified  bool   `json:"verified"`
 	Pinned    bool   `json:"pinned"`
 }
 
 func (s *Store) Coverage(ctx context.Context, seriesID int64) ([]AssetCoverage, error) {
-	return list[AssetCoverage](ctx, s, `SELECT c.file_id,t.id AS target_id,c.work_id,c.verified,COALESCE(a.pinned,FALSE) AS pinned,c.evidence
- FROM asset_contents c JOIN works w ON w.id=c.work_id JOIN download_targets t ON t.collection_id=w.collection_id
- JOIN files f ON f.id=c.file_id LEFT JOIN asset_coverage a ON a.file_id=c.file_id AND a.work_id=c.work_id AND a.target_id=t.id
+	return list[AssetCoverage](ctx, s, `SELECT c.file_id,t.id AS version_id,c.book_id,c.verified,COALESCE(a.pinned,FALSE) AS pinned,c.evidence
+ FROM asset_contents c JOIN books w ON w.id=c.book_id JOIN versions t ON t.edition_id=w.edition_id
+ JOIN files f ON f.id=c.file_id LEFT JOIN asset_coverage a ON a.file_id=c.file_id AND a.book_id=c.book_id AND a.version_id=t.id
  WHERE f.series_id=? AND COALESCE(a.selected,TRUE)=TRUE`, seriesID)
 }
 func (s *Store) PinCoverage(ctx context.Context, seriesID int64, a AssetCoverage) error {
-	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,pinned)
- SELECT c.file_id,t.id,c.work_id,? FROM asset_contents c JOIN works w ON w.id=c.work_id JOIN download_targets t ON t.collection_id=w.collection_id JOIN files f ON f.id=c.file_id
- WHERE c.file_id=? AND t.id=? AND c.work_id=? AND f.series_id=?
- ON CONFLICT(file_id,target_id,work_id) DO UPDATE SET pinned=excluded.pinned`), a.Pinned, a.FileID, a.VersionID, a.BookID, seriesID)
+	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,pinned)
+ SELECT c.file_id,t.id,c.book_id,? FROM asset_contents c JOIN books w ON w.id=c.book_id JOIN versions t ON t.edition_id=w.edition_id JOIN files f ON f.id=c.file_id
+ WHERE c.file_id=? AND t.id=? AND c.book_id=? AND f.series_id=?
+ ON CONFLICT(file_id,version_id,book_id) DO UPDATE SET pinned=excluded.pinned`), a.Pinned, a.FileID, a.VersionID, a.BookID, seriesID)
 	return err
 }
 func (s *Store) FileFacts(ctx context.Context, id int64) (AssetFacts, error) {
@@ -238,7 +238,7 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Boo
 	}
 	for _, sl := range slots {
 		var valid int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id JOIN collections c ON c.id=w.collection_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), sl.BookID, sl.VersionID, sl.EditionID, seriesID).Scan(&valid); err != nil {
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM books w JOIN versions t ON t.edition_id=w.edition_id JOIN editions c ON c.id=w.edition_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), sl.BookID, sl.VersionID, sl.EditionID, seriesID).Scan(&valid); err != nil {
 			return err
 		}
 		if valid != 1 {
@@ -246,7 +246,7 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Boo
 		}
 	}
 	pins := map[string]bool{}
-	rows, err := tx.QueryContext(ctx, s.q(`SELECT target_id,work_id,pinned FROM asset_coverage WHERE file_id=?`), fileID)
+	rows, err := tx.QueryContext(ctx, s.q(`SELECT version_id,book_id,pinned FROM asset_coverage WHERE file_id=?`), fileID)
 	if err != nil {
 		return err
 	}
@@ -271,16 +271,16 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Boo
 		return err
 	}
 	for _, sl := range slots {
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,work_id,verified,evidence) VALUES(?,?,TRUE,'manual') ON CONFLICT DO NOTHING`), fileID, sl.BookID); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,book_id,verified,evidence) VALUES(?,?,TRUE,'manual') ON CONFLICT DO NOTHING`), fileID, sl.BookID); err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,pinned,evidence) VALUES(?,?,?,? ,'manual') ON CONFLICT DO NOTHING`), fileID, sl.VersionID, sl.BookID, pins[BookKey(sl.VersionID, sl.BookID)]); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,pinned,evidence) VALUES(?,?,?,? ,'manual') ON CONFLICT DO NOTHING`), fileID, sl.VersionID, sl.BookID, pins[BookKey(sl.VersionID, sl.BookID)]); err != nil {
 			return err
 		}
 	}
 	// Explicit mapping choices may exclude existing versions; future versions can still reuse content.
-	if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,target_id,work_id,selected)
- SELECT c.file_id,t.id,c.work_id,FALSE FROM asset_contents c JOIN works w ON w.id=c.work_id JOIN download_targets t ON t.collection_id=w.collection_id
+	if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,selected)
+ SELECT c.file_id,t.id,c.book_id,FALSE FROM asset_contents c JOIN books w ON w.id=c.book_id JOIN versions t ON t.edition_id=w.edition_id
  WHERE c.file_id=? ON CONFLICT DO NOTHING`), fileID); err != nil {
 		return err
 	}
@@ -290,12 +290,12 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Boo
 	return tx.Commit()
 }
 
-func (s *Store) SetBookMonitored(ctx context.Context, seriesID, versionID, workID int64, monitored bool) error {
+func (s *Store) SetBookMonitored(ctx context.Context, seriesID, versionID, bookID int64, monitored bool) error {
 	t, err := s.GetVersion(ctx, versionID)
 	if err != nil {
 		return err
 	}
-	w, err := s.GetBook(ctx, workID)
+	w, err := s.GetBook(ctx, bookID)
 	if err != nil {
 		return err
 	}
@@ -306,20 +306,20 @@ func (s *Store) SetBookMonitored(ctx context.Context, seriesID, versionID, workI
 	if c.SeriesID != seriesID || w.EditionID != c.ID {
 		return ErrNotFound
 	}
-	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO unit_overrides(target_id,work_id,monitored) VALUES(?,?,?) ON CONFLICT(target_id,work_id) DO UPDATE SET monitored=excluded.monitored`), versionID, workID, monitored)
+	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO book_overrides(version_id,book_id,monitored) VALUES(?,?,?) ON CONFLICT(version_id,book_id) DO UPDATE SET monitored=excluded.monitored`), versionID, bookID, monitored)
 	return err
 }
 func (s *Store) BookOverrides(ctx context.Context, versionID int64) (map[int64]bool, error) {
 	rows, err := list[struct {
-		WorkID    int64
+		BookID    int64
 		Monitored bool
-	}](ctx, s, `SELECT work_id,monitored FROM unit_overrides WHERE target_id=?`, versionID)
+	}](ctx, s, `SELECT book_id,monitored FROM book_overrides WHERE version_id=?`, versionID)
 	if err != nil {
 		return nil, err
 	}
 	out := map[int64]bool{}
 	for _, r := range rows {
-		out[r.WorkID] = r.Monitored
+		out[r.BookID] = r.Monitored
 	}
 	return out, nil
 }
@@ -364,13 +364,13 @@ func (s *Store) BulkMonitor(ctx context.Context, sid, tid int64, ids []int64, mo
 	}
 	for _, id := range ids {
 		var count int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works WHERE id=? AND collection_id=?`), id, c.ID).Scan(&count); err != nil {
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM books WHERE id=? AND edition_id=?`), id, c.ID).Scan(&count); err != nil {
 			return err
 		}
 		if count != 1 {
 			return apperr.Invalidf("book belongs to another edition")
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO unit_overrides(target_id,work_id,monitored) VALUES(?,?,?) ON CONFLICT(target_id,work_id) DO UPDATE SET monitored=excluded.monitored`), tid, id, monitored); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO book_overrides(version_id,book_id,monitored) VALUES(?,?,?) ON CONFLICT(version_id,book_id) DO UPDATE SET monitored=excluded.monitored`), tid, id, monitored); err != nil {
 			return err
 		}
 	}

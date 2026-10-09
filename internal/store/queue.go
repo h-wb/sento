@@ -57,7 +57,7 @@ type QueueItem struct {
 	ExternalID     string   `json:"externalId"`
 	Title          string   `json:"title"`
 	Status         string   `json:"status"`
-	Books          JSONText `json:"books" db:"expected_slots_json" tstype:"BookRef[]"`
+	Books          JSONText `json:"books" db:"books_json" tstype:"BookRef[]"`
 	Error          string   `json:"error,omitempty"`
 	CreatedAt      string   `json:"createdAt"`
 	UpdatedAt      string   `json:"updatedAt,omitempty"`
@@ -88,35 +88,9 @@ type BookRef struct {
 	Number    int64  `json:"number"`
 }
 
-// UnmarshalJSON also accepts "workId", "targetId" and "collectionId", the
-// names these fields had in queue items, decisions and snapshots written
-// before they were renamed.
-func (b *BookRef) UnmarshalJSON(data []byte) error {
-	type plain BookRef
-	aux := struct {
-		*plain
-		LegacyBook    int64 `json:"workId"`
-		LegacyVersion int64 `json:"targetId"`
-		LegacyEdition int64 `json:"collectionId"`
-	}{plain: (*plain)(b)}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	if b.BookID == 0 {
-		b.BookID = aux.LegacyBook
-	}
-	if b.VersionID == 0 {
-		b.VersionID = aux.LegacyVersion
-	}
-	if b.EditionID == 0 {
-		b.EditionID = aux.LegacyEdition
-	}
-	return nil
-}
-
 func (s *Store) AddQueueItem(ctx context.Context, q QueueItem) (int64, error) {
 	return s.insert(ctx, `
-		INSERT INTO queue_items (series_id, protocol, external_id, title, status, expected_slots_json)
+		INSERT INTO queue_items (series_id, protocol, external_id, title, status, books_json)
 		VALUES (?,?,?,?,?,?) RETURNING id`,
 		q.SeriesID, q.Protocol, q.ExternalID, q.Title, orDefault(q.Status, QueueQueued),
 		string(q.Books))
@@ -128,7 +102,7 @@ func (s *Store) UpdateQueueItem(ctx context.Context, id int64, status, errMsg st
 		status, errMsg, utcNow(), id)
 }
 
-const queueColumns = `id, series_id, protocol, external_id, title, status, expected_slots_json,
+const queueColumns = `id, series_id, protocol, external_id, title, status, books_json,
 	             COALESCE(error,'') AS error, created_at,provider_id,release_key,snapshot_json,
 	             COALESCE(updated_at,'') AS updated_at,retry_count,retry_at,download_client,
 	             download_progress,progress_at,observed_at,download_state,stalled`
@@ -230,7 +204,7 @@ func (s *Store) SeriesTitles(ctx context.Context, seriesID int64, preferredLangu
 }
 
 func (s *Store) PendingBooks(ctx context.Context, seriesID int64) (map[string]bool, error) {
-	raws, err := list[string](ctx, s, `SELECT expected_slots_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`, seriesID)
+	raws, err := list[string](ctx, s, `SELECT books_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -296,21 +270,21 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []BookRef) 
 	}
 	for _, sl := range slots {
 		var n int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM works w JOIN download_targets t ON t.collection_id=w.collection_id WHERE w.id=? AND t.id=? AND w.collection_id=? AND w.sync_state<>'retired'`), sl.BookID, sl.VersionID, sl.EditionID).Scan(&n); err != nil {
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM books w JOIN versions t ON t.edition_id=w.edition_id WHERE w.id=? AND t.id=? AND w.edition_id=? AND w.sync_state<>'retired'`), sl.BookID, sl.VersionID, sl.EditionID).Scan(&n); err != nil {
 			return 0, false, err
 		}
 		if n != 1 {
 			return 0, false, apperr.Conflictf("edition changed while preparing the download; search again")
 		}
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM unit_reservations WHERE queue_id IN(SELECT id FROM queue_items WHERE status IN('failed','imported','cancelled'))`); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM book_reservations WHERE queue_id IN(SELECT id FROM queue_items WHERE status IN('failed','imported','cancelled'))`); err != nil {
 		return 0, false, err
 	}
 	var id int64
 	var raw, snap string
 	err = sql.ErrNoRows
 	if q.ReleaseKey != "" {
-		query := `SELECT id,expected_slots_json,snapshot_json FROM queue_items WHERE series_id=? AND provider_id=? AND release_key=? AND status IN('queued','downloading') ORDER BY id LIMIT 1`
+		query := `SELECT id,books_json,snapshot_json FROM queue_items WHERE series_id=? AND provider_id=? AND release_key=? AND status IN('queued','downloading') ORDER BY id LIMIT 1`
 		if s.pg {
 			query += " FOR UPDATE"
 		}
@@ -320,7 +294,7 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []BookRef) 
 	var plan []BookRef
 	if created {
 		body, _ := json.Marshal(slots)
-		if err = tx.QueryRowContext(ctx, s.q(`INSERT INTO queue_items(series_id,protocol,external_id,title,status,expected_slots_json,provider_id,release_key,snapshot_json,download_client) VALUES(?,?,'',?,'queued',?,?,?,?,?) RETURNING id`), q.SeriesID, q.Protocol, q.Title, string(body), q.ProviderID, q.ReleaseKey, string(q.Snapshot), q.DownloadClient).Scan(&id); err != nil {
+		if err = tx.QueryRowContext(ctx, s.q(`INSERT INTO queue_items(series_id,protocol,external_id,title,status,books_json,provider_id,release_key,snapshot_json,download_client) VALUES(?,?,'',?,'queued',?,?,?,?,?) RETURNING id`), q.SeriesID, q.Protocol, q.Title, string(body), q.ProviderID, q.ReleaseKey, string(q.Snapshot), q.DownloadClient).Scan(&id); err != nil {
 			return 0, false, conflict(err, "release already has an active job")
 		}
 	} else if err != nil {
@@ -341,7 +315,7 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []BookRef) 
 			continue
 		}
 		if sl.VersionID > 0 && sl.BookID > 0 {
-			if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO unit_reservations(target_id,work_id,queue_id) VALUES(?,?,?)`), sl.VersionID, sl.BookID, id); err != nil {
+			if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO book_reservations(version_id,book_id,queue_id) VALUES(?,?,?)`), sl.VersionID, sl.BookID, id); err != nil {
 				return 0, false, conflict(err, "book already has a pending download")
 			}
 		}
@@ -356,7 +330,7 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []BookRef) 
 		extra = append(extra, json.RawMessage(q.Snapshot))
 		snapshot["extraEvaluations"], _ = json.Marshal(extra)
 		saved, _ := json.Marshal(snapshot)
-		if _, err = tx.ExecContext(ctx, s.q(`UPDATE queue_items SET expected_slots_json=?,snapshot_json=? WHERE id=?`), string(body), string(saved), id); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`UPDATE queue_items SET books_json=?,snapshot_json=? WHERE id=?`), string(body), string(saved), id); err != nil {
 			return 0, false, err
 		}
 	}
@@ -386,7 +360,7 @@ func (s *Store) BeginImport(ctx context.Context, id int64) (*QueueItem, error) {
 		return nil, apperr.Conflictf("download is no longer active")
 	}
 	var q QueueItem
-	err = tx.QueryRowContext(ctx, s.q(`SELECT id,series_id,protocol,external_id,title,status,expected_slots_json,provider_id,release_key,snapshot_json,created_at,download_client FROM queue_items WHERE id=?`), id).Scan(&q.ID, &q.SeriesID, &q.Protocol, &q.ExternalID, &q.Title, &q.Status, &q.Books, &q.ProviderID, &q.ReleaseKey, &q.Snapshot, &q.CreatedAt, &q.DownloadClient)
+	err = tx.QueryRowContext(ctx, s.q(`SELECT id,series_id,protocol,external_id,title,status,books_json,provider_id,release_key,snapshot_json,created_at,download_client FROM queue_items WHERE id=?`), id).Scan(&q.ID, &q.SeriesID, &q.Protocol, &q.ExternalID, &q.Title, &q.Status, &q.Books, &q.ProviderID, &q.ReleaseKey, &q.Snapshot, &q.CreatedAt, &q.DownloadClient)
 	if err != nil {
 		return nil, err
 	}
@@ -420,7 +394,7 @@ func (s *Store) CancelQueue(ctx context.Context, id int64) error {
 	if n == 0 {
 		return apperr.Conflictf("wait for the current import to finish before cancelling")
 	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM unit_reservations WHERE queue_id=?`), id); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM book_reservations WHERE queue_id=?`), id); err != nil {
 		return err
 	}
 	return tx.Commit()

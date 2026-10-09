@@ -89,3 +89,33 @@ test('looking for a replacement leaves the stalled download alone', async ({ pag
   // Only the server retires the old job, and only when a replacement is picked.
   expect(cancelled).toBe(false)
 })
+
+test('a local edition is offered the catalog edition that matches it', async ({ page, request }) => {
+  const added = await request.post('/api/v1/series/', { data: { mangabakaId: 103, monitor: 'all' } })
+  expect(added.ok()).toBeTruthy()
+  const { id } = await added.json()
+  try {
+    const detail = await (await request.get(`/api/v1/series/${id}/`)).json()
+    const catalog = detail.editions.find((e: { editionName: string; type: string }) => e.editionName === 'Standard Edition' && e.type === 'volume')
+    const created = await request.post(`/api/v1/series/${id}/editions`, {
+      data: { editionName: 'My scans', language: catalog.language, publisher: '', medium: '', type: 'volume', basedOn: catalog.id, volumes: 0, cutoffNum: 0, monitored: true },
+    })
+    expect(created.ok()).toBeTruthy()
+
+    await page.goto(`/series/${id}?view=review`)
+    const item = page.locator('.mantine-Card-root').filter({ hasText: 'Catalog edition available' })
+    await expect(item.getByText(/MangaBaka lists “Standard Edition/)).toBeVisible()
+    await item.getByRole('button', { name: 'Review and link' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Link edition to MangaBaka' })
+    await expect(dialog.getByText(/of your books match the catalog/)).toBeVisible()
+    await dialog.getByRole('button', { name: 'Link edition' }).click()
+    await expect(dialog).toBeHidden()
+    await expect(page.getByText('Catalog edition available')).toHaveCount(0)
+
+    // One edition remains, and it is a catalog edition now.
+    const after = await (await request.get(`/api/v1/series/${id}/`)).json()
+    const standard = after.editions.filter((e: { editionName: string; type: string }) => e.editionName === 'Standard Edition' && e.type === 'volume')
+    expect(standard).toHaveLength(1)
+    expect(standard[0].custom).toBe(false)
+  } finally { await request.delete(`/api/v1/series/${id}/`) }
+})

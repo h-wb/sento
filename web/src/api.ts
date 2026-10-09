@@ -215,6 +215,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ catalogId }),
     }),
+  // "Not the same edition": stops the link from being suggested again.
+  declineCatalogLink: (id: number, cid: number, catalogId: number) =>
+    request<void>(`/series/${id}/editions/${cid}/catalog-link?decline=1`, {
+      method: 'POST',
+      body: JSON.stringify({ catalogId }),
+    }),
   coverage: (id: number) => request<AssetCoverage[]>(`/series/${id}/coverage`),
   pinCoverage: (id: number, coverage: AssetCoverage) =>
     request<void>(`/series/${id}/coverage/pin`, {
