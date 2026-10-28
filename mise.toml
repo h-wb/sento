@@ -7,7 +7,9 @@
 [tools]
 go = "1.27.3"
 node = "24.20.0"
-java = "temurin-21.0.13"
+# Java keeps its upstream build metadata ("+9.0.LTS"): macOS resolves
+# only the full form, so the pin uses it.
+java = "temurin-21.0.13+9.0.LTS"
 vendir = "0.46.2"
 gradle = "9.8.0"
 golangci-lint = "2.14.0"
