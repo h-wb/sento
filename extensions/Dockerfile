@@ -11,7 +11,7 @@
 FROM --platform=$BUILDPLATFORM gradle:9.8.0-jdk21 AS build
 ARG BUILDARCH
 # Keep in step with the vendir pin in mise.toml (Renovate bumps both).
-ARG VENDIR_VERSION=0.46.2
+ARG VENDIR_VERSION=0.46.3
 RUN curl -fsSL -o /usr/local/bin/vendir \
       "https://github.com/carvel-dev/vendir/releases/download/v${VENDIR_VERSION}/vendir-linux-${BUILDARCH}" \
     && chmod +x /usr/local/bin/vendir
