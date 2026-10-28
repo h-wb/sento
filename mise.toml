@@ -2,10 +2,12 @@
 # tool upgrade arrives as a reviewable Renovate PR instead of as a surprise
 # red build. Only gopls floats: it is an editor language server no task
 # uses (CI skips it via MISE_DISABLE_TOOLS).
+# Exact versions, not ranges: CI caches installs keyed on this file, so a
+# range like "1.27" kept a cached go1.27.1 through its security release.
 [tools]
-go = "1.27"
-node = "24"
-java = "temurin-21"
+go = "1.27.3"
+node = "24.20.0"
+java = "temurin-21.0.13"
 vendir = "0.46.2"
 gradle = "9.8.0"
 golangci-lint = "2.14.0"
