@@ -42,7 +42,7 @@ func requireHost(t *testing.T) (*Client, context.Context) {
 	base := hostURL()
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Get(base + "/health")
 	if err != nil {
-		t.Fatalf("sidecar unreachable at %s: %v (start it with: mise run extensions:run)", base, err)
+		t.Fatalf("sidecar unreachable at %s: %v (start it with: mise daemons start extensions)", base, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {

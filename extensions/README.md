@@ -53,8 +53,16 @@ instead of converting the APK with dex2jar.
 ## Run
 
 ```sh
+mise daemons start extensions   # vendir sync + gradle :app:installDist, then run it
+mise daemons logs -t extensions
+```
+
+That is the `extensions` daemon from the repo's `mise.toml`: port 8901 in the
+primary checkout, data in `extensions/data`. By hand, without the supervisor:
+
+```sh
 mise run extensions:build   # vendir sync + gradle :app:installDist
-SENTO_EXTENSIONS_PORT=8901 SENTO_EXTENSIONS_DATA=data app/build/install/app/bin/app
+SENTO_EXTENSIONS_PORT=8901 SENTO_EXTENSIONS_DATA=data mise run extensions:run
 ```
 
 Environment: `SENTO_EXTENSIONS_PORT` (8901), `SENTO_EXTENSIONS_DATA` (data),

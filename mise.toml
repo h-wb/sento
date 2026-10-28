@@ -1,3 +1,9 @@
+min_version = "2026.9.18"
+
+[settings]
+# [daemons] and the tasks that require them are experimental in mise.
+experimental = true
+
 # Everything a check depends on is pinned, so a run is reproducible and a
 # tool upgrade arrives as a reviewable Renovate PR instead of as a surprise
 # red build. Only gopls floats: it is an editor language server no task
@@ -7,14 +13,15 @@
 [tools]
 go = "1.27.3"
 node = "24.20.0"
-# Java keeps its upstream build metadata ("+9.0.LTS"): macOS resolves
-# only the full form, so the pin uses it.
+# Java keeps its upstream build metadata ("+9.0.LTS"): macOS resolves only
+# the full form, so the pin uses it.
 java = "temurin-21.0.13+9.0.LTS"
 vendir = "0.46.2"
 gradle = "9.8.0"
 golangci-lint = "2.14.0"
 actionlint = "1.7.12"
 shellcheck = "0.11.0" # actionlint runs it over every `run:` script
+pitchfork = "2.30.1" # supervises the [daemons] dev stack
 "go:golang.org/x/tools/gopls" = "latest"
 
 [env]
@@ -27,6 +34,85 @@ SENTO_LIBRARY_PATH = "data/library"
 # Read from the caller first: mise [env] otherwise overrides it, and the Paseo
 # `api` service (paseo.json) points the backend at its worktree's sidecar.
 SENTO_EXTENSIONS_URL = "{{ get_env(name='SENTO_EXTENSIONS_URL', default='http://localhost:8901') }}"
+
+# --- dev stack (long-running processes; pitchfork supervises them) ---
+#
+#   mise run dev            sidecar + backend + web UI, built first, waited
+#                           on, then their logs (= mise daemons start + logs -t)
+#   mise run dev:stop       stop everything this checkout started
+#
+# Every port is automatic: the primary checkout gets the base below and a
+# linked git worktree gets its own offset, so two checkouts run side by
+# side. Each daemon starts its process with the same mise task a terminal
+# uses (extensions:run, web:dev); paseo.json's services call those tasks
+# too, so each process has exactly one definition of how it starts.
+
+[daemons_settings]
+namespace = "sento"
+
+[daemon_groups]
+# What a bare `mise daemons start` brings up; the rest start on demand.
+default = ["extensions", "api", "web"]
+
+[daemons.extensions]
+dir = "extensions"
+init = "mise run extensions:build"
+run = "SENTO_EXTENSIONS_PORT=$EXTENSIONS_PORT mise run extensions:run"
+port = { auto = true, base = 8901 }
+# Generous: the first start compiles the vendored Suwayomi tree, then boots a JVM.
+ready_cmd = { run = "curl -fsS http://127.0.0.1:$EXTENSIONS_PORT/health", timeout = "15m" }
+
+[daemons.api]
+# Not `mise run run` on purpose: that task builds and runs in one step, so
+# a broken build would take the daemon down with it. init keeps the last
+# good binary and the daemon keeps serving it, with BUILD FAILED in the log.
+init = "mise run build || echo 'BUILD FAILED: still serving the previous bin/sento' >&2"
+run = "SENTO_PORT=$API_PORT SENTO_EXTENSIONS_URL=http://127.0.0.1:$EXTENSIONS_PORT exec bin/sento"
+port = { auto = true, base = 8484 }
+ready_cmd = { run = "curl -fsS http://127.0.0.1:$API_PORT/api/v1/system/health", timeout = "5m" }
+depends = ["extensions"]
+# Rebuild and restart on a Go change (the web UI hot-reloads by itself).
+watch = ["cmd/**/*.go", "internal/**/*.go", "go.mod"]
+
+[daemons.web]
+dir = "web"
+init = "mise run web:install"
+# vite.config.ts proxies /api to $SENTO_API_URL.
+run = "SENTO_API_URL=http://127.0.0.1:$API_PORT mise run web:dev -- --host 127.0.0.1 --port $WEB_PORT --strictPort"
+port = { auto = true, base = 5173 }
+ready_cmd = { run = "curl -fsS http://127.0.0.1:$WEB_PORT/", timeout = "5m" }
+depends = ["api"]
+
+# A throwaway sidecar for `mise run extensions:contract`: its own port, and a
+# data directory wiped on every start so no installed extension carries over.
+[daemons.extensions-contract]
+dir = "extensions"
+init = ["mise run extensions:build", "rm -rf build/contract-data"]
+run = "SENTO_EXTENSIONS_PORT=$EXTENSIONS_CONTRACT_PORT SENTO_EXTENSIONS_DATA=build/contract-data mise run extensions:run"
+port = { auto = true, base = 8951 }
+proxy = false
+ready_cmd = { run = "curl -fsS http://127.0.0.1:$EXTENSIONS_CONTRACT_PORT/health", timeout = "15m" }
+
+# PostgreSQL for `mise run test:pg`. The preset installs the server, keeps
+# its data outside the checkout and exports DATABASE_URL.
+[daemons.postgres]
+preset = "postgres"
+version = "17"
+port = "auto"
+options.database = "sento"
+
+[tasks.dev]
+description = "Bring up the whole dev stack (sidecar, backend, web UI) and follow its logs"
+# Ctrl-C ends the log view only; the stack keeps running until `mise run dev:stop`.
+daemons = ["extensions", "api", "web"]
+run = [
+  "mise daemons urls",
+  "mise daemons logs -t extensions api web",
+]
+
+[tasks."dev:stop"]
+description = "Stop everything the dev stack started"
+run = "mise daemons stop"
 
 [tasks.build]
 description = "Build the sento binary"
@@ -134,8 +220,8 @@ git diff --exit-code HEAD -- web/src/types || {
 
 [tasks."test:pg"]
 description = "Run the Go suite against PostgreSQL (dialect conformance)"
-run = "go test ./..."
-env = { SENTO_TEST_DB_URL = "postgres://sento:sento@localhost:5432/sento?sslmode=disable" }
+daemons = "postgres"
+run = 'SENTO_TEST_DB_URL="$DATABASE_URL" go test ./...'
 
 [tasks."test:contract"]
 description = "Contract tests against the live MangaBaka API (network)"
@@ -172,19 +258,10 @@ run = "npm run e2e:ui"
 
 [tasks."extensions:contract"]
 description = "Build the sidecar, start it, and run internal/extensions contract tests"
-depends = ["extensions:build"]
+daemons = "extensions-contract"
 run = """
-set -e
-DATA=$(mktemp -d)
-trap 'kill ${HOST_PID:-} 2>/dev/null || true; rm -rf "$DATA"' EXIT
-SENTO_EXTENSIONS_PORT=8902 SENTO_EXTENSIONS_DATA="$DATA" extensions/app/build/install/app/bin/app &
-HOST_PID=$!
-# `if` keeps a failing probe from tripping `set -e` while the JVM boots.
-for _ in $(seq 1 60); do
-  if curl -fsS http://127.0.0.1:8902/health >/dev/null 2>&1; then break; fi
-  sleep 2
-done
-SENTO_EXTENSIONS_URL=http://127.0.0.1:8902 go test -tags contract -count=1 -v ./internal/extensions
+trap 'mise daemons stop extensions-contract' EXIT
+SENTO_EXTENSIONS_URL="http://127.0.0.1:$EXTENSIONS_CONTRACT_PORT" go test -tags contract -count=1 -v ./internal/extensions
 """
 
 # --- container image ---

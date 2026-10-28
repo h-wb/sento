@@ -23,14 +23,61 @@ Tooling is pinned with [mise](https://mise.jdx.dev):
 
 ```sh
 mise install        # Go, Node, Java, Gradle, vendir, linters — all pinned
+mise run dev        # build and run the whole dev stack, then follow its logs
 mise run build      # build bin/sento
-mise run run        # run the backend (http://localhost:8484)
-mise run extensions:build # build the extension sidecar (JVM; needed for sources)
-mise run extensions:run   # run it on :8901, where the dev backend expects it
-mise run web:dev    # web UI dev server (proxies /api to :8484)
 mise run web:build  # build web UI into web/dist (served by the binary)
 mise run test       # go test ./...
 ```
+
+### Dev stack
+
+The long-running processes are [mise daemons](https://mise.jdx.dev/daemons.html)
+(`[daemons]` in `mise.toml`), supervised in the background by
+[pitchfork](https://pitchfork.jdx.dev). Each one builds what it needs before
+it starts, so there is no separate build step and no terminal per process:
+
+| Daemon       | What                                   | Primary checkout      |
+| ------------ | -------------------------------------- | --------------------- |
+| `web`        | Vite dev server, proxies `/api` to api | http://127.0.0.1:5173 |
+| `api`        | the Go backend (`bin/sento`)           | http://127.0.0.1:8484 |
+| `extensions` | the extension sidecar (JVM)            | http://127.0.0.1:8901 |
+
+```sh
+mise run dev                # all three, in dependency order, then their logs
+mise run dev:stop           # stop everything this checkout started
+```
+
+Ctrl-C in `mise run dev` only leaves the log view; the stack keeps running.
+The pieces underneath, for finer control:
+
+```sh
+mise daemons start          # the same three, without the log view
+mise daemons                # what is running
+mise daemons logs -t        # follow the output (add a name for one daemon)
+mise daemons restart api    # rebuild and restart one
+mise daemons stop           # stop everything this checkout started
+mise daemons urls           # the ports (and hostnames) of this checkout
+```
+
+- **They outlive the terminal.** Nothing stops them but `mise run dev:stop`
+  (or `mise daemons stop`).
+- **`api` rebuilds itself** when a Go file under `cmd/` or `internal/`
+  changes. If that build fails it keeps serving the previous binary and
+  logs `BUILD FAILED` — look at `mise daemons logs api` when a change does
+  not seem to land.
+- **The first start is slow**: it syncs and compiles the vendored Suwayomi
+  tree for the sidecar. After that, unchanged builds are skipped.
+- **Ports are per checkout.** The table is the primary checkout; a linked
+  git worktree gets its own ports (and its own `data/`), so two checkouts
+  run side by side. `mise daemons urls` shows them.
+- Daemons are an experimental mise feature, enabled for this repo in
+  `mise.toml`.
+
+Under [Paseo](https://github.com/h-wb/paseo) the same three run as the
+services declared in [`paseo.json`](paseo.json), on Paseo-assigned ports.
+Both call the same mise tasks (`extensions:run`, `run`, `web:dev`), so each
+process has one definition of how it starts; `mise run extensions:run`,
+`mise run run` and `mise run web:dev` also still work by hand in terminals.
 
 ### Checks
 
@@ -41,7 +88,7 @@ locally with one command:
 mise run ci         # everything a pull request runs: lint, types, tests, e2e
 mise run test:race  # the Go suite under the race detector (what ci runs)
 mise run e2e        # Playwright, driving a real sento against stubbed upstreams
-mise run test:pg    # the Go suite against PostgreSQL (dialect conformance)
+mise run test:pg    # the Go suite against PostgreSQL (starts its own server)
 mise run gen:check  # fail if web/src/types is stale (fix: mise run gen)
 mise run lint:ci    # actionlint over .github/workflows
 mise run vuln       # govulncheck + npm audit (also runs nightly)
