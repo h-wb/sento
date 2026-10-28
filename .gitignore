@@ -23,3 +23,6 @@ web/.playwright/
 # tooling
 .DS_Store
 mise.local.toml
+
+# dropped-in agent session transcripts
+codex-session-*.md
