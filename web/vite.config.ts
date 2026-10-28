@@ -6,8 +6,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // dev server proxies API calls to the Go backend
-      '/api': 'http://localhost:8484',
+      // dev server proxies API calls to the Go backend (SENTO_API_URL when
+      // the backend isn't on its default port, e.g. a Paseo worktree service)
+      '/api': process.env.SENTO_API_URL ?? 'http://localhost:8484',
     },
   },
 })

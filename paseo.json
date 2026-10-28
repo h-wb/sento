@@ -1,5 +1,19 @@
 {
   "worktree": {
     "setup": "mise install && mise run web:install"
+  },
+  "scripts": {
+    "extensions": {
+      "type": "service",
+      "command": "mise run extensions:build && SENTO_EXTENSIONS_PORT=$PASEO_PORT mise run extensions:run"
+    },
+    "api": {
+      "type": "service",
+      "command": "SENTO_PORT=$PASEO_PORT SENTO_EXTENSIONS_URL=http://127.0.0.1:$PASEO_SERVICE_EXTENSIONS_PORT mise run run"
+    },
+    "web": {
+      "type": "service",
+      "command": "SENTO_API_URL=http://127.0.0.1:$PASEO_SERVICE_API_PORT mise run web:dev -- --host $HOST --port $PASEO_PORT --strictPort"
+    }
   }
 }

@@ -20,7 +20,9 @@ CGO_ENABLED = "0"
 SENTO_DB_PATH = "data/sento.db"
 SENTO_LIBRARY_PATH = "data/library"
 # Dev default: sento-extensions sidecar on its default port (mise run extensions:run).
-SENTO_EXTENSIONS_URL = "http://localhost:8901"
+# Read from the caller first: mise [env] otherwise overrides it, and the Paseo
+# `api` service (paseo.json) points the backend at its worktree's sidecar.
+SENTO_EXTENSIONS_URL = "{{ get_env(name='SENTO_EXTENSIONS_URL', default='http://localhost:8901') }}"
 
 [tasks.build]
 description = "Build the sento binary"
@@ -54,7 +56,8 @@ run = "golangci-lint run"
 [tasks."web:dev"]
 description = "Run the web UI dev server"
 dir = "web"
-run = "npm run dev"
+# The trailing `--` hands task arguments (e.g. --port) to vite, not npm.
+run = "npm run dev --"
 
 [tasks."web:build"]
 description = "Build the web UI"
@@ -64,6 +67,10 @@ run = "npm run build"
 [tasks."extensions:vendor"]
 description = "Sync vendored Suwayomi pieces (pinned in extensions/vendir.lock.yml)"
 dir = "extensions"
+# Skipped while vendor/ is newer than the pin (and this file), so starting
+# the Paseo `extensions` service doesn't re-fetch Suwayomi every time.
+sources = ["vendir.yml", "vendir.lock.yml"]
+outputs = ["vendor/**/*"]
 run = "vendir sync"
 
 [tasks."extensions:build"]
