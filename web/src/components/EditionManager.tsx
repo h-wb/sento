@@ -12,7 +12,7 @@ import EditionActions from './EditionActions'
 import { useState } from 'react'
 import {
   Alert,
-  Badge,
+  Anchor,
   Button,
   Card,
   Group,
@@ -31,6 +31,8 @@ import type { Edition, CollectedVersion, Book, File as SeriesFile } from '../typ
 import type { BookSelection } from './BookDialog'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
+import { editionDetails, editionMedia } from './editionText'
+import { EditionOrigin, MangaBakaMark } from './Origin'
 
 const editionLabel = (c: Edition) =>
   [c.language, c.editionName, c.publisher, c.medium].filter(Boolean).join(' · ')
@@ -41,6 +43,10 @@ type Props = {
   section: EditionSection
   seriesID: number
   editions: Edition[]
+  // The volume count MangaBaka gives for the series, 0 when it gives none.
+  volumeCount: number
+  // The series' page on MangaBaka.
+  catalogUrl: string
   files: SeriesFile[]
   onBook: (s: BookSelection) => void
   onAddEdition: () => void
@@ -49,6 +55,8 @@ export default function EditionManager({
   section,
   seriesID,
   editions,
+  volumeCount,
+  catalogUrl,
   files,
   onBook,
   onAddEdition,
@@ -135,6 +143,30 @@ export default function EditionManager({
             }}
           />
           {error && <Alert color="red">{error}</Alert>}
+          {!pending && !editions.some((c) => c.type === 'volume') && (
+            <Alert
+              color="blue"
+              variant="light"
+              icon={<MangaBakaMark />}
+              title="MangaBaka lists no volumes for this series"
+            >
+              <Group justify="space-between" align="center" gap="sm">
+                <Text size="sm" style={{ flex: 1, minWidth: 220 }}>
+                  Its volumes are not in MangaBaka’s catalog yet, so there is nothing to collect
+                  from.{' '}
+                  {volumeCount > 0 &&
+                    `MangaBaka only gives a count for the original run: ${volumeCount} volumes. `}
+                  You can add the edition yourself and link it when MangaBaka lists it.{' '}
+                  <Anchor href={catalogUrl} target="_blank" rel="noreferrer" size="sm">
+                    See the series on MangaBaka
+                  </Anchor>
+                </Text>
+                <Button size="xs" onClick={onAddEdition}>
+                  Add a volume edition
+                </Button>
+              </Group>
+            </Alert>
+          )}
           {!pending && yours.length === 0 && (
             <Text size="sm" c="dimmed">
               No edition is being collected yet. Pick one from the other editions below, or add your
@@ -182,16 +214,10 @@ export default function EditionManager({
                           <Text fw={600} style={{ overflowWrap: 'anywhere' }}>
                             {c.editionName}
                           </Text>
-                          {(c.custom || c.syncState === 'stale') && (
-                            <Badge size="xs" color={c.syncState === 'stale' ? 'orange' : 'gray'}>
-                              {c.syncState === 'stale' ? 'Catalog entry missing' : 'Local edition'}
-                            </Badge>
-                          )}
+                          <EditionOrigin edition={c} href={catalogUrl} />
                         </Group>
                         <Text size="xs" c="dimmed" mt={2}>
-                          {[c.language, c.publisher, c.medium, t && profile]
-                            .filter(Boolean)
-                            .join(' · ')}
+                          {editionDetails(c, t && profile)}
                         </Text>
                       </div>
                       <Group gap="xs" wrap="nowrap">
@@ -284,6 +310,8 @@ export default function EditionManager({
                                 countType: 'main',
                                 pages: 0,
                                 syncState: 'local',
+                                overrides: [],
+                                copies: 0,
                               })
                             }
                           >
@@ -419,18 +447,18 @@ export default function EditionManager({
                   data={[...new Set(others.map((c) => c.language))]}
                 />
                 <Select
-                  placeholder="All formats"
+                  placeholder="All media"
                   clearable
                   value={layout}
                   onChange={setLayout}
-                  data={[...new Set(others.flatMap((c) => c.editionTraits).filter(Boolean))]}
+                  data={[...new Set(others.flatMap(editionMedia))]}
                 />
               </Group>
               {others
                 .filter(
                   (c) =>
                     (!language || c.language === language) &&
-                    (!layout || c.editionTraits.includes(layout)),
+                    (!layout || editionMedia(c).includes(layout)),
                 )
                 .map((c) => (
                   <Card key={c.id} withBorder padding="sm">
@@ -438,7 +466,7 @@ export default function EditionManager({
                       <div>
                         <Text fw={500}>{c.editionName}</Text>
                         <Text size="xs" c="dimmed">
-                          {[c.language, c.publisher, c.medium].filter(Boolean).join(' · ')}
+                          {editionDetails(c)}
                         </Text>
                       </div>
                       <Button
@@ -553,6 +581,8 @@ export default function EditionManager({
         <BookEditor
           key={book.id}
           value={book}
+          seriesID={seriesID}
+          edition={editions.find((c) => c.id === book.editionId)}
           save={async (value) => {
             await api.saveBook(seriesID, value)
             await changed()
@@ -576,14 +606,7 @@ export default function EditionManager({
           value={edition}
           reset={async () => {
             await api.editEdition(seriesID, edition.id, {
-              reset: [
-                'edition_name',
-                'language',
-                'publisher',
-                'medium',
-                'edition_traits',
-                'content_variant',
-              ],
+              reset: ['edition_name', 'language', 'publisher', 'medium'],
             })
             await changed()
             setEdition(null)

@@ -16,6 +16,7 @@ import (
 func Parse(name string, ch Channel) Result {
 	res := Result{ContentType: ContentManga, Confidence: 1}
 	cleaned := preClean(name)
+	res.name = strings.ToLower(cleaned)
 	res.step("preclean", cleaned)
 	parseInto(cleaned, ch, &res, "", nil)
 	return res

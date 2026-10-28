@@ -178,6 +178,68 @@ func (s *Server) handleCatalogLink(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// handleBookWorks lists the catalog works behind one book.
+func (s *Server) handleBookWorks(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	bid, ok := pathID(w, r, "bid")
+	if !ok {
+		return
+	}
+	book, err := s.store.GetBook(r.Context(), bid)
+	if err == nil {
+		var edition *store.Edition
+		if edition, err = s.store.GetEdition(r.Context(), book.EditionID); err == nil && edition.SeriesID != id {
+			err = store.ErrNotFound
+		}
+	}
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	works, err := s.store.ListWorks(r.Context(), bid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, works)
+}
+
+// handleCatalogEditions lists the catalog's edition names.
+func (s *Server) handleCatalogEditions(w http.ResponseWriter, r *http.Request) {
+	editions, err := s.library.CatalogEditions(r.Context())
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, editions)
+}
+
+// handleSeparateCollection gives one collection an edition of its own.
+func (s *Server) handleSeparateCollection(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	cid, ok := pathID(w, r, "cid")
+	if !ok {
+		return
+	}
+	edition, err := s.store.SeparateCollection(r.Context(), id, cid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err = s.store.EnsureModels(r.Context(), id); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"editionId": edition})
+}
+
 func (s *Server) handleCoverage(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {

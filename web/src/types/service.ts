@@ -277,11 +277,26 @@ export interface CreateEditionParams {
   Language: string;
   Publisher: string;
   Medium: string;
+  /**
+   * ProviderEditionID names the catalog edition this local one stands in
+   * for, when it was picked from the catalog's list.
+   */
+  ProviderEditionID: string;
   Type: string; // "" = volume
   BasedOn: number /* int64 */;
   Volumes: number /* int */;
   CutoffNum: number /* int64 */;
   Monitored: boolean;
+}
+/**
+ * SeriesPublisher is one publisher of a series as the catalog's series
+ * record lists it.
+ */
+export interface SeriesPublisher {
+  name: string;
+  language: string;
+  type?: string; // Original | English | Other
+  note?: string; // free text: "42 Volumes - Ongoing"
 }
 /**
  * EditionUpdate is a partial edition patch (nil = keep).

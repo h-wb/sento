@@ -40,16 +40,10 @@ func (im *Importer) bookInfo(ctx context.Context, series *store.Series, sl store
 	if col != nil {
 		info.LanguageISO = col.Language
 		info.Publisher = col.Publisher
-		var traits []string
-		for _, t := range col.EditionTraits {
-			if t != "standard" {
-				traits = append(traits, titleCase(t))
-			}
+		// What kind of edition it is, when its name says more than "standard".
+		if kind := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(col.ProviderEditionName), "Edition")); kind != "" && !strings.EqualFold(kind, "standard") {
+			info.Format = kind
 		}
-		if col.ContentVariant == "colored" {
-			traits = append(traits, "Colored")
-		}
-		info.Format = strings.Join(traits, ", ")
 		notes = append(notes, "edition:"+strconv.Quote(col.EditionName))
 	}
 

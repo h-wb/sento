@@ -26,6 +26,7 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Post("/system/tasks/{slug}/run", s.handleRunTask)
 
 	r.Get("/lookup", s.handleLookup)
+	r.Get("/catalog/editions", s.handleCatalogEditions)
 	r.Get("/calendar", s.handleCalendar)
 	r.Get("/review", s.handleReview)
 	r.Delete("/files/{fid}", s.handleDeleteFile)
@@ -66,6 +67,7 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Post("/books", s.handleSaveBook)
 			r.Put("/books/{bid}", s.handleSaveBook)
 			r.Delete("/books/{bid}", s.handleDeleteBook)
+			r.Get("/books/{bid}/works", s.handleBookWorks)
 			r.Post("/books/{bid}/catalog-reset", s.handleResetBook)
 			r.Post("/books/{bid}/split", s.handleSplitBox)
 			r.Put("/editions/{eid}/metadata", s.handleEditEditionMetadata)
@@ -82,6 +84,7 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Post("/editions", s.handleCreateEdition)
 			r.Put("/editions/{eid}", s.handleUpdateEdition)
 			r.Post("/editions/{eid}/merge", s.handleMergeEditions)
+			r.Post("/collections/{cid}/separate", s.handleSeparateCollection)
 			r.Delete("/editions/{eid}", s.handleDeleteEdition)
 			r.Get("/files", s.handleListFiles)
 			r.Get("/files/organize", s.handlePlanOrganize)

@@ -40,8 +40,6 @@ export interface BookObservation {
 export interface EditionMetadataPatch {
   makeLocal?: boolean;
   numberingSource?: string;
-  editionTraits?: string[];
-  contentVariant?: string;
   discoverChapters?: boolean;
   editionName?: string;
   language?: string;
@@ -60,6 +58,10 @@ export interface CatalogLinkPreview {
   catalog?: Edition;
   mapping: { [key: number /* int64 */]: number /* int64 */};
   unmatched: number /* int64 */[];
+  /**
+   * Ambiguous lists the unmatched books that had several candidates.
+   */
+  ambiguous: number /* int64 */[];
 }
 /**
  * LinkSuggestion is a catalog edition that looks like the one a local
@@ -73,10 +75,55 @@ export interface LinkSuggestion {
   localBooks: number /* int */;
   catalogBooks: number /* int */;
 }
+
+//////////
+// source: collections.go
+
 /**
- * EditionTraitList stores known traits; [] explicitly means unspecified.
+ * Collection is a catalog collection filed under the edition it belongs to.
  */
-export type EditionTraitList = string[];
+export interface Collection {
+  id: number /* int64 */;
+  editionId: number /* int64 */;
+  providerId: string;
+  publisher: string;
+  medium: string;
+  format: string;
+  status: string;
+  relatedCollectionId?: string;
+  countMain: number /* int */;
+  countExtra: number /* int */;
+  countOther: number /* int */;
+  startDate?: string;
+  endDate?: string;
+  syncState: string;
+}
+/**
+ * Work is a catalog work filed under the book it is a copy of.
+ */
+export interface Work {
+  id: number /* int64 */;
+  collectionId: number /* int64 */;
+  bookId: number /* int64 */;
+  providerId: string;
+  sequenceNum: number /* int64 */;
+  sequenceStr: string;
+  numberKnown: boolean;
+  countType: string;
+  releaseDate?: string;
+  isbn?: string;
+  pages?: number /* int */;
+  subTitle?: string;
+  revision?: string;
+  syncState: string;
+  medium: string;
+  publisher: string;
+}
+/**
+ * FieldList is the set of fields edited by hand, stored as the keys of a
+ * JSON object of the edited values.
+ */
+export type FieldList = string[];
 
 //////////
 // source: history.go
@@ -95,7 +142,7 @@ export interface Decision {
  * DecisionBody is the JSON payload of one history event.
  */
 export interface DecisionBody {
-  event: string; // grabbed | imported | import_failed | download_failed | blocklisted
+  event: string; // grabbed | imported | import_failed | download_failed | blocklisted | editions_grouped
   ledger?: string;
   title?: string; // release title
   provider?: string;
@@ -301,14 +348,27 @@ export interface Series {
   addedAt: string;
   refreshedAt?: string;
 }
+/**
+ * Edition is what is collected: MangaBaka's edition for one series,
+ * language and type, or a local one the catalog does not list. Publisher
+ * and Medium are those of its preferred collection, or as entered.
+ */
 export interface Edition {
   numberingSource: string;
-  editionTraits: EditionTraitList;
-  contentVariant: string;
   discoverChapters: boolean;
   syncState: string;
   id: number /* int64 */;
   seriesId: number /* int64 */;
+  /**
+   * ProviderEditionID is MangaBaka's edition id, shared by every series
+   * that has that edition ("Standard Edition", "3-in-1 Edition").
+   */
+  providerEditionId?: string;
+  /**
+   * ProviderEditionName is MangaBaka's name for it, whatever EditionName
+   * was changed to.
+   */
+  providerEditionName?: string;
   editionName: string;
   language: string;
   publisher: string;
@@ -321,8 +381,21 @@ export interface Edition {
   startDate?: string;
   endDate?: string;
   custom: boolean;
+  /**
+   * Split: someone separated this edition from the one it was grouped with.
+   */
+  split: boolean;
   profileId?: number /* int64 */; // 0 = inherit from series
   cutoffNum: number /* int64 */; // chapter editions: skip through this number (exclusive cutoff)
+  /**
+   * Overrides names the fields edited by hand, which refreshes leave alone.
+   */
+  overrides: string[];
+  /**
+   * Collections are the catalog collections grouped under this edition,
+   * the preferred first; none for a local edition.
+   */
+  collections: Collection[];
 }
 export interface Book {
   providerId?: string;
@@ -337,6 +410,15 @@ export interface Book {
   releaseDate?: string;
   isbn?: string;
   pages?: number /* int */;
+  /**
+   * Overrides names the fields edited by hand, which refreshes leave alone.
+   */
+  overrides: string[];
+  /**
+   * Copies counts the catalog works behind the book: one per medium it
+   * is listed in, none for a book added by hand.
+   */
+  copies: number /* int */;
 }
 export interface File {
   claims: AssetFacts;

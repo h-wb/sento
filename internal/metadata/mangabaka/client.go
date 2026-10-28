@@ -210,13 +210,17 @@ type mbCollection struct {
 		Name string `json:"name"`
 	} `json:"publisher"`
 	Edition struct {
+		ID   string `json:"id"`
 		Name string `json:"name"`
 	} `json:"edition"`
 	Language struct {
 		ISO string `json:"iso"`
 	} `json:"language"`
 	Type      string `json:"type"`
+	Format    string `json:"format"`
 	Medium    string `json:"medium"`
+	Status    string `json:"status"`
+	Related   string `json:"related_collection_id"`
 	CountMain int    `json:"count_main"`
 	CountExt  int    `json:"count_extra"`
 	CountOth  int    `json:"count_other"`
@@ -232,6 +236,7 @@ type mbWork struct {
 	SeqNumeric  json.Number `json:"sequence_numeric"`
 	Pages       int         `json:"pages"`
 	Revision    string      `json:"revision"`
+	SubTitle    string      `json:"sub_title"`
 	Identifiers []struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
@@ -348,7 +353,11 @@ func (c *Client) GetCollections(ctx context.Context, seriesID int64) ([]metadata
 			}
 			cols = append(cols, metadata.Collection{
 				ProviderID:  mc.ID,
+				EditionID:   mc.Edition.ID,
 				EditionName: mc.Edition.Name,
+				Format:      mc.Format,
+				Status:      mc.Status,
+				RelatedID:   mc.Related,
 				Language:    mc.Language.ISO,
 				Publisher:   mc.Publisher.Name,
 				Medium:      mc.Medium,
@@ -367,6 +376,32 @@ func (c *Client) GetCollections(ctx context.Context, seriesID int64) ([]metadata
 		}
 	}
 	return cols, nil
+}
+
+func (c *Client) GetEditions(ctx context.Context) ([]metadata.Edition, error) {
+	next := c.baseURL + "/editions/all?limit=50"
+	var out []metadata.Edition
+	seen := map[string]bool{}
+	for next != "" {
+		if seen[next] {
+			return nil, fmt.Errorf("catalog pagination repeats a page")
+		}
+		seen[next] = true
+		env, err := c.get(ctx, c.lookupLimit, next)
+		if err != nil {
+			return nil, err
+		}
+		var rows []metadata.Edition
+		if err := json.Unmarshal(env.Data, &rows); err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+		next = ""
+		if env.Pagination != nil && env.Pagination.Next != nil {
+			next = *env.Pagination.Next
+		}
+	}
+	return out, nil
 }
 
 func (c *Client) GetWorks(ctx context.Context, seriesID int64) (map[string][]metadata.Work, error) {
@@ -399,6 +434,7 @@ func (c *Client) GetWorks(ctx context.Context, seriesID int64) (map[string][]met
 				SequenceNum: seqToNum(w.SeqNumeric, w.SeqString),
 				NumberKnown: w.SeqNumeric.String() != "" && w.SeqNumeric.String() != "null",
 				Revision:    w.Revision,
+				SubTitle:    w.SubTitle,
 				SequenceStr: w.SeqString,
 				CountType:   w.CountType,
 				ReleaseDate: w.ReleaseDate,

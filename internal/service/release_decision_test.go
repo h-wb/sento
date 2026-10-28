@@ -107,9 +107,9 @@ func TestExtraReleaseDoesNotClaimRegularVolume(t *testing.T) {
 // Edition fit: medium only breaks ties, and only editions the user
 // collects compete for a release.
 func TestEditionAmbiguity(t *testing.T) {
-	paper := store.Edition{ID: 1, Type: "volume", Language: "en", Medium: "paperback", EditionTraits: []string{"standard"}}
-	digital := store.Edition{ID: 2, Type: "volume", Language: "en", Medium: "digital", EditionTraits: []string{"standard"}}
-	french := store.Edition{ID: 3, Type: "volume", Language: "fr", EditionTraits: []string{"standard"}}
+	paper := store.Edition{ID: 1, Type: "volume", Language: "en", Medium: "paperback", EditionName: "Standard Edition"}
+	digital := store.Edition{ID: 2, Type: "volume", Language: "en", Medium: "digital", EditionName: "Standard Edition"}
+	french := store.Edition{ID: 3, Type: "volume", Language: "fr", EditionName: "Standard Edition"}
 	chapters := store.Edition{ID: 4, Type: "chapter", Language: "en"}
 	titles := []string{"ONE PIECE"}
 	parsed := func(name string) parse.Result { return parse.ParseAnchored(name, parse.ChannelTorrent, titles) }
@@ -311,10 +311,10 @@ func TestApplyCatalog(t *testing.T) {
 func TestEditionFacets(t *testing.T) {
 	titles := []string{"NAUSICAA"}
 	parsed := func(name string) parse.Result { return parse.ParseAnchored(name, parse.ChannelTorrent, titles) }
-	edition := func(id int64, medium string, traits ...string) store.Edition {
-		return store.Edition{ID: id, Type: "volume", Language: "en", Medium: medium, EditionTraits: traits, ContentVariant: "unknown"}
+	edition := func(id int64, medium, name string) store.Edition {
+		return store.Edition{ID: id, Type: "volume", Language: "en", Medium: medium, EditionName: name}
 	}
-	standard, box, deluxeBox, omnibus := edition(1, "paperback", "standard"), edition(2, "paperback", "boxset"), edition(3, "hardcover", "boxset", "deluxe"), edition(4, "paperback", "omnibus")
+	standard, box, deluxeBox, omnibus := edition(1, "paperback", "Standard Edition"), edition(2, "paperback", "Box Set Edition"), edition(3, "hardcover", "Deluxe Box Set Edition"), edition(4, "paperback", "3-in-1 Edition")
 	for _, tc := range []struct {
 		name    string
 		release string
@@ -346,11 +346,30 @@ func TestEditionFacets(t *testing.T) {
 	if !editionFits(parsed("NAUSICAA v01"), deluxeBox, true) || editionFits(parsed("NAUSICAA Omnibus v01"), deluxeBox, true) {
 		t.Error("established edition: unstated facets should pass, contradictions should not")
 	}
-	// The table stays honest: every content facet can say "unspecified".
-	for _, f := range editionFacets {
-		if f.content && f.unspecified == nil {
-			t.Errorf("content facet %q has no unspecified rule", f.name)
+	// A catalog name the vocabulary does not know is taken as written: the
+	// edition takes only releases that carry it, and a release naming
+	// another of the series' editions is that edition.
+	fullmetal := store.Edition{ID: 5, Type: "volume", Language: "en", EditionName: "Fullmetal Edition", ProviderEditionID: "x", ProviderEditionName: "Fullmetal Edition"}
+	rival := standard
+	rival.OtherLabels = []string{"Fullmetal Edition", "3-in-1 Edition"}
+	for _, tc := range []struct {
+		name    string
+		release string
+		edition store.Edition
+		fits    bool
+	}{
+		{"its own name", "NAUSICAA Fullmetal Edition v01 [English]", fullmetal, true},
+		{"without the word edition", "NAUSICAA (Fullmetal) v01 [English]", fullmetal, true},
+		{"a plain volume is not it", "NAUSICAA v01 [English]", fullmetal, false},
+		{"and it is not a plain volume", "NAUSICAA Fullmetal Edition v01 [English]", rival, false},
+		{"a plain volume is still the standard one", "NAUSICAA v01 [English]", rival, true},
+	} {
+		if got := editionCompatible(parsed(tc.release), tc.edition); got != tc.fits {
+			t.Errorf("%s: fits = %v, want %v", tc.name, got, tc.fits)
 		}
+	}
+	if !editionFits(parsed("NAUSICAA v01"), fullmetal, true) {
+		t.Error("an established edition need not be named by the release")
 	}
 }
 

@@ -65,6 +65,15 @@ func envelope(data any) map[string]any {
 
 // --- MangaBaka (SENTO_MANGABAKA_BASE_URL=<stub>/mangabaka/v1) ---
 
+const standardEdition = "edition-standard"
+
+func collectionID(series int64, medium string) string {
+	if medium == "digital" {
+		return fmt.Sprintf("col-%d-en", series)
+	}
+	return fmt.Sprintf("col-%d-en-%s", series, medium)
+}
+
 type stubSeries struct {
 	ID            int64    `json:"id"`
 	State         string   `json:"state"`
@@ -93,6 +102,22 @@ type stubSeries struct {
 		Title    string `json:"title"`
 		Primary  bool   `json:"is_primary"`
 	} `json:"titles"`
+	Publishers []map[string]string `json:"publishers"`
+	// unlisted: the catalog knows the series but lists no collections or
+	// works for it, as MangaBaka does for publishers it does not cover.
+	unlisted bool
+}
+
+// unlistedSeries is a series whose volumes the catalog does not list: only
+// the series record says who publishes it and how many volumes there are.
+func unlistedSeries(id int64, title string, year, volumes int) stubSeries {
+	s := newStubSeries(id, title, year, volumes)
+	s.unlisted = true
+	s.Publishers = []map[string]string{
+		{"name": "Stub House", "language": "en", "type": "English", "note": "5 Volumes - Ongoing"},
+		{"name": "Éditions Stub", "language": "fr", "type": "Other"},
+	}
+	return s
 }
 
 func newStubSeries(id int64, title string, year, volumes int) stubSeries {
@@ -121,6 +146,8 @@ var mbFixtures = map[int64]stubSeries{
 	101: newStubSeries(101, "Stub Blade", 2011, 12),
 	102: newStubSeries(102, "Stub Blade: Afterstory", 2019, 3),
 	103: newStubSeries(103, "Deterministic Diaries", 2004, 7),
+	// Not in mbOrder: reachable by id, never a search result.
+	104: unlistedSeries(104, "Unlisted Volumes", 2015, 6),
 }
 
 // mbOrder fixes search-result ordering; map iteration would not.
@@ -155,19 +182,35 @@ func mountMangaBaka(mux *http.ServeMux) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		writeJSON(w, envelope([]map[string]any{{
-			"id":          fmt.Sprintf("col-%d-en", id),
-			"publisher":   map[string]string{"name": "Stub Publishing"},
-			"edition":     map[string]string{"name": "Standard Edition"},
-			"language":    map[string]string{"iso": "en"},
-			"type":        "volume",
-			"medium":      "digital",
-			"count_main":  volumeCount(s),
-			"count_extra": 0,
-			"count_other": 0,
-			"start_date":  fmt.Sprintf("%d-01-01", s.Year),
-			"end_date":    "",
-		}}))
+		// As MangaBaka lists them: one collection per medium, both of the
+		// same edition.
+		cols := []map[string]any{}
+		for _, medium := range media(s) {
+			cols = append(cols, map[string]any{
+				"id":          collectionID(id, medium),
+				"publisher":   map[string]string{"name": "Stub Publishing"},
+				"edition":     map[string]string{"id": standardEdition, "name": "Standard Edition"},
+				"language":    map[string]string{"iso": "en"},
+				"type":        "volume",
+				"format":      "paged",
+				"medium":      medium,
+				"status":      "releasing",
+				"count_main":  volumeCount(s),
+				"count_extra": 0,
+				"count_other": 0,
+				"start_date":  fmt.Sprintf("%d-01-01", s.Year),
+				"end_date":    "",
+			})
+		}
+		writeJSON(w, envelope(cols))
+	})
+
+	mux.HandleFunc("GET /mangabaka/v1/editions/all", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, envelope([]map[string]string{
+			{"id": standardEdition, "name": "Standard Edition"},
+			{"id": "edition-omnibus", "name": "Omnibus Edition"},
+			{"id": "edition-deluxe", "name": "Deluxe Edition"},
+		}))
 	})
 
 	mux.HandleFunc("GET /mangabaka/v1/series/{id}/works", func(w http.ResponseWriter, r *http.Request) {
@@ -178,20 +221,29 @@ func mountMangaBaka(mux *http.ServeMux) {
 			return
 		}
 		works := []map[string]any{}
-		for i := 1; i <= volumeCount(s); i++ {
-			works = append(works, map[string]any{
-				"id":               fmt.Sprintf("work-%d-%d", id, i),
-				"count_type":       "main",
-				"release_date":     fmt.Sprintf("%d-%02d-01", s.Year+i/6, (i%12)+1),
-				"sequence_string":  fmt.Sprint(i),
-				"sequence_numeric": i,
-				"pages":            192,
-				"identifiers":      []map[string]string{{"id": fmt.Sprintf("978000000%04d", i), "name": "isbn"}},
-				"collections":      []map[string]string{{"id": fmt.Sprintf("col-%d-en", id)}},
-			})
+		for m, medium := range media(s) {
+			for i := 1; i <= volumeCount(s); i++ {
+				works = append(works, map[string]any{
+					"id":               fmt.Sprintf("work-%d-%d-%s", id, i, medium),
+					"count_type":       "main",
+					"release_date":     fmt.Sprintf("%d-%02d-01", s.Year+i/6, (i%12)+1),
+					"sequence_string":  fmt.Sprint(i),
+					"sequence_numeric": i,
+					"pages":            192,
+					"identifiers":      []map[string]string{{"id": fmt.Sprintf("97800%d000%04d", m, i), "name": "isbn"}},
+					"collections":      []map[string]string{{"id": collectionID(id, medium)}},
+				})
+			}
 		}
 		writeJSON(w, envelope(works))
 	})
+}
+
+func media(s stubSeries) []string {
+	if s.unlisted {
+		return nil
+	}
+	return []string{"digital", "paperback"}
 }
 
 func volumeCount(s stubSeries) int {

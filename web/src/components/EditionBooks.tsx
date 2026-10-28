@@ -28,6 +28,7 @@ import type {
 import type { BookStatus } from '../types/service'
 import type { BookSelection } from './BookDialog'
 import { QueryFeedback } from './QueryFeedback'
+import { BookOrigin } from './Origin'
 import classes from './EditionBooks.module.css'
 
 const labels: Record<string, string> = {
@@ -490,7 +491,12 @@ export default function EditionBooks({
                   {s.book.countType !== 'main' &&
                     (s.book.countType === 'extra' ? 'Bonus / special · ' : 'Other · ')}
                   {s.reason || s.book.releaseDate || 'Publication date unknown'}
+                  {c.collections.length > 1 &&
+                    s.book.copies > 0 &&
+                    s.book.copies < c.collections.length &&
+                    ` · in ${s.book.copies} of ${c.collections.length} media`}
                 </Text>
+                <BookOrigin book={s.book} edition={c} />
                 <Badge size="xs" variant="light" color={badgeColor[tone(s)]}>
                   {labels[s.state] ?? s.state}
                 </Badge>

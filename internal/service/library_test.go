@@ -21,6 +21,9 @@ func (f *fakeProvider) Search(context.Context, string) ([]metadata.SeriesRef, er
 func (f *fakeProvider) GetSeries(context.Context, int64) (*metadata.Series, error) {
 	return f.series, nil
 }
+func (f *fakeProvider) GetEditions(context.Context) ([]metadata.Edition, error) {
+	return []metadata.Edition{{ID: "ed-Standard Edition", Name: "Standard Edition"}}, nil
+}
 func (f *fakeProvider) GetCollections(context.Context, int64) ([]metadata.Collection, error) {
 	return f.collections, nil
 }

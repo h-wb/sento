@@ -2,9 +2,7 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/georgysavva/scany/v2/sqlscan"
 	"strconv"
@@ -12,49 +10,7 @@ import (
 	"time"
 
 	"github.com/h-wb/sento/internal/apperr"
-	"github.com/h-wb/sento/internal/metadata"
 )
-
-// A Work is a stable collection membership. External work references may be
-// shared across collections; numbers and labels never identify its bytes.
-func (s *Store) upsertBook(ctx context.Context, tx *sql.Tx, cid int64, w metadata.Work) error {
-	var id int64
-	err := tx.QueryRowContext(ctx, s.q(`SELECT id FROM books WHERE edition_id=? AND (provider_id=? OR id IN(SELECT local_id FROM external_refs WHERE provider='mangabaka' AND kind='book' AND external_id=?)) ORDER BY id LIMIT 1`), cid, w.ProviderID, w.ProviderID).Scan(&id)
-	if w.ProviderID == "" {
-		err = sql.ErrNoRows
-	}
-	known := w.NumberKnown || w.SequenceNum != 0
-	if !known {
-		_, e := strconv.ParseFloat(w.SequenceStr, 64)
-		known = e == nil
-	}
-	if errors.Is(err, sql.ErrNoRows) {
-		err = tx.QueryRowContext(ctx, s.q(`INSERT INTO books(edition_id,provider_id,sequence_num,sequence_string,count_type,release_date,isbn,pages,raw_json,number_known,revision,sync_state) VALUES(?,?,?,?,?,?,?,?,?,?,?,'linked') RETURNING id`), cid, w.ProviderID, int64(w.SequenceNum), w.SequenceStr, w.CountType, w.ReleaseDate, w.ISBN, w.Pages, string(w.RawJSON), known, w.Revision).Scan(&id)
-	} else if err == nil {
-		var overrides string
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT overrides_json FROM books WHERE id=?`), id).Scan(&overrides); err != nil {
-			return err
-		}
-		local := map[string]json.RawMessage{}
-		_ = json.Unmarshal([]byte(overrides), &local)
-		fields := map[string]any{"sequence_num": int64(w.SequenceNum), "sequence_string": w.SequenceStr, "count_type": w.CountType, "release_date": w.ReleaseDate, "isbn": w.ISBN, "pages": w.Pages, "number_known": known, "revision": w.Revision}
-		for k, v := range fields {
-			if _, ok := local[k]; !ok {
-				if _, err = tx.ExecContext(ctx, s.q(`UPDATE books SET `+k+`=? WHERE id=?`), v, id); err != nil {
-					return err
-				}
-			}
-		}
-		_, err = tx.ExecContext(ctx, s.q(`UPDATE books SET provider_id=?,raw_json=?,sync_state=CASE WHEN sync_state='retired' THEN 'retired' ELSE 'linked' END WHERE id=?`), w.ProviderID, string(w.RawJSON), id)
-	}
-	if err != nil {
-		return err
-	}
-	if w.ProviderID != "" {
-		_, err = tx.ExecContext(ctx, s.q(`INSERT INTO external_refs(provider,kind,external_id,local_id,last_seen) VALUES('mangabaka','book',?,?,?) ON CONFLICT(provider,kind,external_id,local_id) DO UPDATE SET last_seen=excluded.last_seen`), w.ProviderID, id, utcNow())
-	}
-	return err
-}
 
 // EnsureModels creates default targets and explicitly inferred chapter books. It never adopts local metadata or touches bytes.
 func (s *Store) EnsureModels(ctx context.Context, seriesID int64) error {
@@ -104,7 +60,7 @@ func (s *Store) GetBook(ctx context.Context, id int64) (*Book, error) {
 	return get[Book](ctx, s, `SELECT `+bookColumns+` FROM books WHERE id=?`, id)
 }
 
-const bookColumns = `id,edition_id,COALESCE(provider_id,'') AS provider_id,sequence_num,COALESCE(sequence_string,'') AS sequence_string,count_type,COALESCE(release_date,'') AS release_date,COALESCE(isbn,'') AS isbn,COALESCE(pages,0) AS pages,number_known,revision,sync_state`
+const bookColumns = `id,edition_id,COALESCE(provider_id,'') AS provider_id,sequence_num,COALESCE(sequence_string,'') AS sequence_string,count_type,COALESCE(release_date,'') AS release_date,COALESCE(isbn,'') AS isbn,COALESCE(pages,0) AS pages,number_known,revision,sync_state,overrides_json,(SELECT COUNT(*) FROM works x WHERE x.book_id=books.id AND x.sync_state='linked') AS copies`
 
 func (s *Store) SaveBook(ctx context.Context, seriesID int64, w Book) (int64, error) {
 	c, err := s.GetEdition(ctx, w.EditionID)

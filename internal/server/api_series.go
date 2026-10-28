@@ -97,9 +97,15 @@ func (s *Server) handleGetSeries(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	publishers, err := s.library.SeriesPublishers(r.Context(), id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, SeriesDetail{
-		Series:   series,
-		Editions: collections,
+		Series:     series,
+		Editions:   collections,
+		Publishers: publishers,
 	})
 }
 
@@ -165,7 +171,8 @@ func (s *Server) handleCreateEdition(w http.ResponseWriter, r *http.Request) {
 	col, err := s.library.CreateEdition(r.Context(), id, service.CreateEditionParams{
 		EditionName: body.EditionName, Language: body.Language,
 		Publisher: body.Publisher, Medium: body.Medium, Type: body.Type,
-		BasedOn: body.BasedOn, Volumes: body.Volumes,
+		ProviderEditionID: body.ProviderEditionID,
+		BasedOn:           body.BasedOn, Volumes: body.Volumes,
 		CutoffNum: body.CutoffNum, Monitored: body.Monitored,
 	})
 	if err != nil {

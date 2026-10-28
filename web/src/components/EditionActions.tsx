@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api, type Edition } from '../api'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
+import { editionDetails } from './editionText'
 // Local edition management lives alongside its books and collected versions.
 export default function EditionActions({
   seriesID,
@@ -21,16 +22,23 @@ export default function EditionActions({
 }) {
   const { confirm, confirmation } = useConfirmAction()
   const [merge, setMerge] = useState<Edition | null>(null)
-  const candidates = others.filter(
-    (o) =>
-      o.editionName === edition.editionName &&
-      o.language === edition.language &&
-      o.publisher === edition.publisher &&
-      o.medium === edition.medium &&
-      o.type === edition.type &&
-      JSON.stringify(o.editionTraits) === JSON.stringify(edition.editionTraits) &&
-      o.contentVariant === edition.contentVariant,
-  )
+  // A local edition merges into its duplicate; a catalog edition into
+  // another of the same MangaBaka edition it was kept apart from.
+  const candidates = others.filter((o) => {
+    if (o.language !== edition.language || o.type !== edition.type) return false
+    if (edition.custom)
+      return (
+        o.editionName === edition.editionName &&
+        o.publisher === edition.publisher &&
+        o.medium === edition.medium
+      )
+    return (
+      !o.custom &&
+      (edition.providerEditionId
+        ? o.providerEditionId === edition.providerEditionId
+        : o.editionName === edition.editionName)
+    )
+  })
   return (
     <>
       <Menu position="bottom-end" withinPortal>
@@ -46,15 +54,43 @@ export default function EditionActions({
         </Menu.Target>
         <Menu.Dropdown>
           {children}
-          {edition.custom && (
+          {(edition.custom || candidates.length > 0) && (
             <>
               <Menu.Label>Merge into</Menu.Label>
               {candidates.map((o) => (
                 <Menu.Item key={o.id} onClick={() => setMerge(o)}>
-                  {o.editionName} · {o.language} {o.medium ? `· ${o.medium}` : ''}
+                  {o.editionName} · {editionDetails(o)}
                 </Menu.Item>
               ))}
               {candidates.length === 0 && <Menu.Item disabled>No matching edition</Menu.Item>}
+            </>
+          )}
+          {edition.collections.length > 1 && (
+            <>
+              <Menu.Label>Separate into its own edition</Menu.Label>
+              {edition.collections.map((c) => (
+                <Menu.Item
+                  key={c.id}
+                  onClick={() =>
+                    confirm({
+                      title: `Separate the ${c.medium} collection?`,
+                      message:
+                        'Use this when it is a different publication, such as another publisher’s translation. Its books become an edition of their own, not collected until you choose to. Files stay with the edition they are in.',
+                      label: 'Separate',
+                      onConfirm: async () => {
+                        await api.separateCollection(seriesID, c.id)
+                        run(async () => {}, 'Collection separated')
+                      },
+                    })
+                  }
+                >
+                  {[c.medium, c.publisher].filter(Boolean).join(' · ')}
+                </Menu.Item>
+              ))}
+            </>
+          )}
+          {edition.custom && (
+            <>
               <Menu.Divider />
               <Menu.Item
                 color="red"

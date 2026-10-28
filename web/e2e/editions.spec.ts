@@ -64,15 +64,18 @@ test('editions retain independent versions, editable books, and mobile layout', 
     await expect(page.getByRole('button', { name: 'Editions', exact: true })).toHaveCount(0)
     await page.getByRole('button', { name: 'Add edition', exact: true }).click()
     const add = page.getByRole('dialog', { name: 'Add edition', exact: true })
-    await add.getByRole('textbox', { name: 'Edition name', exact: true }).fill('Spanish edition')
+    await add.getByRole('combobox', { name: 'Edition name', exact: true }).fill('Spanish edition')
     await add.getByRole('button', { name: 'Close dialog', exact: true }).click()
     const discard = page.getByRole('dialog', { name: 'Discard unsaved changes?', exact: true })
     await expect(discard).toBeVisible()
     await discard.getByRole('button', { name: 'Cancel', exact: true }).click()
-    await expect(add.getByRole('textbox', { name: 'Edition name', exact: true })).toHaveValue(
+    await expect(add.getByRole('combobox', { name: 'Edition name', exact: true })).toHaveValue(
       'Spanish edition',
     )
-    await add.getByRole('textbox', { name: 'Language', exact: true }).fill('es')
+    await add.getByRole('combobox', { name: 'Language', exact: true }).fill('es')
+    // The count MangaBaka gives is offered, not imposed.
+    await expect(add.getByRole('textbox', { name: 'Volumes', exact: true })).toHaveValue('7')
+    await add.getByRole('textbox', { name: 'Volumes', exact: true }).fill('0')
     await add.getByRole('button', { name: 'Add edition', exact: true }).click()
     await expect(add).toBeHidden()
     await expect(page.getByText('Spanish edition', { exact: true })).toBeVisible()
@@ -145,7 +148,7 @@ test('a long chapter edition is browsed as a grid with filters, ranges and jump'
     await expect(page.getByRole('button', { name: /Hide chapters/ })).toBeVisible()
     // One tab row only: no nested section switcher above the editions.
     await expect(page.getByText('Your editions', { exact: true })).toHaveCount(0)
-    await expect(page.getByRole('tab')).toHaveText(['Editions', /^Files/, 'Review', 'Indexers', 'History'])
+    await expect(page.getByRole('tab')).toHaveText(['Editions', /^Files/, 'Review', 'Sources', 'History'])
     const chapters = page.locator('.mantine-Card-root').filter({ hasText: 'Local edition' })
     const layout = chapters.getByRole('radiogroup', { name: 'Book layout' })
     await expect(layout.getByRole('radio', { name: 'Grid' })).toBeChecked()
@@ -245,5 +248,159 @@ test('organize files previews renames and metadata updates before applying', asy
     expect(posted).toEqual([{ rename: true, retag: false }])
   } finally {
     await request.delete(`/api/v1/series/${id}/`)
+  }
+})
+
+// MangaBaka lists the digital and the paperback run as two collections of
+// one edition. They are collected as one edition, and either can be taken
+// out of it and put back.
+test('an edition groups its catalog collections, which can be separated and merged back', async ({
+  page,
+  request,
+}, testInfo) => {
+  const added = await request.post('/api/v1/series/', {
+    data: { mangabakaId: 103, monitor: 'all' },
+  })
+  expect(added.ok()).toBeTruthy()
+  const { id } = await added.json()
+  const standard = async () =>
+    (
+      (await (await request.get(`/api/v1/series/${id}/`)).json()) as {
+        editions: {
+          id: number
+          editionName: string
+          type: string
+          collections: { medium: string }[]
+        }[]
+      }
+    ).editions.filter((e) => e.editionName === 'Standard Edition' && e.type === 'volume')
+  try {
+    let editions = await standard()
+    expect(editions).toHaveLength(1)
+    expect(editions[0].collections.map((c) => c.medium)).toEqual(['digital', 'paperback'])
+
+    await page.goto(`/series/${id}`)
+    const card = page.locator('.mantine-Card-root').filter({ hasText: 'Standard Edition' }).first()
+    await expect(card).toContainText('en · Stub Publishing · digital + paperback')
+    await page.screenshot({
+      path: testInfo.outputPath('edition-grouped.png'),
+      animations: 'disabled',
+    })
+
+    await card.getByRole('button', { name: /More actions/ }).click()
+    await page
+      .getByRole('menuitem', {
+        name: 'paperback · Stub Publishing',
+        exact: true,
+      })
+      .click()
+    const confirm = page.getByRole('dialog', {
+      name: 'Separate the paperback collection?',
+    })
+    await confirm.getByRole('button', { name: 'Separate', exact: true }).click()
+    await expect(confirm).toBeHidden()
+    await expect.poll(async () => (await standard()).length).toBe(2)
+    await expect(card).toContainText('en · Stub Publishing · digital')
+    await expect(card).not.toContainText('paperback')
+
+    // The paperback is now an edition nobody collects, offered with the rest.
+    await page.getByRole('button', { name: /Other editions \(1\)/ }).click()
+    const other = page.locator('.mantine-Card-root').filter({ hasText: 'paperback' }).first()
+    await expect(other).toContainText('Standard Edition')
+
+    editions = await standard()
+    const paper = editions.find((e) => e.collections[0].medium === 'paperback')!
+    const digital = editions.find((e) => e.collections[0].medium === 'digital')!
+    const merged = await request.post(`/api/v1/series/${id}/editions/${paper.id}/merge`, {
+      data: { into: digital.id },
+    })
+    expect(merged.ok()).toBeTruthy()
+    editions = await standard()
+    expect(editions).toHaveLength(1)
+    expect(editions[0].collections).toHaveLength(2)
+  } finally {
+    await request.delete(`/api/v1/series/${id}`).catch(() => {})
+  }
+})
+
+// MangaBaka knows some series without listing their volumes. The page says
+// so, and the edition added by hand is pre-filled from what MangaBaka's
+// series record does give, each value saying where it comes from.
+test('a series MangaBaka lists no volumes for explains itself and pre-fills a local edition', async ({
+  page,
+  request,
+}, testInfo) => {
+  const added = await request.post('/api/v1/series/', { data: { mangabakaId: 104 } })
+  expect(added.ok()).toBeTruthy()
+  const { id } = await added.json()
+  try {
+    await page.goto(`/series/${id}`)
+    const notice = page.getByRole('alert').filter({ hasText: 'MangaBaka lists no volumes' })
+    await expect(notice).toContainText('a count for the original run: 6 volumes')
+    await notice.getByRole('button', { name: 'Add a volume edition', exact: true }).click()
+
+    const add = page.getByRole('dialog', { name: 'Add edition', exact: true })
+    await expect(add).toContainText('MangaBaka lists no editions for this series yet')
+    await expect(add.getByRole('textbox', { name: 'Volumes', exact: true })).toHaveValue('6')
+    await expect(add).toContainText('The original run has 6')
+    await add.getByRole('combobox', { name: 'Language', exact: true }).fill('fr')
+    // Publisher and medium stay out of the way; MangaBaka's publisher shows on the toggle.
+    await add.getByRole('button', { name: 'Publisher and medium: Éditions Stub' }).click()
+    await expect(add.getByRole('combobox', { name: 'Publisher', exact: true })).toHaveValue(
+      'Éditions Stub',
+    )
+    await expect(add).toContainText('Its fr publisher')
+    await expect(add).toContainText(
+      'Adds Standard Edition · fr · Éditions Stub as a local edition with volumes 1 to 6',
+    )
+    await add.screenshot({ path: testInfo.outputPath('add-edition.png'), animations: 'disabled' })
+    await add.getByRole('button', { name: 'Add edition', exact: true }).click()
+    await expect(add).toBeHidden()
+
+    await expect(notice).toHaveCount(0)
+    const card = page.locator('.mantine-Card-root').filter({ hasText: 'Standard Edition' }).first()
+    await expect(card).toContainText('Local edition')
+    await expect(card).toContainText('fr · Éditions Stub')
+    await expect(card).toContainText('6 volumes')
+    const detail = await (await request.get(`/api/v1/series/${id}/`)).json()
+    const local = detail.editions.find((e: { type: string }) => e.type === 'volume')
+    // Named from MangaBaka's list, so the link is a key match later.
+    expect(local).toMatchObject({ custom: true, providerEditionId: 'edition-standard' })
+  } finally {
+    await request.delete(`/api/v1/series/${id}`).catch(() => {})
+  }
+})
+
+// A book of a catalog edition shows the copies MangaBaka lists behind it,
+// and an edit is marked as one.
+test('a book shows its MangaBaka copies and marks what was edited', async ({
+  page,
+  request,
+}, testInfo) => {
+  const added = await request.post('/api/v1/series/', {
+    data: { mangabakaId: 103, monitor: 'all' },
+  })
+  expect(added.ok()).toBeTruthy()
+  const { id } = await added.json()
+  try {
+    await page.goto(`/series/${id}`)
+    const card = page.locator('.mantine-Card-root').filter({ hasText: 'Standard Edition' }).first()
+    await expect(card.getByText('MangaBaka', { exact: true })).toBeVisible()
+    await card.getByRole('radio', { name: 'List' }).check({ force: true })
+    const row = card.locator('[data-book]').first()
+    await row.getByRole('button', { name: /More|actions/i }).click()
+    await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
+    const edit = page.getByRole('dialog', { name: 'Edit book', exact: true })
+    const copies = edit.getByLabel('Copies listed in MangaBaka')
+    await expect(copies).toContainText('digital · Stub Publishing · ISBN 9780000000001')
+    await expect(copies).toContainText('paperback · Stub Publishing · ISBN 9780010000001')
+    await expect(copies).toContainText('The date shown is the earliest of these copies.')
+    await edit.screenshot({ path: testInfo.outputPath('book-copies.png'), animations: 'disabled' })
+    await edit.getByRole('textbox', { name: 'ISBN', exact: true }).fill('my-own-isbn')
+    await edit.getByRole('button', { name: /Save/ }).click()
+    await expect(edit).toBeHidden()
+    await expect(row.getByText('Edited', { exact: true })).toBeVisible()
+  } finally {
+    await request.delete(`/api/v1/series/${id}`).catch(() => {})
   }
 })

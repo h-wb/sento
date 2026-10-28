@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -66,9 +65,9 @@ func TestModelRefreshKeepsIdentityAndCoverage(t *testing.T) {
 	fid := ownedModelFile(t, st, id, c, ws[0], version)
 	p := testProvider()
 	p.collections[0].EditionName = "Publisher renamed this"
-	p.works[c.ProviderID][0].SequenceNum = 150
-	p.works[c.ProviderID][0].SequenceStr = "1.5"
-	p.works[c.ProviderID] = append(p.works[c.ProviderID], metadata.Work{ProviderID: "same-number-new-isbn", SequenceNum: 150, SequenceStr: "1.5", CountType: "main", ISBN: "another", ReleaseDate: "2001-01-01"})
+	p.works["uuid-standard"][0].SequenceNum = 150
+	p.works["uuid-standard"][0].SequenceStr = "1.5"
+	p.works["uuid-standard"] = append(p.works["uuid-standard"], metadata.Work{ProviderID: "same-number-new-isbn", SequenceNum: 150, SequenceStr: "1.5", CountType: "main", ISBN: "another", ReleaseDate: "2001-01-01"})
 	if err := st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +117,7 @@ func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 	lc, _ := st.GetEdition(ctx, local)
-	if lc.ProviderID != "" {
+	if !lc.Custom || len(lc.Collections) != 0 {
 		t.Fatal("refresh silently adopted local edition")
 	}
 	label := "My local publication"
@@ -138,7 +137,7 @@ func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
 	}
 	lc, _ = st.GetEdition(ctx, local)
 	after, _ := st.ListBooks(ctx, local)
-	if lc.EditionName != label || lc.ProviderID != c.ProviderID || after[0].ID != before[0].ID {
+	if lc.EditionName != label || len(lc.Collections) != 1 || lc.Collections[0].ProviderID != "uuid-standard" || after[0].ID != before[0].ID {
 		t.Fatalf("link changed local identity: %+v %+v", lc, after)
 	}
 	if lc.Custom || lc.SyncState != "linked" {
@@ -149,7 +148,7 @@ func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
 	}
 	editions, _ := st.ListEditions(ctx, id)
 	for _, e := range editions {
-		if e.ProviderID == c.ProviderID && e.ID != local {
+		if e.ID != local && len(e.Collections) > 0 && e.Collections[0].ProviderID == "uuid-standard" {
 			t.Fatalf("refresh recreated the catalog edition: %+v", e)
 		}
 	}
@@ -604,8 +603,8 @@ func TestModelLayoutSurvivesDisplayRenameAndRequiresEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	renamed, _ := st.GetEdition(ctx, omni.ID)
-	if !slices.Contains(renamed.EditionTraits, "omnibus") {
-		t.Fatal("layout lost when display name changed")
+	if renamed.ProviderEditionName != "Omnibus Edition" {
+		t.Fatal("the catalog's name was lost when the display name changed")
 	}
 	plain := parse.ParseAnchored("ONE PIECE v01 (Digital)", parse.ChannelTorrent, []string{"ONE PIECE"})
 	if editionCompatible(plain, *renamed) {
@@ -621,7 +620,7 @@ func TestModelLayoutSurvivesDisplayRenameAndRequiresEvidence(t *testing.T) {
 }
 
 func TestModelEditingOneUnitFieldDoesNotFreezeCatalogDates(t *testing.T) {
-	_, st, id, c, ws, _ := modelFixture(t)
+	_, st, id, _, ws, _ := modelFixture(t)
 	ctx := context.Background()
 	w := ws[1]
 	w.SequenceStr = "Local label"
@@ -629,7 +628,7 @@ func TestModelEditingOneUnitFieldDoesNotFreezeCatalogDates(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := testProvider()
-	p.works[c.ProviderID][1].ReleaseDate = "2020-02-01"
+	p.works["uuid-standard"][1].ReleaseDate = "2020-02-01"
 	if err := st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
 		t.Fatal(err)
 	}
@@ -690,7 +689,7 @@ func TestCatalogIdentityCorrectionRequiresCoverageReview(t *testing.T) {
 	fid := ownedModelFile(t, st, id, c, ws[0], version)
 	p := testProvider()
 	for i := range p.collections {
-		if p.collections[i].ProviderID == c.ProviderID {
+		if p.collections[i].ProviderID == "uuid-standard" {
 			p.collections[i].Language = "fr"
 		}
 	}
@@ -717,29 +716,19 @@ func TestCatalogIdentityCorrectionRequiresCoverageReview(t *testing.T) {
 	}
 }
 
-func TestCatalogGenericRenameKeepsEditionLayout(t *testing.T) {
+// What an edition is follows the catalog: when MangaBaka files a
+// collection under another edition, the edition here changes with it.
+func TestEditionFollowsTheCatalogName(t *testing.T) {
 	_, st, id, c, _, _ := modelFixture(t)
 	ctx := context.Background()
 	p := testProvider()
-	for i := range p.collections {
-		if p.collections[i].ProviderID == c.ProviderID {
-			p.collections[i].EditionName = "Omnibus Edition"
-		}
-	}
-	if err := st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
-		t.Fatal(err)
-	}
-	for i := range p.collections {
-		if p.collections[i].ProviderID == c.ProviderID {
-			p.collections[i].EditionName = "Publisher books"
-		}
-	}
+	p.collections[0].EditionName = "Colossal Edition"
 	if err := st.ReconcileMetadata(ctx, id, p.series, p.collections, p.works); err != nil {
 		t.Fatal(err)
 	}
 	got, err := st.GetEdition(ctx, c.ID)
-	if err != nil || !slices.Contains(got.EditionTraits, "omnibus") {
-		t.Fatalf("generic rename erased layout: %+v %v", got, err)
+	if err != nil || got.EditionName != "Colossal Edition" || got.ProviderEditionName != "Colossal Edition" {
+		t.Fatalf("edition did not follow the catalog: %+v %v", got, err)
 	}
 }
 

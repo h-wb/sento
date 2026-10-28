@@ -1,19 +1,17 @@
 import EditionManager, { type EditionSection } from '../components/EditionManager'
-import { EditorModal } from '../components/EditionDialogs'
-import SourceMappings from '../components/SourceMappings'
 import OrganizeFiles from '../components/OrganizeFiles'
-import { useCallback, useState } from 'react'
+import AddEdition from '../components/AddEdition'
+import { Fragment, useCallback, useState, type ReactNode } from 'react'
 import {
   Anchor,
   ActionIcon,
   Badge,
   Button,
+  Checkbox,
   Group,
   Image,
   Menu,
   Modal,
-  NumberInput,
-  SegmentedControl,
   Select,
   Skeleton,
   Stack,
@@ -28,17 +26,18 @@ import {
 } from '@mantine/core'
 import {
   IconAdjustmentsHorizontal,
+  IconChevronDown,
   IconChevronLeft,
+  IconChevronRight,
   IconDotsVertical,
-  IconEye,
-  IconEyeOff,
+  IconPlus,
   IconRefresh,
   IconSearch,
   IconTrash,
   IconX,
 } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, type Edition, type SeriesIndexerView } from '../api'
 import BookDialog, { type BookSelection } from '../components/BookDialog'
 import { fmtWhen, notify, usePageTitle } from '../ui'
@@ -57,10 +56,21 @@ export default function SeriesPage() {
   const [bookSel, setBookSel] = useState<BookSelection | null>(null)
   const [fullDesc, setFullDesc] = useState(false)
   const [addEdition, setAddEdition] = useState(false)
-  // ?view=review is the deep link the global review inbox uses.
-  const [tab, setTab] = useState<string | null>(
-    new URLSearchParams(window.location.search).get('view') === 'review' ? 'review' : 'editions',
-  )
+  // The open tab lives in ?view= so it survives a reload and can be linked
+  // to; ?view=review is the deep link the global review inbox uses.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const view = searchParams.get('view')
+  const tab = view && SERIES_TABS.includes(view) ? view : 'editions'
+  const setTab = (next: string | null) =>
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev)
+        if (!next || next === 'editions') params.delete('view')
+        else params.set('view', next)
+        return params
+      },
+      { replace: true },
+    )
   const [organize, setOrganize] = useState(false)
 
   const queryClient = useQueryClient()
@@ -89,6 +99,18 @@ export default function SeriesPage() {
   const editions = detail.data?.editions ?? []
   const overview = overviewQuery.data ?? null
   const files = filesQuery.data ?? []
+  // Shares the Sources tab's query: an enabled source that was searched and
+  // found no confident match needs one chosen by hand.
+  const indexersQuery = useQuery({
+    queryKey: ['series', seriesID, 'indexers'],
+    queryFn: () => api.seriesIndexers(seriesID),
+  })
+  const unmatchedSources = (indexersQuery.data ?? []).filter(
+    (s) =>
+      s.enabled &&
+      s.bindings?.some((b) => b.state === 'unmatched') &&
+      !s.bindings.some((b) => b.state === 'active'),
+  ).length
 
   // Refresh everything under this series (books, files, indexers, detail).
   const load = useCallback(() => {
@@ -103,6 +125,8 @@ export default function SeriesPage() {
       section={section}
       seriesID={seriesID}
       editions={editions}
+      volumeCount={series?.finalVolume ?? 0}
+      catalogUrl={`https://mangabaka.org/${series?.mangabakaId ?? ''}`}
       files={files}
       onBook={setBookSel}
       onAddEdition={() => setAddEdition(true)}
@@ -339,8 +363,10 @@ export default function SeriesPage() {
       )}
       {confirmation}
       {addEdition && (
-        <AddEditionModal
+        <AddEdition
           seriesID={seriesID}
+          series={series}
+          publishers={detail.data?.publishers ?? []}
           editions={editions}
           busy={busy}
           run={run}
@@ -365,7 +391,21 @@ export default function SeriesPage() {
           >
             Review
           </Tabs.Tab>
-          <Tabs.Tab value="indexers">Indexers</Tabs.Tab>
+          <Tabs.Tab
+            value="sources"
+            aria-description={
+              unmatchedSources > 0 ? `${unmatchedSources} without a match` : undefined
+            }
+            rightSection={
+              unmatchedSources > 0 ? (
+                <Badge aria-hidden size="xs" circle color="orange">
+                  {unmatchedSources}
+                </Badge>
+              ) : undefined
+            }
+          >
+            Sources
+          </Tabs.Tab>
           <Tabs.Tab value="history">History</Tabs.Tab>
         </Tabs.List>
         <QueryFeedback error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} />
@@ -377,11 +417,14 @@ export default function SeriesPage() {
         <Tabs.Panel value="review" pt="md">
           {editionManager('review')}
         </Tabs.Panel>
-        <Tabs.Panel value="indexers" pt="md">
-          <Stack gap="lg">
-            <IndexersTab seriesID={seriesID} seriesTitle={series.title} run={run} busy={busy} />
-            <SourceMappings seriesID={seriesID} editions={editions} />
-          </Stack>
+        <Tabs.Panel value="sources" pt="md">
+          <IndexersTab
+            seriesID={seriesID}
+            seriesTitle={series.title}
+            editions={editions}
+            run={run}
+            busy={busy}
+          />
         </Tabs.Panel>
 
         <Tabs.Panel value="files" pt="md">
@@ -445,6 +488,7 @@ const eventColor: Record<string, string> = {
   import_failed: 'red',
   download_failed: 'red',
   blocklisted: 'orange',
+  editions_grouped: 'blue',
 }
 
 function HistoryTab({ seriesID }: { seriesID: number }) {
@@ -560,174 +604,23 @@ function ProfileBarButton({ seriesID, profileId }: { seriesID: number; profileId
   )
 }
 
-// AddEditionModal creates a custom edition: based on an existing one
-// (clones the volume numbering — language variants) or from scratch with
-// a volume count (editions MangaBaka doesn't know yet). Metadata refresh
-// keeps local editions independent until explicitly linked to the catalog.
-function AddEditionModal({
-  seriesID,
-  editions,
-  busy,
-  run,
-  onClose,
-}: {
-  seriesID: number
-  editions: Edition[]
-  busy: boolean
-  run: (fn: () => Promise<unknown>, msg?: string) => void
-  onClose: () => void
-}) {
-  const [ctype, setCtype] = useState<'volume' | 'chapter'>('volume')
-  const [name, setName] = useState('Standard Edition')
-  const [language, setLanguage] = useState('')
-  const [publisher, setPublisher] = useState('')
-  const [medium, setMedium] = useState('')
-  const [basedOn, setBasedOn] = useState<string | null>(null)
-  const [volumes, setVolumes] = useState<number | string>(0)
-  const [cutoff, setCutoff] = useState<number | string>(0)
-
-  const create = () =>
-    run(
-      () =>
-        api
-          .createEdition(seriesID, {
-            editionName: name,
-            language,
-            publisher,
-            medium,
-            type: ctype,
-            basedOn: basedOn ? Number(basedOn) : 0,
-            volumes: ctype === 'volume' && !basedOn ? Number(volumes) || 0 : 0,
-            cutoffNum: ctype === 'chapter' ? Math.round((Number(cutoff) || 0) * 100) : 0,
-            monitored: true,
-          })
-          .then(onClose),
-      'Edition added',
-    )
-
-  return (
-    <EditorModal
-      dirty={
-        name !== 'Standard Edition' ||
-        !!language ||
-        !!publisher ||
-        !!medium ||
-        !!basedOn ||
-        Number(volumes) !== 0 ||
-        Number(cutoff) !== 0 ||
-        ctype !== 'volume'
-      }
-      busy={busy}
-      onClose={onClose}
-      title="Add edition"
-      size="md"
-    >
-      <Stack gap="sm">
-        <Text size="sm" c="dimmed">
-          Add a language or publication edition missing from MangaBaka. To keep another release
-          group for an existing edition, add a collected version instead.
-        </Text>
-        <SegmentedControl
-          size="xs"
-          value={ctype}
-          onChange={(v) => {
-            const t = v as 'volume' | 'chapter'
-            setCtype(t)
-            setBasedOn(null)
-            // Swap the default name when the user hasn't typed their own.
-            if (t === 'chapter' && name === 'Standard Edition') setName('Chapters')
-            if (t === 'volume' && name === 'Chapters') setName('Standard Edition')
-          }}
-          data={[
-            { value: 'volume', label: 'Volumes' },
-            { value: 'chapter', label: 'Chapters' },
-          ]}
-        />
-        {
-          <Select
-            label="Copy numbering from"
-            description="Copy book numbers only. Dates and catalog references are kept separate."
-            placeholder="From scratch"
-            clearable
-            data={editions
-              .filter((c) => c.type === ctype)
-              .map((c) => ({
-                value: String(c.id),
-                label: [c.editionName, c.language, c.medium].filter(Boolean).join(' · '),
-              }))}
-            value={basedOn}
-            onChange={setBasedOn}
-          />
-        }
-        {ctype === 'volume' && !basedOn && (
-          <NumberInput
-            label="Volumes"
-            description="Leave at 0 to add volumes individually; only enter a count you know."
-            min={0}
-            max={500}
-            value={volumes}
-            onChange={setVolumes}
-          />
-        )}
-        {ctype === 'chapter' && (
-          <Text size="sm" c="dimmed">
-            This edition starts empty. Add chapters individually, or enable
-            count-based numbering in Edit edition.
-          </Text>
-        )}
-        {ctype === 'chapter' && (
-          <NumberInput
-            label="Skip through chapter"
-            description="Only chapters above this number are collected automatically. You can collect chapter zero from its book list."
-            min={0}
-            value={cutoff}
-            onChange={setCutoff}
-          />
-        )}
-        <TextInput
-          label="Edition name"
-          value={name}
-          onChange={(e) => setName(e.currentTarget.value)}
-        />
-        <TextInput
-          label="Language"
-          placeholder="fr"
-          value={language}
-          onChange={(e) => setLanguage(e.currentTarget.value)}
-        />
-        <Group grow>
-          <TextInput
-            label="Publisher (optional)"
-            value={publisher}
-            onChange={(e) => setPublisher(e.currentTarget.value)}
-          />
-          <TextInput
-            label="Medium (optional)"
-            placeholder="paperback"
-            value={medium}
-            onChange={(e) => setMedium(e.currentTarget.value)}
-          />
-        </Group>
-        <Button mt="xs" loading={busy} disabled={!name.trim() || !language.trim()} onClick={create}>
-          Add edition
-        </Button>
-      </Stack>
-    </EditorModal>
-  )
-}
+const SERIES_TABS = ['editions', 'files', 'review', 'sources', 'history']
 
 function IndexersTab({
   seriesID,
   seriesTitle,
+  editions,
   run,
   busy,
 }: {
   seriesID: number
   seriesTitle: string
+  editions: Edition[]
   run: (fn: () => Promise<unknown>, msg?: string) => void
   busy: boolean
 }) {
   const [rebind, setRebind] = useState<SeriesIndexerView | null>(null)
+  const [showDefaults, setShowDefaults] = useState(false)
   const {
     data: sites,
     error,
@@ -751,15 +644,33 @@ function IndexersTab({
       }),
     )
 
+  const sources = sites?.filter((s) => s.protocol === 'source') ?? []
+  const torrents = sites?.filter((s) => s.protocol !== 'source') ?? []
+  // Torrent indexers have nothing series-specific until one is overridden,
+  // so the ones still on their defaults fold into a single line.
+  const defaults = torrents.filter((s) => !s.override)
+  const defaultsOn = defaults.filter((s) => s.enabled).length
+  const row = (s: SeriesIndexerView) => (
+    <IndexerRow
+      key={s.id}
+      seriesID={seriesID}
+      site={s}
+      editions={editions}
+      busy={busy}
+      run={run}
+      override={override}
+      onFindMatch={() => setRebind(s)}
+    />
+  )
+
   return (
-    <Stack>
+    <Stack gap="lg">
       <Text size="sm" c="dimmed">
-        These settings apply to this series.{' '}
+        These settings apply to this series only.{' '}
         <Anchor component={Link} to="/indexers" size="sm">
           Manage indexers
         </Anchor>{' '}
-        to change the defaults. Source matches are found automatically when you search; you can also
-        choose them below.
+        to change the defaults.
       </Text>
       <QueryFeedback pending={isPending} error={error} onRetry={() => void refetch()} />
       {sites?.length === 0 && !error && (
@@ -773,195 +684,283 @@ function IndexersTab({
           }
         />
       )}
-      {!!sites?.length && (
-        <Table.ScrollContainer minWidth={700}>
-          <Table>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Site</Table.Th>
-                <Table.Th>Enabled</Table.Th>
-                <Table.Th>Volumes</Table.Th>
-                <Table.Th>Chapters</Table.Th>
-                <Table.Th>Source matches</Table.Th>
-                <Table.Th></Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {sites?.map((s) => {
-                const overridden = !!s.override
-                return (
-                  <Table.Tr key={s.id} opacity={s.reachable ? 1 : 0.5}>
-                    <Table.Td>
-                      <Group gap={6}>
-                        <Text size="sm">{s.name}</Text>
-                        <Badge
-                          size="xs"
-                          variant="outline"
-                          color={s.protocol === 'torznab' ? 'blue' : 'teal'}
-                        >
-                          {s.protocol}
-                        </Badge>
-                        {overridden && (
-                          <Badge size="xs" color="grape" variant="light">
-                            override
-                          </Badge>
-                        )}
-                      </Group>
-                    </Table.Td>
-                    <Table.Td>
-                      <Switch
-                        size="xs"
-                        aria-label={`Enable ${s.name} for this series`}
-                        disabled={busy}
-                        checked={s.enabled}
-                        onChange={(e) => override(s, { enabled: e.currentTarget.checked })}
-                      />
-                    </Table.Td>
-                    <Table.Td>
-                      <Switch
-                        size="xs"
-                        aria-label={`Search volumes on ${s.name}`}
-                        checked={s.useVolumes}
-                        disabled={!s.enabled || busy}
-                        onChange={(e) => override(s, { useVolumes: e.currentTarget.checked })}
-                      />
-                    </Table.Td>
-                    <Table.Td>
-                      <Switch
-                        size="xs"
-                        aria-label={`Search chapters on ${s.name}`}
-                        checked={s.useChapters}
-                        disabled={!s.enabled || busy}
-                        onChange={(e) => override(s, { useChapters: e.currentTarget.checked })}
-                      />
-                    </Table.Td>
-                    <Table.Td>
-                      {s.protocol === 'source' ? (
-                        <BindingList seriesID={seriesID} site={s} run={run} />
-                      ) : (
-                        <Text size="xs" c="dimmed">
-                          —
-                        </Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td>
-                      <Group gap={4} justify="flex-end">
-                        {overridden && (
-                          <Button
-                            size="compact-xs"
-                            variant="subtle"
-                            onClick={() =>
-                              override(s, {
-                                enabled: undefined,
-                                useVolumes: undefined,
-                                useChapters: undefined,
-                              })
-                            }
-                          >
-                            Reset
-                          </Button>
-                        )}
-                        {s.protocol === 'source' && (
-                          <Button size="compact-xs" variant="default" onClick={() => setRebind(s)}>
-                            {s.bindings?.some((b) => b.state === 'active')
-                              ? 'Add match'
-                              : 'Find match'}
-                          </Button>
-                        )}
-                      </Group>
-                    </Table.Td>
-                  </Table.Tr>
-                )
-              })}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
+      {sources.length > 0 && (
+        <IndexerSection
+          title="Extension sources"
+          hint="A source is searched through the entries matched to this series. Matches are found automatically when you search; untick one that returns the wrong series. Set the edition a match publishes so its releases count as evidence for that edition; a selected download version alone is not evidence."
+        >
+          {sources.map(row)}
+        </IndexerSection>
+      )}
+      {torrents.length > 0 && (
+        <IndexerSection title="Torrent indexers" hint="Searched by title, so there is nothing to match.">
+          {torrents.filter((s) => s.override || showDefaults).map(row)}
+          {defaults.length > 0 && (
+            <UnstyledButton
+              className={classes.siteFold}
+              aria-expanded={showDefaults}
+              onClick={() => setShowDefaults((v) => !v)}
+            >
+              {showDefaults ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+              <Text size="sm" c="dimmed">
+                {showDefaults
+                  ? 'Hide indexers on their defaults'
+                  : `${defaults.length} on ${defaults.length === 1 ? 'its' : 'their'} defaults (${defaultsOn} enabled)`}
+              </Text>
+            </UnstyledButton>
+          )}
+        </IndexerSection>
       )}
 
-      <RebindModal
-        seriesID={seriesID}
-        seriesTitle={seriesTitle}
-        site={rebind && (sites?.find((x) => x.id === rebind.id) ?? rebind)}
-        busy={busy}
-        run={run}
-        onClose={() => setRebind(null)}
-      />
+      {rebind && (
+        <RebindModal
+          key={rebind.id}
+          seriesID={seriesID}
+          seriesTitle={seriesTitle}
+          site={sites?.find((x) => x.id === rebind.id) ?? rebind}
+          busy={busy}
+          run={run}
+          onClose={() => setRebind(null)}
+        />
+      )}
     </Stack>
   )
+}
+
+function IndexerSection({
+  title,
+  hint,
+  children,
+}: {
+  title: string
+  hint: string
+  children: ReactNode
+}) {
+  return (
+    <Stack gap="xs">
+      <div>
+        <Title order={3} size="h5">
+          {title}
+        </Title>
+        <Text size="xs" c="dimmed">
+          {hint}
+        </Text>
+      </div>
+      <div className={classes.sites}>{children}</div>
+    </Stack>
+  )
+}
+
+function IndexerRow({
+  seriesID,
+  site: s,
+  editions,
+  busy,
+  run,
+  override,
+  onFindMatch,
+}: {
+  seriesID: number
+  site: SeriesIndexerView
+  editions: Edition[]
+  busy: boolean
+  run: (fn: () => Promise<unknown>, msg?: string) => void
+  override: (s: SeriesIndexerView, patch: Record<string, boolean | undefined>) => void
+  onFindMatch: () => void
+}) {
+  return (
+    <div className={classes.site} data-off={!s.enabled || undefined}>
+      <Switch
+        size="sm"
+        aria-label={`Enable ${s.name} for this series`}
+        disabled={busy}
+        checked={s.enabled}
+        onChange={(e) => override(s, { enabled: e.currentTarget.checked })}
+      />
+      <Group gap={6} className={classes.siteName}>
+        <Text size="sm" fw={500}>
+          {s.name}
+        </Text>
+        {!s.reachable && (
+          <Badge size="xs" color="orange" variant="light">
+            unreachable
+          </Badge>
+        )}
+        {s.override && (
+          <>
+            <Tooltip label="Differs from the indexer's defaults">
+              <Badge size="xs" color="grape" variant="light">
+                custom
+              </Badge>
+            </Tooltip>
+            <Button
+              size="compact-xs"
+              variant="subtle"
+              disabled={busy}
+              onClick={() =>
+                override(s, { enabled: undefined, useVolumes: undefined, useChapters: undefined })
+              }
+            >
+              Reset
+            </Button>
+          </>
+        )}
+      </Group>
+      <Group gap="sm" className={classes.siteLedgers} role="group" aria-label={`Search ${s.name} for`}>
+        <Checkbox
+          size="xs"
+          label="Volumes"
+          checked={s.useVolumes}
+          disabled={!s.enabled || busy}
+          onChange={(e) => override(s, { useVolumes: e.currentTarget.checked })}
+        />
+        <Checkbox
+          size="xs"
+          label="Chapters"
+          checked={s.useChapters}
+          disabled={!s.enabled || busy}
+          onChange={(e) => override(s, { useChapters: e.currentTarget.checked })}
+        />
+      </Group>
+      {s.protocol === 'source' && (
+        <div className={classes.matches}>
+          <BindingList seriesID={seriesID} site={s} editions={editions} run={run} busy={busy} />
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            leftSection={<IconPlus size={12} />}
+            onClick={onFindMatch}
+          >
+            {s.bindings?.some((b) => b.state === 'active') ? 'Add match' : 'Find match'}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// bindingPath makes a binding's key readable. The key is opaque, but sources
+// commonly mint {"url": …}; that path is what tells same-titled entries apart.
+function bindingPath(key: string): string {
+  try {
+    const v: unknown = JSON.parse(key)
+    if (v && typeof v === 'object' && 'url' in v && typeof v.url === 'string') {
+      return decodeURI(v.url)
+    }
+  } catch {
+    /* not JSON: show the key as is */
+  }
+  return key
 }
 
 // BindingList shows a site's bound manga entries: every entry that cleared
 // auto-matching is searched in parallel and the funnel picks per book —
-// disable an entry only if it produces garbage.
+// disable an entry only if it produces garbage. The edition picked on an
+// entry is the verified mapping that lets its releases count as evidence
+// for that edition.
 function BindingList({
   seriesID,
   site,
+  editions,
   run,
+  busy,
 }: {
   seriesID: number
   site: SeriesIndexerView
+  editions: Edition[]
   run: (fn: () => Promise<unknown>, msg?: string) => void
+  busy: boolean
 }) {
   const bindings = site.bindings ?? []
+  const editionChoices = editions.map((c) => ({
+    value: String(c.id),
+    label: [c.language, c.editionName, c.publisher, c.medium].filter(Boolean).join(' · '),
+  }))
   if (bindings.length === 0) {
     return (
       <Text size="xs" c="dimmed">
-        Found on first search
+        No match yet. One is looked for on the first search.
       </Text>
     )
   }
   return (
-    <Stack gap={2}>
-      {bindings.map((b) =>
-        b.state === 'unmatched' ? (
-          <Text key={b.id} size="xs" c="dimmed">
-            no confident match{b.mangaTitle ? ` (best: ${b.mangaTitle})` : ''}
-          </Text>
-        ) : (
-          <Group key={b.id} gap={4} wrap="nowrap">
-            <Text size="xs" c={b.state === 'active' ? undefined : 'dimmed'} truncate maw={220}>
-              {b.mangaTitle || 'manga'}{' '}
-              <Text span size="xs" c="dimmed">
-                #{b.sourceMangaKey}
-              </Text>
+    <>
+      {bindings.map((b) => {
+        if (b.state === 'unmatched') {
+          return (
+            <Text key={b.id} size="xs" c="orange">
+              No confident match{b.mangaTitle ? ` (best: ${b.mangaTitle})` : ''}
             </Text>
-            <Tooltip label={b.state === 'active' ? 'Disable entry' : 'Enable entry'}>
-              <ActionIcon
-                size="md"
-                aria-label={`${b.state === 'active' ? 'Disable' : 'Enable'} match ${b.mangaTitle}`}
-                variant="subtle"
-                color={b.state === 'active' ? 'gray' : 'yellow'}
-                onClick={() =>
-                  run(() =>
-                    api.setBindingState(
-                      seriesID,
-                      b.id,
-                      b.state === 'active' ? 'disabled' : 'active',
-                    ),
-                  )
-                }
-              >
-                {b.state === 'active' ? <IconEye size={12} /> : <IconEyeOff size={12} />}
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Remove source match">
-              <ActionIcon
-                size="md"
-                aria-label={`Remove match ${b.mangaTitle}`}
-                variant="subtle"
-                color="red"
-                onClick={() => run(() => api.deleteBinding(seriesID, b.id))}
-              >
-                <IconX size={12} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-        ),
-      )}
-    </Stack>
+          )
+        }
+        const active = b.state === 'active'
+        const path = bindingPath(b.sourceMangaKey)
+        return (
+          <Fragment key={b.id}>
+            <div className={classes.match} data-off={!active || undefined}>
+              <Tooltip label={active ? 'Searched. Untick to skip this entry' : 'Skipped. Tick to search it'}>
+                <Checkbox
+                  size="xs"
+                  aria-label={`Search ${b.mangaTitle || 'entry'} ${path}`}
+                  checked={active}
+                  disabled={busy}
+                  onChange={() =>
+                    run(() => api.setBindingState(seriesID, b.id, active ? 'disabled' : 'active'))
+                  }
+                />
+              </Tooltip>
+              <Text size="sm" className={classes.matchTitle}>
+                {b.mangaTitle || 'manga'}
+              </Text>
+              <Text size="xs" c="dimmed" truncate title={path} className={classes.matchPath}>
+                {path}
+              </Text>
+              {active && (
+                <Select
+                  size="xs"
+                  className={classes.matchEdition}
+                  aria-label={`Edition for ${b.mangaTitle} ${path}`}
+                  placeholder="Edition not verified"
+                  clearable
+                  data={editionChoices}
+                  value={b.editionId ? String(b.editionId) : null}
+                  disabled={busy}
+                  onChange={(v) => run(() => api.setBindingEdition(seriesID, b.id, Number(v) || 0))}
+                />
+              )}
+              <Tooltip label="Remove match">
+                <ActionIcon
+                  size="sm"
+                  aria-label={`Remove match ${b.mangaTitle} ${path}`}
+                  variant="subtle"
+                  color="gray"
+                  disabled={busy}
+                  onClick={() => run(() => api.deleteBinding(seriesID, b.id))}
+                >
+                  <IconX size={14} />
+                </ActionIcon>
+              </Tooltip>
+            </div>
+            {active && editions.find((c) => c.id === b.editionId)?.type === 'chapter' && (
+              <Checkbox
+                size="xs"
+                className={classes.matchTrust}
+                label="Trust new chapters from this listing"
+                description="Add observed chapters automatically when chapter discovery is enabled for this edition."
+                checked={b.trustChapters}
+                disabled={busy}
+                onChange={(e) => run(() => api.trustBinding(seriesID, b.id, e.currentTarget.checked))}
+              />
+            )}
+          </Fragment>
+        )
+      })}
+    </>
   )
 }
 
+// RebindModal is mounted per site (keyed by its id), so one site's query and
+// results can never be offered as matches for another.
 function RebindModal({
   seriesID,
   seriesTitle,
@@ -972,67 +971,95 @@ function RebindModal({
 }: {
   seriesID: number
   seriesTitle: string
-  site: SeriesIndexerView | null
+  site: SeriesIndexerView
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onClose: () => void
 }) {
   const [query, setQuery] = useState(seriesTitle)
-  const [results, setResults] = useState<{ key: string; title: string }[]>([])
-
-  if (!site) return null
+  // The submitted query drives the search; it starts as the series title so
+  // the dialog opens on results.
+  const [submitted, setSubmitted] = useState(seriesTitle.trim())
+  const search = useQuery({
+    queryKey: ['source-search', site.id, submitted],
+    queryFn: () => api.sourceSearch(String(site.id), submitted),
+    enabled: submitted !== '',
+  })
+  const results = search.data ?? []
 
   return (
     <Modal opened onClose={onClose} title={`Find a match on ${site.name}`} size="lg">
       <Stack>
-        <Group align="flex-end">
-          <TextInput
-            label="Search"
-            value={query}
-            onChange={(e) => setQuery(e.currentTarget.value)}
-            style={{ flex: 1 }}
-          />
-          <Button
-            loading={busy}
-            onClick={() =>
-              run(() =>
-                api
-                  .sourceSearch(String(site.id), query)
-                  .then((r) => setResults(r.map((m) => ({ key: m.key, title: m.title })))),
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (query.trim() === submitted) void search.refetch()
+            else setSubmitted(query.trim())
+          }}
+        >
+          <Group align="flex-end">
+            <TextInput
+              label="Search"
+              data-autofocus
+              value={query}
+              onChange={(e) => setQuery(e.currentTarget.value)}
+              style={{ flex: 1 }}
+            />
+            <Button type="submit" loading={search.isFetching} disabled={!query.trim()}>
+              Search
+            </Button>
+          </Group>
+        </form>
+        <QueryFeedback
+          pending={search.isLoading}
+          error={search.error}
+          onRetry={() => void search.refetch()}
+        />
+        {search.isSuccess && results.length === 0 && (
+          <Text size="sm" c="dimmed">
+            Nothing on {site.name} for “{submitted}”. Try a shorter or alternative title.
+          </Text>
+        )}
+        {results.length > 0 && (
+          <div className={classes.sites}>
+            {results.map((m) => {
+              const isBound = site.bindings?.some(
+                (b) => b.sourceMangaKey === m.key && b.state !== 'unmatched',
               )
-            }
-          >
-            Search
-          </Button>
-        </Group>
-        {results.map((m) => {
-          const isBound = site.bindings?.some(
-            (b) => b.sourceMangaKey === m.key && b.state !== 'unmatched',
-          )
-          return (
-            <Group key={m.key} justify="space-between">
-              <Text size="sm">{m.title}</Text>
-              <Button
-                size="compact-xs"
-                disabled={isBound}
-                onClick={() =>
-                  run(
-                    () =>
-                      api.addBinding(seriesID, {
-                        sourceId: String(site.id),
-                        sourceMangaKey: m.key,
-                        sourceName: site.name,
-                        mangaTitle: m.title,
-                      }),
-                    'Source match added',
-                  )
-                }
-              >
-                {isBound ? 'Matched' : 'Use this match'}
-              </Button>
-            </Group>
-          )
-        })}
+              const path = bindingPath(m.key)
+              return (
+                <div key={m.key} className={classes.result}>
+                  <div className={classes.resultBody}>
+                    <Text size="sm">{m.title}</Text>
+                    <Text size="xs" c="dimmed" className={classes.resultPath}>
+                      {path}
+                    </Text>
+                  </div>
+                  <Button
+                    size="compact-xs"
+                    variant={isBound ? 'default' : 'filled'}
+                    disabled={isBound || busy}
+                    aria-label={`${isBound ? 'Matched' : 'Use this match'}: ${m.title} ${path}`}
+                    onClick={() =>
+                      run(
+                        () =>
+                          api.addBinding(seriesID, {
+                            sourceId: String(site.id),
+                            sourceMangaKey: m.key,
+                            sourceName: site.name,
+                            mangaTitle: m.title,
+                          }),
+                        'Source match added',
+                      )
+                    }
+                  >
+                    {isBound ? 'Matched' : 'Use this match'}
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </Stack>
     </Modal>
   )

@@ -74,6 +74,8 @@ type Result struct {
 	Version          int     `json:"version,omitempty"`
 	Confidence       float64 `json:"confidence"`
 	Trace            []Step  `json:"-"`
+	// name is the cleaned, lowercased input, kept for Mentions.
+	name string
 }
 
 func (r *Result) step(rule, text string) {

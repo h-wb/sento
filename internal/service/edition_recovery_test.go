@@ -8,10 +8,8 @@ import (
 	"github.com/h-wb/sento/internal/db/dbtest"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
-	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
@@ -173,27 +171,29 @@ func TestBulkMonitoringRollsBackForeignBook(t *testing.T) {
 	}
 }
 
-func TestIndependentEditionTraitsAndUnknownEvidence(t *testing.T) {
+// An edition is what its names say: a rename can add what the catalog
+// leaves out, and a name that says nothing claims nothing.
+func TestEditionNameCarriesWhatItIs(t *testing.T) {
 	lib, st, id, c, _, _ := modelFixture(t)
 	_ = lib
 	ctx := context.Background()
-	traits := []string{"omnibus", "deluxe"}
-	if err := st.EditEdition(ctx, id, c.ID, store.EditionMetadataPatch{EditionTraits: &traits}); err != nil {
+	name := "Deluxe Omnibus Edition"
+	if err := st.EditEdition(ctx, id, c.ID, store.EditionMetadataPatch{EditionName: &name}); err != nil {
 		t.Fatal(err)
 	}
 	c2, err := st.GetEdition(ctx, c.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(c2.EditionTraits, []string{"deluxe", "omnibus"}) {
-		t.Fatalf("combined traits lost: %v", c2.EditionTraits)
-	}
 	p := parse.ParseAnchored("ONE PIECE Deluxe Omnibus v01.cbz", parse.ChannelFile, []string{"ONE PIECE"})
 	if !editionCompatible(p, *c2) {
 		t.Fatalf("combined edition rejected: %+v", p.Edition)
 	}
-	if len(metadata.EditionTraits("Publisher edition")) != 0 || metadata.ContentVariant("Publisher edition") != "unknown" {
-		t.Fatal("missing evidence became standard/original")
+	if editionCompatible(parse.ParseAnchored("ONE PIECE v01.cbz", parse.ChannelFile, []string{"ONE PIECE"}), *c2) {
+		t.Fatal("a plain volume satisfied a deluxe omnibus")
+	}
+	if tags := parse.EditionTags("Publisher edition"); tags.Omnibus || tags.Deluxe || tags.BoxSet || tags.Colored {
+		t.Fatal("missing evidence became a kind of edition")
 	}
 }
 

@@ -1,17 +1,18 @@
 package service
 
 import (
-	"slices"
+	"strings"
 
-	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/store"
 )
 
 // Whether a release belongs to an edition is decided here and nowhere
-// else, from one table. Each row is a facet: something a release name or
-// an edition can state. A facet is one of two kinds, and the kind is the
-// whole rule:
+// else. An edition is what its name says it is, read with the vocabulary
+// release names are read with: there is no separate list of traits to
+// keep in step with the catalog. Each row below is a facet, something a
+// release name or an edition name can state. A facet is one of two kinds,
+// and the kind is the whole rule:
 //
 //   - A content facet changes what is on the pages (omnibus, deluxe,
 //     coloured). Release and edition must agree, or it is a different book.
@@ -20,8 +21,10 @@ import (
 //     release; it only says which of several fitting editions is the
 //     better home.
 //
-// A new trait is a new row. If a rule seems to need an exception, the
-// facet is probably of the other kind.
+// A new term is a new row. If a rule seems to need an exception, the
+// facet is probably of the other kind. Edition names this vocabulary does
+// not know ("Fullmetal Edition", "Colossal Edition") are handled as they
+// are written: see labelFits.
 type editionFacet struct {
 	name    string
 	content bool
@@ -29,72 +32,100 @@ type editionFacet struct {
 	stated func(parse.Result) bool
 	// holds reports whether the edition is so.
 	holds func(editionView) bool
-	// unspecified reports whether the edition says nothing either way
-	// (content facets only): absence of evidence is not a contradiction
-	// once something else has established the edition.
-	unspecified func(editionView) bool
 }
 
-// editionView is an edition with its traits and variant resolved: the
-// stored ones, or what its name implies when none are stored.
+// editionView is an edition with its names read: the catalog's name for
+// it and the one it is shown under. Renaming an edition cannot take away
+// what the catalog says it is, and can add what the catalog leaves out (a
+// "Box Set Edition" whose books are the deluxe ones).
 type editionView struct {
 	store.Edition
-	traits  []string
-	variant string
+	tags parse.EditionHints
+	// phrase is what the catalog's name says beyond this vocabulary:
+	// "fullmetal" for "Fullmetal Edition", nothing for "Standard Edition"
+	// or "3-in-1 Edition". A local edition is named freely and has none.
+	phrase string
 }
 
 func viewEdition(c store.Edition) editionView {
-	v := editionView{Edition: c, traits: c.EditionTraits, variant: c.ContentVariant}
-	if v.traits == nil {
-		v.traits = metadata.EditionTraits(c.EditionName)
-	}
-	if v.variant == "" {
-		v.variant = metadata.ContentVariant(c.EditionName)
-	}
-	return v
+	shown, catalog := parse.EditionTags(c.EditionName), parse.EditionTags(c.ProviderEditionName)
+	return editionView{Edition: c, phrase: labelPhrase(c.ProviderEditionName), tags: parse.EditionHints{
+		Omnibus: shown.Omnibus || catalog.Omnibus, Deluxe: shown.Deluxe || catalog.Deluxe,
+		BoxSet: shown.BoxSet || catalog.BoxSet, Colored: shown.Colored || catalog.Colored,
+	}}
 }
 
-func trait(name string) func(editionView) bool {
-	return func(e editionView) bool { return slices.Contains(e.traits, name) }
+// specified reports whether the edition's name says what kind of edition
+// it is. One that does not ("Chapters", a local edition's free name) does
+// not contradict a release that does, once something else has established
+// the edition.
+func (e editionView) specified() bool {
+	t := e.tags
+	return t.Omnibus || t.Deluxe || t.BoxSet || t.Colored || e.phrase != "" || strings.Contains(strings.ToLower(e.EditionName+" "+e.ProviderEditionName), "standard")
 }
 
-func noTraits(e editionView) bool { return len(e.traits) == 0 }
+// labelPhrase is the distinctive part of an edition name the shared
+// vocabulary does not already explain.
+func labelPhrase(name string) string {
+	n := strings.TrimSpace(strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), "edition"))
+	if n == "" || n == "standard" {
+		return ""
+	}
+	if t := parse.EditionTags(n); t.Omnibus || t.Deluxe || t.BoxSet || t.Colored {
+		return ""
+	}
+	return n
+}
 
 var editionFacets = []editionFacet{
 	{
 		name: "omnibus", content: true,
 		stated: func(p parse.Result) bool { return p.Edition.Omnibus },
-		holds:  trait("omnibus"), unspecified: noTraits,
+		holds:  func(e editionView) bool { return e.tags.Omnibus },
 	},
 	{
 		name: "deluxe", content: true,
 		stated: func(p parse.Result) bool { return p.Edition.Deluxe },
-		holds:  trait("deluxe"), unspecified: noTraits,
+		holds:  func(e editionView) bool { return e.tags.Deluxe },
 	},
 	{
 		name: "colored", content: true,
-		stated:      func(p parse.Result) bool { return p.Edition.Colored },
-		holds:       func(e editionView) bool { return e.variant == "colored" },
-		unspecified: func(e editionView) bool { return e.variant == "unknown" },
+		stated: func(p parse.Result) bool { return p.Edition.Colored },
+		holds:  func(e editionView) bool { return e.tags.Colored },
 	},
 	{
 		// A box is how books are sold, not what they are: the volumes in
 		// it are named like any others.
 		name:   "box set",
 		stated: func(p parse.Result) bool { return p.Edition.BoxSet },
-		holds:  trait("boxset"),
+		holds:  func(e editionView) bool { return e.tags.BoxSet },
 	},
 	{
 		// "(Digital)" says how the file was produced.
 		name:   "digital",
 		stated: func(p parse.Result) bool { return p.Quality.Digital },
-		holds:  func(e editionView) bool { return e.Medium == "digital" },
+		holds:  func(e editionView) bool { return e.HasMedium("digital") },
 	},
 	{
 		name:   "print scan",
 		stated: func(p parse.Result) bool { return p.Quality.Scan },
-		holds:  func(e editionView) bool { return e.Medium != "" && e.Medium != "digital" },
+		holds:  func(e editionView) bool { return e.HasMedium("paperback") || e.HasMedium("hardcover") },
 	},
+}
+
+// labelFits applies an edition name the vocabulary does not know, as it is
+// written. A release that names another of the series' editions in full
+// ("Fullmetal Edition") is that edition and no other. An edition with a
+// name of its own takes only releases that carry it, unless something
+// stronger has established the edition.
+func labelFits(p parse.Result, e editionView, established bool) bool {
+	for _, other := range e.OtherLabels {
+		phrase := labelPhrase(other)
+		if phrase != "" && phrase != e.phrase && p.Mentions(phrase+" edition") {
+			return false
+		}
+	}
+	return e.phrase == "" || established || p.Mentions(e.phrase)
 }
 
 // editionFits reports whether a release can be a book of this edition:
@@ -117,11 +148,11 @@ func editionFits(p parse.Result, c store.Edition, established bool) bool {
 		case stated == holds:
 		case !established:
 			return false
-		case stated && !f.unspecified(e):
+		case stated && e.specified():
 			return false
 		}
 	}
-	return true
+	return labelFits(p, e, established)
 }
 
 // editionCompatible is editionFits for a release known only by its name.

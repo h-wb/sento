@@ -8,12 +8,13 @@ import type {
   AssetCoverage,
   BookRef,
   BookObservation,
+  Work,
 } from './types/store'
 import type { BookStatus } from './types/service'
 // Typed client for the Sento API. All payload types are generated from the
 // Go structs (mise run gen) into ./types/ — the backend is the schema.
 
-import type { SeriesRef } from './types/metadata'
+import type { SeriesRef, Edition as CatalogEdition } from './types/metadata'
 import type {
   SearchBody,
   BrowseProwlarrBody,
@@ -283,6 +284,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  bookWorks: (id: number, bookId: number) => request<Work[]>(`/series/${id}/books/${bookId}/works`),
+  separateCollection: (id: number, collectionId: number) =>
+    request<{ editionId: number }>(`/series/${id}/collections/${collectionId}/separate`, {
+      method: 'POST',
+    }),
+  catalogEditions: () => request<CatalogEdition[]>('/catalog/editions'),
   mergeEditions: (id: number, cid: number, into: number) =>
     request<MergeEditionResponse>(`/series/${id}/editions/${cid}/merge`, {
       method: 'POST',

@@ -26,6 +26,7 @@ func (noMetadata) GetSeries(context.Context, int64) (*metadata.Series, error) {
 func (noMetadata) GetCollections(context.Context, int64) ([]metadata.Collection, error) {
 	return nil, nil
 }
+func (noMetadata) GetEditions(context.Context) ([]metadata.Edition, error) { return nil, nil }
 func (noMetadata) GetWorks(context.Context, int64) (map[string][]metadata.Work, error) {
 	return nil, nil
 }

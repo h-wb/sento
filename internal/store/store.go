@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -110,29 +109,54 @@ type Series struct {
 	RefreshedAt string `json:"refreshedAt,omitempty"`
 }
 
+// Edition is what is collected: MangaBaka's edition for one series,
+// language and type, or a local one the catalog does not list. Publisher
+// and Medium are those of its preferred collection, or as entered.
 type Edition struct {
-	NumberingSource  string           `json:"numberingSource"`
-	EditionTraits    EditionTraitList `json:"editionTraits"`
-	ContentVariant   string           `json:"contentVariant"`
-	DiscoverChapters bool             `json:"discoverChapters"`
-	SyncState        string           `json:"syncState"`
-	ID               int64            `json:"id"`
-	SeriesID         int64            `json:"seriesId"`
-	ProviderID       string           `json:"-"`
-	EditionName      string           `json:"editionName"`
-	Language         string           `json:"language"`
-	Publisher        string           `json:"publisher"`
-	Medium           string           `json:"medium"`
-	Type             string           `json:"type"`
-	Monitored        bool             `json:"monitored"`
-	CountMain        int              `json:"countMain"`
-	CountExtra       int              `json:"countExtra"`
-	CountOther       int              `json:"countOther"`
-	StartDate        string           `json:"startDate,omitempty"`
-	EndDate          string           `json:"endDate,omitempty"`
-	Custom           bool             `json:"custom"`
-	ProfileID        int64            `json:"profileId,omitempty" db:"profile_id"` // 0 = inherit from series
-	CutoffNum        int64            `json:"cutoffNum" db:"cutoff_num"`           // chapter editions: skip through this number (exclusive cutoff)
+	NumberingSource  string `json:"numberingSource"`
+	DiscoverChapters bool   `json:"discoverChapters"`
+	SyncState        string `json:"syncState"`
+	ID               int64  `json:"id"`
+	SeriesID         int64  `json:"seriesId"`
+	// ProviderEditionID is MangaBaka's edition id, shared by every series
+	// that has that edition ("Standard Edition", "3-in-1 Edition").
+	ProviderEditionID string `json:"providerEditionId,omitempty"`
+	// ProviderEditionName is MangaBaka's name for it, whatever EditionName
+	// was changed to.
+	ProviderEditionName string `json:"providerEditionName,omitempty"`
+	EditionName         string `json:"editionName"`
+	Language            string `json:"language"`
+	Publisher           string `json:"publisher"`
+	Medium              string `json:"medium"`
+	Type                string `json:"type"`
+	Monitored           bool   `json:"monitored"`
+	CountMain           int    `json:"countMain"`
+	CountExtra          int    `json:"countExtra"`
+	CountOther          int    `json:"countOther"`
+	StartDate           string `json:"startDate,omitempty"`
+	EndDate             string `json:"endDate,omitempty"`
+	Custom              bool   `json:"custom"`
+	// Split: someone separated this edition from the one it was grouped with.
+	Split     bool  `json:"split"`
+	ProfileID int64 `json:"profileId,omitempty" db:"profile_id"` // 0 = inherit from series
+	CutoffNum int64 `json:"cutoffNum" db:"cutoff_num"`           // chapter editions: skip through this number (exclusive cutoff)
+	// Overrides names the fields edited by hand, which refreshes leave alone.
+	Overrides FieldList `json:"overrides" db:"overrides_json" tstype:"string[]"`
+	// Collections are the catalog collections grouped under this edition,
+	// the preferred first; none for a local edition.
+	Collections []Collection `json:"collections" db:"-"`
+	// OtherLabels names the series' other catalog editions of this type.
+	OtherLabels []string `json:"-" db:"-"`
+}
+
+// HasMedium reports whether the edition exists in a medium.
+func (e Edition) HasMedium(medium string) bool {
+	for _, c := range e.Collections {
+		if c.Medium == medium {
+			return true
+		}
+	}
+	return e.Medium == medium
 }
 
 type Book struct {
@@ -148,6 +172,11 @@ type Book struct {
 	ReleaseDate string `json:"releaseDate,omitempty"`
 	ISBN        string `json:"isbn,omitempty"`
 	Pages       int    `json:"pages,omitempty"`
+	// Overrides names the fields edited by hand, which refreshes leave alone.
+	Overrides FieldList `json:"overrides" db:"overrides_json" tstype:"string[]"`
+	// Copies counts the catalog works behind the book: one per medium it
+	// is listed in, none for a book added by hand.
+	Copies int `json:"copies"`
 }
 
 type File struct {
@@ -216,9 +245,6 @@ func (s *Store) DeleteSeries(ctx context.Context, id int64) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='edition' AND local_id IN(SELECT id FROM editions WHERE series_id=?)) OR (kind='book' AND local_id IN(SELECT w.id FROM books w JOIN editions c ON c.id=w.edition_id WHERE c.series_id=?))`), id, id); err != nil {
-		return err
-	}
 	res, err := tx.ExecContext(ctx, s.q(`DELETE FROM series WHERE id=?`), id)
 	if err != nil {
 		return err
@@ -290,32 +316,28 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 		lang = "en"
 	}
 
-	var chapterColID int64 // first MB chapter collection of the wanted language
+	if err = s.syncCatalog(ctx, tx, seriesID, p.Collections, p.Works); err != nil {
+		return 0, fmt.Errorf("filing the catalog: %w", err)
+	}
+	// An edition is collected when any of its collections was chosen.
+	var chapterColID int64 // first catalog chapter edition of the wanted language
 	for _, col := range p.Collections {
-		monitored := p.MonitorAll && col.Type == "volume" || monitor[col.ProviderID]
-		var colID int64
-		if err := tx.QueryRowContext(ctx, s.q(`
-			INSERT INTO editions (series_id, provider_id, edition_name, language,
-				publisher, medium, type, count_main, count_extra, count_other,
-				start_date, end_date, raw_json, updated_at,numbering_source,edition_traits,content_variant)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'catalog',?,?) RETURNING id`),
-			seriesID, col.ProviderID, col.EditionName, col.Language, col.Publisher,
-			col.Medium, col.Type, col.CountMain, col.CountExtra, col.CountOther,
-			col.StartDate, col.EndDate, string(col.RawJSON), utcNow(), metadata.TraitsJSON(metadata.EditionTraits(col.EditionName)), metadata.ContentVariant(col.EditionName)).Scan(&colID); err != nil {
-			return 0, fmt.Errorf("inserting edition %q: %w", col.EditionName, err)
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored) VALUES(?,'Default',TRUE,?)`), colID, monitored); err != nil {
+		var edID int64
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT edition_id FROM collections WHERE provider_id=? AND edition_id IN(SELECT id FROM editions WHERE series_id=?)`), col.ProviderID, seriesID).Scan(&edID); err != nil {
 			return 0, err
 		}
-		if chapterColID == 0 && col.Type == "chapter" && strings.EqualFold(col.Language, lang) {
-			chapterColID = colID
+		monitored := p.MonitorAll && col.Type == "volume" || monitor[col.ProviderID]
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored) SELECT ?,'Default',TRUE,FALSE WHERE NOT EXISTS(SELECT 1 FROM versions WHERE edition_id=?)`), edID, edID); err != nil {
+			return 0, err
 		}
-		for _, w := range p.Works[col.ProviderID] {
-			if err := s.upsertBook(ctx, tx, colID, w); err != nil {
+		if monitored {
+			if _, err = tx.ExecContext(ctx, s.q(`UPDATE versions SET monitored=TRUE WHERE edition_id=? AND is_default=TRUE`), edID); err != nil {
 				return 0, err
 			}
 		}
-
+		if chapterColID == 0 && col.Type == "chapter" && strings.EqualFold(col.Language, lang) {
+			chapterColID = edID
+		}
 	}
 
 	// The chapter ledger is a chapter-type collection: adopt the MangaBaka
@@ -345,20 +367,32 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 // --- collections / works ---
 
 const editionColumns = `
-	id, series_id, COALESCE(provider_id,'') AS provider_id,
+	id, series_id, COALESCE(provider_edition_id,'') AS provider_edition_id, provider_edition_name,
 	edition_name, language, publisher, medium, type, EXISTS(SELECT 1 FROM versions t WHERE t.edition_id=editions.id AND t.monitored=TRUE) AS monitored,
 	COALESCE(count_main,0) AS count_main, COALESCE(count_extra,0) AS count_extra,
 	COALESCE(count_other,0) AS count_other,
-	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date, custom,
-	COALESCE(profile_id,0) AS profile_id, COALESCE((SELECT t.cutoff_num FROM versions t WHERE t.edition_id=editions.id AND t.is_default=TRUE),0) AS cutoff_num,sync_state,discover_chapters,edition_traits,content_variant,numbering_source`
+	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date, custom, split,
+	COALESCE(profile_id,0) AS profile_id, COALESCE((SELECT t.cutoff_num FROM versions t WHERE t.edition_id=editions.id AND t.is_default=TRUE),0) AS cutoff_num,sync_state,discover_chapters,numbering_source,overrides_json`
 
 func (s *Store) ListEditions(ctx context.Context, seriesID int64) ([]Edition, error) {
-	return list[Edition](ctx, s, `SELECT `+editionColumns+`
-		FROM editions WHERE series_id = ? ORDER BY edition_name, language, medium`, seriesID)
+	eds, err := list[Edition](ctx, s, `SELECT `+editionColumns+`
+		FROM editions WHERE series_id = ? ORDER BY edition_name, language, medium, id`, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	return eds, s.decorate(ctx, seriesID, eds)
 }
 
 func (s *Store) GetEdition(ctx context.Context, id int64) (*Edition, error) {
-	return get[Edition](ctx, s, `SELECT `+editionColumns+` FROM editions WHERE id = ?`, id)
+	e, err := get[Edition](ctx, s, `SELECT `+editionColumns+` FROM editions WHERE id = ?`, id)
+	if err != nil {
+		return nil, err
+	}
+	one := []Edition{*e}
+	if err = s.decorate(ctx, e.SeriesID, one); err != nil {
+		return nil, err
+	}
+	return &one[0], nil
 }
 
 func (s *Store) SetEditionMonitored(ctx context.Context, seriesID, editionID int64, monitored bool) error {
@@ -395,11 +429,11 @@ func (s *Store) AddCustomEdition(ctx context.Context, c Edition, basedOn int64, 
 	ctype := orDefault(c.Type, "volume")
 	var colID int64
 	err = tx.QueryRowContext(ctx, s.q(`
-		INSERT INTO editions (series_id, edition_name, language, publisher, medium,
-			type, custom, updated_at,edition_traits,content_variant)
-		VALUES (?,?,?,?,?,?,TRUE,?,?,?) RETURNING id`),
-		c.SeriesID, c.EditionName, c.Language, c.Publisher, c.Medium, ctype,
-		utcNow(), metadata.TraitsJSON(metadata.EditionTraits(c.EditionName)), metadata.ContentVariant(c.EditionName)).Scan(&colID)
+		INSERT INTO editions (series_id, provider_edition_id, provider_edition_name, edition_name, language, publisher, medium,
+			type, custom, updated_at)
+		VALUES (?,?,?,?,?,?,?,?,TRUE,?) RETURNING id`),
+		c.SeriesID, c.ProviderEditionID, c.ProviderEditionName, c.EditionName, c.Language, c.Publisher, c.Medium, ctype,
+		utcNow()).Scan(&colID)
 	if err != nil {
 		if c := conflict(err, "an edition with this name/language/publisher/medium already exists"); c != err {
 			return 0, c
@@ -439,68 +473,24 @@ func (s *Store) AddCustomEdition(ctx context.Context, c Edition, basedOn int64, 
 	return colID, tx.Commit()
 }
 
-// MergeEditions folds a custom edition into another collection of the
-// same series with an unambiguous match for every book. Acquisition versions
-// and their policies survive independently. Files stay in place.
+// MergeEditions folds one edition into another of the same series: a
+// local duplicate into its twin, or a catalog edition into the one it was
+// kept apart from. Every book needs an unambiguous counterpart or none.
+// Collected versions and their policies survive independently, and files
+// stay in place.
 func (s *Store) MergeEditions(ctx context.Context, seriesID, fromID, intoID int64) ([]int64, error) {
-	from, err := s.GetEdition(ctx, fromID)
+	p, err := s.PreviewMerge(ctx, seriesID, fromID, intoID)
 	if err != nil {
 		return nil, err
 	}
-	into, err := s.GetEdition(ctx, intoID)
-	if err != nil {
-		return nil, err
+	if p.Pending {
+		return nil, apperr.Conflictf("edition has pending downloads")
 	}
-	if from.SeriesID != seriesID || into.SeriesID != seriesID {
-		return nil, ErrNotFound
-	}
-	if !from.Custom {
-		return nil, apperr.Invalidf("only local editions can be merged away")
-	}
-	for _, id := range []int64{fromID, intoID} {
-		pending, e := s.EditionPending(ctx, id)
-		if e != nil {
-			return nil, e
-		}
-		if pending {
-			return nil, apperr.Conflictf("edition has pending downloads")
-		}
-	}
-	if from.Language != into.Language || from.EditionName != into.EditionName || from.Publisher != into.Publisher || from.Medium != into.Medium || !slices.Equal(from.EditionTraits, into.EditionTraits) || from.ContentVariant != into.ContentVariant {
-		return nil, apperr.Invalidf("only duplicate editions with matching identity can be merged; use explicit content relationships for different editions")
-	}
-	if from.Type != into.Type {
-		return nil, apperr.Invalidf("editions are of different types")
-	}
-
-	if fromID == intoID {
-		return nil, apperr.Invalidf("choose two different editions")
+	if len(p.Ambiguous) > 0 {
+		return nil, apperr.Conflictf("every book needs an unambiguous match before merging editions")
 	}
 	if err := s.EnsureModels(ctx, seriesID); err != nil {
 		return nil, err
-	}
-	fromBooks, err := s.ListBooks(ctx, fromID)
-	if err != nil {
-		return nil, err
-	}
-	intoBooks, err := s.ListBooks(ctx, intoID)
-	if err != nil {
-		return nil, err
-	}
-	mapping := map[int64]int64{}
-	used := map[int64]bool{}
-	for _, w := range fromBooks {
-		matches := []int64{}
-		for _, v := range intoBooks {
-			if w.SequenceStr == v.SequenceStr && w.NumberKnown == v.NumberKnown && w.CountType == v.CountType && w.Revision == v.Revision && (w.ISBN == "" || v.ISBN == "" || w.ISBN == v.ISBN) {
-				matches = append(matches, v.ID)
-			}
-		}
-		if len(matches) != 1 || used[matches[0]] {
-			return nil, apperr.Conflictf("every book needs an unambiguous match before merging editions")
-		}
-		mapping[w.ID] = matches[0]
-		used[matches[0]] = true
 	}
 	versions, err := s.ListVersions(ctx, seriesID)
 	if err != nil {
@@ -526,24 +516,10 @@ func (s *Store) MergeEditions(ctx context.Context, seriesID, fromID, intoID int6
 			return nil, err
 		}
 	}
-	for oldID, newID := range mapping {
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,verified,pinned,evidence,selected) SELECT file_id,version_id,?,verified,pinned,evidence,selected FROM asset_coverage WHERE book_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
-			return nil, err
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,book_id,verified,evidence) SELECT file_id,?,verified,evidence FROM asset_contents WHERE book_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
-			return nil, err
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO book_overrides(version_id,book_id,monitored) SELECT version_id,?,monitored FROM book_overrides WHERE book_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
-			return nil, err
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO external_refs(provider,kind,external_id,local_id,last_seen) SELECT provider,kind,external_id,?,last_seen FROM external_refs WHERE kind='book' AND local_id=? ON CONFLICT DO NOTHING`), newID, oldID); err != nil {
-			return nil, err
-		}
-	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='edition' AND local_id=?) OR (kind='book' AND local_id IN(SELECT id FROM books WHERE edition_id=?))`), fromID, fromID); err != nil {
+	if err = s.foldEdition(ctx, tx, fromID, intoID, p.Mapping); err != nil {
 		return nil, err
 	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM editions WHERE id=?`), fromID); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`UPDATE editions SET split=FALSE WHERE id=?`), intoID); err != nil {
 		return nil, err
 	}
 	return []int64{}, tx.Commit()
@@ -586,9 +562,6 @@ func (s *Store) DeleteCustomEdition(ctx context.Context, seriesID, editionID int
 	}
 
 	if _, err = tx.ExecContext(ctx, s.q(`UPDATE source_bindings SET edition_id=0 WHERE edition_id=?`), editionID); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM external_refs WHERE (kind='edition' AND local_id=?) OR (kind='book' AND local_id IN(SELECT id FROM books WHERE edition_id=?))`), editionID, editionID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM editions WHERE id = ?`), editionID); err != nil {

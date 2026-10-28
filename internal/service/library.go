@@ -4,7 +4,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
+	"sync"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/metadata"
@@ -14,6 +16,9 @@ import (
 type Library struct {
 	store    *store.Store
 	provider metadata.Provider
+
+	editionsMu sync.Mutex
+	editions   []metadata.Edition
 }
 
 func NewLibrary(st *store.Store, provider metadata.Provider) *Library {
@@ -129,11 +134,58 @@ type CreateEditionParams struct {
 	Language    string
 	Publisher   string
 	Medium      string
-	Type        string // "" = volume
-	BasedOn     int64
-	Volumes     int
-	CutoffNum   int64
-	Monitored   bool
+	// ProviderEditionID names the catalog edition this local one stands in
+	// for, when it was picked from the catalog's list.
+	ProviderEditionID string
+	Type              string // "" = volume
+	BasedOn           int64
+	Volumes           int
+	CutoffNum         int64
+	Monitored         bool
+}
+
+// SeriesPublisher is one publisher of a series as the catalog's series
+// record lists it.
+type SeriesPublisher struct {
+	Name     string `json:"name"`
+	Language string `json:"language"`
+	Type     string `json:"type,omitempty"` // Original | English | Other
+	Note     string `json:"note,omitempty"` // free text: "42 Volumes - Ongoing"
+}
+
+// SeriesPublishers reads the publishers out of the stored series record.
+func (l *Library) SeriesPublishers(ctx context.Context, seriesID int64) ([]SeriesPublisher, error) {
+	raw, _, err := l.store.CatalogPayloads(ctx, seriesID, 0)
+	if err != nil {
+		return nil, err
+	}
+	var doc struct {
+		Publishers []SeriesPublisher `json:"publishers"`
+	}
+	_ = json.Unmarshal([]byte(raw), &doc) // an older or empty record lists none
+	if doc.Publishers == nil {
+		doc.Publishers = []SeriesPublisher{}
+	}
+	return doc.Publishers, nil
+}
+
+// CatalogEditions lists the catalog's edition names, for naming a local
+// edition after the catalog edition it stands in for. The list is small
+// and changes rarely, so it is fetched once per run.
+func (l *Library) CatalogEditions(ctx context.Context) ([]metadata.Edition, error) {
+	l.editionsMu.Lock()
+	defer l.editionsMu.Unlock()
+	if l.editions == nil {
+		list, err := l.provider.GetEditions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if list == nil {
+			list = []metadata.Edition{}
+		}
+		l.editions = list
+	}
+	return l.editions, nil
 }
 
 // CreateEdition validates and creates a custom edition.
@@ -151,11 +203,26 @@ func (l *Library) CreateEdition(ctx context.Context, seriesID int64, p CreateEdi
 	if ctype == "volume" && p.BasedOn == 0 && (p.Volumes < 0 || p.Volumes > 500) {
 		return nil, apperr.Invalidf("volumes must be 0-500 when not based on an existing edition")
 	}
-	cid, err := l.store.AddCustomEdition(ctx, store.Edition{
+	edition := store.Edition{
 		SeriesID: seriesID, EditionName: p.EditionName, Language: p.Language,
 		Publisher: p.Publisher, Medium: p.Medium, Type: ctype,
 		Monitored: p.Monitored, CutoffNum: p.CutoffNum,
-	}, p.BasedOn, p.Volumes)
+	}
+	if p.ProviderEditionID != "" {
+		known, err := l.CatalogEditions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range known {
+			if e.ID == p.ProviderEditionID {
+				edition.ProviderEditionID, edition.ProviderEditionName = e.ID, e.Name
+			}
+		}
+		if edition.ProviderEditionID == "" {
+			return nil, apperr.Invalidf("unknown catalog edition")
+		}
+	}
+	cid, err := l.store.AddCustomEdition(ctx, edition, p.BasedOn, p.Volumes)
 	if err != nil {
 		return nil, err
 	}

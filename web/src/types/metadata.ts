@@ -46,16 +46,21 @@ export interface Title {
   Primary: boolean;
 }
 /**
- * Collection supplies edition facts. Sento owns local identity; provider
- * references and descriptors are reconciliation evidence.
+ * Collection is one product line of a series as the catalog lists it: a
+ * language, a publisher, an edition and a medium. Collections that share
+ * an edition, a language and a type hold the same books in different media.
  */
 export interface Collection {
-  ProviderID: string; // volatile
+  ProviderID: string; // the catalog's collection id
+  EditionID: string; // the catalog's edition id, shared across series
   EditionName: string;
   Language: string;
   Publisher: string;
-  Medium: string;
-  Type: string; // volume|chapter
+  Medium: string; // digital|paperback|hardcover
+  Format: string; // paged|longstrip
+  Type: string; // volume|chapter|one-shot|other
+  Status: string;
+  RelatedID: string; // a related collection (publisher change)
   CountMain: number /* int */;
   CountExtra: number /* int */;
   CountOther: number /* int */;
@@ -70,6 +75,7 @@ export interface Work {
   ProviderID: string;
   NumberKnown: boolean;
   Revision: string;
+  SubTitle: string;
   SequenceNum: Num;
   SequenceStr: string;
   CountType: string; // main|extra|other
@@ -77,6 +83,14 @@ export interface Work {
   ISBN: string;
   Pages: number /* int */;
   RawJSON: string /* []byte */;
+}
+/**
+ * Edition is one of the catalog's edition names ("Standard Edition",
+ * "3-in-1 Edition"), shared by every series that has it.
+ */
+export interface Edition {
+  id: string;
+  name: string;
 }
 /**
  * Provider is the anti-corruption boundary for series metadata.

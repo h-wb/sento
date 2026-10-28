@@ -29,6 +29,9 @@ type DatabaseStatus struct {
 type SeriesDetail struct {
 	Series   *store.Series   `json:"series"`
 	Editions []store.Edition `json:"editions"`
+	// Publishers is who MangaBaka says publishes the series, per language.
+	// It knows this for series whose volumes it does not list.
+	Publishers []service.SeriesPublisher `json:"publishers"`
 }
 
 // SearchBody is POST /series/{id}/search.
@@ -79,11 +82,14 @@ type CreateEditionBody struct {
 	Language    string `json:"language"`
 	Publisher   string `json:"publisher"`
 	Medium      string `json:"medium"`
-	Type        string `json:"type" tstype:"'' | 'volume' | 'chapter'"` // default volume
-	BasedOn     int64  `json:"basedOn"`                                 // edition id; 0 = from scratch
-	Volumes     int    `json:"volumes"`                                 // only when basedOn is 0
-	CutoffNum   int64  `json:"cutoffNum"`                               // chapter type: monitor from N onward
-	Monitored   bool   `json:"monitored"`
+	// ProviderEditionID is the catalog edition this one stands in for,
+	// when its name was picked from GET /catalog/editions.
+	ProviderEditionID string `json:"providerEditionId,omitempty"`
+	Type              string `json:"type" tstype:"'' | 'volume' | 'chapter'"` // default volume
+	BasedOn           int64  `json:"basedOn"`                                 // edition id; 0 = from scratch
+	Volumes           int    `json:"volumes"`                                 // only when basedOn is 0
+	CutoffNum         int64  `json:"cutoffNum"`                               // chapter type: monitor from N onward
+	Monitored         bool   `json:"monitored"`
 }
 
 // MergeEditionBody is POST /series/{id}/editions/{cid}/merge.

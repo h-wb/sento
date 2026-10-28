@@ -25,9 +25,14 @@ import type {
 } from '../types/store'
 import type { BookStatus } from '../types/service'
 import { useConfirmAction } from './ConfirmAction'
+import { EditionOrigin, Origin } from './Origin'
 
 const editionLabel = (c: Edition) =>
   [c.language, c.editionName, c.publisher, c.medium].filter(Boolean).join(' · ')
+// The note under a field someone changed from what MangaBaka lists.
+const edited = (v: { overrides: string[]; custom?: boolean }, field: string) =>
+  !v.custom && v.overrides.includes(field) ? 'Edited by you; a refresh keeps it' : undefined
+
 function useEditor() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -150,14 +155,97 @@ export function VersionEditor({
     </EditorModal>
   )
 }
+// What MangaBaka lists behind a book: one copy per medium, each with its
+// own ISBN and date. The book shows the earliest date and the preferred
+// copy's ISBN, and this says which.
+function BookCopies({
+  seriesID,
+  book,
+  edition,
+}: {
+  seriesID: number
+  book: Book
+  edition?: Edition
+}) {
+  const works = useQuery({
+    queryKey: ['series', seriesID, 'book-works', book.id],
+    queryFn: () => api.bookWorks(seriesID, book.id),
+    enabled: book.id > 0 && book.copies > 0,
+  })
+  if (!edition || book.id === 0) return null
+  if (edition.custom)
+    return (
+      <Group gap="xs">
+        <Origin kind="local" />
+        <Text size="sm" c="dimmed">
+          Part of a local edition. MangaBaka does not update it.
+        </Text>
+      </Group>
+    )
+  if (book.copies === 0)
+    return (
+      <Group gap="xs">
+        <Origin kind="local" />
+        <Text size="sm" c="dimmed">
+          MangaBaka does not list this book in this edition.
+        </Text>
+      </Group>
+    )
+  const copies = works.data ?? []
+  const absent = [...new Set(edition.collections.map((c) => c.medium))].filter(
+    (m) => !copies.some((w) => w.medium === m && w.syncState === 'linked'),
+  )
+  return (
+    <Stack gap={6} aria-label="Copies listed in MangaBaka">
+      <Group gap="xs">
+        <Origin kind="catalog" compact />
+        <Text size="sm" fw={600}>
+          Listed in MangaBaka
+        </Text>
+        {book.syncState === 'stale' && <Origin kind="missing" />}
+      </Group>
+      {copies.map((w, i) => (
+        <Text key={w.id} size="sm" c={w.syncState === 'linked' ? undefined : 'dimmed'}>
+          <b>{w.medium || 'unknown medium'}</b>
+          {[
+            w.publisher,
+            w.isbn && `ISBN ${w.isbn}`,
+            w.releaseDate,
+            w.pages ? `${w.pages} pages` : '',
+            w.syncState !== 'linked' && 'no longer listed',
+            i === 0 && copies.length > 1 && 'ISBN and pages shown',
+          ]
+            .filter(Boolean)
+            .map((part) => ` · ${part}`)
+            .join('')}
+        </Text>
+      ))}
+      {works.isSuccess && absent.length > 0 && (
+        <Text size="sm" c="dimmed">
+          Not listed in {absent.join(' or ')}.
+        </Text>
+      )}
+      {copies.length > 1 && (
+        <Text size="xs" c="dimmed">
+          The date shown is the earliest of these copies.
+        </Text>
+      )}
+    </Stack>
+  )
+}
+
 export function BookEditor({
   value,
+  seriesID,
+  edition,
   save,
   remove,
   reset,
   close,
 }: {
   value: Book
+  seriesID: number
+  edition?: Edition
   save: (v: Book) => Promise<void>
   remove: () => Promise<void>
   reset: () => Promise<void>
@@ -181,13 +269,16 @@ export function BookEditor({
           }}
         >
           <Stack>
+            <BookCopies seriesID={seriesID} book={value} edition={edition} />
             <Text size="sm" c="dimmed">
               Numbers identify books within this edition. Specials can use a label without a number.
+              {value.copies > 0 && ' What you change here is kept when MangaBaka is refreshed.'}
             </Text>
             <fieldset className="formFields" disabled={edit.busy}>
               <Stack>
                 <TextInput
                   label="Display label"
+                  description={edited(value, 'sequence_string')}
                   required
                   value={v.sequenceStr}
                   onChange={(e) => set({ ...v, sequenceStr: e.currentTarget.value })}
@@ -220,16 +311,19 @@ export function BookEditor({
                 <TextInput
                   type="date"
                   label="Publication date"
+                  description={edited(value, 'release_date')}
                   value={v.releaseDate ?? ''}
                   onChange={(e) => set({ ...v, releaseDate: e.currentTarget.value })}
                 />
                 <TextInput
                   label="ISBN"
+                  description={edited(value, 'isbn')}
                   value={v.isbn ?? ''}
                   onChange={(e) => set({ ...v, isbn: e.currentTarget.value })}
                 />
                 <TextInput
                   label="Revision"
+                  description={edited(value, 'revision')}
                   value={v.revision ?? ''}
                   onChange={(e) => set({ ...v, revision: e.currentTarget.value })}
                 />
@@ -239,7 +333,7 @@ export function BookEditor({
             <Group justify="space-between">
               {v.providerId && (
                 <Button variant="subtle" disabled={edit.busy} onClick={() => void edit.run(reset)}>
-                  Use catalog values
+                  Use MangaBaka’s values
                 </Button>
               )}
               {v.id > 0 && (
@@ -284,8 +378,6 @@ export function EditionEditor({
     language: string
     publisher: string
     medium: string
-    editionTraits: string[]
-    contentVariant: string
     numberingSource: string
     discoverChapters?: boolean
   }) => Promise<void>
@@ -293,6 +385,10 @@ export function EditionEditor({
   close: () => void
 }) {
   const [v, set] = useState(value)
+  // Publisher and medium rarely need a hand; they open when one was edited.
+  const [more, setMore] = useState(
+    value.overrides.includes('publisher') || value.overrides.includes('medium'),
+  )
   const edit = useEditor()
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
   return (
@@ -309,27 +405,65 @@ export function EditionEditor({
         }}
       >
         <Stack>
+          <Group gap="xs">
+            <EditionOrigin edition={value} />
+          </Group>
           <Text size="sm" c="dimmed">
-            Edits are preserved during catalog refresh. To collect a different language or edition,
-            add an edition.
+            {value.custom
+              ? 'A local edition: everything here is yours, and MangaBaka does not update it.'
+              : `MangaBaka lists this as “${value.providerEditionName || value.editionName}” in ${
+                  value.collections
+                    .map((c) => [c.medium, c.publisher].filter(Boolean).join(' from '))
+                    .join(' and ') || 'no medium'
+                }. What you change here is kept when it is refreshed.`}{' '}
+            To collect a different language or edition, add an edition.
           </Text>
-          {(['editionName', 'language', 'publisher', 'medium'] as const).map((k) => (
-            <TextInput
-              key={k}
-              label={
-                {
-                  editionName: 'Edition name',
-                  language: 'Language',
-                  publisher: 'Publisher',
-                  medium: 'Publication medium',
-                }[k]
-              }
-              required={k === 'editionName' || k === 'language'}
-              value={v[k]}
-              disabled={edit.busy}
-              onChange={(e) => set({ ...v, [k]: e.currentTarget.value })}
-            />
-          ))}
+          {(['editionName', 'language', 'publisher', 'medium'] as const).map((k) =>
+            k === 'publisher' && !more ? (
+              <Button
+                key="more"
+                variant="subtle"
+                size="compact-sm"
+                w="fit-content"
+                onClick={() => setMore(true)}
+              >
+                Publisher and medium
+                {v.publisher || v.medium
+                  ? `: ${[v.publisher, v.medium].filter(Boolean).join(' · ')}`
+                  : ''}
+              </Button>
+            ) : k === 'medium' && !more ? null : (
+              <TextInput
+                key={k}
+                label={
+                  {
+                    editionName: 'Edition name',
+                    language: 'Language',
+                    publisher: 'Publisher',
+                    medium: 'Publication medium',
+                  }[k]
+                }
+                description={
+                  edited(
+                    value,
+                    {
+                      editionName: 'edition_name',
+                      language: 'language',
+                      publisher: 'publisher',
+                      medium: 'medium',
+                    }[k],
+                  ) ??
+                  (k === 'editionName'
+                    ? 'Releases are matched by what this says: add “Deluxe”, “Omnibus” or “Colored” when the books are.'
+                    : undefined)
+                }
+                required={k === 'editionName' || k === 'language'}
+                value={v[k]}
+                disabled={edit.busy}
+                onChange={(e) => set({ ...v, [k]: e.currentTarget.value })}
+              />
+            ),
+          )}
           <Select
             label="Edition release profile"
             description="Used by versions that inherit this edition’s profile."
@@ -338,30 +472,6 @@ export function EditionEditor({
             data={(profiles.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
             value={v.profileId ? String(v.profileId) : null}
             onChange={(id) => set({ ...v, profileId: Number(id) || 0 })}
-            disabled={edit.busy}
-          />
-          <MultiSelect
-            label="Edition traits"
-            description="Choose all known traits. Leave blank when unspecified."
-            data={[
-              { value: 'standard', label: 'Standard numbering' },
-              { value: 'omnibus', label: 'Omnibus' },
-              { value: 'deluxe', label: 'Deluxe' },
-              { value: 'boxset', label: 'Box set' },
-            ]}
-            value={v.editionTraits ?? []}
-            onChange={(editionTraits) => set({ ...v, editionTraits })}
-            disabled={edit.busy}
-          />
-          <Select
-            label="Content version"
-            data={[
-              { value: 'unknown', label: 'Unspecified' },
-              { value: 'original', label: 'Original' },
-              { value: 'colored', label: 'Colored' },
-            ]}
-            value={v.contentVariant || 'unknown'}
-            onChange={(variant) => set({ ...v, contentVariant: variant ?? 'unknown' })}
             disabled={edit.busy}
           />
           {v.type === 'chapter' && v.custom && (
@@ -390,7 +500,7 @@ export function EditionEditor({
           <Group justify="space-between">
             {(v.syncState === 'linked' || v.syncState === 'stale') && (
               <Button variant="subtle" disabled={edit.busy} onClick={() => void edit.run(reset)}>
-                Use catalog values
+                Use MangaBaka’s values
               </Button>
             )}
             <Button type="submit" loading={edit.busy}>
