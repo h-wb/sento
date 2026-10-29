@@ -13,10 +13,13 @@ rules.
 
 Operational entry points:
 
-- **The stack**: `paseo script start extensions api web` (a fresh worktree's
-  first api start includes a Go build — give it a few minutes), then
-  `paseo script ls` for the ports and proxy URLs. Open the **web** URL, not
-  the backend's; `GET /` on the backend is a 404 by design.
+- **The stack**: boot it only through the services — `paseo script start
+  extensions api web`, never a bare `mise run` in a terminal (a fresh
+  worktree's first api start includes a Go build — give it a few minutes).
+  `paseo script ls` prints the ports **and the proxy URLs**; report the web
+  and api proxy URLs in your first message so the human can watch the same
+  instance in their browser. Open the **web** URL, not the backend's;
+  `GET /` on the backend is a 404 by design.
 - **Read `docs/dogfooding.md` first**: sharpen its entries with repro and
   evidence instead of filing duplicates; a finding that matches no entry
   gets a fresh issue.

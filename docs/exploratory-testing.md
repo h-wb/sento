@@ -20,12 +20,14 @@ this document; other providers get the path directly.
 
 ## The target
 
-Each exploratory run gets a disposable Paseo worktree: `paseo.json` setup
-runs `mise install && mise run web:install`, then start the three services
-(`paseo script start extensions api web`; `paseo script ls` prints the
-ports and the proxy URLs). The stack runs from the worktree's own code —
-Go changes rebuild in seconds, the web HMRs — so what you test is the code,
-not a built image.
+Each exploratory run gets a disposable Paseo worktree. Boot the stack
+**only** through the services — `paseo script start extensions api web`,
+never a bare `mise run` in a terminal: the services are what assign the
+ports and publish the proxy URLs (`paseo script ls` prints both). Report
+the web and api proxy URLs in your first message so the human can open the
+same instance in their browser and watch. The stack runs from the
+worktree's own code — Go changes rebuild in seconds, the web HMRs — so
+what you test is the code, not a built image.
 
 Everything is real. The api service (`paseo.json`) starts the backend with
 the upstream env on its command line — cluster-local qBittorrent and
