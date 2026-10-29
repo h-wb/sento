@@ -98,6 +98,9 @@ func (s *Server) reconcileExtensions() {
 // Importer exposes the queue importer for background loops.
 func (s *Server) Importer() *service.Importer { return s.importer }
 
+// Scanner exposes the library scanner for background loops.
+func (s *Server) Scanner() *service.Scanner { return s.scanner }
+
 // SearchSvc exposes the unified search for background loops.
 func (s *Server) SearchSvc() *service.SearchService { return s.search }
 

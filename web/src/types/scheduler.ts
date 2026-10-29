@@ -14,6 +14,7 @@ export interface Intervals {
   RefreshSweep: any /* time.Duration */;
   ChapterCheck: any /* time.Duration */;
   VolumeSweep: any /* time.Duration */;
+  LibraryScan: any /* time.Duration */;
   RefreshReleasing: any /* time.Duration */;
   RefreshEnded: any /* time.Duration */;
 }

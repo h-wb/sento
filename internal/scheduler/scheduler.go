@@ -20,6 +20,7 @@ type Intervals struct {
 	RefreshSweep     time.Duration
 	ChapterCheck     time.Duration
 	VolumeSweep      time.Duration
+	LibraryScan      time.Duration
 	RefreshReleasing time.Duration
 	RefreshEnded     time.Duration
 }
@@ -31,6 +32,7 @@ func DefaultIntervals() Intervals {
 		RefreshSweep:     time.Hour,
 		ChapterCheck:     2 * time.Hour,
 		VolumeSweep:      12 * time.Hour,
+		LibraryScan:      12 * time.Hour,
 		RefreshReleasing: 24 * time.Hour,
 		RefreshEnded:     7 * 24 * time.Hour,
 	}
@@ -69,6 +71,7 @@ type Scheduler struct {
 	libraries  *service.Library
 	search     *service.SearchService
 	importer   *service.Importer
+	scanner    *service.Scanner
 	extensions *service.ExtensionService
 	intervals  Intervals
 	tasks      []*task
@@ -86,11 +89,12 @@ type Scheduler struct {
 const stateKey = "scheduler"
 
 func New(st *store.Store, lib *service.Library, search *service.SearchService,
-	importer *service.Importer, extensions *service.ExtensionService, intervals Intervals,
+	importer *service.Importer, scanner *service.Scanner,
+	extensions *service.ExtensionService, intervals Intervals,
 ) *Scheduler {
 	s := &Scheduler{
 		store: st, libraries: lib, search: search,
-		importer: importer, extensions: extensions, intervals: intervals,
+		importer: importer, scanner: scanner, extensions: extensions, intervals: intervals,
 		startupGrace: 30 * time.Second,
 	}
 	s.tasks = append(s.tasks, &task{
@@ -109,6 +113,12 @@ func New(st *store.Store, lib *service.Library, search *service.SearchService,
 		slug: "metadata-refresh", name: "Refresh Stale Metadata",
 		interval: intervals.RefreshSweep, tick: s.tickRefresh,
 	})
+	if scanner != nil {
+		s.tasks = append(s.tasks, &task{
+			slug: "library-scan", name: "Scan Library Folders",
+			interval: intervals.LibraryScan, tick: s.tickLibraryScan,
+		})
+	}
 	if search.HasProviders() {
 		s.tasks = append(s.tasks,
 			&task{
@@ -358,6 +368,42 @@ func (s *Scheduler) tickRefresh(ctx context.Context) error {
 // refresh, so waiting for "releasing" would miss the return.
 func active(sr store.Series) bool {
 	return sr.Status == "releasing" || sr.Status == "hiatus"
+}
+
+// tickLibraryScan keeps the library state honest (spec.md §11.4 rescan):
+// for every series it re-checks file presence — a deleted file stops
+// counting as owned and its book becomes wanted again, an unreachable
+// folder blocks acquisition and shows in review — and imports files that
+// appeared on disk since the last pass, in place, without renaming.
+func (s *Scheduler) tickLibraryScan(ctx context.Context) error {
+	series, err := s.store.ListSeries(ctx)
+	if err != nil {
+		return err
+	}
+	var linked, changed int
+	for _, sr := range series {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if sr.Path == "" && sr.ChapterPath == "" {
+			continue
+		}
+		res, err := s.scanner.ScanSeriesFolder(ctx, sr.ID, "")
+		if err != nil {
+			slog.Warn("library scan failed", "series", sr.ID, "title", sr.Title, "error", err)
+			continue
+		}
+		linked += res.Linked
+		changed += res.Changed
+		if res.Linked > 0 || res.Changed > 0 {
+			slog.Info("library scan", "series", sr.Title,
+				"linked", res.Linked, "changed", res.Changed, "unrequested", res.Unrequested)
+		}
+	}
+	if linked > 0 || changed > 0 {
+		slog.Info("library scan complete", "linked", linked, "changed", changed)
+	}
+	return nil
 }
 
 // tickChapters runs the automatic chapter search for active, monitored

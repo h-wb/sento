@@ -7,6 +7,7 @@ const PAGES = [
   { nav: 'Library', heading: 'Library', url: '/' },
   { nav: 'Calendar', heading: 'Calendar', url: '/calendar' },
   { nav: 'Activity', heading: 'Activity', url: '/queue' },
+  { nav: 'Wanted', heading: 'Wanted', url: '/wanted' },
   { nav: 'Indexers', heading: 'Indexers', url: '/indexers' },
   { nav: 'Connections', heading: 'Connections', url: '/connections' },
   { nav: 'Profiles', heading: 'Profiles', url: '/profiles' },

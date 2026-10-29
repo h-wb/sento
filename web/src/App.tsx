@@ -41,6 +41,7 @@ import {
   IconPlug,
   IconSun,
   IconWorldSearch,
+  IconZoomCheck,
 } from '@tabler/icons-react'
 import { useIsFetching, useQuery } from '@tanstack/react-query'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
@@ -58,6 +59,7 @@ const AddPage = lazy(() => import('./pages/AddPage'))
 const SeriesPage = lazy(() => import('./pages/SeriesPage'))
 const CalendarPage = lazy(() => import('./pages/CalendarPage'))
 const QueuePage = lazy(() => import('./pages/QueuePage'))
+const WantedPage = lazy(() => import('./pages/WantedPage'))
 const IndexersPage = lazy(() => import('./pages/IndexersPage'))
 const ConnectionsPage = lazy(() => import('./pages/ConnectionsPage'))
 const MediaPage = lazy(() => import('./pages/MediaPage'))
@@ -69,6 +71,7 @@ const primaryLinks = [
   { to: '/', label: 'Library', icon: IconBooks },
   { to: '/calendar', label: 'Calendar', icon: IconCalendar },
   { to: '/queue', label: 'Activity', icon: IconDownload },
+  { to: '/wanted', label: 'Wanted', icon: IconZoomCheck },
 ]
 // Set-up-once config, ordered to mirror the pipeline: search → download →
 // quality decision → import.
@@ -104,6 +107,7 @@ const SHORTCUTS: [string, string][] = [
   ['g then l', 'Go to Library'],
   ['g then c', 'Go to Calendar'],
   ['g then a', 'Go to Activity'],
+  ['g then w', 'Go to Wanted'],
   ['g then n', 'Add Series'],
   ['g then i / o / p / m', 'Indexers / Connections / Profiles / Media'],
   ['g then s', 'Go to System'],
@@ -351,6 +355,7 @@ export default function App() {
             <Route path="/series/:id" element={<SeriesPage key={location.pathname} />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/queue" element={<QueuePage />} />
+            <Route path="/wanted" element={<WantedPage />} />
             <Route path="/connections" element={<ConnectionsPage />} />
             {/* The page was called Sources; keep old bookmarks working. */}
             <Route path="/sources" element={<Navigate to="/connections" replace />} />

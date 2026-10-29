@@ -57,7 +57,7 @@ func run(configPath string) error {
 	schedCtx, stopSched := context.WithCancel(context.Background())
 	defer stopSched()
 	sched := scheduler.New(app.Store(), app.LibraryService(), app.SearchSvc(),
-		app.Importer(), app.ExtensionsSvc(), scheduler.DefaultIntervals())
+		app.Importer(), app.Scanner(), app.ExtensionsSvc(), scheduler.DefaultIntervals())
 	health := app.HealthSvc()
 	sched.Register("health-check", "Check Health", 15*time.Minute, func(ctx context.Context) error {
 		health.Check(ctx)

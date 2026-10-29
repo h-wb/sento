@@ -1,5 +1,5 @@
 import type { ReviewItem } from './types/store'
-import type { EditionOverview, FileChange, HealthReport, OrganizeResult } from './types/service'
+import type { EditionOverview, FileChange, HealthReport, OrganizeResult, WantedRow } from './types/service'
 import type {
   CollectedVersion,
   Book,
@@ -247,6 +247,7 @@ export const api = {
   runTask: (slug: string) => request<void>(`/system/tasks/${slug}/run`, { method: 'POST' }),
   lookup: (q: string) => request<LookupResult[]>(`/lookup?q=${encodeURIComponent(q)}`),
   calendar: (days = 60) => request<CalendarEntry[]>(`/calendar?days=${days}`),
+  wanted: () => request<WantedRow[]>('/wanted'),
 
   listSeries: () => request<Series[]>('/series/'),
   addSeries: (body: Partial<AddSeriesRequest> & Pick<AddSeriesRequest, 'mangabakaId'>) =>

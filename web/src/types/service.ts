@@ -653,3 +653,27 @@ export interface BookStatus {
   fileIds: number /* int64 */[];
   wanted: boolean;
 }
+
+//////////
+// source: wanted.go
+
+/**
+ * WantedRow is one book the library is still waiting on: a missing,
+ * monitored slot the ledger marked wanted — never released, storage-blocked
+ * and unmonitored books do not qualify, and an upgrade-eligible copy is
+ * here too, with its reason saying so. The library-wide view behind the
+ * Wanted page.
+ */
+export interface WantedRow {
+  seriesId: number /* int64 */;
+  seriesTitle: string;
+  editionId: number /* int64 */;
+  editionName: string;
+  language: string;
+  ledger: string;
+  versionId: number /* int64 */;
+  book: Book;
+  reason: string;
+  availability: string;
+  state: string;
+}

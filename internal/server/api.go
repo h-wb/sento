@@ -28,6 +28,7 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/lookup", s.handleLookup)
 	r.Get("/catalog/editions", s.handleCatalogEditions)
 	r.Get("/calendar", s.handleCalendar)
+	r.Get("/wanted", s.handleWanted)
 	r.Get("/review", s.handleReview)
 	r.Delete("/files/{fid}", s.handleDeleteFile)
 	r.Post("/library/import/scan", s.handleImportScan)
@@ -195,6 +196,13 @@ func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
 	to := now.AddDate(0, 0, days).Format("2006-01-02")
 	entries, err := s.library.Calendar(r.Context(), from, to)
 	respondList(w, entries, err)
+}
+
+// handleWanted lists the library's missing and upgrade-eligible books
+// across every monitored series (the Wanted page).
+func (s *Server) handleWanted(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.library.Wanted(r.Context())
+	respondList(w, rows, err)
 }
 
 // --- helpers ---
