@@ -32,6 +32,7 @@ clean library for readers like Komga/Kavita.
 | D13 | MangaBaka volatility | MangaBaka (esp. collections/works) is WIP and may change: Sento isolates it behind a `MetadataProvider` anti-corruption layer, owns its identity model, caches raw payloads, and degrades gracefully (§5.1) |
 | D14 | Existing-library import | First-class, Sonarr-style: scan root folders, match series, link files to slots **in place** — non-destructive by default, renaming/organizing only as an explicit separate action (§11.4) |
 | D15 | Metadata/download separation | Verified source observations enter review or an explicitly trusted binding; never expand numbering from source maxima. |
+| D16 | Review proposes | Review items carry a proposed resolution read from evidence (a file's name, the download it came in), accepted one by one or together; nothing is recorded until accepted, and automatic acquisition stays as strict as before ([propose-dont-ask.md](../reviews/propose-dont-ask.md)). |
 
 ## 2. Goals / non-goals
 

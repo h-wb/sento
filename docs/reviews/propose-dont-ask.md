@@ -143,6 +143,25 @@ Nausicaä of the Valley of the Wind
 This reshapes `EditionManager.tsx` and is the largest change; it is
 sketched here and built after A, B1 and B2, which do not depend on it.
 
+## Status
+
+Built on 2026-10-29, on the branch of the exploratory pass:
+
+| Part | Commit | Issue |
+| --- | --- | --- |
+| A1 file proposals, accept one or all, pre-filled mapping | `289fec0` | #24 |
+| A2 held downloads close on their last confirmed file | `224300d` | #23 |
+| B1 a series without volumes wants its chapters | `3084117` | #25 |
+| B2 all-books search proposes only wanted books; Select range | `bedb1f3` | #27 |
+| B3 Collecting summary; edition cards open on demand | `4b017fa` | — |
+| A3 missing-edition proposals | not built | #22 |
+
+B3 is the first step of the reshape sketched above: the summary leads and
+editions are the detail, but each edition card is unchanged. What the
+cards should still carry once the summary exists (Version settings and
+Search releases on every card, the menu's three levels) is the next
+question, best answered by a think-aloud session on the new page.
+
 ## Out of scope
 
 Automatic acquisition rules, the facet vocabulary, and the
