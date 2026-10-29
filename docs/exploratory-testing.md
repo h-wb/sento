@@ -21,12 +21,18 @@ Proton Pass by fnox for the `run:agent` task only (`fnox.toml`; the
 worktree setup runs `mise run pass:login`, idempotent). Seeds apply on a
 worktree's first run only: once its DB has settings, env changes are
 ignored — wipe `data/` to reseed. You configure nothing by hand except
-the indexers (below).
+the Nyaa indexer and the Weeb Central source (below).
 
 Limits — these are hard rules, not preferences:
 
 - **Indexers: Nyaa only.** Add exactly one indexer, Nyaa, in the UI.
   Never enable the rest of Prowlarr's catalog.
+- **Extension sources: Weeb Central only.** The sidecar ships with no
+  sources: add the repo
+  `https://github.com/keiyoushi/extensions/raw/repo/index.pb` in
+  Connections, install `WeebCentral` from the Indexers page, and use it
+  for the chapter-source flows — search, grab, CBZ assembly — staging in
+  the worktree's own downloads dir. Never add another source.
 - **qBittorrent category: `sento-test`.** Seeded via
   `SENTO_QBITTORRENT_CATEGORY`. Grabs must land under
   `/data/Downloads/qbittorrent/complete/sento-test`. Never the live
@@ -55,10 +61,10 @@ Limits — these are hard rules, not preferences:
 Use the web UI like a user would — through the pod's headless Chromium or
 the Playwright suite in `web/e2e` (against `cmd/e2estub`) when a flow needs
 determinism. Walk the real journeys: search and add a series, browse its
-editions/versions/books, grab something from Nyaa, watch the queue, work
-the review inbox, check Wanted, change settings. For every hesitation,
-ask: what did I expect, what actually happened, what would a first-time
-user do here?
+editions/versions/books, grab something from Nyaa, grab chapters from
+Weeb Central, watch the queue, work the review inbox, check Wanted,
+change settings. For every hesitation, ask: what did I expect, what
+actually happened, what would a first-time user do here?
 
 Judge by these classes, in order of severity:
 
