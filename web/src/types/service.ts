@@ -264,7 +264,7 @@ export interface AddSeriesRequest {
   monitor: string;
   monitorIds: string[]; // explicit provider edition ids
   chapterLang: string; // default "en"
-  chapterCutoff: number /* int64 */; // hundredths; 0 = latest at add (D6)
+  chapterCutoff: number /* int64 */; // hundredths; 0 = latest at add when volumes are collected, else every chapter (D6)
   profileId: number /* int64 */; // 0 = instance default
 }
 /**

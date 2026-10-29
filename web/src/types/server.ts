@@ -25,6 +25,13 @@ export interface BookMonitorBody {
   bookId: number /* int64 */;
   monitored: boolean;
 }
+/**
+ * SightingBody names a missing-edition sighting to dismiss.
+ */
+export interface SightingBody {
+  facet: string;
+  language: string;
+}
 
 //////////
 // source: server.go

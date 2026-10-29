@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -544,8 +545,49 @@ func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64
 		emit(ev)
 	}
 	plan := run.buildPlan(candidates, complete && ctx.Err() == nil)
+	s.recordSightings(ctx, run, candidates)
 	emit(SearchEvent{Type: "done", Ledger: searchLedger, Plan: &plan})
 	return nil
+}
+
+// sightingReleases is how many distinct releases must name an edition the
+// series lacks before review proposes adding it: one could be a mislabel.
+const sightingReleases = 2
+
+// recordSightings keeps, per kind of edition and language, the releases
+// that were ruled out for stating an edition no edition of the series is
+// (propose-dont-ask.md §A3). Review proposes adding it.
+func (s *SearchService) recordSightings(ctx context.Context, run *searchRun, cs []ReleaseCandidate) {
+	type key struct{ facet, language string }
+	titles := map[key]map[string]int{}
+	for _, c := range cs {
+		if c.EditionSnapshot == nil || !slices.Contains(c.Rejections, "rejected.edition_routing") {
+			continue
+		}
+		facet := statedFacet(c.Parse, *c.EditionSnapshot)
+		if facet == "" || holdsFacet(run.editions, facet, c.EditionSnapshot.Language) {
+			continue
+		}
+		k := key{facet, baseLang(c.EditionSnapshot.Language)}
+		if titles[k] == nil {
+			titles[k] = map[string]int{}
+		}
+		titles[k][c.Title] = max(titles[k][c.Title], c.Seeders)
+	}
+	for k, seen := range titles {
+		if len(seen) < sightingReleases {
+			continue
+		}
+		example, best := "", -1
+		for title, seeders := range seen {
+			if seeders > best || seeders == best && title < example {
+				example, best = title, seeders
+			}
+		}
+		if err := s.store.RecordEditionSighting(ctx, store.EditionSighting{SeriesID: run.seriesID, Facet: k.facet, Language: k.language, Releases: len(seen), Example: example}); err != nil {
+			slog.Warn("recording an edition sighting failed", "series", run.seriesID, "error", err)
+		}
+	}
 }
 
 // buildPlan plans the default selection from planCandidates, and says

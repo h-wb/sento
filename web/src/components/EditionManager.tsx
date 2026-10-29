@@ -37,6 +37,7 @@ import type {
   ReviewProposal,
 } from '../types/store'
 import type { BookSelection } from './BookDialog'
+import type { EditionStart } from './AddEdition'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
 import { editionDetails, editionMedia } from './editionText'
@@ -57,7 +58,7 @@ type Props = {
   catalogUrl: string
   files: SeriesFile[]
   onBook: (s: BookSelection) => void
-  onAddEdition: () => void
+  onAddEdition: (start?: EditionStart) => void
 }
 export default function EditionManager({
   section,
@@ -200,7 +201,7 @@ export default function EditionManager({
                     See the series on MangaBaka
                   </Anchor>
                 </Text>
-                <Button size="xs" onClick={onAddEdition}>
+                <Button size="xs" onClick={() => onAddEdition()}>
                   Add a volume edition
                 </Button>
               </Group>
@@ -514,7 +515,7 @@ export default function EditionManager({
             >
               Other editions ({others.length})
             </Button>
-            <Button size="xs" variant="default" onClick={onAddEdition}>
+            <Button size="xs" variant="default" onClick={() => onAddEdition()}>
               Add edition
             </Button>
           </Group>
@@ -572,6 +573,7 @@ export default function EditionManager({
       {section === 'review' && (
         <ReviewInbox
           seriesID={seriesID}
+          onAddEdition={onAddEdition}
           onFile={(id, proposal) => {
             const f = files.find((f) => f.id === id)
             if (f) {

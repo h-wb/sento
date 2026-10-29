@@ -426,6 +426,28 @@ func (s *Server) handleBulkMonitor(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// SightingBody names a missing-edition sighting to dismiss.
+type SightingBody struct {
+	Facet    string `json:"facet"`
+	Language string `json:"language"`
+}
+
+func (s *Server) handleDismissSighting(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body SightingBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if err := s.store.DismissEditionSighting(r.Context(), id, body.Facet, body.Language); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 	sid, _ := strconv.ParseInt(r.URL.Query().Get("seriesId"), 10, 64)
 	data, err := s.library.ReviewItems(r.Context(), sid)

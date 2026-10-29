@@ -290,3 +290,35 @@ func editionConflict(p parse.Result, c store.Edition) (why string, statesOwn boo
 	}
 	return "", false
 }
+
+// statedFacet is the content facet a release states that c does not hold
+// ("deluxe" for a Deluxe release ruled out of a box set), "" for none.
+func statedFacet(p parse.Result, c store.Edition) string {
+	e := viewEdition(c)
+	for _, f := range editionFacets {
+		if f.content && f.stated(p) && !f.holds(e) {
+			return f.name
+		}
+	}
+	return ""
+}
+
+// holdsFacet reports whether any of eds in language is a facet edition.
+func holdsFacet(eds []store.Edition, facet, language string) bool {
+	for _, c := range eds {
+		if baseLang(c.Language) != baseLang(language) {
+			continue
+		}
+		for _, f := range editionFacets {
+			if f.name == facet && f.holds(viewEdition(c)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// facetEditionName is what an edition of that facet is usually called.
+func facetEditionName(facet string) string {
+	return strings.ToUpper(facet[:1]) + facet[1:] + " Edition"
+}

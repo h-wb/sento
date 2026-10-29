@@ -33,6 +33,42 @@ func (l *Library) ReviewItems(ctx context.Context, seriesID int64) ([]store.Revi
 		}
 		items[i].Proposal = p.propose(items[i].ItemID)
 	}
+	return l.withSightings(ctx, seriesID, items)
+}
+
+// withSightings adds a "missing-edition" item for each edition releases
+// state that the series still lacks (§A3). Adding one such edition
+// retires the item; "Not an edition I want" dismisses it.
+func (l *Library) withSightings(ctx context.Context, seriesID int64, items []store.ReviewItem) ([]store.ReviewItem, error) {
+	sightings, err := l.store.EditionSightings(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	editions := map[int64][]store.Edition{}
+	for _, s := range sightings {
+		eds, ok := editions[s.SeriesID]
+		if !ok {
+			if eds, err = l.store.ListEditions(ctx, s.SeriesID); err != nil {
+				return nil, err
+			}
+			editions[s.SeriesID] = eds
+		}
+		if holdsFacet(eds, s.Facet, s.Language) {
+			continue
+		}
+		series, err := l.store.GetSeries(ctx, s.SeriesID)
+		if err != nil {
+			return nil, err
+		}
+		sighting := s
+		items = append(items, store.ReviewItem{
+			ID: fmt.Sprintf("sighting-%d-%s-%s", s.SeriesID, s.Facet, s.Language), Kind: "missing-edition", Status: "propose",
+			SeriesID: s.SeriesID, SeriesTitle: series.Title, Title: facetEditionName(s.Facet) + " · " + s.Language,
+			Detail: fmt.Sprintf("%d releases are a %s edition in %s, which this series does not have — such as “%s”. If it exists, add it, then search again.",
+				s.Releases, s.Facet, s.Language, s.Example),
+			Sighting: &sighting,
+		})
+	}
 	return items, nil
 }
 

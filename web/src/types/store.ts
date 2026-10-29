@@ -302,6 +302,10 @@ export interface ReviewItem {
    * until it is accepted.
    */
   proposal?: ReviewProposal;
+  /**
+   * Sighting is the evidence of a "missing-edition" item.
+   */
+  sighting?: EditionSighting;
 }
 /**
  * ReviewProposal is a file's proposed mapping and why: the books, the
@@ -312,6 +316,18 @@ export interface ReviewProposal {
   edition: string;
   label: string;
   evidence: string;
+}
+/**
+ * EditionSighting is an edition releases state that the series lacks:
+ * "deluxe" in English, seen in Releases distinct releases.
+ */
+export interface EditionSighting {
+  seriesId: number /* int64 */;
+  facet: string;
+  language: string;
+  releases: number /* int */;
+  example: string;
+  seenAt: string;
 }
 
 //////////
@@ -487,7 +503,7 @@ export interface AddSeriesParams {
   MonitorAll: boolean; // monitor every volume-type collection
   MonitorIDs: string[]; // or: provider ids to monitor
   ChapterLang: string;
-  ChapterCutoff: number /* int64 */; // hundredths; default: total_chapters*100 (latest at add)
+  ChapterCutoff: number /* int64 */; // hundredths; default: total_chapters*100 (latest at add) when volumes are collected, else 0
   ProfileID: number /* int64 */; // 0 = instance default (stored NULL)
 }
 

@@ -104,15 +104,18 @@ cleared, and History records what happened ("imported after review: 7
 files confirmed by hand"). Books of its plan that no file fulfilled are
 released and wanted again; they are named in the history entry.
 
-### A3. Missing editions (#22) — next
+### A3. Missing editions (#22)
 
 Releases ruled out because they state an edition the series does not have
-("deluxe") are evidence of a missing edition. Search results are not
-stored today, so this needs a small record of such observations before it
-can become a review proposal ("Releases exist for a Deluxe Edition this
-series doesn't have — add it?" → Add edition pre-filled). Until then the
-rejection reason says what differs and points to Add edition (done:
-`73b3b9d`).
+("deluxe") are evidence of a missing edition. A search records, per kind
+of edition and language, how many distinct releases said so and the
+best-seeded one (`edition_sightings`); two releases are needed, one could
+be a mislabel. Review then proposes it ("Deluxe Edition · en: 3 releases
+are a deluxe edition…") with Add edition (pre-filled with the name and
+language) and "Not an edition I want", which is remembered. Adding any
+edition of that kind retires the item. An edition of that kind that exists
+but is not collected records nothing: collecting it is the answer. The
+rejection reason itself also says what differs (`73b3b9d`).
 
 ## B. Series page
 
@@ -154,7 +157,8 @@ Built on 2026-10-29, on the branch of the exploratory pass:
 | B1 a series without volumes wants its chapters | `3084117` | #25 |
 | B2 all-books search proposes only wanted books; Select range | `bedb1f3` | #27 |
 | B3 Collecting summary; edition cards open on demand | `4b017fa` | — |
-| A3 missing-edition proposals | not built | #22 |
+| A3 missing-edition proposals (`edition_sightings`, migration 24) | see git log | #22 |
+| Search status and source notes; names instead of internals | `e908250` and before | #26, #28 |
 
 B3 is the first step of the reshape sketched above: the summary leads and
 editions are the detail, but each edition card is unchanged. What the

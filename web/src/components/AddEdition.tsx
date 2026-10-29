@@ -26,6 +26,8 @@ const languages = ['en', 'fr', 'es', 'de', 'it', 'pt-br', 'ja', 'ko', 'zh']
 // offers what MangaBaka lists and nobody collects yet, then the form for
 // an edition MangaBaka does not list. What the form pre-fills from
 // MangaBaka's series record (the publisher, the volume count) says so.
+export type EditionStart = { editionName: string; language: string }
+
 export default function AddEdition({
   seriesID,
   series,
@@ -34,6 +36,7 @@ export default function AddEdition({
   busy,
   run,
   onClose,
+  initial,
 }: {
   seriesID: number
   series: Series
@@ -42,11 +45,15 @@ export default function AddEdition({
   busy: boolean
   run: (fn: () => Promise<unknown>, msg?: string) => void
   onClose: () => void
+  // Where to start, when review proposes an edition releases state.
+  initial?: EditionStart
 }) {
+  const startName = initial?.editionName ?? 'Standard Edition'
+  const startLanguage = initial?.language ?? ''
   const hasVolumes = editions.some((c) => c.type === 'volume')
   const [ctype, setCtype] = useState<'volume' | 'chapter'>('volume')
-  const [name, setName] = useState('Standard Edition')
-  const [language, setLanguage] = useState('')
+  const [name, setName] = useState(startName)
+  const [language, setLanguage] = useState(startLanguage)
   // null: follow MangaBaka's suggestion for the language.
   const [publisherInput, setPublisher] = useState<string | null>(null)
   const [medium, setMedium] = useState<string | null>(null)
@@ -121,8 +128,8 @@ export default function AddEdition({
   return (
     <EditorModal
       dirty={
-        name !== 'Standard Edition' ||
-        !!language ||
+        name !== startName ||
+        language !== startLanguage ||
         publisherInput !== null ||
         !!medium ||
         !!basedOn ||

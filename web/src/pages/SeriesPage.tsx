@@ -1,6 +1,6 @@
 import EditionManager, { type EditionSection } from '../components/EditionManager'
 import OrganizeFiles from '../components/OrganizeFiles'
-import AddEdition from '../components/AddEdition'
+import AddEdition, { type EditionStart } from '../components/AddEdition'
 import { Fragment, useCallback, useState, type ReactNode } from 'react'
 import {
   Anchor,
@@ -55,7 +55,8 @@ export default function SeriesPage() {
   const [busy, setBusy] = useState(false)
   const [bookSel, setBookSel] = useState<BookSelection | null>(null)
   const [fullDesc, setFullDesc] = useState(false)
-  const [addEdition, setAddEdition] = useState(false)
+  // An edition start from review, or {} for a blank form; null: closed.
+  const [addEdition, setAddEdition] = useState<Partial<EditionStart> | null>(null)
   // The open tab lives in ?view= so it survives a reload and can be linked
   // to; ?view=review is the deep link the global review inbox uses.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -129,7 +130,7 @@ export default function SeriesPage() {
       catalogUrl={`https://mangabaka.org/${series?.mangabakaId ?? ''}`}
       files={files}
       onBook={setBookSel}
-      onAddEdition={() => setAddEdition(true)}
+      onAddEdition={(start) => setAddEdition(start ?? {})}
     />
   )
 
@@ -370,7 +371,8 @@ export default function SeriesPage() {
           editions={editions}
           busy={busy}
           run={run}
-          onClose={() => setAddEdition(false)}
+          onClose={() => setAddEdition(null)}
+          initial={addEdition.editionName ? (addEdition as EditionStart) : undefined}
         />
       )}
 

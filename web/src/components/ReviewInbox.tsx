@@ -8,13 +8,17 @@ import { useConfirmAction } from './ConfirmAction'
 import type { Edition, ReviewItem, ReviewProposal } from '../types/store'
 import { CatalogLink } from './EditionDialogs'
 import { fileName } from './editionText'
+import type { EditionStart } from './AddEdition'
 
 export default function ReviewInbox({
   seriesID = 0,
   onFile,
+  onAddEdition,
 }: {
   seriesID?: number
   onFile?: (id: number, proposal?: ReviewProposal) => void
+  // Open Add edition on the series page, started from a sighting.
+  onAddEdition?: (start: EditionStart) => void
 }) {
   const qc = useQueryClient()
   const q = useQuery({
@@ -124,7 +128,9 @@ export default function ReviewInbox({
                   ? 'File review'
                   : i.kind === 'edition'
                     ? 'Catalog edition available'
-                    : 'Download'}
+                    : i.kind === 'missing-edition'
+                      ? 'Edition releases name'
+                      : 'Download'}
             </Text>
             <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>
               {i.kind === 'file' ? fileName(i.title) : i.title}
@@ -209,6 +215,41 @@ export default function ReviewInbox({
                     }
                   >
                     Not the same edition
+                  </Button>
+                </>
+              )}
+              {i.kind === 'missing-edition' && i.sighting && (
+                <>
+                  {onAddEdition ? (
+                    <Button
+                      size="xs"
+                      onClick={() =>
+                        onAddEdition({ editionName: i.title.split(' · ')[0], language: i.sighting!.language })
+                      }
+                    >
+                      Add edition
+                    </Button>
+                  ) : (
+                    <Button
+                      size="xs"
+                      variant="default"
+                      component={Link}
+                      to={`/series/${i.seriesId}?view=review`}
+                    >
+                      Review on the series
+                    </Button>
+                  )}
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(() =>
+                        api.dismissSighting(i.seriesId, i.sighting!.facet, i.sighting!.language),
+                      )
+                    }
+                  >
+                    Not an edition I want
                   </Button>
                 </>
               )}

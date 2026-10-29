@@ -228,6 +228,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(coverage),
     }),
+  dismissSighting: (id: number, facet: string, language: string) =>
+    request<void>(`/series/${id}/edition-sightings/dismiss`, {
+      method: 'POST',
+      body: JSON.stringify({ facet, language }),
+    }),
   mapFile: (id: number, fid: number, books: BookRef[]) =>
     request<void>(`/series/${id}/files/${fid}/mapping`, {
       method: 'PUT',
