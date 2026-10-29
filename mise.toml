@@ -139,9 +139,12 @@ description = "Run sento with the agent-stack upstream seeds (fnox secrets; the 
 # The secrets are handed to this task only (see fnox.toml); the plain `run`
 # task stays secret-free so terminal and daemon starts never need a Proton
 # Pass session. paseo.json's api service runs this with the non-secret
-# upstream env (URLs, sento-test category) on its command line.
+# upstream env (URLs, sento-test category) on its command line. The command
+# is `go run` directly, not `mise run run`: granted secrets reach this
+# task's own process only — a nested mise task drops them (probed on the
+# paseo pod: direct grant SET, nested run empty).
 secrets = ["SENTO_QBITTORRENT_USERNAME", "SENTO_QBITTORRENT_PASSWORD", "SENTO_PROWLARR_API_KEY"]
-run = "mise run run"
+run = "go run ./cmd/sento"
 
 [tasks."pass:login"]
 description = "Log the repo's scoped Proton Pass agent session in (macOS Keychain, or PROTON_PASS_TOKEN on the paseo pod)"
