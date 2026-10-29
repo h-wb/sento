@@ -134,6 +134,13 @@ func BuildPlan(candidates []ReleaseCandidate, books []PlanBook, complete bool) A
 			}
 		}
 	}
+	markAvailability(&plan, pool, complete)
+	return plan
+}
+
+// markAvailability says, for each book of the plan, what the search found
+// for it among pool, whether or not the plan selects it.
+func markAvailability(plan *AcquisitionPlan, pool []ReleaseCandidate, complete bool) {
 	for i := range plan.Books {
 		b := &plan.Books[i]
 		b.Availability = "not_found"
@@ -161,7 +168,6 @@ func BuildPlan(candidates []ReleaseCandidate, books []PlanBook, complete bool) A
 			}
 		}
 	}
-	return plan
 }
 
 func smallerKnown(a, b int64) bool { return a > 0 && (b <= 0 || a < b) }

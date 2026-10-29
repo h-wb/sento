@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Alert, Anchor, Badge, Button, Checkbox, Group, Paper, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
+import { Alert, Anchor, Badge, Button, Checkbox, Group, NumberInput, Paper, Popover, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
 import { api, fmtNum, fmtSize, type ReleaseCandidate } from '../api'
 import type { AcquisitionPlan as Plan, PlanBook, PlanOutcome, PlanPick, SearchScope } from '../types/service'
 import type { BookRef } from '../types/store'
@@ -65,6 +65,8 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
   const [sending, setSending] = useState(false)
   const [outcomes, setOutcomes] = useState<PlanOutcome[] | null>(null)
   const [error, setError] = useState('')
+  const [rangeOpen, setRangeOpen] = useState(false)
+  const [range, setRange] = useState<{ from: number | string; to: number | string }>({ from: '', to: '' })
   const releases = useMemo(() => new Map(candidates.map((c) => [c.key, c])), [candidates])
   const known = useMemo(() => new Map(plan.books.map((b) => [bookKey(b.book), b])), [plan.books])
 
@@ -113,6 +115,18 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
       return next
     })
   }
+  // Select every downloadable release whose books all fall in the range;
+  // overlapping ones still give each book to the first.
+  const selectRange = () => {
+    const from = Number(range.from) * 100
+    const to = range.to === '' ? Infinity : Number(range.to) * 100
+    const keys = candidates
+      .filter((c) => c.decision?.canDownload && c.coverage?.length && c.coverage.every((b) => b.number >= from && b.number <= to))
+      .map((c) => c.key)
+    setListed((before) => [...before, ...keys.filter((k) => !before.includes(k))])
+    setSelected((before) => new Set([...before, ...keys]))
+    setRangeOpen(false)
+  }
   const named = (refs: BookRef[]) =>
     ranges(refs.map((b) => known.get(bookKey(b)) ?? { book: b, label: '', ownership: '', availability: '' }))
   const submit = async () => {
@@ -135,7 +149,7 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
           <Group justify="space-between" align="flex-start">
             <div>
               <Text fw={600}>
-                {total > 0 ? `${assigned.size} of ${count(total, `wanted ${noun}`)} selected` : `${count(assigned.size, noun)} selected`}
+                {total > 0 ? `${assigned.size} of ${count(total, scope.allBooks ? noun : `wanted ${noun}`)} selected` : `${count(assigned.size, noun)} selected`}
               </Text>
               <Text size="sm" c="dimmed">
                 {assigned.size === 0 ? 'Nothing will be downloaded yet.' : <>
@@ -181,6 +195,31 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
                   </Group>
                 )
               })}
+            </Group>
+          )}
+          {scope.allBooks && !outcomes && (
+            <Group gap="xs">
+              <Popover opened={rangeOpen} onChange={setRangeOpen} position="bottom-start" withArrow trapFocus>
+                <Popover.Target>
+                  <Button size="compact-xs" variant="subtle" disabled={locked} onClick={() => setRangeOpen(!rangeOpen)}>
+                    Select range
+                  </Button>
+                </Popover.Target>
+                <Popover.Dropdown>
+                  <Group gap="xs" align="flex-end">
+                    <NumberInput label="From" size="xs" w={90} min={0} hideControls value={range.from}
+                      onChange={(from) => setRange({ ...range, from })} />
+                    <NumberInput label="To" size="xs" w={90} min={0} hideControls value={range.to}
+                      onChange={(to) => setRange({ ...range, to })} onKeyDown={(e) => e.key === 'Enter' && selectRange()} />
+                    <Button size="xs" onClick={selectRange}>Select</Button>
+                  </Group>
+                </Popover.Dropdown>
+              </Popover>
+              {selected.size > 0 && (
+                <Button size="compact-xs" variant="subtle" disabled={locked} onClick={() => setSelected(new Set())}>
+                  Clear selection
+                </Button>
+              )}
             </Group>
           )}
           {!plan.complete && !searching && <Text size="sm" c="orange">Some sources could not be checked, so this plan may be missing releases.</Text>}
@@ -252,7 +291,7 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
       )}
       {(browsing || focus || rows.length === 0) && (listedCandidates.length > 0 || !focus) && (
         <CandidateList key={focus ? bookKey(focus.book) : 'all'} candidates={listedCandidates} onGrab={onGrab} busy={locked}
-          searching={searching} editionWide selected={selected} onToggle={toggle} showAll={!!focus} />
+          searching={searching} editionWide selected={selected} onToggle={toggle} showAll={!!focus} allBooks={scope.allBooks} />
       )}
     </Stack>
   )

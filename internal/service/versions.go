@@ -333,6 +333,7 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 	run.books = view.Books
 	run.versionProfiles = view.Profiles
 	run.wantedBooks = map[int64]map[int64]bool{}
+	run.wanted = map[string]bool{}
 	run.ownedScores = map[int64]map[int64]int{}
 	bindings, err := s.store.ListBindings(ctx, run.seriesID)
 	if err != nil {
@@ -359,6 +360,10 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 		wanted := map[int64]bool{}
 		run.ownedScores[t.ID] = map[int64]int{}
 		for _, sl := range view.Status[t.ID] {
+			// A book reserved by the download being replaced is still wanted.
+			if sl.Wanted && sl.State != "pending" || sl.State == "pending" && run.replacing[store.BookKey(t.ID, sl.Book.ID)] {
+				run.wanted[store.BookKey(t.ID, sl.Book.ID)] = true
+			}
 			selected := sl.Wanted
 			if run.scope != nil && run.scope.AllBooks && run.scope.BookID == 0 {
 				selected = sl.State != "storage_unavailable" && sl.State != "needs_review" && sl.State != "pending"

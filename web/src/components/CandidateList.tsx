@@ -77,6 +77,7 @@ export default function CandidateList({
   selected,
   onToggle,
   showAll = false,
+  allBooks = false,
 }: {
   candidates: ReleaseCandidate[]
   dropped?: number
@@ -91,6 +92,8 @@ export default function CandidateList({
   // Open on every release, ruled-out ones included: the question being
   // answered is why something is not on offer.
   showAll?: boolean
+  // The search covers every book, not only the wanted ones.
+  allBooks?: boolean
 }) {
   const { confirm, confirmation } = useConfirmAction()
   const [queued, setQueued] = useState<Set<string>>(new Set())
@@ -341,6 +344,7 @@ export default function CandidateList({
               queued={queued.has(releaseKey(c))}
               busy={busy || !!active}
               showBooks={editionWide}
+              allBooks={allBooks}
               loading={active === releaseKey(c)}
               onGrab={onGrab ? requestDownload : undefined}
               selected={selected?.has(c.key)}
@@ -366,6 +370,7 @@ function ReleaseRow({
   c,
   queued,
   showBooks = false,
+  allBooks = false,
   busy,
   loading,
   onGrab,
@@ -375,6 +380,7 @@ function ReleaseRow({
   c: ReleaseCandidate
   queued: boolean
   showBooks?: boolean
+  allBooks?: boolean
   busy: boolean
   loading: boolean
   onGrab?: (c: ReleaseCandidate, force: boolean) => void
@@ -458,7 +464,7 @@ function ReleaseRow({
                 <Text size="xs" c={state === 'review' ? 'orange' : 'dimmed'}>
                   {state === 'review' && `${reason}${more > 0 ? ` (+${more} more)` : ''} · `}
                   {matched > 0
-                    ? `${matched} wanted ${matched === 1 ? 'book' : 'books'}`
+                    ? `${matched}${allBooks ? '' : ' wanted'} ${matched === 1 ? 'book' : 'books'}`
                     : decision?.kind || 'Unclassified'}
                   {state === 'ready' && ` · Rank score ${c.score}`}
                   {c.editionSnapshot && ` · ${c.editionSnapshot.editionName}`}

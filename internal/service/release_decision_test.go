@@ -278,6 +278,36 @@ func TestEditionSearchScope(t *testing.T) {
 	if got := wanted(true); got != len(works) || got == 0 {
 		t.Fatalf("all-books scope selected %d of %d", got, len(works))
 	}
+	// Every release is offered, but the plan proposes only what the
+	// edition wants: here, nothing.
+	run := &searchRun{seriesID: id, ledger: LedgerVolume, scope: &SearchScope{VersionID: version.ID, All: true, AllBooks: true}, titles: []string{"ONE PIECE"}}
+	if err := svc.prepareVersions(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	offered, _ := svc.process(run, []provider.Candidate{{Provider: "torrent", Protocol: "torrent", SiteID: "site", Title: "ONE PIECE v01 [English Digital]", Torrent: &provider.TorrentRef{GUID: "v1", Size: 100 << 20, Seeders: 30}}})
+	if len(offered) != 1 || len(offered[0].Coverage) != 1 {
+		t.Fatalf("all-books release not offered: %+v", offered)
+	}
+	plan := run.buildPlan(offered, true)
+	if len(plan.Picks) != 0 || len(plan.Books) != len(works) {
+		t.Fatalf("all-books plan: %d picks over %d books, want none over %d", len(plan.Picks), len(plan.Books), len(works))
+	}
+	if plan.Books[0].Availability != "available" {
+		t.Errorf("a book on offer but not proposed reads %q", plan.Books[0].Availability)
+	}
+	// Once a book is wanted again, it is proposed.
+	version.Monitored = true
+	if _, err := st.SaveVersion(ctx, id, version); err != nil {
+		t.Fatal(err)
+	}
+	run = &searchRun{seriesID: id, ledger: LedgerVolume, scope: &SearchScope{VersionID: version.ID, All: true, AllBooks: true}, titles: []string{"ONE PIECE"}}
+	if err := svc.prepareVersions(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	offered, _ = svc.process(run, []provider.Candidate{{Provider: "torrent", Protocol: "torrent", SiteID: "site", Title: "ONE PIECE v01 [English Digital]", Torrent: &provider.TorrentRef{GUID: "v1", Size: 100 << 20, Seeders: 30}}})
+	if plan := run.buildPlan(offered, true); len(plan.Picks) != 1 {
+		t.Fatalf("wanted book not proposed: %d picks", len(plan.Picks))
+	}
 }
 
 // The raw catalog documents supply what the extracted columns do not.

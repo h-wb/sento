@@ -311,6 +311,9 @@ type SearchEvent struct {
 // goroutines (read-only after prepare).
 type searchRun struct {
 	planBooks []PlanBook
+	// wanted holds the books the version wants, by refKey: in an
+	// all-books search the plan's default selection is still only these.
+	wanted map[string]bool
 	// Set when the search replaces a download (SearchScope.ReplaceQueueID):
 	// the job, its release's content key, and the books it reserves.
 	replaceQueueID  int64
@@ -535,14 +538,44 @@ func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64
 		// A provisional plan with every batch, so the view fills in while
 		// slower sources are still answering.
 		if ev.Type == "batch" {
-			plan := BuildPlan(candidates, run.planBooks, false)
+			plan := run.buildPlan(candidates, false)
 			ev.Plan = &plan
 		}
 		emit(ev)
 	}
-	plan := BuildPlan(candidates, run.planBooks, complete && ctx.Err() == nil)
+	plan := run.buildPlan(candidates, complete && ctx.Err() == nil)
 	emit(SearchEvent{Type: "done", Ledger: searchLedger, Plan: &plan})
 	return nil
+}
+
+// buildPlan plans the default selection from planCandidates, and says
+// what was found for every book from all of them.
+func (run *searchRun) buildPlan(cs []ReleaseCandidate, complete bool) AcquisitionPlan {
+	plan := BuildPlan(run.planCandidates(cs), run.planBooks, complete)
+	markAvailability(&plan, cs, complete)
+	return plan
+}
+
+// planCandidates is what the default selection is planned from. An
+// all-books search lists every book a release holds, but only proposes
+// the ones the edition wants: downloading the rest is a choice, never
+// the default (propose-dont-ask.md §B2).
+func (run *searchRun) planCandidates(cs []ReleaseCandidate) []ReleaseCandidate {
+	if run.scope == nil || !run.scope.AllBooks {
+		return cs
+	}
+	out := make([]ReleaseCandidate, 0, len(cs))
+	for _, c := range cs {
+		var coverage []store.BookRef
+		for _, b := range c.Coverage {
+			if run.wanted[refKey(b)] {
+				coverage = append(coverage, b)
+			}
+		}
+		c.Coverage = coverage
+		out = append(out, c)
+	}
+	return out
 }
 
 // discovers reports whether this run covers a chapter edition that learns
