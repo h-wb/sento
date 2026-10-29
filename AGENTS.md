@@ -31,6 +31,11 @@ paseo script start web          # Vite, proxying /api to this worktree's backend
 paseo script ls                 # ports + proxy URLs; open the web one
 ```
 
+The Paseo `api` service rebuilds and restarts itself on a Go change too
+(same port, so `web` keeps proxying); a failed build logs `BUILD FAILED`
+and keeps serving the previous binary. Stopping and starting a service
+gets it a new port: restart `web` after restarting `api`.
+
 Either way, don't background processes by hand (`nohup`, `&`): they outlive
 the session and nothing stops them.
 

@@ -143,8 +143,33 @@ description = "Run sento with the agent-stack upstream seeds (fnox secrets; the 
 # is `go run` directly, not `mise run run`: granted secrets reach this
 # task's own process only — a nested mise task drops them (probed on the
 # paseo pod: direct grant SET, nested run empty).
+# For the same reason it watches for itself, like the api daemon's `watch`:
+# a Go change rebuilds and restarts the server on the same port (so the web
+# service's proxy keeps working); a failed build logs BUILD FAILED and keeps
+# serving the previous binary.
 secrets = ["SENTO_QBITTORRENT_USERNAME", "SENTO_QBITTORRENT_PASSWORD", "SENTO_PROWLARR_API_KEY"]
-run = "go run ./cmd/sento"
+run = '''
+#!/usr/bin/env bash
+set -u
+bin=bin/sento-agent mark=bin/.sento-agent-built pid=
+stop() { if [ -n "$pid" ]; then kill "$pid" 2>/dev/null; wait "$pid"; fi; }
+trap 'stop; exit 0' INT TERM
+mkdir -p bin && touch "$mark"
+go build -o "$bin" ./cmd/sento || exit 1
+"$bin" & pid=$!
+while sleep 2; do
+  if ! kill -0 "$pid" 2>/dev/null; then wait "$pid"; exit; fi
+  changed=$(find cmd internal go.mod go.sum -newer "$mark" \( -name '*.go' -o -name 'go.mod' -o -name 'go.sum' \) -print -quit)
+  [ -n "$changed" ] || continue
+  touch "$mark"
+  echo "run:agent: $changed changed, rebuilding" >&2
+  if go build -o "$bin.new" ./cmd/sento; then
+    stop; mv "$bin.new" "$bin"; "$bin" & pid=$!
+  else
+    echo "BUILD FAILED: still serving the previous bin/sento-agent" >&2
+  fi
+done
+'''
 
 [tasks."pass:login"]
 description = "Log the repo's scoped Proton Pass agent session in (macOS Keychain, or PROTON_PASS_TOKEN on the paseo pod)"
