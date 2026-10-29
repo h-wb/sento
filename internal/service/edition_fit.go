@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/h-wb/sento/internal/parse"
@@ -260,4 +261,32 @@ func ledgerOf(p parse.Result) string {
 		return LedgerChapter
 	}
 	return LedgerVolume
+}
+
+// editionConflict says, in words, why editionFits turned a release away
+// from c, and whether the release states an edition of its own. "" when
+// the name does not show it (a source listing placed it elsewhere).
+func editionConflict(p parse.Result, c store.Edition) (why string, statesOwn bool) {
+	e := viewEdition(c)
+	for _, f := range editionFacets {
+		if !f.content {
+			continue
+		}
+		switch stated, holds := f.stated(p), f.holds(e); {
+		case stated && !holds:
+			return fmt.Sprintf("The release is a %s edition; %s is not.", f.name, c.EditionName), true
+		case holds && !stated:
+			return fmt.Sprintf("%s is a %s edition; the release does not say it is.", c.EditionName, f.name), false
+		}
+	}
+	for _, other := range e.OtherLabels {
+		phrase := labelPhrase(other)
+		if phrase != "" && phrase != e.phrase && p.Mentions(phrase+" edition") {
+			return fmt.Sprintf("The release names %s, another edition of this series.", other), false
+		}
+	}
+	if e.phrase != "" && !p.Mentions(e.phrase) {
+		return fmt.Sprintf("The release name does not mention %q.", e.phrase), false
+	}
+	return "", false
 }

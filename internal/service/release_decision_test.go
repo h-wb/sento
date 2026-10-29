@@ -371,6 +371,23 @@ func TestEditionFacets(t *testing.T) {
 	if !editionFits(parsed("NAUSICAA v01"), fullmetal, true) {
 		t.Error("an established edition need not be named by the release")
 	}
+	// A ruled-out release says what differs, and when the release is an
+	// edition of its own, that it can be added.
+	for _, tc := range []struct {
+		release   string
+		edition   store.Edition
+		why       string
+		statesOwn bool
+	}{
+		{"NAUSICAA - Deluxe Edition (2012) [English]", box, "The release is a deluxe edition; Box Set Edition is not.", true},
+		{"NAUSICAA v01 [English]", deluxeBox, "Deluxe Box Set Edition is a deluxe edition; the release does not say it is.", false},
+		{"NAUSICAA Fullmetal Edition v01 [English]", rival, "The release names Fullmetal Edition, another edition of this series.", false},
+		{"NAUSICAA v01 [English]", fullmetal, `The release name does not mention "fullmetal".`, false},
+	} {
+		if why, statesOwn := editionConflict(parsed(tc.release), tc.edition); why != tc.why || statesOwn != tc.statesOwn {
+			t.Errorf("%s in %s: %q %v", tc.release, tc.edition.EditionName, why, statesOwn)
+		}
+	}
 }
 
 // A catalog box set is one item; the books inside become volumes that
