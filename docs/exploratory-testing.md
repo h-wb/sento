@@ -56,15 +56,64 @@ Limits — these are hard rules, not preferences:
 - A queue item that fails is a finding to reproduce, not a bug to hide:
   leave the state inspectable and describe it.
 
+## The user you are
+
+Explore as someone who has run Sonarr or Radarr for years but has never
+seen Sento. The *arr instincts are the quality bar: every place Sento
+deviates is either a finding or a delight worth reporting. This user
+expects to:
+
+- **Add a series the way they added a TV show**: search a title, tell the
+  right entry from lookalikes (cover, year, type, status), monitor it,
+  done — without reading any docs.
+- **See "what am I missing" at a glance**: Wanted and the series page
+  must answer it the way Sonarr's episode table does, including the
+  difference between *missing* and *not out yet*.
+- **Trust automatic grabs, and audit them**: manual search must show
+  *why* a release was rejected, as plainly as Sonarr's rejection reasons.
+- **Read the queue like a user, not a log**: every state means an action
+  they can take; every failure says what to do next.
+- **Never lose a file**: the review flow explains a mismatch and always
+  offers a way out, like Sonarr's interactive import.
+- **Get a library Kavita can serve**: predictable paths, sane naming,
+  ComicInfo intact — files that a manga server indexes without handholding.
+- **Configure once**: connections self-test, settings persist, and errors
+  name the field that's wrong.
+
+## The corpus
+
+Add these (real MangaBaka entries; the worktree DB is disposable). Each
+stresses a different shape — that's the point of the list:
+
+- **Nausicaä of the Valley of the Wind** — the boxset quirk: the catalog
+  models the deluxe box as unit 0, torrents carry 0/1/2. The known case
+  (see dogfooding.md); sharpen it, don't rediscover it.
+- **One Piece** — 100+ volumes, chapter-centric, ongoing: latest-first
+  expectations, very long lists, cutoffs.
+- **Berserk** (+ note the **Berserk of Gluttony** collision) — long
+  series with multiple physical editions: edition disambiguation and
+  near-duplicate search results.
+- **Hunter×Hunter** — on hiatus: nothing new for months; Wanted and the
+  calendar must handle "quiet" without looking broken.
+- **Dragon Ball** — completed classic: complete-pack torrents, cutoff
+  behavior, and the "nothing left to do" states.
+- **A one-volume one-shot** — the smallest edge: one book, complete,
+  nothing to monitor.
+- **Something you can only get via Weeb Central** — the chapter-source
+  path end to end: search, grab, CBZ assembly, import.
+- **Whatever search hands you that looks wrong** — the corpus is also
+  bait: odd catalog entries are findings about the search experience,
+  not detours from it.
+
 ## How to explore
 
 Use the web UI like a user would — through the pod's headless Chromium or
 the Playwright suite in `web/e2e` (against `cmd/e2estub`) when a flow needs
-determinism. Walk the real journeys: search and add a series, browse its
-editions/versions/books, grab something from Nyaa, grab chapters from
-Weeb Central, watch the queue, work the review inbox, check Wanted,
-change settings. For every hesitation, ask: what did I expect, what
-actually happened, what would a first-time user do here?
+determinism. Work the corpus above and judge every screen against the
+expectations above. For every hesitation, ask: what did I expect (the
+charter), what actually happened, what would a first-time *arr user do
+here? Report delights too — surprising things that work are worth as much
+as friction.
 
 Judge by these classes, in order of severity:
 
