@@ -7,6 +7,7 @@ import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
 import type { Edition, ReviewItem, ReviewProposal } from '../types/store'
 import { CatalogLink } from './EditionDialogs'
+import { fileName } from './editionText'
 
 export default function ReviewInbox({
   seriesID = 0,
@@ -126,7 +127,7 @@ export default function ReviewInbox({
                     : 'Download'}
             </Text>
             <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>
-              {i.kind === 'file' ? i.title.split(/[\\/]/).pop() : i.title}
+              {i.kind === 'file' ? fileName(i.title) : i.title}
             </Text>
             {i.proposal ? (
               <Text size="sm">

@@ -15,3 +15,7 @@ export const editionDetails = (c: Edition, ...more: (string | false | null | und
   [c.language, editionPublishers(c).join(' / '), editionMedia(c).join(' + '), ...more]
     .filter(Boolean)
     .join(' · ')
+
+// A stored file's name as people know it: no folders, no content hash.
+export const fileName = (path: string) =>
+  (path.split(/[\\/]/).pop() ?? path).replace(/ \[[0-9a-f]{64}\](?=\.\w+$)/, '')

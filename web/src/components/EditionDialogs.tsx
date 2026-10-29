@@ -1,3 +1,4 @@
+import { fileName } from './editionText'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useUnsavedChanges } from '../useUnsavedChanges'
 import {
@@ -689,9 +690,19 @@ export function MappingEditor({
       title="Match imported file"
     >
       <Stack>
-        <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
-          {value.path}
-        </Text>
+        <div>
+          <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>
+            {value.facts?.title || fileName(value.path)}
+          </Text>
+          <details>
+            <summary style={{ fontSize: 'var(--mantine-font-size-xs)', cursor: 'pointer' }}>
+              Stored at
+            </summary>
+            <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+              {value.path}
+            </Text>
+          </details>
+        </div>
         <Text size="sm">
           Confirm the edition and books this archive contains. This confirmation overrides parsed
           language for coverage. Group requirements still apply. A pack can cover several books.

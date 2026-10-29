@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
@@ -120,9 +121,14 @@ func summary(ix store.Indexer) string {
 		_ = json.Unmarshal(ix.Settings, &ts)
 		return hostString(ts.URL)
 	case store.IndexerSource:
+		// The source id is a number only the host understands; the
+		// extension's package says which one it is.
 		var ss SourceSettings
 		_ = json.Unmarshal(ix.Settings, &ss)
-		return "source " + ss.SourceID
+		if i := strings.LastIndex(ss.PkgName, "."); i >= 0 && i < len(ss.PkgName)-1 {
+			return "extension: " + ss.PkgName[i+1:]
+		}
+		return "extension source"
 	}
 	return ""
 }
