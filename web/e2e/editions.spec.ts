@@ -349,6 +349,9 @@ test('a series MangaBaka lists no volumes for explains itself and pre-fills a lo
     await expect(add).toContainText('MangaBaka lists no editions for this series yet')
     await expect(add.getByRole('textbox', { name: 'Volumes', exact: true })).toHaveValue('6')
     await expect(add).toContainText('The original run has 6')
+    // The disabled button's reason is spelled out.
+    await expect(add).toContainText('Enter a language to add this edition.')
+    await expect(add.getByRole('button', { name: 'Add edition', exact: true })).toBeDisabled()
     await add.getByRole('combobox', { name: 'Language', exact: true }).fill('fr')
     // Publisher and medium stay out of the way; MangaBaka's publisher shows on the toggle.
     await add.getByRole('button', { name: 'Publisher and medium: Éditions Stub' }).click()

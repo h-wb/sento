@@ -70,6 +70,10 @@ export default function AddEdition({
 
   const listed = editions.filter((c) => !c.custom && !c.monitored && c.syncState !== 'stale')
   const lang = language.trim().toLowerCase()
+  // Named in the summary while the Add button waits on them.
+  const missing = [!language.trim() && 'a language', !name.trim() && 'an edition name'].filter(
+    (m) => !!m,
+  )
   const suggested = publishers.find((p) => p.language.toLowerCase() === lang)
   const publisher = publisherInput ?? suggested?.name ?? ''
   const counted = series.finalVolume > 0 ? series.finalVolume : 0
@@ -204,6 +208,7 @@ export default function AddEdition({
           <Group grow align="flex-start">
             <Autocomplete
               label="Language"
+              required
               placeholder="fr"
               description="Language code"
               data={[...new Set([...publishers.map((p) => p.language), ...languages])]}
@@ -212,6 +217,7 @@ export default function AddEdition({
             />
             <Autocomplete
               label="Edition name"
+              required
               description="MangaBaka’s name for it, when it has one"
               data={catalogEditions.map((e) => e.name)}
               value={name}
@@ -307,19 +313,23 @@ export default function AddEdition({
             </Group>
           )}
           <Alert variant="light" color="gray" p="xs">
-            <Text size="sm">
-              Adds{' '}
-              <b>
-                {[name.trim() || 'an edition', language.trim(), publisher.trim(), medium]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </b>{' '}
-              as a local edition with {books}. MangaBaka does not update a local edition; when it
-              lists this one, Review offers to link them.
-            </Text>
+            {missing.length ? (
+              <Text size="sm">Enter {missing.join(' and ')} to add this edition.</Text>
+            ) : (
+              <Text size="sm">
+                Adds{' '}
+                <b>
+                  {[name.trim() || 'an edition', language.trim(), publisher.trim(), medium]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </b>{' '}
+                as a local edition with {books}. MangaBaka does not update a local edition; when
+                it lists this one, Review offers to link them.
+              </Text>
+            )}
           </Alert>
           <Group justify="flex-end">
-            <Button loading={busy} disabled={!name.trim() || !language.trim()} onClick={create}>
+            <Button loading={busy} disabled={missing.length > 0} onClick={create}>
               Add edition
             </Button>
           </Group>
