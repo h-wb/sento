@@ -43,8 +43,10 @@ Limits — these are hard rules, not preferences:
   nothing, grab nothing.
 - Cancel stuck grabs from the test instance's queue UI; do not manage
   qBittorrent directly beyond the `sento-test` category.
-- The worktree is disposable: exploratory runs report, they never fix.
-  Findings, not patches.
+- The worktree is disposable: exploratory runs report, they don't rework.
+  Findings are the deliverable. A small, obvious fix may ride along as a
+  pull request — a branch in your worktree, never a direct push to main,
+  opened through the scoped token (below).
 - A queue item that fails is a finding to reproduce, not a bug to hide:
   leave the state inspectable and describe it.
 
@@ -70,18 +72,19 @@ Judge by these classes, in order of severity:
    deserves.
 5. **Raw internals** — paths, Go errors, or SQL states shown to a user.
 
-## Filing issues
+## Filing issues (and PRs)
 
 One issue per finding, with the
 [exploratory finding](.github/ISSUE_TEMPLATE/exploratory-finding.md)
-template, labeled `usability`. File through the scoped PAT — `GH_TOKEN`
-from Proton Pass (fnox.toml), issues read/write on this repo only — not
-the pod's broader token; gh reads `GH_TOKEN` first, and the granted value
-shadows the pod env for this one command:
+template, labeled `usability`. Every GitHub write goes through the scoped PAT — `GH_TOKEN` from Proton
+Pass (fnox.toml), contents + pull requests + issues read/write on this
+repo only — not the pod's broader token; gh reads `GH_TOKEN` first, and
+the granted value shadows the pod env for granted commands:
 
 ```sh
 mise x --secrets GH_TOKEN -- gh issue create --label usability \
   --title "<one-line finding>" --body-file <filled template>
+mise x --secrets GH_TOKEN -- gh pr create ...
 ```
 
 Before filing, read [dogfooding.md](dogfooding.md): if the finding is
