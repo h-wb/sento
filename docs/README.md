@@ -3,6 +3,8 @@
 | Where | What it answers |
 |---|---|
 | [architecture.md](architecture.md) | **Where** — package map, dependency graph, invariants |
+| [dogfooding.md](dogfooding.md) | **Usability** — friction and usage notes from actually using Sento |
+| [exploratory-testing.md](exploratory-testing.md) | **Agent harness** — how testing sessions explore Sento and file issues |
 | [flows/](flows/) | **How** — guided walkthroughs of each data flow through the code |
 | [spec/](spec/) | **What & why** — product behavior and the decision log |
 | [archive/](archive/) | Superseded documents, kept for the "why was this abandoned" trail |

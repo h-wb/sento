@@ -1,0 +1,58 @@
+---
+name: Exploratory finding
+about: Usability finding from an exploratory testing session (agents use this)
+title: ''
+labels: ['usability']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Filed from an exploratory testing run (see
+        [docs/exploratory-testing.md](../../docs/exploratory-testing.md)).
+        If this sharpens an existing dogfooding entry, link it below instead
+        of restating it.
+  - type: textarea
+    id: repro
+    attributes:
+      label: Repro
+      description: Exact steps on a fresh worktree stack, or the state it was found in.
+      placeholder: |
+        1. Add series "…"
+        2. Open editions → ⋯ menu → …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What I expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened / why it confuses
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity class
+      options:
+        - Dead end — no offered action can resolve it
+        - Wrong label — control doesn't do what it says
+        - Hidden narrative — state is knowable but shown in fragments
+        - Friction — more steps than the task deserves
+        - Raw internals — paths/errors/SQL shown to a user
+    validations:
+      required: true
+  - type: input
+    id: dogfooding
+    attributes:
+      label: Related dogfooding entry (if any)
+      description: 'e.g. docs/dogfooding.md — "Keep an additional version…"'
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: UI path or route, API payloads, queue snapshot fragments — what proves it.
+      placeholder: web/src/components/… · GET /api/v1/… → …
