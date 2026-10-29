@@ -140,6 +140,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 							cp.Rejections = append(cp.Rejections, "rejected.language")
 						} else {
 							cp.Rejections = append(cp.Rejections, "rejected.edition_routing")
+							cp.OtherEdition = otherEdition(cp.Parse, *col, run.editions)
 						}
 					} else {
 						s.funnel(&scoped, &cp, ranges)

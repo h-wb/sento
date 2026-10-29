@@ -18,6 +18,7 @@ import { api, fmtNum, fmtSize, type ReleaseCandidate, type SeriesFile } from '..
 import { notify } from '../ui'
 import CandidateList from './CandidateList'
 import AcquisitionPlan from './AcquisitionPlan'
+import type { EditionStart } from './AddEdition'
 import type { AcquisitionPlan as Plan } from '../types/service'
 import { useConfirmAction } from './ConfirmAction'
 
@@ -75,12 +76,15 @@ export default function BookDialog({
   files,
   onClose,
   onChanged,
+  onAddEdition,
 }: {
   seriesID: number
   sel: BookSelection | null
   files: SeriesFile[]
   onClose: () => void
   onChanged: () => void
+  // Releases are an edition the series lacks: add it, then search it.
+  onAddEdition?: (start: EditionStart) => void
 }) {
   if (!sel) return null
   // Keyed by book so every open starts fresh (tab choice, search state).
@@ -92,6 +96,7 @@ export default function BookDialog({
       files={files}
       onClose={onClose}
       onChanged={onChanged}
+      onAddEdition={onAddEdition}
     />
   )
 }
@@ -102,12 +107,14 @@ function Inner({
   files,
   onClose,
   onChanged,
+  onAddEdition,
 }: {
   seriesID: number
   sel: BookSelection
   files: SeriesFile[]
   onClose: () => void
   onChanged: () => void
+  onAddEdition?: (start: EditionStart) => void
 }) {
   // Without a book, the search covers the whole collected version: the
   // place to grab packs and complete releases.
@@ -227,6 +234,18 @@ function Inner({
   // ("no results", "no confident match") are answers, not failures.
   const problems = [...new Set(result?.errors ?? [])].map(tidyProblem)
   const notes = [...new Set(result?.notes ?? [])].map(tidyProblem)
+  // Releases ruled out for being an edition the series has none of, by
+  // edition: the one thing to do about them is add that edition.
+  const byEdition = new Map<string, { name: string; language: string; titles: Set<string> }>()
+  for (const c of result?.candidates ?? []) {
+    const o = c.otherEdition
+    if (!o || o.inLibrary) continue
+    const key = `${o.name}/${o.language}`
+    const group = byEdition.get(key) ?? { name: o.name, language: o.language, titles: new Set() }
+    group.titles.add(c.title)
+    byEdition.set(key, group)
+  }
+  const missing = [...byEdition.values()].map((m) => ({ ...m, releases: m.titles.size }))
   const [problemsOpen, setProblemsOpen] = useState<boolean | null>(null)
   const showProblems = problemsOpen ?? (!!result?.done && result.candidates.length === 0)
 
@@ -421,6 +440,23 @@ function Inner({
                       ))}
                     </Stack>
                   )}
+                  {!searching &&
+                    onAddEdition &&
+                    missing.map((m) => (
+                      <Group key={`${m.name}/${m.language}`} gap="xs" justify="space-between">
+                        <Text size="sm">
+                          {m.releases === 1 ? '1 release is' : `${m.releases} releases are`} a{' '}
+                          {m.name} ({m.language}), which this series doesn’t have.
+                        </Text>
+                        <Button
+                          size="compact-xs"
+                          variant="default"
+                          onClick={() => onAddEdition({ editionName: m.name, language: m.language })}
+                        >
+                          Add {m.name}
+                        </Button>
+                      </Group>
+                    ))}
                   {notes.map((n) => (
                     <Text key={n} size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
                       {n}

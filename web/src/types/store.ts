@@ -302,10 +302,6 @@ export interface ReviewItem {
    * until it is accepted.
    */
   proposal?: ReviewProposal;
-  /**
-   * Sighting is the evidence of a "missing-edition" item.
-   */
-  sighting?: EditionSighting;
 }
 /**
  * ReviewProposal is a file's proposed mapping and why: the books, the
@@ -316,18 +312,6 @@ export interface ReviewProposal {
   edition: string;
   label: string;
   evidence: string;
-}
-/**
- * EditionSighting is an edition releases state that the series lacks:
- * "deluxe" in English, seen in Releases distinct releases.
- */
-export interface EditionSighting {
-  seriesId: number /* int64 */;
-  facet: string;
-  language: string;
-  releases: number /* int */;
-  example: string;
-  seenAt: string;
 }
 
 //////////

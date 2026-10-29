@@ -106,16 +106,19 @@ released and wanted again; they are named in the history entry.
 
 ### A3. Missing editions (#22)
 
-Releases ruled out because they state an edition the series does not have
-("deluxe") are evidence of a missing edition. A search records, per kind
-of edition and language, how many distinct releases said so and the
-best-seeded one (`edition_sightings`); two releases are needed, one could
-be a mislabel. Review then proposes it ("Deluxe Edition · en: 3 releases
-are a deluxe edition…") with Add edition (pre-filled with the name and
-language) and "Not an edition I want", which is remembered. Adding any
-edition of that kind retires the item. An edition of that kind that exists
-but is not collected records nothing: collecting it is the answer. The
-rejection reason itself also says what differs (`73b3b9d`).
+The answer belongs where the question comes up: in the search. A release
+ruled out as another edition says which edition it is ("Deluxe Edition",
+en) and whether the series has one like it. When it has none, the search
+says so in one line, "3 releases are a Deluxe Edition (en), which this
+series doesn't have", with **Add Deluxe Edition**: the Add edition form
+starts from that name and language, and once the edition is added the
+search reopens on it, where those releases now match. An edition of that
+kind that exists but is not collected is not offered: collecting it is
+the answer. The rejection reason says what differs (`73b3b9d`).
+
+A first version recorded these sightings in a table and raised them later
+as review items; it was removed for asking out of context what the search
+can offer in place.
 
 ## B. Series page
 
@@ -157,7 +160,7 @@ Built on 2026-10-29, on the branch of the exploratory pass:
 | B1 a series without volumes wants its chapters | `3084117` | #25 |
 | B2 all-books search proposes only wanted books; Select range | `bedb1f3` | #27 |
 | B3 Collecting summary — reverted: it repeated the cards instead of replacing them | `4b017fa`, reverted | — |
-| A3 missing-edition proposals (`edition_sightings`, migration 24) | see git log | #22 |
+| A3 the search offers to add an edition releases are that the series lacks | see git log | #22 |
 | Search status and source notes; names instead of internals | `e908250` and before | #26, #28 |
 
 B3 as first built added a summary above the edition cards without taking

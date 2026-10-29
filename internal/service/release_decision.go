@@ -95,11 +95,8 @@ func (c *ReleaseCandidate) explain() {
 		seen[code] = true
 		message := labels[code]
 		if code == "rejected.edition_routing" && c.EditionSnapshot != nil {
-			if why, statesOwn := editionConflict(c.Parse, *c.EditionSnapshot); why != "" {
+			if why, _ := editionConflict(c.Parse, *c.EditionSnapshot); why != "" {
 				message = why
-				if statesOwn {
-					message += " If MangaBaka does not list that edition, add it to the series with Add edition."
-				}
 			}
 		}
 		if message == "" {

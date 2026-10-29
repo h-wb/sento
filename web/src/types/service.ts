@@ -100,6 +100,16 @@ export interface ConnectionTest {
 //////////
 // source: edition_fit.go
 
+/**
+ * OtherEdition names the edition a release is when it was ruled out of
+ * another one: "Deluxe Edition" in en. InLibrary says whether the series
+ * already has an edition like it; when not, the search offers to add it.
+ */
+export interface OtherEdition {
+  name: string;
+  language: string;
+  inLibrary: boolean;
+}
 
 //////////
 // source: edition_view.go
@@ -554,6 +564,10 @@ export interface ReleaseCandidate {
   formatSnapshot?: any /* profile.Format */[];
   policySnapshot?: any /* profile.Profile */;
   editionSnapshot?: any /* store.Edition */;
+  /**
+   * OtherEdition is the edition a release ruled out of this one is.
+   */
+  otherEdition?: OtherEdition;
   representedBooks: number /* int */;
   versionId?: number /* int64 */;
   coverage?: BookRef[];

@@ -79,7 +79,6 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Put("/files/{fid}/mapping", s.handleRemapFile)
 			r.Patch("/files/{fid}/facts", s.handleFileFacts)
 			r.Post("/check-files", s.handleCheckFiles)
-			r.Post("/edition-sightings/dismiss", s.handleDismissSighting)
 			r.Get("/observations", s.handleObservations)
 			r.Post("/observations", s.handleObservations)
 			r.Put("/observations/{oid}", s.handleResolveObservation)

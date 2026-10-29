@@ -322,3 +322,22 @@ func holdsFacet(eds []store.Edition, facet, language string) bool {
 func facetEditionName(facet string) string {
 	return strings.ToUpper(facet[:1]) + facet[1:] + " Edition"
 }
+
+// OtherEdition names the edition a release is when it was ruled out of
+// another one: "Deluxe Edition" in en. InLibrary says whether the series
+// already has an edition like it; when not, the search offers to add it.
+type OtherEdition struct {
+	Name      string `json:"name"`
+	Language  string `json:"language"`
+	InLibrary bool   `json:"inLibrary"`
+}
+
+// otherEdition is the edition a release states that c is not, nil when
+// the release names none (a source listing placed it elsewhere).
+func otherEdition(p parse.Result, c store.Edition, eds []store.Edition) *OtherEdition {
+	facet := statedFacet(p, c)
+	if facet == "" {
+		return nil
+	}
+	return &OtherEdition{Name: facetEditionName(facet), Language: c.Language, InLibrary: holdsFacet(eds, facet, c.Language)}
+}

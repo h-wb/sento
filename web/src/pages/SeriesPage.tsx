@@ -55,8 +55,25 @@ export default function SeriesPage() {
   const [busy, setBusy] = useState(false)
   const [bookSel, setBookSel] = useState<BookSelection | null>(null)
   const [fullDesc, setFullDesc] = useState(false)
-  // An edition start from review, or {} for a blank form; null: closed.
-  const [addEdition, setAddEdition] = useState<Partial<EditionStart> | null>(null)
+  // Add edition: a start from the search (which reopens on the new
+  // edition), or {} for a blank form; null: closed.
+  const [addEdition, setAddEdition] = useState<(Partial<EditionStart> & { search?: boolean }) | null>(null)
+  const searchEdition = async (e: Edition) => {
+    const v = (await api.versions(seriesID)).find((v) => v.editionId === e.id && v.isDefault)
+    if (!v) return
+    setBookSel({
+      versionId: v.id,
+      all: true,
+      ledger: e.type === 'chapter' ? 'chapter' : 'volume',
+      number: 0,
+      editionId: e.id,
+      editionLabel: `${e.language} · ${e.editionName} · ${v.name}`,
+      monitored: v.monitored,
+      wanted: true,
+      fileIds: [],
+      autoSearch: true,
+    })
+  }
   // The open tab lives in ?view= so it survives a reload and can be linked
   // to; ?view=review is the deep link the global review inbox uses.
   const [searchParams, setSearchParams] = useSearchParams()
@@ -373,6 +390,7 @@ export default function SeriesPage() {
           run={run}
           onClose={() => setAddEdition(null)}
           initial={addEdition.editionName ? (addEdition as EditionStart) : undefined}
+          onCreated={addEdition.search ? (e) => void searchEdition(e) : undefined}
         />
       )}
 
@@ -479,6 +497,10 @@ export default function SeriesPage() {
         files={files}
         onClose={() => setBookSel(null)}
         onChanged={load}
+        onAddEdition={(start) => {
+          setBookSel(null)
+          setAddEdition({ ...start, search: true })
+        }}
       />
     </>
   )

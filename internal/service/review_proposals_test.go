@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/h-wb/sento/internal/parse"
-	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -117,68 +116,5 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 	// Its books are free for another download.
 	if _, _, err = st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "next", Title: "ONE PIECE v02"}, []store.BookRef{modelRef(standard, books[1], version)}); err != nil {
 		t.Errorf("volume still reserved: %v", err)
-	}
-}
-
-// Releases ruled out for being an edition the series lacks are evidence:
-// review proposes adding it, until it exists or is dismissed.
-func TestReviewProposesAMissingEdition(t *testing.T) {
-	lib, st, sid, _, _, version := modelFixture(t)
-	ctx := context.Background()
-	svc := NewSearchService(st, provider.NewRegistry())
-	search := func(titles ...string) {
-		t.Helper()
-		run := &searchRun{seriesID: sid, ledger: LedgerVolume, scope: &SearchScope{VersionID: version.ID, All: true}, titles: []string{"ONE PIECE"}}
-		if err := svc.prepareVersions(ctx, run); err != nil {
-			t.Fatal(err)
-		}
-		var cands []provider.Candidate
-		for i, title := range titles {
-			cands = append(cands, provider.Candidate{Provider: "torrent", Protocol: "torrent", SiteID: "site", Title: title, Torrent: &provider.TorrentRef{GUID: title, Size: 100 << 20, Seeders: 10 + i}})
-		}
-		offered, _ := svc.process(run, cands)
-		svc.recordSightings(ctx, run, offered)
-	}
-	missing := func() []store.ReviewItem {
-		t.Helper()
-		items, err := lib.ReviewItems(ctx, sid)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var out []store.ReviewItem
-		for _, i := range items {
-			if i.Kind == "missing-edition" {
-				out = append(out, i)
-			}
-		}
-		return out
-	}
-	search("ONE PIECE - Deluxe Edition v01 [English]")
-	if got := missing(); len(got) != 0 {
-		t.Fatalf("one release is not evidence enough: %+v", got)
-	}
-	// An omnibus edition exists (uncollected): collecting it is the answer.
-	search("ONE PIECE - Deluxe Edition v01 [English]", "ONE PIECE Deluxe v02 [English]", "ONE PIECE Omnibus v01 [English]", "ONE PIECE Omnibus v02 [English]")
-	got := missing()
-	if len(got) != 1 || got[0].Title != "Deluxe Edition · en" || got[0].Sighting.Releases != 2 || got[0].Sighting.Example != "ONE PIECE Deluxe v02 [English]" {
-		t.Fatalf("missing editions: %+v", got)
-	}
-	if _, err := lib.CreateEdition(ctx, sid, CreateEditionParams{EditionName: "Deluxe Edition", Language: "en", Type: "volume", Volumes: 2}); err != nil {
-		t.Fatal(err)
-	}
-	if got := missing(); len(got) != 0 {
-		t.Fatalf("still proposed once added: %+v", got)
-	}
-	// Dismissed stays dismissed, however often it is seen again.
-	search("ONE PIECE Colored v01 [English]", "ONE PIECE Colored v02 [English]")
-	if got := missing(); len(got) != 1 {
-		t.Fatalf("colored not proposed: %+v", got)
-	}
-	if err := st.DismissEditionSighting(ctx, sid, "colored", "en"); err != nil {
-		t.Fatal(err)
-	}
-	search("ONE PIECE Colored v01 [English]", "ONE PIECE Colored v02 [English]")
-	if got := missing(); len(got) != 0 {
-		t.Fatalf("dismissed sighting came back: %+v", got)
 	}
 }

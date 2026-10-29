@@ -21,8 +21,6 @@ type ReviewItem struct {
 	// Proposal is what the evidence says a file holds; nothing is recorded
 	// until it is accepted.
 	Proposal *ReviewProposal `json:"proposal,omitempty" db:"-"`
-	// Sighting is the evidence of a "missing-edition" item.
-	Sighting *EditionSighting `json:"sighting,omitempty" db:"-"`
 }
 
 // ReviewProposal is a file's proposed mapping and why: the books, the
@@ -83,35 +81,4 @@ func (s *Store) reviewRows(ctx context.Context, sid int64) ([]ReviewItem, error)
  SELECT 'chapter-'||CAST(o.id AS TEXT),'chapter',c.series_id,s.title,o.id,o.label,'New chapter from '||o.source,o.state
  FROM book_observations o JOIN editions c ON c.id=o.edition_id JOIN series s ON s.id=c.series_id WHERE (?=0 OR s.id=?) AND o.state='pending'
  ORDER BY series_title,kind,item_id LIMIT 500`, sid, sid, sid, sid, sid, sid)
-}
-
-// EditionSighting is an edition releases state that the series lacks:
-// "deluxe" in English, seen in Releases distinct releases.
-type EditionSighting struct {
-	SeriesID int64  `json:"seriesId"`
-	Facet    string `json:"facet"`
-	Language string `json:"language"`
-	Releases int    `json:"releases"`
-	Example  string `json:"example"`
-	SeenAt   string `json:"seenAt"`
-}
-
-// RecordEditionSighting keeps the latest evidence for a missing edition.
-// A dismissal survives: the same releases will be seen again.
-func (s *Store) RecordEditionSighting(ctx context.Context, e EditionSighting) error {
-	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO edition_sightings(series_id,facet,language,releases,example,seen_at) VALUES(?,?,?,?,?,?)
- ON CONFLICT(series_id,facet,language) DO UPDATE SET releases=excluded.releases,example=excluded.example,seen_at=excluded.seen_at`),
-		e.SeriesID, e.Facet, e.Language, e.Releases, e.Example, utcNow())
-	return err
-}
-
-// EditionSightings lists the sightings not dismissed (sid 0: every series).
-func (s *Store) EditionSightings(ctx context.Context, sid int64) ([]EditionSighting, error) {
-	return list[EditionSighting](ctx, s, `SELECT series_id,facet,language,releases,example,seen_at FROM edition_sightings
- WHERE (?=0 OR series_id=?) AND dismissed=FALSE ORDER BY series_id,facet,language`, sid, sid)
-}
-
-// DismissEditionSighting records "not an edition I want".
-func (s *Store) DismissEditionSighting(ctx context.Context, seriesID int64, facet, language string) error {
-	return s.touch(ctx, `UPDATE edition_sightings SET dismissed=TRUE WHERE series_id=? AND facet=? AND language=?`, seriesID, facet, language)
 }

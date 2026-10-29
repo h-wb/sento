@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -73,33 +72,35 @@ type ReleaseCandidate struct {
 	// when the release name did not state it.
 	languageSource string
 
-	Decision         ReleaseDecision         `json:"decision"`
-	ScoreParts       []ScorePart             `json:"scoreParts,omitempty"`
-	ParseTrace       []parse.Step            `json:"parseTrace,omitempty"`
-	VersionSnapshot  *store.CollectedVersion `json:"versionSnapshot,omitempty"`
-	FormatSnapshot   []profile.Format        `json:"formatSnapshot,omitempty"`
-	PolicySnapshot   *profile.Profile        `json:"policySnapshot,omitempty"`
-	EditionSnapshot  *store.Edition          `json:"editionSnapshot,omitempty"`
-	RepresentedBooks int                     `json:"representedBooks"`
-	VersionID        int64                   `json:"versionId,omitempty"`
-	Coverage         []store.BookRef         `json:"coverage,omitempty"`
-	ProfileID        int64                   `json:"profileId,omitempty"`
-	GUID             string                  `json:"guid"`
-	Provider         string                  `json:"provider"`
-	Protocol         string                  `json:"protocol"`
-	Site             string                  `json:"site"`
-	SiteID           string                  `json:"siteId"`
-	Title            string                  `json:"title"`
-	URL              string                  `json:"url,omitempty"` // release page on the indexer/source site
-	Size             int64                   `json:"size,omitempty"`
-	Seeders          int                     `json:"seeders,omitempty"`
-	Scanlator        string                  `json:"scanlator,omitempty"`
-	EditionID        int64                   `json:"editionId,omitempty"`
-	Score            int                     `json:"score"`
-	Formats          []FormatHit             `json:"formats,omitempty"`     // matched custom formats
-	FormatScore      int                     `json:"formatScore,omitempty"` // their summed score
-	Rejections       []string                `json:"rejections,omitempty"`
-	Parse            parse.Result            `json:"parse"`
+	Decision        ReleaseDecision         `json:"decision"`
+	ScoreParts      []ScorePart             `json:"scoreParts,omitempty"`
+	ParseTrace      []parse.Step            `json:"parseTrace,omitempty"`
+	VersionSnapshot *store.CollectedVersion `json:"versionSnapshot,omitempty"`
+	FormatSnapshot  []profile.Format        `json:"formatSnapshot,omitempty"`
+	PolicySnapshot  *profile.Profile        `json:"policySnapshot,omitempty"`
+	EditionSnapshot *store.Edition          `json:"editionSnapshot,omitempty"`
+	// OtherEdition is the edition a release ruled out of this one is.
+	OtherEdition     *OtherEdition   `json:"otherEdition,omitempty"`
+	RepresentedBooks int             `json:"representedBooks"`
+	VersionID        int64           `json:"versionId,omitempty"`
+	Coverage         []store.BookRef `json:"coverage,omitempty"`
+	ProfileID        int64           `json:"profileId,omitempty"`
+	GUID             string          `json:"guid"`
+	Provider         string          `json:"provider"`
+	Protocol         string          `json:"protocol"`
+	Site             string          `json:"site"`
+	SiteID           string          `json:"siteId"`
+	Title            string          `json:"title"`
+	URL              string          `json:"url,omitempty"` // release page on the indexer/source site
+	Size             int64           `json:"size,omitempty"`
+	Seeders          int             `json:"seeders,omitempty"`
+	Scanlator        string          `json:"scanlator,omitempty"`
+	EditionID        int64           `json:"editionId,omitempty"`
+	Score            int             `json:"score"`
+	Formats          []FormatHit     `json:"formats,omitempty"`     // matched custom formats
+	FormatScore      int             `json:"formatScore,omitempty"` // their summed score
+	Rejections       []string        `json:"rejections,omitempty"`
+	Parse            parse.Result    `json:"parse"`
 	cand             provider.Candidate
 }
 
@@ -545,49 +546,8 @@ func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64
 		emit(ev)
 	}
 	plan := run.buildPlan(candidates, complete && ctx.Err() == nil)
-	s.recordSightings(ctx, run, candidates)
 	emit(SearchEvent{Type: "done", Ledger: searchLedger, Plan: &plan})
 	return nil
-}
-
-// sightingReleases is how many distinct releases must name an edition the
-// series lacks before review proposes adding it: one could be a mislabel.
-const sightingReleases = 2
-
-// recordSightings keeps, per kind of edition and language, the releases
-// that were ruled out for stating an edition no edition of the series is
-// (propose-dont-ask.md §A3). Review proposes adding it.
-func (s *SearchService) recordSightings(ctx context.Context, run *searchRun, cs []ReleaseCandidate) {
-	type key struct{ facet, language string }
-	titles := map[key]map[string]int{}
-	for _, c := range cs {
-		if c.EditionSnapshot == nil || !slices.Contains(c.Rejections, "rejected.edition_routing") {
-			continue
-		}
-		facet := statedFacet(c.Parse, *c.EditionSnapshot)
-		if facet == "" || holdsFacet(run.editions, facet, c.EditionSnapshot.Language) {
-			continue
-		}
-		k := key{facet, baseLang(c.EditionSnapshot.Language)}
-		if titles[k] == nil {
-			titles[k] = map[string]int{}
-		}
-		titles[k][c.Title] = max(titles[k][c.Title], c.Seeders)
-	}
-	for k, seen := range titles {
-		if len(seen) < sightingReleases {
-			continue
-		}
-		example, best := "", -1
-		for title, seeders := range seen {
-			if seeders > best || seeders == best && title < example {
-				example, best = title, seeders
-			}
-		}
-		if err := s.store.RecordEditionSighting(ctx, store.EditionSighting{SeriesID: run.seriesID, Facet: k.facet, Language: k.language, Releases: len(seen), Example: example}); err != nil {
-			slog.Warn("recording an edition sighting failed", "series", run.seriesID, "error", err)
-		}
-	}
 }
 
 // buildPlan plans the default selection from planCandidates, and says

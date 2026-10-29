@@ -519,3 +519,32 @@ func TestLedgerOf(t *testing.T) {
 		}
 	}
 }
+
+// A release ruled out as another edition says which edition it is, and
+// whether the series has one like it: the search offers to add it if not.
+func TestRuledOutReleaseNamesItsEdition(t *testing.T) {
+	_, st, sid, _, _, version := modelFixture(t)
+	ctx := context.Background()
+	svc := NewSearchService(st, provider.NewRegistry())
+	run := &searchRun{seriesID: sid, ledger: LedgerVolume, scope: &SearchScope{VersionID: version.ID, All: true}, titles: []string{"ONE PIECE"}}
+	if err := svc.prepareVersions(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		title string
+		want  *OtherEdition
+	}{
+		{"ONE PIECE - Deluxe Edition v01 [English]", &OtherEdition{Name: "Deluxe Edition", Language: "en"}},
+		// The series lists an omnibus edition: collecting it is the answer.
+		{"ONE PIECE Omnibus v01 [English]", &OtherEdition{Name: "Omnibus Edition", Language: "en", InLibrary: true}},
+		{"ONE PIECE v01 [English]", nil},
+	} {
+		got, _ := svc.process(run, []provider.Candidate{{Provider: "torrent", Protocol: "torrent", SiteID: "site", Title: tc.title, Torrent: &provider.TorrentRef{GUID: tc.title, Size: 100 << 20, Seeders: 10}}})
+		if len(got) != 1 {
+			t.Fatalf("%s: %d candidates", tc.title, len(got))
+		}
+		if o := got[0].OtherEdition; (o == nil) != (tc.want == nil) || o != nil && *o != *tc.want {
+			t.Errorf("%s: other edition %+v, want %+v", tc.title, o, tc.want)
+		}
+	}
+}

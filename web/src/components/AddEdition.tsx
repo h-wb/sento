@@ -37,6 +37,7 @@ export default function AddEdition({
   run,
   onClose,
   initial,
+  onCreated,
 }: {
   seriesID: number
   series: Series
@@ -47,6 +48,7 @@ export default function AddEdition({
   onClose: () => void
   // Where to start, when review proposes an edition releases state.
   initial?: EditionStart
+  onCreated?: (e: Edition) => void
 }) {
   const startName = initial?.editionName ?? 'Standard Edition'
   const startLanguage = initial?.language ?? ''
@@ -104,7 +106,10 @@ export default function AddEdition({
             cutoffNum: ctype === 'chapter' ? Math.round((Number(cutoff) || 0) * 100) : 0,
             monitored: true,
           })
-          .then(onClose),
+          .then((e) => {
+            onClose()
+            onCreated?.(e)
+          }),
       'Edition added',
     )
   const collect = (c: Edition) => {

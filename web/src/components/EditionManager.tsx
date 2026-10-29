@@ -501,7 +501,6 @@ export default function EditionManager({
       {section === 'review' && (
         <ReviewInbox
           seriesID={seriesID}
-          onAddEdition={onAddEdition}
           onFile={(id, proposal) => {
             const f = files.find((f) => f.id === id)
             if (f) {
