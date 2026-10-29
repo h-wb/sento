@@ -122,9 +122,14 @@ stresses a different shape — that's the point of the list:
 
 ## How to explore
 
-Use the web UI like a user would — through the pod's headless Chromium or
-the Playwright suite in `web/e2e` (against `cmd/e2estub`) when a flow needs
-determinism. Work the corpus above and judge every screen against the
+Use the web UI like a user would — through the pod's headless Chromium
+(chrome-devtools-mcp against the sidecar at `127.0.0.1:9222`, which is
+the browser that works in the pod). The Playwright suite in `web/e2e`
+**cannot run in the pod**: the image lacks the browser's shared
+libraries (`libglib` and friends) and the pod user has no root for
+`playwright install --with-deps`. It runs on a workstation or CI — use
+it from there when a flow needs determinism (`mise run e2e` against
+`cmd/e2estub`). Work the corpus above and judge every screen against the
 expectations above. For every hesitation, ask: what did I expect (the
 charter), what actually happened, what would a first-time *arr user do
 here? Report delights too — surprising things that work are worth as much
