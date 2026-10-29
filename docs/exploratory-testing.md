@@ -14,13 +14,14 @@ ports and the proxy URLs). The stack runs from the worktree's own code —
 Go changes rebuild in seconds, the web HMRs — so what you test is the code,
 not a built image.
 
-Everything is real. The api service starts the backend under the prod
-profile (`MISE_ENV=prod` → `mise.prod.toml`: qBittorrent and Prowlarr URLs,
-the `sento-test` category) with credentials fetched from Proton Pass by
-fnox for the `run:agent` task only (`fnox.toml`; the worktree setup runs
-`mise run pass:login`, idempotent). Seeds apply on a worktree's first run
-only: once its DB has settings, env changes are ignored — wipe `data/` to
-reseed. You configure nothing by hand except the indexers (below).
+Everything is real. The api service (`paseo.json`) starts the backend with
+the upstream env on its command line — cluster-local qBittorrent and
+Prowlarr URLs, the `sento-test` category — with credentials fetched from
+Proton Pass by fnox for the `run:agent` task only (`fnox.toml`; the
+worktree setup runs `mise run pass:login`, idempotent). Seeds apply on a
+worktree's first run only: once its DB has settings, env changes are
+ignored — wipe `data/` to reseed. You configure nothing by hand except
+the indexers (below).
 
 Limits — these are hard rules, not preferences:
 

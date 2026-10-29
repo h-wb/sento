@@ -9,7 +9,7 @@
     },
     "api": {
       "type": "service",
-      "command": "MISE_ENV=prod SENTO_PORT=$PASEO_PORT SENTO_EXTENSIONS_URL=http://127.0.0.1:$PASEO_SERVICE_EXTENSIONS_PORT mise run run:agent"
+      "command": "SENTO_QBITTORRENT_URL=http://qbittorrent.downloads.svc.cluster.local SENTO_QBITTORRENT_CATEGORY=sento-test SENTO_PROWLARR_URL=http://prowlarr.downloads.svc.cluster.local SENTO_PORT=$PASEO_PORT SENTO_EXTENSIONS_URL=http://127.0.0.1:$PASEO_SERVICE_EXTENSIONS_PORT mise run run:agent"
     },
     "web": {
       "type": "service",

@@ -135,10 +135,11 @@ description = "Run sento (dev)"
 run = "go run ./cmd/sento"
 
 [tasks."run:agent"]
-description = "Run sento with the agent-stack upstream seeds (prod profile + fnox secrets; the paseo api service)"
+description = "Run sento with the agent-stack upstream seeds (fnox secrets; the paseo api service)"
 # The secrets are handed to this task only (see fnox.toml); the plain `run`
 # task stays secret-free so terminal and daemon starts never need a Proton
-# Pass session. paseo.json's api service runs this under MISE_ENV=prod.
+# Pass session. paseo.json's api service runs this with the non-secret
+# upstream env (URLs, sento-test category) on its command line.
 secrets = ["SENTO_QBITTORRENT_USERNAME", "SENTO_QBITTORRENT_PASSWORD", "SENTO_PROWLARR_API_KEY"]
 run = "mise run run"
 
