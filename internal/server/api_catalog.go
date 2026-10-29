@@ -423,7 +423,7 @@ func (s *Server) handleBulkMonitor(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
 	sid, _ := strconv.ParseInt(r.URL.Query().Get("seriesId"), 10, 64)
-	data, err := s.store.ReviewItems(r.Context(), sid)
+	data, err := s.library.ReviewItems(r.Context(), sid)
 	respondList(w, data, err)
 }
 

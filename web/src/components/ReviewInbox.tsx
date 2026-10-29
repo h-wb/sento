@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
-import type { Edition, ReviewItem } from '../types/store'
+import type { Edition, ReviewItem, ReviewProposal } from '../types/store'
 import { CatalogLink } from './EditionDialogs'
 
 export default function ReviewInbox({
@@ -13,7 +13,7 @@ export default function ReviewInbox({
   onFile,
 }: {
   seriesID?: number
-  onFile?: (id: number) => void
+  onFile?: (id: number, proposal?: ReviewProposal) => void
 }) {
   const qc = useQueryClient()
   const q = useQuery({
@@ -44,6 +44,8 @@ export default function ReviewInbox({
     }
   }
   const chapters = (q.data ?? []).filter((i) => i.kind === 'chapter')
+  const proposed = (q.data ?? []).filter((i) => i.proposal)
+  const accept = (i: ReviewItem) => api.mapFile(i.seriesId, i.itemId, i.proposal!.books)
   return (
     <Stack gap="sm">
       <Text size="sm" c="dimmed">
@@ -80,6 +82,21 @@ export default function ReviewInbox({
           </Button>
         </Group>
       )}
+      {proposed.length > 1 && (
+        <Group>
+          <Button
+            size="xs"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                for (const i of proposed) await accept(i)
+              })
+            }
+          >
+            Accept {proposed.length} proposed matches
+          </Button>
+        </Group>
+      )}
       {q.data?.length === 0 && (
         <Text c="dimmed" size="sm">
           Nothing needs review.
@@ -111,15 +128,24 @@ export default function ReviewInbox({
             <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>
               {i.kind === 'file' ? i.title.split(/[\\/]/).pop() : i.title}
             </Text>
-            <Text
-              size="xs"
-              c="dimmed"
-              lineClamp={3}
-              title={i.detail}
-              style={{ overflowWrap: 'anywhere' }}
-            >
-              {i.detail}
-            </Text>
+            {i.proposal ? (
+              <Text size="sm">
+                Proposed: <b>{i.proposal.label}</b> of {i.proposal.edition}{' '}
+                <Text span size="xs" c="dimmed">
+                  ({i.proposal.evidence})
+                </Text>
+              </Text>
+            ) : (
+              <Text
+                size="xs"
+                c="dimmed"
+                lineClamp={3}
+                title={i.detail}
+                style={{ overflowWrap: 'anywhere' }}
+              >
+                {i.detail}
+              </Text>
+            )}
             {i.detail.length > 180 && (
               <details>
                 <summary style={{ fontSize: 'var(--mantine-font-size-xs)', cursor: 'pointer' }}>
@@ -136,9 +162,18 @@ export default function ReviewInbox({
               </details>
             )}
             <Group gap="xs">
+              {i.proposal && (
+                <Button size="xs" disabled={busy} onClick={() => void run(() => accept(i))}>
+                  Accept
+                </Button>
+              )}
               {i.kind === 'file' &&
                 (onFile ? (
-                  <Button size="xs" variant="default" onClick={() => onFile(i.itemId)}>
+                  <Button
+                    size="xs"
+                    variant="default"
+                    onClick={() => onFile(i.itemId, i.proposal)}
+                  >
                     Review file
                   </Button>
                 ) : (

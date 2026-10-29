@@ -118,6 +118,11 @@ func (s *Store) ListQueueItems(ctx context.Context, activeOnly bool) ([]QueueIte
 	return list[QueueItem](ctx, s, q)
 }
 
+// SeriesQueueItems is every job of one series, whatever its state.
+func (s *Store) SeriesQueueItems(ctx context.Context, seriesID int64) ([]QueueItem, error) {
+	return list[QueueItem](ctx, s, `SELECT `+queueColumns+` FROM queue_items WHERE series_id = ? ORDER BY id`, seriesID)
+}
+
 // ListRunnableQueue is the worker's list: every job it can advance, oldest
 // first. Jobs waiting on a person (needs_review, dispatch_unknown) are left
 // out, so no number of them can keep a runnable job from being seen.

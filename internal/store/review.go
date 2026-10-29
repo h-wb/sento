@@ -18,6 +18,18 @@ type ReviewItem struct {
 	// RelatedID is the catalog edition of an "edition" item (ItemID is the
 	// local one).
 	RelatedID int64 `json:"relatedId,omitempty" db:"-"`
+	// Proposal is what the evidence says a file holds; nothing is recorded
+	// until it is accepted.
+	Proposal *ReviewProposal `json:"proposal,omitempty" db:"-"`
+}
+
+// ReviewProposal is a file's proposed mapping and why: the books, the
+// edition they belong to, and the evidence in words.
+type ReviewProposal struct {
+	Books    []BookRef `json:"books"`
+	Edition  string    `json:"edition"`
+	Label    string    `json:"label"`
+	Evidence string    `json:"evidence"`
 }
 
 func (s *Store) ReviewItems(ctx context.Context, sid int64) ([]ReviewItem, error) {

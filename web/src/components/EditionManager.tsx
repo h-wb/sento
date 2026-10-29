@@ -27,7 +27,13 @@ import {
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, fmtSize } from '../api'
-import type { Edition, CollectedVersion, Book, File as SeriesFile } from '../types/store'
+import type {
+  Edition,
+  CollectedVersion,
+  Book,
+  File as SeriesFile,
+  ReviewProposal,
+} from '../types/store'
 import type { BookSelection } from './BookDialog'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
@@ -81,6 +87,10 @@ export default function EditionManager({
   const [edition, setEdition] = useState<Edition | null>(null)
   const [link, setLink] = useState<Edition | null>(null)
   const [file, setFile] = useState<SeriesFile | null>(null)
+  // Review's proposal for the file it opened; other ways in open it plain.
+  const [proposal, setProposal] = useState<{ fileId: number; value: ReviewProposal } | null>(
+    null,
+  )
   const [fileFilter, setFileFilter] = useState('')
   const [filePage, setFilePage] = useState(1)
   const [error, setError] = useState('')
@@ -490,9 +500,12 @@ export default function EditionManager({
       {section === 'review' && (
         <ReviewInbox
           seriesID={seriesID}
-          onFile={(id) => {
+          onFile={(id, proposal) => {
             const f = files.find((f) => f.id === id)
-            if (f) setFile(f)
+            if (f) {
+              setFile(f)
+              setProposal(proposal ? { fileId: id, value: proposal } : null)
+            }
           }}
         />
       )}
@@ -659,6 +672,7 @@ export default function EditionManager({
           value={file}
           versions={allVersions}
           existing={coverage.data?.filter((a) => a.fileId === file.id) ?? []}
+          proposal={proposal?.fileId === file.id ? proposal.value : undefined}
           books={allBooks}
           editions={editions}
           save={async (books) => {

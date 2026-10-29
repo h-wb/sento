@@ -475,6 +475,10 @@ export interface ReleaseDecision {
 }
 
 //////////
+// source: review_proposals.go
+
+
+//////////
 // source: scan.go
 
 /**

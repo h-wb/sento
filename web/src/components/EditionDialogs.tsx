@@ -628,6 +628,7 @@ export function MappingEditor({
   value,
   versions,
   existing,
+  proposal,
   books,
   editions,
   save,
@@ -637,12 +638,13 @@ export function MappingEditor({
   value: SeriesFile
   versions: CollectedVersion[]
   existing: import('../types/store').AssetCoverage[]
+  proposal?: import('../types/store').ReviewProposal
   books: BookStatus[]
   editions: Edition[]
   save: (books: import('../types/store').BookRef[]) => Promise<void>
   close: () => void
 }) {
-  const initial = existing.map((a) => ({
+  const mapped = existing.map((a) => ({
     versionId: a.versionId,
     bookId: a.bookId,
     editionId: versions.find((t) => t.id === a.versionId)?.editionId ?? 0,
@@ -651,9 +653,24 @@ export function MappingEditor({
       editions.find((c) => c.id === versions.find((t) => t.id === a.versionId)?.editionId)
         ?.type ?? 'volume',
   }))
+  // An unmapped file starts from review's proposal; saving accepts it.
+  const initial =
+    mapped.length || !proposal
+      ? mapped
+      : proposal.books.map((b) => ({
+          versionId: b.versionId ?? 0,
+          bookId: b.bookId ?? 0,
+          editionId: b.editionId,
+          number: b.number,
+          ledger: b.ledger,
+        }))
   const [draft, setDraft] = useState(initial)
   const [version, setVersion] = useState<string | null>(
-    existing[0] ? String(existing[0].versionId) : null,
+    existing[0]
+      ? String(existing[0].versionId)
+      : proposal?.books[0]
+        ? String(proposal.books[0].versionId)
+        : null,
   )
   const edit = useEditor()
   const [language, setLanguage] = useState(value.facts?.language ?? '')
@@ -680,6 +697,14 @@ export function MappingEditor({
           language for coverage. Group requirements still apply. A pack can cover several books.
           Existing mappings to other versions are kept.
         </Text>
+        {proposal && !existing.length && (
+          <Alert variant="light" p="xs">
+            <Text size="sm">
+              Proposed: <b>{proposal.label}</b> of {proposal.edition} ({proposal.evidence}).
+              Save to accept, or change it below.
+            </Text>
+          </Alert>
+        )}
         {value.facts && (
           <Text size="xs" c="dimmed">
             {[

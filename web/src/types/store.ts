@@ -293,6 +293,21 @@ export interface ReviewItem {
    * local one).
    */
   relatedId?: number /* int64 */;
+  /**
+   * Proposal is what the evidence says a file holds; nothing is recorded
+   * until it is accepted.
+   */
+  proposal?: ReviewProposal;
+}
+/**
+ * ReviewProposal is a file's proposed mapping and why: the books, the
+ * edition they belong to, and the evidence in words.
+ */
+export interface ReviewProposal {
+  books: BookRef[];
+  edition: string;
+  label: string;
+  evidence: string;
 }
 
 //////////
