@@ -34,6 +34,8 @@ test('editions retain independent versions, editable books, and mobile layout', 
     await bookDialog.getByRole('textbox', { name: 'Display label', exact: true }).fill('0')
     await bookDialog.getByRole('button', { name: 'Save book', exact: true }).click()
     await expect(bookDialog).toBeHidden()
+    // With several editions collected, each opens on demand.
+    await edition.getByRole('button', { name: /Show volumes/ }).click()
     await expect(edition.getByRole('button', { name: /Hide volumes/ })).toBeVisible()
     await expect(edition.getByRole('button', { name: '0', exact: true })).toBeVisible()
     await edition.getByRole('button', { name: '0', exact: true }).click()
@@ -151,6 +153,9 @@ test('a long chapter edition is browsed as a grid with filters, ranges and jump'
   const { id } = await added.json()
   try {
     await page.goto(`/series/${id}`)
+    // The summary leads; editions open on demand.
+    await expect(page.getByTestId('collecting')).toContainText('Chapters')
+    await page.getByRole('button', { name: /Show chapters/ }).click()
     await expect(page.getByRole('button', { name: /Hide chapters/ })).toBeVisible()
     // One tab row only: no nested section switcher above the editions.
     await expect(page.getByText('Your editions', { exact: true })).toHaveCount(0)
@@ -395,6 +400,7 @@ test('a book shows its MangaBaka copies and marks what was edited', async ({
     await page.goto(`/series/${id}`)
     const card = page.locator('.mantine-Card-root').filter({ hasText: 'Standard Edition' }).first()
     await expect(card.getByText('MangaBaka', { exact: true })).toBeVisible()
+    await card.getByRole('button', { name: /Show volumes/ }).click()
     await card.getByRole('radio', { name: 'List' }).check({ force: true })
     const row = card.locator('[data-book]').first()
     await row.getByRole('button', { name: /More|actions/i }).click()
