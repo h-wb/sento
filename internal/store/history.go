@@ -16,7 +16,7 @@ type Decision struct {
 
 // DecisionBody is the JSON payload of one history event.
 type DecisionBody struct {
-	Event    string `json:"event"` // grabbed | imported | import_failed | download_failed | blocklisted | editions_grouped
+	Event    string `json:"event"` // grabbed | imported | imported_after_review | import_failed | download_failed | blocklisted | editions_grouped
 	Ledger   string `json:"ledger,omitempty"`
 	Title    string `json:"title,omitempty"` // release title
 	Provider string `json:"provider,omitempty"`
@@ -25,7 +25,9 @@ type DecisionBody struct {
 	// "books" is the name in decisions already stored.
 	Books []BookRef `json:"slots,omitempty"`
 	Error string    `json:"error,omitempty"`
-	Force bool      `json:"force,omitempty"`
+	// Note says what happened when it is not an error.
+	Note  string `json:"note,omitempty"`
+	Force bool   `json:"force,omitempty"`
 }
 
 func (s *Store) AddDecision(ctx context.Context, seriesID int64, body DecisionBody) error {

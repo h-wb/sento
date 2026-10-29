@@ -382,6 +382,30 @@ func (s *Store) ResumeQueue(ctx context.Context, id int64, remoteID string) erro
 	}
 	return s.touch(ctx, `UPDATE queue_items SET status='queued',error='',retry_at='',retry_count=0 WHERE id=? AND status IN('needs_review','retry_wait','dispatch_unknown')`, id)
 }
+
+// SettleReviewedQueue finishes a job held for review whose files have all
+// been reviewed: it is imported, and its reservations are released so the
+// books it did not deliver are wanted again. False when the job was no
+// longer waiting.
+func (s *Store) SettleReviewedQueue(ctx context.Context, id int64) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, s.q(`UPDATE queue_items SET status='imported',error='',updated_at=? WHERE id=? AND status='needs_review'`), utcNow(), id)
+	if err != nil {
+		return false, err
+	}
+	if n, err := result.RowsAffected(); err != nil || n == 0 {
+		return false, err
+	}
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM book_reservations WHERE queue_id=?`), id); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
 func (s *Store) CancelQueue(ctx context.Context, id int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

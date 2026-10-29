@@ -62,3 +62,59 @@ func TestReviewProposesWhatTheFileNameSays(t *testing.T) {
 		}
 	}
 }
+
+// A download held for review closes on the last confirmation of its
+// files, says what was confirmed, and wants again the books no file held.
+func TestReviewedDownloadClosesItself(t *testing.T) {
+	_, st, sid, standard, books, version := modelFixture(t)
+	ctx := context.Background()
+	im := NewImporter(st, nil, t.TempDir(), nil)
+	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "pack", Title: "ONE PIECE pack"}, []store.BookRef{modelRef(standard, books[0], version), modelRef(standard, books[1], version)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.UpdateQueueItem(ctx, qid, store.QueueNeedsReview, "partial import: verified 0 of 2 expected books; unmatched files need review"); err != nil {
+		t.Fatal(err)
+	}
+	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/1.cbz", NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "1.cbz", ReleaseKey: "pack"}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := func() string {
+		t.Helper()
+		job, err := st.GetQueueItem(ctx, qid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return job.Status
+	}
+	if err = im.SettleReviewedJobs(ctx, sid); err != nil || status() != store.QueueNeedsReview {
+		t.Fatalf("closed with a file still waiting: %s %v", status(), err)
+	}
+	if err = st.MapFile(ctx, sid, fid, []store.BookRef{modelRef(standard, books[0], version)}); err != nil {
+		t.Fatal(err)
+	}
+	if err = im.SettleReviewedJobs(ctx, sid); err != nil || status() != store.QueueImported {
+		t.Fatalf("not closed after the last confirmation: %s %v", status(), err)
+	}
+	job, _ := st.GetQueueItem(ctx, qid)
+	if job.Error != "" {
+		t.Errorf("stale error kept: %q", job.Error)
+	}
+	history, err := st.ListDecisions(ctx, sid, 10)
+	if err != nil || len(history) == 0 {
+		t.Fatalf("history: %+v %v", history, err)
+	}
+	var last store.DecisionBody
+	if err = json.Unmarshal(history[0].Body, &last); err != nil || last.Event != "imported_after_review" {
+		t.Fatalf("last event: %+v %v", last, err)
+	}
+	want := "1 file confirmed in review. Not in this download, wanted again: Standard Edition volume " + books[1].SequenceStr + "."
+	if last.Note != want {
+		t.Errorf("note = %q, want %q", last.Note, want)
+	}
+	// Its books are free for another download.
+	if _, _, err = st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "next", Title: "ONE PIECE v02"}, []store.BookRef{modelRef(standard, books[1], version)}); err != nil {
+		t.Errorf("volume still reserved: %v", err)
+	}
+}

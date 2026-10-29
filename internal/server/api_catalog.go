@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/h-wb/sento/internal/store"
+	"log/slog"
 	"net/http"
 	"strconv"
 )
@@ -279,6 +280,10 @@ func (s *Server) handleRemapFile(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.MapFile(r.Context(), id, fid, body.Books); err != nil {
 		writeErr(w, err)
 		return
+	}
+	// The mapping is saved either way; a job it completes is closed now.
+	if err := s.importer.SettleReviewedJobs(r.Context(), id); err != nil {
+		slog.Warn("settling reviewed jobs failed", "series", id, "error", err)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

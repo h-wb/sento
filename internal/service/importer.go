@@ -546,3 +546,86 @@ func (im *Importer) reviewedJobComplete(ctx context.Context, item store.QueueIte
 	}
 	return true, nil
 }
+
+// SettleReviewedJobs finishes the series' jobs held for review once no
+// file they delivered still waits for it (propose-dont-ask.md §A2): the
+// last confirmation closes the job, not another run of the importer.
+// History says how many files were confirmed and which planned books no
+// file turned out to hold; those are wanted again.
+func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) error {
+	jobs, err := im.store.SeriesQueueItems(ctx, seriesID)
+	if err != nil {
+		return err
+	}
+	files, err := im.store.ListFiles(ctx, seriesID)
+	if err != nil {
+		return err
+	}
+	var coverage []store.AssetCoverage
+	for _, job := range jobs {
+		if job.Status != store.QueueNeedsReview || job.ReleaseKey == "" {
+			continue
+		}
+		delivered, waiting := map[int64]bool{}, false
+		for _, f := range files {
+			if f.Facts.ReleaseKey == job.ReleaseKey {
+				delivered[f.ID] = true
+				waiting = waiting || f.NeedsReview || f.Unrequested
+			}
+		}
+		// No files at all is an import that never happened (a path the
+		// client sees and Sento does not): that still needs a person.
+		if waiting || len(delivered) == 0 {
+			continue
+		}
+		if coverage == nil {
+			if coverage, err = im.store.Coverage(ctx, seriesID); err != nil {
+				return err
+			}
+		}
+		held := map[int64]bool{}
+		for _, c := range coverage {
+			held[c.BookID] = held[c.BookID] || delivered[c.FileID]
+		}
+		var plan []store.BookRef
+		_ = json.Unmarshal(job.Books, &plan)
+		var missing []string
+		for _, ref := range plan {
+			if !held[ref.BookID] {
+				missing = append(missing, im.bookName(ctx, ref))
+			}
+		}
+		settled, err := im.store.SettleReviewedQueue(ctx, job.ID)
+		if err != nil || !settled {
+			return err
+		}
+		note := fmt.Sprintf("%d %s confirmed in review.", len(delivered), plural(len(delivered), "file"))
+		if len(missing) > 0 {
+			note += " Not in this download, wanted again: " + strings.Join(missing, ", ") + "."
+		}
+		if err := im.store.AddDecision(ctx, seriesID, store.DecisionBody{Event: "imported_after_review", Title: job.Title, Provider: job.ProviderID, Key: job.ExternalID, Note: note}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// bookName names a planned book for people: "Box Set Edition volume 0".
+func (im *Importer) bookName(ctx context.Context, ref store.BookRef) string {
+	book, err := im.store.GetBook(ctx, ref.BookID)
+	if err != nil {
+		return ref.Ledger + " " + hundredths(parse.Num(ref.Number))
+	}
+	name := ref.Ledger + " " + book.SequenceStr
+	if ed, err := im.store.GetEdition(ctx, book.EditionID); err == nil {
+		name = ed.EditionName + " " + name
+	}
+	return name
+}
+
+func plural(n int, word string) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
+}

@@ -485,6 +485,7 @@ export default function SeriesPage() {
 const eventColor: Record<string, string> = {
   grabbed: 'indigo',
   imported: 'green',
+  imported_after_review: 'green',
   import_failed: 'red',
   download_failed: 'red',
   blocklisted: 'orange',
@@ -543,6 +544,11 @@ function HistoryTab({ seriesID }: { seriesID: number }) {
                 {d.body.error && (
                   <Text size="xs" c="red" lineClamp={1} title={d.body.error}>
                     {d.body.error}
+                  </Text>
+                )}
+                {d.body.note && (
+                  <Text size="xs" c="dimmed">
+                    {d.body.note}
                   </Text>
                 )}
               </Table.Td>
