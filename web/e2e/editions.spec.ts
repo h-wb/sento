@@ -20,8 +20,9 @@ test('editions retain independent versions, editable books, and mobile layout', 
       .filter({ hasText: 'Standard Edition' })
       .first()
     await edition.getByRole('button', { name: /More actions/ }).click()
-    await page.getByRole('menuitem', { name: 'Keep an additional version', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Keep an additional version', exact: true })
+    await page.getByRole('menuitem', { name: 'More', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Keep another copy of this edition', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Keep another copy of this edition', exact: true })
     await dialog.getByRole('textbox', { name: 'Version name', exact: true }).fill('Preferred group')
     await dialog.getByRole('textbox', { name: 'Required release group', exact: true }).fill('LuCaZ')
     await dialog.getByRole('button', { name: 'Save version', exact: true }).click()
@@ -294,6 +295,7 @@ test('an edition groups its catalog collections, which can be separated and merg
     })
 
     await card.getByRole('button', { name: /More actions/ }).click()
+    await page.getByRole('menuitem', { name: 'More', exact: true }).click()
     await page
       .getByRole('menuitem', {
         name: 'paperback · Stub Publishing',

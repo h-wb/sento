@@ -72,7 +72,7 @@ export function VersionEditor({
       dirty={JSON.stringify(v) !== JSON.stringify(value)}
       busy={edit.busy}
       onClose={close}
-      title={v.id ? 'Version settings' : 'Keep an additional version'}
+      title={v.id ? 'Collecting settings' : 'Keep another copy of this edition'}
     >
       <form
         onSubmit={(e) => {

@@ -13,8 +13,11 @@ export default function EditionActions({
   others,
   run,
   children,
+  more,
 }: {
   children?: ReactNode
+  // Rare maintenance, one level down: the menu opens on what is common.
+  more?: ReactNode
   seriesID: number
   edition: Edition
   others: Edition[]
@@ -54,40 +57,49 @@ export default function EditionActions({
         </Menu.Target>
         <Menu.Dropdown>
           {children}
-          {(edition.custom || candidates.length > 0) && (
-            <>
-              <Menu.Label>Merge into</Menu.Label>
-              {candidates.map((o) => (
-                <Menu.Item key={o.id} onClick={() => setMerge(o)}>
-                  {o.editionName} · {editionDetails(o)}
-                </Menu.Item>
-              ))}
-              {candidates.length === 0 && <Menu.Item disabled>No matching edition</Menu.Item>}
-            </>
-          )}
-          {edition.collections.length > 1 && (
-            <>
-              <Menu.Label>Separate into its own edition</Menu.Label>
-              {edition.collections.map((c) => (
-                <Menu.Item
-                  key={c.id}
-                  onClick={() =>
-                    confirm({
-                      title: `Separate the ${c.medium} collection?`,
-                      message:
-                        'Use this when it is a different publication, such as another publisher’s translation. Its books become an edition of their own, not collected until you choose to. Files stay with the edition they are in.',
-                      label: 'Separate',
-                      onConfirm: async () => {
-                        await api.separateCollection(seriesID, c.id)
-                        run(async () => {}, 'Collection separated')
-                      },
-                    })
-                  }
-                >
-                  {[c.medium, c.publisher].filter(Boolean).join(' · ')}
-                </Menu.Item>
-              ))}
-            </>
+          {(more || candidates.length > 0 || edition.collections.length > 1) && (
+            <Menu.Sub position="left-start">
+              <Menu.Sub.Target>
+                <Menu.Sub.Item>More</Menu.Sub.Item>
+              </Menu.Sub.Target>
+              <Menu.Sub.Dropdown>
+                {more}
+                {candidates.length > 0 && (
+                  <>
+                    <Menu.Label>Merge into</Menu.Label>
+                    {candidates.map((o) => (
+                      <Menu.Item key={o.id} onClick={() => setMerge(o)}>
+                        {o.editionName} · {editionDetails(o)}
+                      </Menu.Item>
+                    ))}
+                  </>
+                )}
+                {edition.collections.length > 1 && (
+                  <>
+                    <Menu.Label>Separate into its own edition</Menu.Label>
+                    {edition.collections.map((c) => (
+                      <Menu.Item
+                        key={c.id}
+                        onClick={() =>
+                          confirm({
+                            title: `Separate the ${c.medium} collection?`,
+                            message:
+                              'Use this when it is a different publication, such as another publisher’s translation. Its books become an edition of their own, not collected until you choose to. Files stay with the edition they are in.',
+                            label: 'Separate',
+                            onConfirm: async () => {
+                              await api.separateCollection(seriesID, c.id)
+                              run(async () => {}, 'Collection separated')
+                            },
+                          })
+                        }
+                      >
+                        {[c.medium, c.publisher].filter(Boolean).join(' · ')}
+                      </Menu.Item>
+                    ))}
+                  </>
+                )}
+              </Menu.Sub.Dropdown>
+            </Menu.Sub>
           )}
           {edition.custom && (
             <>

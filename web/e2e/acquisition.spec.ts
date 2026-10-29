@@ -32,10 +32,8 @@ for (const width of [390, 1280]) {
       })
       await page.goto(`/series/${id}`)
       const edition = page.locator('.mantine-Card-root').filter({ hasText: 'Standard Edition' }).first()
-      if (width < 768) {
-        await edition.getByRole('button', { name: /More actions/ }).click()
-        await page.getByRole('menuitem', { name: 'Search releases', exact: true }).click()
-      } else await edition.getByRole('button', { name: 'Search releases', exact: true }).click()
+      await edition.getByRole('button', { name: /More actions/ }).click()
+      await page.getByRole('menuitem', { name: 'Search releases', exact: true }).click()
       const plan = page.getByTestId('acquisition-plan')
       await expect(plan.getByText('3 of 4 wanted volumes selected')).toBeVisible()
       await expect(plan.getByText('Will download · 3')).toBeVisible()

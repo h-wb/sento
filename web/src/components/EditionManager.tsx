@@ -194,14 +194,15 @@ export default function EditionManager({
               const stats = t ? summary(t.id) : undefined
               const owned = stats?.owned ?? 0
               const total = stats?.total ?? 0
-              const noun = c.type === 'chapter' ? 'chapters' : 'volumes'
+              const noun = (c.type === 'chapter' ? 'chapter' : 'volume') + (total === 1 ? '' : 's')
               // With one or two editions there is nothing to scan past.
               const show = expanded[c.id] ?? yours.length <= 2
-              const profile = `${stats?.profileName || 'Default profile'} · ${
-                stats?.profileSource === 'this version'
-                  ? 'custom profile'
-                  : `inherited from ${stats?.profileSource ?? 'series'}`
-              }`
+              // A profile is worth a word only when it was chosen here.
+              const profile =
+                stats?.profileName &&
+                (stats.profileSource === 'this version' || stats.profileSource === 'edition') &&
+                stats.profileName
+              const missing = stats?.wanted ?? 0
               const findMissing = () =>
                 t &&
                 onBook({
@@ -255,24 +256,9 @@ export default function EditionManager({
                             Continue locally
                           </Button>
                         )}
-                        {t && (
-                          <Button
-                            variant="default"
-                            size="xs"
-                            visibleFrom="sm"
-                            onClick={() => setVersion(t)}
-                          >
-                            Version settings
-                          </Button>
-                        )}
-                        {t && (
-                          <Button
-                            variant="default"
-                            size="xs"
-                            visibleFrom="sm"
-                            onClick={findMissing}
-                          >
-                            Search releases
+                        {t && missing > 0 && (
+                          <Button variant="default" size="xs" onClick={findMissing}>
+                            Search {missing} missing
                           </Button>
                         )}
                         <EditionActions
@@ -282,34 +268,53 @@ export default function EditionManager({
                           run={async (fn) => {
                             await run(fn)
                           }}
+                          more={
+                            <>
+                              {t && (
+                                <Menu.Item
+                                  onClick={() =>
+                                    setVersion({
+                                      ...t,
+                                      id: 0,
+                                      name: '',
+                                      isDefault: false,
+                                      requiredGroup: '',
+                                    })
+                                  }
+                                >
+                                  Keep another copy of this edition
+                                </Menu.Item>
+                              )}
+                              {t && !t.isDefault && (
+                                <Menu.Item
+                                  color="red"
+                                  onClick={() =>
+                                    confirm({
+                                      title: 'Remove this copy?',
+                                      message:
+                                        'Files stay on disk. Other copies keep their files and ownership.',
+                                      label: 'Remove copy',
+                                      onConfirm: async () => {
+                                        await api.deleteVersion(seriesID, t.id)
+                                        await changed()
+                                      },
+                                    })
+                                  }
+                                >
+                                  Remove this copy
+                                </Menu.Item>
+                              )}
+                              {c.custom && (
+                                <Menu.Item onClick={() => setLink(c)}>Link to MangaBaka</Menu.Item>
+                              )}
+                            </>
+                          }
                         >
-                          {t && (
-                            <Menu.Item hiddenFrom="sm" onClick={() => setVersion(t)}>
-                              Version settings
-                            </Menu.Item>
-                          )}
-                          {t && (
-                            <Menu.Item hiddenFrom="sm" onClick={findMissing}>
-                              Search releases
-                            </Menu.Item>
-                          )}
+                          {t && <Menu.Item onClick={findMissing}>Search releases</Menu.Item>}
                           <Menu.Item onClick={() => setEdition(c)}>Edit edition</Menu.Item>
                           {t && (
-                            <Menu.Item
-                              onClick={() =>
-                                setVersion({
-                                  ...t,
-                                  id: 0,
-                                  name: '',
-                                  isDefault: false,
-                                  requiredGroup: '',
-                                })
-                              }
-                            >
-                              Keep an additional version
-                            </Menu.Item>
+                            <Menu.Item onClick={() => setVersion(t)}>Collecting settings</Menu.Item>
                           )}
-
                           <Menu.Item
                             onClick={() =>
                               setBook({
@@ -328,29 +333,6 @@ export default function EditionManager({
                           >
                             Add {c.type === 'chapter' ? 'chapter' : 'volume'}
                           </Menu.Item>
-                          {t && !t.isDefault && (
-                            <Menu.Item
-                              color="red"
-                              onClick={() =>
-                                confirm({
-                                  title: 'Remove collected version?',
-                                  message:
-                                    'Files stay on disk. Other versions keep their files and ownership.',
-                                  label: 'Remove version',
-                                  onConfirm: async () => {
-                                    await api.deleteVersion(seriesID, t.id)
-                                    await changed()
-                                  },
-                                })
-                              }
-                            >
-                              Remove version
-                            </Menu.Item>
-                          )}
-
-                          {c.custom && (
-                            <Menu.Item onClick={() => setLink(c)}>Link to catalog</Menu.Item>
-                          )}
                         </EditionActions>
                       </Group>
                     </Group>
