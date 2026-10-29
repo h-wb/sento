@@ -5,6 +5,19 @@ runs Sento against real upstreams, explores it like a user, and turns
 findings into GitHub issues. Human notes live in
 [dogfooding.md](dogfooding.md); this document is the machine's brief.
 
+## Kickoff
+
+A pass is one disposable worktree session. From the pod:
+
+```sh
+paseo run --provider mistral-vibe --new-workspace worktree \
+  --title "Sento exploratory pass" \
+  "Run the exploratory-test pass: load the exploratory-test skill (or read docs/exploratory-testing.md) and execute it as your mission brief."
+```
+
+In a Vibe session the `exploratory-test` skill (`.vibe/skills/`) routes to
+this document; other providers get the path directly.
+
 ## The target
 
 Each exploratory run gets a disposable Paseo worktree: `paseo.json` setup
