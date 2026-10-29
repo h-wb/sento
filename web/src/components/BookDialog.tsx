@@ -223,10 +223,10 @@ function Inner({
   }, [])
 
   // Source failures are secondary to the results: one line, opened on
-  // demand, or straight away when they are all there is to show.
-  const problems = [...new Set([...(result?.notes ?? []), ...(result?.errors ?? [])])].map(
-    tidyProblem,
-  )
+  // demand, or straight away when they are all there is to show. Notes
+  // ("no results", "no confident match") are answers, not failures.
+  const problems = [...new Set(result?.errors ?? [])].map(tidyProblem)
+  const notes = [...new Set(result?.notes ?? [])].map(tidyProblem)
   const [problemsOpen, setProblemsOpen] = useState<boolean | null>(null)
   const showProblems = problemsOpen ?? (!!result?.done && result.candidates.length === 0)
 
@@ -345,7 +345,9 @@ function Inner({
                   <Group gap={6}>
                     <Text size="sm" role="status">
                       {searching
-                        ? `Searching ${result.pending.length || ''} of ${result.searched.length || '…'} sources…`
+                        ? result.pending.length > 0
+                          ? `Searching ${result.pending.length} of ${result.searched.length} ${result.searched.length === 1 ? 'source' : 'sources'}…`
+                          : 'Searching…'
                         : result.stopped
                           ? 'Search stopped. Results already received are still available.'
                           : `Searched ${result.searched.length} ${result.searched.length === 1 ? 'source' : 'sources'}`}
@@ -419,9 +421,15 @@ function Inner({
                       ))}
                     </Stack>
                   )}
+                  {notes.map((n) => (
+                    <Text key={n} size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                      {n}
+                    </Text>
+                  ))}
                   {result.done &&
                     !result.stopped &&
                     problems.length === 0 &&
+                    notes.length === 0 &&
                     result.candidates.length === 0 && (
                       <Text size="sm" c="dimmed">
                         No releases found. Check that this series has an enabled indexer for{' '}
