@@ -4,7 +4,9 @@ import { Alert, Button, Group, Modal, Stack, Text } from '@mantine/core'
 type Action = { title: string; message: ReactNode; label: string; onConfirm: () => Promise<unknown> }
 
 // Keep the dialog open on failure so the user can retry the same action.
-export function useConfirmAction() {
+// Pass stackId when confirming from inside another modal's close handler,
+// and render both in one Modal.Stack (see EditorModal).
+export function useConfirmAction({ stackId }: { stackId?: string } = {}) {
   const [action, setAction] = useState<Action | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -19,7 +21,7 @@ export function useConfirmAction() {
     finally { setPending(false) }
   }
   const confirmation = (
-    <Modal opened={!!action} onClose={close} title={action?.title} centered
+    <Modal opened={!!action} onClose={close} stackId={stackId} title={action?.title} centered
       closeOnClickOutside={!pending} closeOnEscape={!pending} withCloseButton={!pending}>
       <Stack gap="md">
         <Text size="sm" c="dimmed">{action?.message}</Text>

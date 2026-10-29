@@ -72,6 +72,12 @@ test('editions retain independent versions, editable books, and mobile layout', 
     await expect(add.getByRole('combobox', { name: 'Edition name', exact: true })).toHaveValue(
       'Spanish edition',
     )
+    // Escape asks too, and Escape again returns to the edits.
+    await add.getByRole('textbox', { name: 'Volumes', exact: true }).press('Escape')
+    await expect(discard).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(discard).toBeHidden()
+    await expect(add).toBeVisible()
     await add.getByRole('combobox', { name: 'Language', exact: true }).fill('es')
     // The count MangaBaka gives is offered, not imposed.
     await expect(add.getByRole('textbox', { name: 'Volumes', exact: true })).toHaveValue('7')

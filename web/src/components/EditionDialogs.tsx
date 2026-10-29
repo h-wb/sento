@@ -799,7 +799,7 @@ export function EditorModal({
   size?: string
 }) {
   useUnsavedChanges(dirty)
-  const { confirm, confirmation } = useConfirmAction()
+  const { confirm, confirmation } = useConfirmAction({ stackId: 'discard' })
   const close = () => {
     if (busy) return
     if (!dirty) {
@@ -813,10 +813,13 @@ export function EditorModal({
       onConfirm: async () => onClose(),
     })
   }
+  // One stack, so the Escape that opens the discard prompt isn't also
+  // delivered to it (it would close again within the same keypress).
   return (
-    <>
+    <Modal.Stack>
       <Modal
         opened
+        stackId="editor"
         title={title}
         size={size}
         onClose={close}
@@ -827,6 +830,6 @@ export function EditorModal({
         {children}
       </Modal>
       {confirmation}
-    </>
+    </Modal.Stack>
   )
 }
