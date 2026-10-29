@@ -156,15 +156,13 @@ Built on 2026-10-29, on the branch of the exploratory pass:
 | A2 held downloads close on their last confirmed file | `224300d` | #23 |
 | B1 a series without volumes wants its chapters | `3084117` | #25 |
 | B2 all-books search proposes only wanted books; Select range | `bedb1f3` | #27 |
-| B3 Collecting summary; edition cards open on demand | `4b017fa` | — |
+| B3 Collecting summary — reverted: it repeated the cards instead of replacing them | `4b017fa`, reverted | — |
 | A3 missing-edition proposals (`edition_sightings`, migration 24) | see git log | #22 |
 | Search status and source notes; names instead of internals | `e908250` and before | #26, #28 |
 
-B3 is the first step of the reshape sketched above: the summary leads and
-editions are the detail, but each edition card is unchanged. What the
-cards should still carry once the summary exists (Version settings and
-Search releases on every card, the menu's three levels) is the next
-question, best answered by a think-aloud session on the new page.
+B3 as first built added a summary above the edition cards without taking
+anything off them, so the page said everything twice. A reshape has to
+remove a layer, not add one: it is redesigned before it is rebuilt.
 
 ## Out of scope
 

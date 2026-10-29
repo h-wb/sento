@@ -18,7 +18,6 @@ import {
   Group,
   Menu,
   Pagination,
-  Paper,
   Select,
   Stack,
   Switch,
@@ -27,8 +26,7 @@ import {
 } from '@mantine/core'
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { api, fmtNum, fmtSize } from '../api'
+import { api, fmtSize } from '../api'
 import type {
   Edition,
   CollectedVersion,
@@ -142,33 +140,6 @@ export default function EditionManager({
     )
   const yours = visible.filter(isYours)
   const others = visible.filter((c) => !isYours(c))
-  // Search what one collected version is missing.
-  const searchMissing = (c: Edition, t: CollectedVersion) =>
-    onBook({
-      ledger: c.type === 'chapter' ? 'chapter' : 'volume',
-      editionId: c.id,
-      versionId: t.id,
-      all: true,
-      number: 0,
-      editionLabel: `${editionLabel(c)} · ${t.name}`,
-      monitored: t.monitored,
-      wanted: true,
-      fileIds: [],
-      autoSearch: true,
-    })
-  // What the series is collected as, per kind of book: the page leads
-  // with this, editions are the detail (propose-dont-ask.md §B3).
-  const collecting = (['volume', 'chapter'] as const).map((kind) => ({
-    kind,
-    rows: yours
-      .filter((c) => c.type === kind)
-      .flatMap((c) =>
-        allVersions
-          .filter((t) => t.editionId === c.id && t.monitored)
-          .map((t) => ({ c, t, stats: summary(t.id) })),
-      ),
-  }))
-  const reviewFiles = overview.data?.reviewFiles ?? 0
 
   return (
     <Stack gap="lg">
@@ -207,61 +178,6 @@ export default function EditionManager({
               </Group>
             </Alert>
           )}
-          {!pending && yours.length > 0 && (
-            <Paper withBorder p="md" data-testid="collecting">
-              <Stack gap="xs">
-                {collecting.map(({ kind, rows }) => (
-                  <Group key={kind} align="flex-start" gap="md" wrap="nowrap">
-                    <Text size="sm" fw={600} w={72} style={{ flex: 'none' }}>
-                      {kind === 'volume' ? 'Volumes' : 'Chapters'}
-                    </Text>
-                    <Stack gap={4} style={{ flex: 1, minWidth: 0 }}>
-                      {rows.length === 0 && (
-                        <Text size="sm" c="dimmed">
-                          {kind === 'chapter' || editions.some((c) => c.type === 'volume')
-                            ? 'Not collected'
-                            : 'Not collected: MangaBaka lists none'}
-                        </Text>
-                      )}
-                      {rows.map(({ c, t, stats }) => (
-                        <Group key={t.id} justify="space-between" gap="xs" wrap="nowrap">
-                          <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
-                            {c.editionName} · {c.language}
-                            {!t.isDefault && ` · ${t.name}`}
-                            <Text span size="sm" c="dimmed">
-                              {' — '}
-                              {stats?.onDisk ?? 0} of {stats?.total ?? 0} on disk
-                              {(stats?.wanted ?? 0) > 0 && ` · ${stats?.wanted} wanted`}
-                              {kind === 'chapter' &&
-                                t.cutoffNum > 0 &&
-                                ` · new chapters after ${fmtNum(t.cutoffNum)} only`}
-                            </Text>
-                          </Text>
-                          {(stats?.wanted ?? 0) > 0 && (
-                            <Button
-                              size="compact-xs"
-                              variant="default"
-                              style={{ flex: 'none' }}
-                              onClick={() => searchMissing(c, t)}
-                            >
-                              Search
-                            </Button>
-                          )}
-                        </Group>
-                      ))}
-                    </Stack>
-                  </Group>
-                ))}
-                {reviewFiles > 0 && (
-                  <Text size="sm">
-                    <Anchor component={Link} to="?view=review" size="sm">
-                      {reviewFiles} {reviewFiles === 1 ? 'file waits' : 'files wait'} for review
-                    </Anchor>
-                  </Text>
-                )}
-              </Stack>
-            </Paper>
-          )}
           {!pending && yours.length === 0 && (
             <Text size="sm" c="dimmed">
               No edition is being collected yet. Pick one from the other editions below, or add your
@@ -279,15 +195,27 @@ export default function EditionManager({
               const owned = stats?.owned ?? 0
               const total = stats?.total ?? 0
               const noun = c.type === 'chapter' ? 'chapters' : 'volumes'
-              // The summary above says where things stand; a lone edition
-              // opens on its books, several open on demand.
-              const show = expanded[c.id] ?? yours.length <= 1
+              // With one or two editions there is nothing to scan past.
+              const show = expanded[c.id] ?? yours.length <= 2
               const profile = `${stats?.profileName || 'Default profile'} · ${
                 stats?.profileSource === 'this version'
                   ? 'custom profile'
                   : `inherited from ${stats?.profileSource ?? 'series'}`
               }`
-              const findMissing = () => t && searchMissing(c, t)
+              const findMissing = () =>
+                t &&
+                onBook({
+                  ledger: c.type === 'chapter' ? 'chapter' : 'volume',
+                  editionId: c.id,
+                  versionId: t.id,
+                  all: true,
+                  number: 0,
+                  editionLabel: `${editionLabel(c)} · ${t.name}`,
+                  monitored: t.monitored,
+                  wanted: true,
+                  fileIds: [],
+                  autoSearch: true,
+                })
               return (
                 <Card key={c.id} padding="md" withBorder>
                   <Stack gap="sm">
