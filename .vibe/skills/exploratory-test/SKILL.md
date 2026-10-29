@@ -11,15 +11,26 @@ charter, the manga corpus, the hard limits (Nyaa only, `sento-test`
 category, Weeb Central only, worktree-local library), and the issue-filing
 rules.
 
+**Before doing anything else — post the URLs.** Boot the stack through the
+services and report the proxy URLs as your very first message, before any
+exploration, configuration, or filing:
+
+```sh
+paseo script start extensions api web   # first api start includes a Go
+                                       # build — give it a few minutes
+paseo script ls                        # ports + proxy URLs
+```
+
+Then immediately send the web and api proxy URLs to the human — they open
+the same instance in their browser and watch the pass. Do not proceed to
+anything else until they are posted. The **web** URL is the one to use
+yourself too; `GET /` on the backend is a 404 by design.
+
 Operational entry points:
 
-- **The stack**: boot it only through the services — `paseo script start
-  extensions api web`, never a bare `mise run` in a terminal (a fresh
-  worktree's first api start includes a Go build — give it a few minutes).
-  `paseo script ls` prints the ports **and the proxy URLs**; report the web
-  and api proxy URLs in your first message so the human can watch the same
-  instance in their browser. Open the **web** URL, not the backend's;
-  `GET /` on the backend is a 404 by design.
+- **The stack**: boot it only through the services — never a bare
+  `mise run` in a terminal; the services are what assign ports and
+  publish the URLs above.
 - **Read `docs/dogfooding.md` first**: sharpen its entries with repro and
   evidence instead of filing duplicates; a finding that matches no entry
   gets a fresh issue.
