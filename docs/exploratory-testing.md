@@ -74,11 +74,14 @@ Judge by these classes, in order of severity:
 
 One issue per finding, with the
 [exploratory finding](.github/ISSUE_TEMPLATE/exploratory-finding.md)
-template, labeled `usability`:
+template, labeled `usability`. File through the scoped PAT — `GH_TOKEN`
+from Proton Pass (fnox.toml), issues read/write on this repo only — not
+the pod's broader token; gh reads `GH_TOKEN` first, and the granted value
+shadows the pod env for this one command:
 
 ```sh
-gh issue create --label usability --title "<one-line finding>" \
-  --body-file <filled template>
+mise x --secrets GH_TOKEN -- gh issue create --label usability \
+  --title "<one-line finding>" --body-file <filled template>
 ```
 
 Before filing, read [dogfooding.md](dogfooding.md): if the finding is
