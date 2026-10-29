@@ -1,6 +1,6 @@
 {
   "worktree": {
-    "setup": "mise install && mise run web:install"
+    "setup": "mise install && mise run pass:login && mise run web:install"
   },
   "scripts": {
     "extensions": {
@@ -9,7 +9,7 @@
     },
     "api": {
       "type": "service",
-      "command": "SENTO_PORT=$PASEO_PORT SENTO_EXTENSIONS_URL=http://127.0.0.1:$PASEO_SERVICE_EXTENSIONS_PORT mise run run"
+      "command": "MISE_ENV=prod SENTO_PORT=$PASEO_PORT SENTO_EXTENSIONS_URL=http://127.0.0.1:$PASEO_SERVICE_EXTENSIONS_PORT mise run run:agent"
     },
     "web": {
       "type": "service",

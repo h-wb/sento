@@ -1,7 +1,8 @@
-min_version = "2026.9.18"
+min_version = "2026.10.4" # older mise rejects `secrets` on a task
 
 [settings]
-# [daemons] and the tasks that require them are experimental in mise.
+# [daemons] and the tasks that require them are experimental in mise;
+# so are [secrets.fnox] task grants (fnox.toml).
 experimental = true
 
 # Everything a check depends on is pinned, so a run is reproducible and a
@@ -22,6 +23,8 @@ golangci-lint = "2.14.0"
 actionlint = "1.7.12"
 shellcheck = "0.11.0" # actionlint runs it over every `run:` script
 pitchfork = "2.30.1" # supervises the [daemons] dev stack
+"github:jdx/fnox" = "1.44.0" # fetches fnox.toml secrets for granted tasks
+"github:protonpass/pass-cli" = "2.5.1" # Proton Pass CLI (fnox backend)
 "go:golang.org/x/tools/gopls" = "latest"
 
 [env]
@@ -34,6 +37,15 @@ SENTO_LIBRARY_PATH = "data/library"
 # Read from the caller first: mise [env] otherwise overrides it, and the Paseo
 # `api` service (paseo.json) points the backend at its worktree's sidecar.
 SENTO_EXTENSIONS_URL = "{{ get_env(name='SENTO_EXTENSIONS_URL', default='http://localhost:8901') }}"
+# fnox/pass-cli use an agent session scoped to this repo; its token is the
+# macOS Keychain item pass-cli-sento on a workstation, PROTON_PASS_TOKEN in
+# the paseo pod. Log it in with `mise run pass:login` — see fnox.toml.
+PROTON_PASS_SESSION_DIR = "{{env.HOME}}/.local/state/pass-cli/sento"
+PROTON_PASS_AGENT_REASON = "sento fnox"
+
+# fnox fetches the fnox.toml secrets; a task lists the keys it needs in
+# `secrets = [...]` and nothing reaches the activated shell or `mise env`.
+[secrets.fnox]
 
 # --- dev stack (long-running processes; pitchfork supervises them) ---
 #
@@ -121,6 +133,31 @@ run = "go build -o bin/sento ./cmd/sento"
 [tasks.run]
 description = "Run sento (dev)"
 run = "go run ./cmd/sento"
+
+[tasks."run:agent"]
+description = "Run sento with the agent-stack upstream seeds (prod profile + fnox secrets; the paseo api service)"
+# The secrets are handed to this task only (see fnox.toml); the plain `run`
+# task stays secret-free so terminal and daemon starts never need a Proton
+# Pass session. paseo.json's api service runs this under MISE_ENV=prod.
+secrets = ["SENTO_QBITTORRENT_USERNAME", "SENTO_QBITTORRENT_PASSWORD", "SENTO_PROWLARR_API_KEY"]
+run = "mise run run"
+
+[tasks."pass:login"]
+description = "Log the repo's scoped Proton Pass agent session in (macOS Keychain, or PROTON_PASS_TOKEN on the paseo pod)"
+quiet = true
+run = '''
+mkdir -p "$PROTON_PASS_SESSION_DIR" && chmod 700 "$PROTON_PASS_SESSION_DIR"
+pass-cli info >/dev/null 2>&1 && { echo "already logged in"; exit 0; }
+if command -v security >/dev/null 2>&1; then
+    token="$(security find-generic-password -s pass-cli-sento -a "$USER" -w)"
+elif [ -n "${PROTON_PASS_TOKEN:-}" ]; then
+    token="$PROTON_PASS_TOKEN"
+else
+    echo "pass:login: no macOS Keychain (security) and no PROTON_PASS_TOKEN; skipping" >&2
+    exit 0
+fi
+PROTON_PASS_PERSONAL_ACCESS_TOKEN="$token" pass-cli login
+'''
 
 [tasks.test]
 description = "Run Go tests"
