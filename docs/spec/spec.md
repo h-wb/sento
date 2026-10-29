@@ -315,6 +315,9 @@ Sento had downloaded them. Unparseable files → manual import queue;
 slot-less matches → unrequested files (§4.3). **Chapter cutoff default on
 import**: lowest owned chapter if chapter files exist (so owned chapters are
 all in-ledger and the frontier continues), else latest-at-add (D6).
+*Correction (2026-10-29):* latest-at-add applies when a volume edition is
+collected; a series added without one (a one-shot, a chapter-only series)
+wants every chapter.
 
 **Non-destructive by default**: import never moves, renames, or rewrites
 anything — files are linked where they are, ComicInfo is *read* but not

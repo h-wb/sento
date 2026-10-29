@@ -33,7 +33,7 @@ type AddSeriesRequest struct {
 	Monitor       string   `json:"monitor"`
 	MonitorIDs    []string `json:"monitorIds"`    // explicit provider edition ids
 	ChapterLang   string   `json:"chapterLang"`   // default "en"
-	ChapterCutoff int64    `json:"chapterCutoff"` // hundredths; 0 = latest at add (D6)
+	ChapterCutoff int64    `json:"chapterCutoff"` // hundredths; 0 = latest at add when volumes are collected, else every chapter (D6)
 	ProfileID     int64    `json:"profileId"`     // 0 = instance default
 }
 

@@ -274,7 +274,7 @@ type AddSeriesParams struct {
 	MonitorAll    bool                       // monitor every volume-type collection
 	MonitorIDs    []string                   // or: provider ids to monitor
 	ChapterLang   string
-	ChapterCutoff int64 // hundredths; default: total_chapters*100 (latest at add)
+	ChapterCutoff int64 // hundredths; default: total_chapters*100 (latest at add) when volumes are collected, else 0
 	ProfileID     int64 // 0 = instance default (stored NULL)
 }
 
@@ -321,12 +321,14 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 	}
 	// An edition is collected when any of its collections was chosen.
 	var chapterColID int64 // first catalog chapter edition of the wanted language
+	volumes := false       // some volume edition is collected
 	for _, col := range p.Collections {
 		var edID int64
 		if err = tx.QueryRowContext(ctx, s.q(`SELECT edition_id FROM collections WHERE provider_id=? AND edition_id IN(SELECT id FROM editions WHERE series_id=?)`), col.ProviderID, seriesID).Scan(&edID); err != nil {
 			return 0, err
 		}
 		monitored := p.MonitorAll && col.Type == "volume" || monitor[col.ProviderID]
+		volumes = volumes || monitored && col.Type == "volume"
 		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored) SELECT ?,'Default',TRUE,FALSE WHERE NOT EXISTS(SELECT 1 FROM versions WHERE edition_id=?)`), edID, edID); err != nil {
 			return 0, err
 		}
@@ -342,8 +344,11 @@ func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error)
 
 	// The chapter ledger is a chapter-type collection: adopt the MangaBaka
 	// one of the wanted language when present, else create the default.
+	// Collected volumes hold the chapters out so far, so only new chapters
+	// are wanted; without volumes the chapters are all there is (a
+	// one-shot, a chapter-only series), so every one is.
 	cutoff := p.ChapterCutoff
-	if cutoff == 0 {
+	if cutoff == 0 && volumes {
 		cutoff = int64(md.TotalChapters) * 100
 	}
 	if chapterColID != 0 {

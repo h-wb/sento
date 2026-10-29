@@ -285,3 +285,41 @@ func TestRefreshReconciliation(t *testing.T) {
 		t.Fatalf("new work should be inserted: want 4, got %d", len(works))
 	}
 }
+
+// Collected volumes hold the chapters out so far, so only new chapters are
+// wanted; a series without volumes (a one-shot) wants every chapter.
+func TestAddSeriesChapterCutoffFollowsVolumes(t *testing.T) {
+	ctx := context.Background()
+	lib, st := setup(t)
+	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cutoff := func(id int64) int64 {
+		t.Helper()
+		cols, err := st.ListEditions(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range cols {
+			if c.Type == "chapter" {
+				return c.CutoffNum
+			}
+		}
+		t.Fatal("no chapter edition")
+		return 0
+	}
+	if got := cutoff(id); got != 1184*100 {
+		t.Errorf("with volumes: skip through %d, want the latest chapter", got)
+	}
+	oneShot := testProvider()
+	oneShot.series.MangaBakaID, oneShot.series.Title, oneShot.series.TotalChapters, oneShot.series.FinalVolume = 900, "The Enigma of Amigara Fault", 1, 0
+	oneShot.collections = nil
+	id, err = NewLibrary(st, oneShot).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 900})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cutoff(id); got != 0 {
+		t.Errorf("without volumes: skip through %d, want every chapter", got)
+	}
+}
