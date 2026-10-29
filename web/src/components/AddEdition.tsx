@@ -26,7 +26,8 @@ const languages = ['en', 'fr', 'es', 'de', 'it', 'pt-br', 'ja', 'ko', 'zh']
 // offers what MangaBaka lists and nobody collects yet, then the form for
 // an edition MangaBaka does not list. What the form pre-fills from
 // MangaBaka's series record (the publisher, the volume count) says so.
-export type EditionStart = { editionName: string; language: string }
+// volumes: the count releases name, when they name one.
+export type EditionStart = { editionName: string; language: string; volumes?: number }
 
 export default function AddEdition({
   seriesID,
@@ -61,7 +62,8 @@ export default function AddEdition({
   const [medium, setMedium] = useState<string | null>(null)
   const [basedOn, setBasedOn] = useState<string | null>(null)
   // null: follow MangaBaka's volume count.
-  const [volumesInput, setVolumes] = useState<number | string | null>(null)
+  const startVolumes = initial?.volumes ?? null
+  const [volumesInput, setVolumes] = useState<number | string | null>(startVolumes)
   const [cutoff, setCutoff] = useState<number | string>(0)
   const [more, setMore] = useState(false)
 
@@ -138,7 +140,7 @@ export default function AddEdition({
         publisherInput !== null ||
         !!medium ||
         !!basedOn ||
-        volumesInput !== null ||
+        volumesInput !== startVolumes ||
         Number(cutoff) !== 0 ||
         ctype !== 'volume'
       }
@@ -255,7 +257,9 @@ export default function AddEdition({
               <NumberInput
                 label="Volumes"
                 description={
-                  counted > 0 && Number(volumes) === counted ? (
+                  startVolumes && Number(volumes) === startVolumes ? (
+                    `The releases go up to volume ${startVolumes}.`
+                  ) : counted > 0 && Number(volumes) === counted ? (
                     <>
                       <Origin kind="catalog" compact /> The original run has {counted}. A
                       translation may have fewer.

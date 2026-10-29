@@ -147,6 +147,13 @@ type Edition struct {
 	Collections []Collection `json:"collections" db:"-"`
 	// OtherLabels names the series' other catalog editions of this type.
 	OtherLabels []string `json:"-" db:"-"`
+	// LastNumber is the highest numbered main book (hundredths), 0 when
+	// none is numbered: a release past it is not this numbering.
+	LastNumber int64 `json:"-" db:"-"`
+	// OtherLast is the highest LastNumber among the series' other editions
+	// of this type and language: numbers past LastNumber only prove a
+	// release is another numbering when another edition reaches them.
+	OtherLast int64 `json:"-" db:"-"`
 }
 
 // HasMedium reports whether the edition exists in a medium.

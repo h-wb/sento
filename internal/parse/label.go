@@ -9,6 +9,9 @@ func EditionTags(label string) EditionHints {
 	return scanTags(strings.ToLower(label)).edition
 }
 
+// Name is the cleaned, lowercased name that was parsed.
+func (r Result) Name() string { return r.name }
+
 // Mentions reports whether the parsed name contains phrase as whole words.
 // phrase must be lowercase.
 func (r Result) Mentions(phrase string) bool {

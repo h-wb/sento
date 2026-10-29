@@ -142,3 +142,13 @@ formats (flags: digital, scan, colored, official, …). No new setting.
 - No new setting, no new screen.
 
 Each row of the probe table above becomes a test with the real name.
+
+## Status
+
+Built 2026-10-29 (`TestEditionRules`, `TestEditionRulesOnRealNames`). One
+refinement from the first run: numbers past an edition's last book only
+say no when another edition of the series reaches them — the test catalog,
+like MangaBaka for some series, lists fewer books than exist. Checked live
+on Vinland Saga: its "Omnibus Edition" releases, ruled out before, are now
+offered for its Standard Edition after review, with "Add Omnibus Edition"
+beside them.

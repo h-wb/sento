@@ -101,13 +101,15 @@ export interface ConnectionTest {
 // source: edition_fit.go
 
 /**
- * OtherEdition names the edition a release is when it was ruled out of
- * another one: "Deluxe Edition" in en. InLibrary says whether the series
- * already has an edition like it; when not, the search offers to add it.
+ * OtherEdition is the edition a release names that the series has none
+ * of, when the search should offer to add it: its name in the release's
+ * own words, the language, and the highest volume the release names (0
+ * when it names none).
  */
 export interface OtherEdition {
   name: string;
   language: string;
+  volumes: number /* int */;
   inLibrary: boolean;
 }
 

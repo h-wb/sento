@@ -99,8 +99,10 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 				compatible := 0
 				for _, t := range run.versions {
 					col := editionByID(run.editions, t.EditionID)
-					if run.wantedBooks[t.ID] != nil && col != nil && editionCompatibleWithEvidence(rc.Parse, *col, evidence) {
-						compatible++
+					if run.wantedBooks[t.ID] != nil && col != nil {
+						if v, _ := judgeWithEvidence(rc.Parse, *col, evidence); v == fitYes {
+							compatible++
+						}
 					}
 				}
 				rejectedShown := false
@@ -112,7 +114,8 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					if col == nil {
 						continue
 					}
-					if !editionCompatibleWithEvidence(rc.Parse, *col, evidence) && run.scope == nil {
+					verdict, _ := judgeWithEvidence(rc.Parse, *col, evidence)
+					if verdict != fitYes && run.scope == nil {
 						if compatible > 0 || rejectedShown {
 							continue
 						}
@@ -135,19 +138,22 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					cp.Rejections = nil
 					cp.Coverage = nil
 					cp.Contents = nil
-					if (evidence != 0 && evidence != col.ID) || !editionCompatibleWithEvidence(cp.Parse, *col, evidence) {
-						if !languageCompatible(cp.Parse, col.Language) {
-							cp.Rejections = append(cp.Rejections, "rejected.language")
-						} else {
-							cp.Rejections = append(cp.Rejections, "rejected.edition_routing")
-							cp.OtherEdition = otherEdition(cp.Parse, *col, run.editions)
-						}
-					} else {
+					switch {
+					case verdict == fitNo && !languageCompatible(cp.Parse, col.Language):
+						cp.Rejections = append(cp.Rejections, "rejected.language")
+					case verdict == fitNo:
+						cp.Rejections = append(cp.Rejections, "rejected.edition_routing")
+						cp.OtherEdition = otherEdition(cp.Parse, cp.Title, *col, run.editions)
+					default:
 						s.funnel(&scoped, &cp, ranges)
-						// The release fits this edition but not only this one.
-						// That is a question for the user, not a contradiction:
-						// never grabbed automatically, downloadable after review.
-						if evidence == 0 && run.ambiguousEdition(cp.Parse, *col) {
+						// Words alone leave the numbering open, or the release
+						// fits another collected edition as well: a question for
+						// the user, not a contradiction — never grabbed
+						// automatically, downloadable after review.
+						if verdict == fitUnsure {
+							cp.Rejections = append(cp.Rejections, "rejected.edition_unsure")
+							cp.OtherEdition = otherEdition(cp.Parse, cp.Title, *col, run.editions)
+						} else if evidence == 0 && run.ambiguousEdition(cp.Parse, *col) {
 							cp.Rejections = append(cp.Rejections, "rejected.edition_ambiguous")
 						}
 					}

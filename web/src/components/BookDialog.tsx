@@ -236,13 +236,17 @@ function Inner({
   const notes = [...new Set(result?.notes ?? [])].map(tidyProblem)
   // Releases ruled out for being an edition the series has none of, by
   // edition: the one thing to do about them is add that edition.
-  const byEdition = new Map<string, { name: string; language: string; titles: Set<string> }>()
+  const byEdition = new Map<
+    string,
+    { name: string; language: string; volumes: number; titles: Set<string> }
+  >()
   for (const c of result?.candidates ?? []) {
     const o = c.otherEdition
     if (!o || o.inLibrary) continue
     const key = `${o.name}/${o.language}`
-    const group = byEdition.get(key) ?? { name: o.name, language: o.language, titles: new Set() }
+    const group = byEdition.get(key) ?? { name: o.name, language: o.language, volumes: 0, titles: new Set() }
     group.titles.add(c.title)
+    group.volumes = Math.max(group.volumes, o.volumes)
     byEdition.set(key, group)
   }
   const missing = [...byEdition.values()].map((m) => ({ ...m, releases: m.titles.size }))
@@ -445,13 +449,15 @@ function Inner({
                     missing.map((m) => (
                       <Group key={`${m.name}/${m.language}`} gap="xs" justify="space-between">
                         <Text size="sm">
-                          {m.releases === 1 ? '1 release is' : `${m.releases} releases are`} a{' '}
-                          {m.name} ({m.language}), which this series doesn’t have.
+                          {m.releases === 1 ? '1 release calls itself' : `${m.releases} releases call themselves`}{' '}
+                          {m.name} ({m.language}); no edition of this series has that name.
                         </Text>
                         <Button
                           size="compact-xs"
                           variant="default"
-                          onClick={() => onAddEdition({ editionName: m.name, language: m.language })}
+                          onClick={() =>
+                            onAddEdition({ editionName: m.name, language: m.language, volumes: m.volumes || undefined })
+                          }
                         >
                           Add {m.name}
                         </Button>
