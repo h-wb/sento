@@ -35,8 +35,20 @@ type ScanResult struct {
 }
 
 // ScanSeriesFolder walks dir (default: the series folder, derived from the
-// naming template when unset) and links every archive it can identify.
+// naming template when unset) and links every archive it can identify. A
+// series without a folder adopts the one scanned.
 func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir string) (*ScanResult, error) {
+	return sc.scan(ctx, seriesID, dir, true)
+}
+
+// LinkFolder links the archives of a folder outside the series' own, in
+// place: the series keeps its folder (or still has none), so downloads
+// keep landing where they did.
+func (sc *Scanner) LinkFolder(ctx context.Context, seriesID int64, dir string) (*ScanResult, error) {
+	return sc.scan(ctx, seriesID, dir, false)
+}
+
+func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt bool) (*ScanResult, error) {
 	if err := sc.store.CheckFilePresence(ctx, seriesID); err != nil {
 		return nil, err
 	}
@@ -67,7 +79,7 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 	}
 
 	// Adopt the folder as the series path if none was set.
-	if series.Path == "" {
+	if adopt && series.Path == "" {
 		if err := sc.store.SetSeriesPath(ctx, seriesID, dir); err != nil {
 			return nil, err
 		}

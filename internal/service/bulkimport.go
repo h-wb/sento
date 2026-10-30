@@ -94,18 +94,30 @@ func cleanFolderName(name string) string {
 }
 
 // ImportFolder adds a series bound to an existing folder: metadata in,
-// path set, files linked in place (non-destructive).
-func (l *Library) ImportFolder(ctx context.Context, scanner *Scanner, dir string, mangabakaID int64) (int64, *ScanResult, error) {
-	id, err := l.AddSeries(ctx, AddSeriesRequest{MangaBakaID: mangabakaID, Monitor: "all"})
+// path set, files linked in place (non-destructive). A series already in
+// the library keeps its own folder and settings; the folder's files are
+// linked to it in place, as a library is built up over time. existing
+// says which happened.
+func (l *Library) ImportFolder(ctx context.Context, scanner *Scanner, dir string, mangabakaID int64) (id int64, result *ScanResult, existing bool, err error) {
+	all, err := l.store.ListSeries(ctx)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, false, err
+	}
+	for _, s := range all {
+		if s.MangaBakaID == mangabakaID {
+			result, err = scanner.LinkFolder(ctx, s.ID, dir)
+			return s.ID, result, true, err
+		}
+	}
+	id, err = l.AddSeries(ctx, AddSeriesRequest{MangaBakaID: mangabakaID, Monitor: "all"})
+	if err != nil {
+		return 0, nil, false, err
 	}
 	if err := l.store.SetSeriesPath(ctx, id, dir); err != nil {
-		return id, nil, err
+		return id, nil, false, err
 	}
-	result, err := scanner.ScanSeriesFolder(ctx, id, dir)
-	if err != nil {
-		return id, nil, err
+	if result, err = scanner.ScanSeriesFolder(ctx, id, dir); err != nil {
+		return id, nil, false, err
 	}
-	return id, result, nil
+	return id, result, false, nil
 }

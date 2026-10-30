@@ -502,7 +502,7 @@ export const api = {
       body: JSON.stringify({ root: root ?? '' }),
     }),
   importFolder: (dir: string, mangabakaId: number) =>
-    request<{ seriesId: number; scan: ScanResult | null }>('/library/import', {
+    request<{ seriesId: number; scan: ScanResult | null; existing?: boolean }>('/library/import', {
       method: 'POST',
       body: JSON.stringify({ dir, mangabakaId }),
     }),

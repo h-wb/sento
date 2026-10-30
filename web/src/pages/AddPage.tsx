@@ -47,7 +47,8 @@ function ImportSection() {
     mutationFn: (p: { dir: string; mangabakaId: number }) =>
       api.importFolder(p.dir, p.mangabakaId),
     onSuccess: (r, p) => {
-      setDone((d) => ({ ...d, [p.dir]: r.scan ? `Imported · ${r.scan.linked} files linked` : 'Imported' }))
+      const linked = r.scan ? ` · ${r.scan.linked} files linked` : ''
+      setDone((d) => ({ ...d, [p.dir]: (r.existing ? 'Linked to the series in your library' : 'Imported') + linked }))
       setImported((prev) => ({ ...prev, [p.dir]: r.seriesId }))
       void queryClient.invalidateQueries({ queryKey: ['series'] })
     },

@@ -243,6 +243,11 @@ export interface ImportFolderBody {
 export interface ImportFolderResponse {
   seriesId: number /* int64 */;
   scan?: ScanResult;
+  /**
+   * Existing: the series was already in the library; the folder's files
+   * were linked to it.
+   */
+  existing?: boolean;
 }
 /**
  * SetPreferenceBody sets one source preference value (string, bool, or

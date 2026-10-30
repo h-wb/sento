@@ -191,6 +191,9 @@ type ImportFolderBody struct {
 type ImportFolderResponse struct {
 	SeriesID int64               `json:"seriesId"`
 	Scan     *service.ScanResult `json:"scan"`
+	// Existing: the series was already in the library; the folder's files
+	// were linked to it.
+	Existing bool `json:"existing,omitempty"`
 }
 
 // SetPreferenceBody sets one source preference value (string, bool, or

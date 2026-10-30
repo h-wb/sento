@@ -44,12 +44,12 @@ func (s *Server) handleImportFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 55*time.Second)
 	defer cancel()
-	id, result, err := s.library.ImportFolder(ctx, s.scanner, body.Dir, body.MangaBakaID)
+	id, result, existing, err := s.library.ImportFolder(ctx, s.scanner, body.Dir, body.MangaBakaID)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, ImportFolderResponse{SeriesID: id, Scan: result})
+	writeJSON(w, http.StatusOK, ImportFolderResponse{SeriesID: id, Scan: result, Existing: existing})
 }
 
 // --- series ---

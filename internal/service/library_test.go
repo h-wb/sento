@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/h-wb/sento/internal/db/dbtest"
@@ -321,5 +323,34 @@ func TestAddSeriesChapterCutoffFollowsVolumes(t *testing.T) {
 	}
 	if got := cutoff(id); got != 0 {
 		t.Errorf("without volumes: skip through %d, want every chapter", got)
+	}
+}
+
+// Importing a folder whose series is already in the library links the
+// folder's files to it, in place, instead of refusing.
+func TestImportFolderLinksIntoAnExistingSeries(t *testing.T) {
+	lib, st := setup(t)
+	ctx := context.Background()
+	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := st.GetSeries(ctx, id)
+	dir := filepath.Join(t.TempDir(), "One Piece")
+	if err = os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(dir, "ONE PIECE v01.cbz"), []byte("pages"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, result, existing, err := lib.ImportFolder(ctx, NewScanner(st, t.TempDir()), dir, 377)
+	if err != nil || got != id || !existing {
+		t.Fatalf("import into the existing series: id %d (want %d) existing %v err %v", got, id, existing, err)
+	}
+	if result.Linked != 1 {
+		t.Errorf("files linked: %+v", result)
+	}
+	if after, _ := st.GetSeries(ctx, id); after.Path != before.Path {
+		t.Errorf("the series' own folder changed: %q → %q", before.Path, after.Path)
 	}
 }
