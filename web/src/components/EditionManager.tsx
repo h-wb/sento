@@ -57,6 +57,7 @@ type Props = {
   files: SeriesFile[]
   onBook: (s: BookSelection) => void
   onAddEdition: (start?: EditionStart) => void
+  onSources: () => void
 }
 export default function EditionManager({
   section,
@@ -67,6 +68,7 @@ export default function EditionManager({
   files,
   onBook,
   onAddEdition,
+  onSources,
 }: Props) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})
@@ -483,6 +485,7 @@ export default function EditionManager({
       {section === 'review' && (
         <ReviewInbox
           seriesID={seriesID}
+          onSources={onSources}
           onFile={(id, proposal) => {
             const f = files.find((f) => f.id === id)
             if (f) {

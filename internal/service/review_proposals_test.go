@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/h-wb/sento/internal/parse"
@@ -158,5 +159,53 @@ func TestKeepingAnExtraResolvesReview(t *testing.T) {
 	}
 	if job, _ := st.GetQueueItem(ctx, qid); job.Status != store.QueueImported {
 		t.Fatalf("download still held: %s", job.Status)
+	}
+}
+
+// A source that found nothing for a series is a question for a person —
+// until it finds a match or is turned off for that series.
+func TestUnmatchedSourceIsAReviewQuestion(t *testing.T) {
+	lib, st, sid, _, _, _ := modelFixture(t)
+	ctx := context.Background()
+	ix, err := st.AddIndexer(ctx, store.Indexer{Name: "Weeb Central (en)", Protocol: store.IndexerSource, Enabled: true, UseVolumes: true, UseChapters: true, Settings: []byte(`{"sourceId":"42"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := strconv.FormatInt(ix, 10)
+	if _, err = st.AddBinding(ctx, store.Binding{SeriesID: sid, SourceID: src, SourceMangaKey: "wrong", SourceName: "Weeb Central (en)", State: "unmatched"}); err != nil {
+		t.Fatal(err)
+	}
+	asked := func() bool {
+		t.Helper()
+		items, err := lib.ReviewItems(ctx, sid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, i := range items {
+			if i.Kind == "source" && i.ItemID == ix {
+				return true
+			}
+		}
+		return false
+	}
+	if !asked() {
+		t.Fatal("an unmatched source is not in review")
+	}
+	off := false
+	if err = st.UpsertSiteOverride(ctx, store.SiteOverride{SeriesID: sid, IndexerID: ix, Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+	if asked() {
+		t.Fatal("a source turned off for the series is still asked about")
+	}
+	on := true
+	if err = st.UpsertSiteOverride(ctx, store.SiteOverride{SeriesID: sid, IndexerID: ix, Enabled: &on}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.AddBinding(ctx, store.Binding{SeriesID: sid, SourceID: src, SourceMangaKey: "right", SourceName: "Weeb Central (en)", State: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	if asked() {
+		t.Fatal("a source with a match is still asked about")
 	}
 }

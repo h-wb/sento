@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+// ReviewItem is one question for a person: a file to match ("file"), a
+// download that needs attention ("download"), a new chapter from a source
+// ("chapter"), a catalog edition that looks like a local one ("edition"),
+// a source that found nothing for the series ("source", ItemID the
+// indexer entry).
 type ReviewItem struct {
 	Status      string `json:"status"`
 	ID          string `json:"id"`
@@ -80,5 +85,12 @@ func (s *Store) reviewRows(ctx context.Context, sid int64) ([]ReviewItem, error)
  UNION ALL
  SELECT 'chapter-'||CAST(o.id AS TEXT),'chapter',c.series_id,s.title,o.id,o.label,'New chapter from '||o.source,o.state
  FROM book_observations o JOIN editions c ON c.id=o.edition_id JOIN series s ON s.id=c.series_id WHERE (?=0 OR s.id=?) AND o.state='pending'
- ORDER BY series_title,kind,item_id LIMIT 500`, sid, sid, sid, sid, sid, sid)
+ UNION ALL
+ SELECT 'source-'||CAST(b.series_id AS TEXT)||'-'||b.source_id,'source',b.series_id,s.title,i.id,i.name,'Found nothing for this series. Pick the right entry, or turn the source off for it.','unmatched'
+ FROM indexers i JOIN source_bindings b ON b.source_id=CAST(i.id AS TEXT) JOIN series s ON s.id=b.series_id
+ LEFT JOIN series_site_settings o ON o.series_id=b.series_id AND o.provider='indexer' AND o.site_id=CAST(i.id AS TEXT)
+ WHERE (?=0 OR s.id=?) AND i.protocol='source' AND COALESCE(o.enabled,i.enabled)=TRUE AND b.state='unmatched'
+ AND NOT EXISTS(SELECT 1 FROM source_bindings a WHERE a.series_id=b.series_id AND a.source_id=b.source_id AND a.state='active')
+ GROUP BY b.series_id,b.source_id,s.title,i.id,i.name
+ ORDER BY series_title,kind,item_id LIMIT 500`, sid, sid, sid, sid, sid, sid, sid, sid)
 }

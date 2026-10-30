@@ -12,9 +12,12 @@ import { fileName } from './editionText'
 export default function ReviewInbox({
   seriesID = 0,
   onFile,
+  onSources,
 }: {
   seriesID?: number
   onFile?: (id: number, proposal?: ReviewProposal) => void
+  // Open the series' sources, for a source that found nothing.
+  onSources?: () => void
 }) {
   const qc = useQueryClient()
   const q = useQuery({
@@ -46,13 +49,15 @@ export default function ReviewInbox({
   }
   const chapters = (q.data ?? []).filter((i) => i.kind === 'chapter')
   const proposed = (q.data ?? []).filter((i) => i.proposal)
+  // Series with files waiting: one recheck for them all, not one per file.
+  const fileSeries = [...new Set((q.data ?? []).filter((i) => i.kind === 'file').map((i) => i.seriesId))]
   const accept = (i: ReviewItem) => api.mapFile(i.seriesId, i.itemId, i.proposal!.books)
   return (
     <Stack gap="sm">
       <Text size="sm" c="dimmed">
-        Resolve file matches, new chapters, catalog editions that match yours, and downloads that
-        need attention. Existing downloads
-        stay reserved until you resolve or cancel them.
+        Resolve file matches, new chapters, catalog editions that match yours, sources that found
+        nothing, and downloads that need attention. Existing downloads stay reserved until you
+        resolve or cancel them.
       </Text>
       <QueryFeedback pending={q.isPending} error={q.error} onRetry={() => void q.refetch()} />
       {error && <Alert color="red">{error}</Alert>}
@@ -83,19 +88,35 @@ export default function ReviewInbox({
           </Button>
         </Group>
       )}
-      {proposed.length > 1 && (
+      {(proposed.length > 1 || fileSeries.length > 0) && (
         <Group>
-          <Button
-            size="xs"
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                for (const i of proposed) await accept(i)
-              })
-            }
-          >
-            Accept {proposed.length} proposed matches
-          </Button>
+          {proposed.length > 1 && (
+            <Button
+              size="xs"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  for (const i of proposed) await accept(i)
+                })
+              }
+            >
+              Accept {proposed.length} proposed matches
+            </Button>
+          )}
+          {fileSeries.length > 0 && (
+            <Button
+              size="xs"
+              variant="default"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  for (const id of fileSeries) await api.checkFiles(id)
+                })
+              }
+            >
+              Recheck files
+            </Button>
+          )}
         </Group>
       )}
       {q.data?.length === 0 && (
@@ -107,24 +128,16 @@ export default function ReviewInbox({
         <Card key={i.id} withBorder padding="sm">
           <Stack gap={6}>
             <Text size="xs" c="dimmed">
-              {i.seriesTitle} ·{' '}
-              {i.kind === 'file' && (
-                <Button
-                  size="xs"
-                  variant="subtle"
-                  disabled={busy}
-                  onClick={() => void run(() => api.checkFiles(i.seriesId))}
-                >
-                  Recheck files
-                </Button>
-              )}
+              {seriesID ? '' : `${i.seriesTitle} · `}
               {i.kind === 'chapter'
                 ? 'New chapter'
                 : i.kind === 'file'
                   ? 'File review'
                   : i.kind === 'edition'
                     ? 'Catalog edition available'
-                    : 'Download'}
+                    : i.kind === 'source'
+                      ? 'Source without a match'
+                      : 'Download'}
             </Text>
             <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>
               {i.kind === 'file' ? fileName(i.title) : i.title}
@@ -212,6 +225,21 @@ export default function ReviewInbox({
                   </Button>
                 </>
               )}
+              {i.kind === 'source' &&
+                (onSources ? (
+                  <Button size="xs" variant="default" onClick={onSources}>
+                    Open sources
+                  </Button>
+                ) : (
+                  <Button
+                    size="xs"
+                    variant="default"
+                    component={Link}
+                    to={`/series/${i.seriesId}?sources=1`}
+                  >
+                    Open sources
+                  </Button>
+                ))}
               {i.kind === 'chapter' && (
                 <>
                   <Button

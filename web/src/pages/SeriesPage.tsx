@@ -31,6 +31,7 @@ import {
   IconChevronRight,
   IconDotsVertical,
   IconPlus,
+  IconPlugConnected,
   IconRefresh,
   IconSearch,
   IconTrash,
@@ -79,16 +80,24 @@ export default function SeriesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const view = searchParams.get('view')
   const tab = view && SERIES_TABS.includes(view) ? view : 'editions'
-  const setTab = (next: string | null) =>
+  const setParam = (key: string, value: string | null) =>
     setSearchParams(
       (prev) => {
         const params = new URLSearchParams(prev)
-        if (!next || next === 'editions') params.delete('view')
-        else params.set('view', next)
+        if (value === null) params.delete(key)
+        else params.set(key, value)
         return params
       },
       { replace: true },
     )
+  const setTab = (next: string | null) => setParam('view', !next || next === 'editions' ? null : next)
+  // Sources are per-series settings, opened from the menu or a review
+  // item; ?sources=1 (and the old ?view=sources) link to them.
+  const sourcesOpen = searchParams.get('sources') === '1' || view === 'sources'
+  const setSourcesOpen = (open: boolean) => {
+    setParam('sources', open ? '1' : null)
+    if (!open && view === 'sources') setTab(null)
+  }
   const [organize, setOrganize] = useState(false)
 
   const queryClient = useQueryClient()
@@ -117,18 +126,6 @@ export default function SeriesPage() {
   const editions = detail.data?.editions ?? []
   const overview = overviewQuery.data ?? null
   const files = filesQuery.data ?? []
-  // Shares the Sources tab's query: an enabled source that was searched and
-  // found no confident match needs one chosen by hand.
-  const indexersQuery = useQuery({
-    queryKey: ['series', seriesID, 'indexers'],
-    queryFn: () => api.seriesIndexers(seriesID),
-  })
-  const unmatchedSources = (indexersQuery.data ?? []).filter(
-    (s) =>
-      s.enabled &&
-      s.bindings?.some((b) => b.state === 'unmatched') &&
-      !s.bindings.some((b) => b.state === 'active'),
-  ).length
 
   // Refresh everything under this series (books, files, indexers, detail).
   const load = useCallback(() => {
@@ -148,6 +145,7 @@ export default function SeriesPage() {
       files={files}
       onBook={setBookSel}
       onAddEdition={(start) => setAddEdition(start ?? {})}
+      onSources={() => setSourcesOpen(true)}
     />
   )
 
@@ -311,26 +309,12 @@ export default function SeriesPage() {
               Search & download
             </Button>
           </Tooltip>
-          <Tooltip label="Update series information and check its folder for existing files.">
-            <Button
-              size="sm"
-              variant="default"
-              leftSection={<IconRefresh size={15} />}
-              disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  await api.refreshSeries(seriesID)
-                  const r = await api.scanSeries(seriesID)
-                  notify.ok(`Series refreshed · ${r.linked} files linked`)
-                })
-              }
-            >
-              Refresh
-            </Button>
-          </Tooltip>
         </Group>
         <Group gap="md">
-          <ProfileBarButton seriesID={seriesID} profileId={series.profileId ?? 0} />
+          {/* The profile is worth a word only when this series chose one. */}
+          {!!series.profileId && (
+            <ProfileBarButton seriesID={seriesID} profileId={series.profileId} />
+          )}
           <Tooltip label="Allow Sento to search for and download missing releases for this series.">
             <Switch
               size="sm"
@@ -350,6 +334,33 @@ export default function SeriesPage() {
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
+              <Menu.Item
+                leftSection={<IconRefresh size={15} />}
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    await api.refreshSeries(seriesID)
+                    const r = await api.scanSeries(seriesID)
+                    notify.ok(`Series refreshed · ${r.linked} files linked`)
+                  })
+                }
+              >
+                Refresh information and files
+              </Menu.Item>
+              <Menu.Sub position="left-start">
+                <Menu.Sub.Target>
+                  <Menu.Sub.Item leftSection={<IconAdjustmentsHorizontal size={15} />}>
+                    Release profile
+                  </Menu.Sub.Item>
+                </Menu.Sub.Target>
+                <Menu.Sub.Dropdown>
+                  <ProfileMenuItems seriesID={seriesID} profileId={series.profileId ?? 0} />
+                </Menu.Sub.Dropdown>
+              </Menu.Sub>
+              <Menu.Item leftSection={<IconPlugConnected size={15} />} onClick={() => setSourcesOpen(true)}>
+                Sources…
+              </Menu.Item>
+              <Menu.Divider />
               <Menu.Item
                 color="red"
                 leftSection={<IconTrash size={15} />}
@@ -411,21 +422,6 @@ export default function SeriesPage() {
           >
             Review
           </Tabs.Tab>
-          <Tabs.Tab
-            value="sources"
-            aria-description={
-              unmatchedSources > 0 ? `${unmatchedSources} without a match` : undefined
-            }
-            rightSection={
-              unmatchedSources > 0 ? (
-                <Badge aria-hidden size="xs" circle color="orange">
-                  {unmatchedSources}
-                </Badge>
-              ) : undefined
-            }
-          >
-            Sources
-          </Tabs.Tab>
           <Tabs.Tab value="history">History</Tabs.Tab>
         </Tabs.List>
         <QueryFeedback error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} />
@@ -436,15 +432,6 @@ export default function SeriesPage() {
         </Tabs.Panel>
         <Tabs.Panel value="review" pt="md">
           {editionManager('review')}
-        </Tabs.Panel>
-        <Tabs.Panel value="sources" pt="md">
-          <IndexersTab
-            seriesID={seriesID}
-            seriesTitle={series.title}
-            editions={editions}
-            run={run}
-            busy={busy}
-          />
         </Tabs.Panel>
 
         <Tabs.Panel value="files" pt="md">
@@ -490,6 +477,15 @@ export default function SeriesPage() {
         </Tabs.Panel>
       </Tabs>
 
+      <Modal opened={sourcesOpen} onClose={() => setSourcesOpen(false)} title="Sources" size="xl">
+        <IndexersTab
+          seriesID={seriesID}
+          seriesTitle={series.title}
+          editions={editions}
+          run={run}
+          busy={busy}
+        />
+      </Modal>
       {organize && <OrganizeFiles seriesID={seriesID} onClose={() => setOrganize(false)} />}
       <BookDialog
         seriesID={seriesID}
@@ -593,17 +589,8 @@ function HistoryTab({ seriesID }: { seriesID: number }) {
 // ProfileBarButton shows the series' release profile in the action bar
 // and switches it from a dropdown. profileId 0 = the instance default.
 function ProfileBarButton({ seriesID, profileId }: { seriesID: number; profileId: number }) {
-  const qc = useQueryClient()
   const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
-  const def = useQuery({ queryKey: ['default-profile'], queryFn: api.defaultProfile })
-  if (!profiles.data?.length) return null
-  const effective = profileId || def.data?.profileId || 0
-  const current = profiles.data.find((p) => p.id === effective)
-  const assign = (id: number) =>
-    api
-      .setSeriesProfile(seriesID, id)
-      .then(() => qc.invalidateQueries({ queryKey: ['series', seriesID] }))
-      .catch(notify.err)
+  const current = profiles.data?.find((p) => p.id === profileId)
   return (
     <Menu position="bottom-start" withinPortal>
       <Menu.Target>
@@ -615,26 +602,42 @@ function ProfileBarButton({ seriesID, profileId }: { seriesID: number; profileId
           aria-label="Release profile"
         >
           {current?.name ?? 'Profile'}
-          {profileId === 0 && ' (default)'}
         </Button>
       </Menu.Target>
       <Menu.Dropdown>
         <Menu.Label>Release profile</Menu.Label>
-        {profiles.data.map((p) => (
-          <Menu.Item key={p.id} onClick={() => void assign(p.id)}>
-            {p.name}
-            {p.id === effective ? ' ✓' : ''}
-          </Menu.Item>
-        ))}
-        {profileId !== 0 && (
-          <Menu.Item onClick={() => void assign(0)}>Use instance default</Menu.Item>
-        )}
+        <ProfileMenuItems seriesID={seriesID} profileId={profileId} />
       </Menu.Dropdown>
     </Menu>
   )
 }
 
-const SERIES_TABS = ['editions', 'files', 'review', 'sources', 'history']
+// ProfileMenuItems picks the series' release profile.
+function ProfileMenuItems({ seriesID, profileId }: { seriesID: number; profileId: number }) {
+  const qc = useQueryClient()
+  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
+  const def = useQuery({ queryKey: ['default-profile'], queryFn: api.defaultProfile })
+  const effective = profileId || def.data?.profileId || 0
+  const assign = (id: number) =>
+    api
+      .setSeriesProfile(seriesID, id)
+      .then(() => qc.invalidateQueries({ queryKey: ['series', seriesID] }))
+      .catch(notify.err)
+  return (
+    <>
+      {(profiles.data ?? []).map((p) => (
+        <Menu.Item key={p.id} onClick={() => void assign(p.id)}>
+          {p.name}
+          {p.id === effective ? ' ✓' : ''}
+          {p.id === effective && profileId === 0 ? ' (default)' : ''}
+        </Menu.Item>
+      ))}
+      {profileId !== 0 && <Menu.Item onClick={() => void assign(0)}>Use instance default</Menu.Item>}
+    </>
+  )
+}
+
+const SERIES_TABS = ['editions', 'files', 'review', 'history']
 
 function IndexersTab({
   seriesID,

@@ -155,7 +155,7 @@ test('a long chapter edition is browsed as a grid with filters, ranges and jump'
     await expect(page.getByRole('button', { name: /Hide chapters/ })).toBeVisible()
     // One tab row only: no nested section switcher above the editions.
     await expect(page.getByText('Your editions', { exact: true })).toHaveCount(0)
-    await expect(page.getByRole('tab')).toHaveText(['Editions', /^Files/, 'Review', 'Sources', 'History'])
+    await expect(page.getByRole('tab')).toHaveText(['Editions', /^Files/, 'Review', 'History'])
     const chapters = page.locator('.mantine-Card-root').filter({ hasText: 'Local edition' })
     const layout = chapters.getByRole('radiogroup', { name: 'Book layout' })
     await expect(layout.getByRole('radio', { name: 'Grid' })).toBeChecked()
@@ -396,7 +396,7 @@ test('a book shows its MangaBaka copies and marks what was edited', async ({
   try {
     await page.goto(`/series/${id}`)
     const card = page.locator('.mantine-Card-root').filter({ hasText: 'Standard Edition' }).first()
-    await expect(card.getByText('MangaBaka', { exact: true })).toBeVisible()
+    await expect(card.getByRole('link', { name: 'From MangaBaka' })).toBeVisible()
     await card.getByRole('radio', { name: 'List' }).check({ force: true })
     const row = card.locator('[data-book]').first()
     await row.getByRole('button', { name: /More|actions/i }).click()
