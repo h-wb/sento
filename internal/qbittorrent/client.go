@@ -129,10 +129,20 @@ func (c *Client) do(ctx context.Context, method, path string, form url.Values) (
 }
 
 // AddTorrent adds a magnet link or torrent URL under the given category.
+// A torrent the client already has is the goal state, as for files.
 func (c *Client) AddTorrent(ctx context.Context, urlOrMagnet, category string) error {
 	form := url.Values{"urls": {urlOrMagnet}, "category": {category}}
-	_, err := c.do(ctx, http.MethodPost, "/api/v2/torrents/add", form)
-	return err
+	status, _, err := c.send(ctx, http.MethodPost, "/api/v2/torrents/add", "application/x-www-form-urlencoded", []byte(form.Encode()))
+	if err != nil {
+		return err
+	}
+	if status == http.StatusConflict {
+		return nil // already added
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("qbittorrent: add failed (%d)", status)
+	}
+	return nil
 }
 
 // AddTorrentFile uploads .torrent bytes (multipart) under the category.

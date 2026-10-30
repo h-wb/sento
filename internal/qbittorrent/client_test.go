@@ -16,6 +16,8 @@ type fakeQBit struct {
 	session int // current valid session number; cookies carry theirs
 	logins  int
 	adds    []string // content types of accepted add requests
+	// duplicate answers adds as qBittorrent does for a torrent it has.
+	duplicate bool
 }
 
 func (f *fakeQBit) expire() {
@@ -45,6 +47,10 @@ func (f *fakeQBit) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Path {
 	case "/api/v2/torrents/add":
+		if f.duplicate {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
 		f.adds = append(f.adds, r.Header.Get("Content-Type"))
 		_, _ = w.Write([]byte("Ok."))
 	case "/api/v2/torrents/info":
@@ -111,5 +117,19 @@ func TestAddTorrentFileSurvivesAnExpiredSession(t *testing.T) {
 	fake.expire()
 	if err := c.AddTorrent(ctx, "magnet:?xt=urn:btih:abc", "sento"); err != nil {
 		t.Fatalf("magnet add after session expiry: %v", err)
+	}
+}
+
+// A torrent the client already has is what an add wants: by URL or by
+// file, qBittorrent's 409 is success, not an error to show.
+func TestAddingATorrentTheClientHasSucceeds(t *testing.T) {
+	fake, c := newFake(t)
+	fake.duplicate = true
+	ctx := context.Background()
+	if err := c.AddTorrent(ctx, "magnet:?xt=urn:btih:abc", "sento"); err != nil {
+		t.Errorf("magnet: %v", err)
+	}
+	if err := c.AddTorrentFile(ctx, "x.torrent", []byte("d4:infoe"), "sento"); err != nil {
+		t.Errorf("file: %v", err)
 	}
 }
