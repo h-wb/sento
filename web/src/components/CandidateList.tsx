@@ -183,8 +183,10 @@ export default function CandidateList({
   const requestDownload = (c: ReleaseCandidate, force: boolean) => {
     if (force)
       confirm({
-        title: 'Download despite profile limits?',
-        message: `“${c.title}” needs review: ${(c.decision?.reasons ?? []).map((r) => r.message).join(' ')} Its edition and book matches still have to pass.`,
+        // Name what is being overridden: the reasons themselves, whatever
+        // they are (pack contents, edition, profile limits).
+        title: 'Download this release anyway?',
+        message: `It was held for review: ${(c.decision?.reasons ?? []).map((r) => r.message).join(' ')} Its books still have to match when it is imported.`,
         label: 'Download anyway',
         onConfirm: () => download(c, true),
       })
