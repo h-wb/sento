@@ -107,6 +107,10 @@ export default function CandidateList({
   const [kind, setKind] = useState<'any' | 'packs' | 'singles'>('any')
   const [site, setSite] = useState<string | null>(null)
   const [sort, setSort] = useState('best')
+  // Filter and sort tools open on demand, and stay open while one is set.
+  const [toolsOpen, setToolsOpen] = useState(false)
+  const activeTools = [filter !== '', site !== null, sort !== 'best', kind !== 'any'].filter(Boolean).length
+  const tools = toolsOpen || activeTools > 0
   const [page, setPage] = useState(1)
   const unique = [...new Map(candidates.map((c) => [releaseKey(c), c])).values()]
   const matches = unique.filter((c) => status(c) !== 'blocked')
@@ -211,7 +215,18 @@ export default function CandidateList({
             { value: 'all', label: `All ${unique.length}` },
           ]}
         />
-        <Group gap="xs" className={classes.filters} justify="flex-end">
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          aria-expanded={tools}
+          disabled={activeTools > 0}
+          onClick={() => setToolsOpen(!toolsOpen)}
+        >
+          {activeTools > 0 ? `Filter and sort (${activeTools})` : 'Filter and sort'}
+        </Button>
+      </Group>
+      {tools && (
+        <Group gap="xs" className={classes.filters}>
           <TextInput
             aria-label="Filter releases"
             placeholder="Filter by title, group, language…"
@@ -248,8 +263,8 @@ export default function CandidateList({
             ]}
           />
         </Group>
-      </Group>
-      {editionWide && state !== 'blocked' && (
+      )}
+      {tools && editionWide && state !== 'blocked' && (
         <Chip.Group value={kind} onChange={(v) => resetPage(() => setKind(v as typeof kind))}>
           <Group gap={6}>
             <Chip value="any" size="xs" variant="light">
