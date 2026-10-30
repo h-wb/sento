@@ -34,7 +34,7 @@ func (s *SearchService) observeCandidates(ctx context.Context, run *searchRun, c
 		if rc.Parse.Language == "" {
 			rc.Parse.Language = cand.Source.Lang
 		}
-		if rc.Parse.ContentType != parse.ContentManga || !editionCompatibleWithEvidence(rc.Parse, *col, cid) {
+		if v, _ := run.shelf.judge(rc.Parse, *col, cid); rc.Parse.ContentType != parse.ContentManga || v != fitYes {
 			continue
 		}
 		ranges := s.coverageRanges(run.ledger, &rc)

@@ -17,6 +17,7 @@ func ParseAnchored(name string, ch Channel, titles []string) Result {
 	res := Result{ContentType: ContentManga, Confidence: 1}
 	cleaned := preClean(name)
 	res.name = strings.ToLower(cleaned)
+	res.Claim = ReadEdition(cleaned)
 	res.step("preclean", cleaned)
 
 	folded := foldRunes(cleaned)

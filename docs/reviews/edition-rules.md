@@ -54,7 +54,7 @@ MangaBaka name. Some match exactly ("Perfect Edition", "Eternal Edition",
 
 ## How today's rules fare
 
-`editionCompatible` on the real names (probe, not a fixture):
+The edition matcher of the time on the real names (probe, not a fixture):
 
 | Release | Edition | Today | Right |
 | --- | --- | --- | --- |
@@ -152,3 +152,17 @@ like MangaBaka for some series, lists fewer books than exist. Checked live
 on Vinland Saga: its "Omnibus Edition" releases, ruled out before, are now
 offered for its Standard Edition after review, with "Add Omnibus Edition"
 beside them.
+
+Then refactored so the design matches the rules:
+
+- **One vocabulary**: `parse.ReadEdition` reads release names and edition
+  names alike into a `parse.EditionClaim` (regroupings named, a name of
+  its own, color, box, and the edition's name as written). Every parse
+  result carries its claim; the parser's edition flags for custom formats
+  come from the same table.
+- **The series is the context**: a `shelf` holds a series' editions with
+  their claims read once. `shelf.judge(release, edition, evidence)` is the
+  one decision; `fits`, `prefer` and `offer` build on it. Nothing about
+  sibling editions is stored on an edition.
+- **One soft code**: unsure and ambiguous are both `rejected.edition_ambiguous`,
+  the reason in its text.

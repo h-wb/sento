@@ -69,7 +69,8 @@ A file waiting for review gets a proposal when its own name, read against
 **every** edition of the series (collected or not), points at exactly one
 edition and resolves to books in it:
 
-- Edition: `editionCompatible` + `preferByPackaging`, then only editions
+- Edition: the series' editions the name surely fits (`shelf.fits`, then
+  `shelf.prefer` among them), then only editions
   that hold all the numbered books; if several remain, collected ones win;
   still several → no proposal.
 - Books: `resolveBooks` on the file's own ranges; ambiguous numbers → no

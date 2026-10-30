@@ -329,6 +329,7 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 		return err
 	}
 	run.editions = view.Editions
+	run.shelf = newShelf(view.Editions)
 	run.versions = view.Versions
 	run.books = view.Books
 	run.versionProfiles = view.Profiles

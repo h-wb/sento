@@ -101,10 +101,9 @@ export interface ConnectionTest {
 // source: edition_fit.go
 
 /**
- * OtherEdition is the edition a release names that the series has none
- * of, when the search should offer to add it: its name in the release's
- * own words, the language, and the highest volume the release names (0
- * when it names none).
+ * OtherEdition is the numbering a release names when no edition of the
+ * series surely takes it, for the search to offer adding: its name as the
+ * release writes it, the language, the highest volume it names (0: none).
  */
 export interface OtherEdition {
   name: string;

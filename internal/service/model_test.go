@@ -607,14 +607,15 @@ func TestModelLayoutSurvivesDisplayRenameAndRequiresEvidence(t *testing.T) {
 		t.Fatal("the catalog's name was lost when the display name changed")
 	}
 	plain := parse.ParseAnchored("ONE PIECE v01 (Digital)", parse.ChannelTorrent, []string{"ONE PIECE"})
-	if editionCompatible(plain, *renamed) {
+	sh := newShelf(cs)
+	if sh.fits(plain, *renamed) {
 		t.Fatal("plain standard release satisfied renamed omnibus")
 	}
-	if !editionCompatibleWithEvidence(plain, *renamed, omni.ID) {
+	if v, _ := sh.judge(plain, *renamed, omni.ID); v != fitYes {
 		t.Fatal("verified listing did not establish edition")
 	}
 	plain.Language = "fr"
-	if editionCompatibleWithEvidence(plain, *renamed, omni.ID) {
+	if v, _ := sh.judge(plain, *renamed, omni.ID); v == fitYes {
 		t.Fatal("listing evidence bypassed contradictory language")
 	}
 }

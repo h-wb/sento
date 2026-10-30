@@ -9,6 +9,30 @@ export type Range = [Num, Num]
 
 
 //////////
+// source: edition.go
+
+/**
+ * EditionClaim is what one name says about the numbering it belongs to.
+ */
+export interface EditionClaim {
+  /**
+   * Regroup holds the regrouping keys named, sorted ("deluxe", "3-in-1").
+   */
+  regroup?: string[];
+  /**
+   * Own is a lowercase name of its own ("fullmetal", "35th anniversary").
+   */
+  own?: string;
+  /**
+   * Written is the edition's name as the source writes it ("Deluxe
+   * Edition", "Kanzenban Edition"); empty when the name names none.
+   */
+  written?: string;
+  color?: boolean;
+  box?: boolean;
+}
+
+//////////
 // source: numbers.go
 
 
@@ -84,6 +108,10 @@ export interface Result {
   language?: string;
   contentType: ContentType;
   edition: EditionHints;
+  /**
+   * Claim is what the name says about the numbering it belongs to.
+   */
+  claim: EditionClaim;
   quality: QualityHints;
   anchored?: boolean; // title matched a known candidate
   /**

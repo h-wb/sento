@@ -186,13 +186,13 @@ func TestEditionNameCarriesWhatItIs(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := parse.ParseAnchored("ONE PIECE Deluxe Omnibus v01.cbz", parse.ChannelFile, []string{"ONE PIECE"})
-	if !editionCompatible(p, *c2) {
+	if !newShelf(nil).fits(p, *c2) {
 		t.Fatalf("combined edition rejected: %+v", p.Edition)
 	}
-	if editionCompatible(parse.ParseAnchored("ONE PIECE v01.cbz", parse.ChannelFile, []string{"ONE PIECE"}), *c2) {
+	if newShelf(nil).fits(parse.ParseAnchored("ONE PIECE v01.cbz", parse.ChannelFile, []string{"ONE PIECE"}), *c2) {
 		t.Fatal("a plain volume satisfied a deluxe omnibus")
 	}
-	if tags := parse.EditionTags("Publisher edition"); tags.Omnibus || tags.Deluxe || tags.BoxSet || tags.Colored {
+	if claim := parse.ReadEdition("Publisher edition"); len(claim.Regroup) > 0 || claim.Color || claim.Box {
 		t.Fatal("missing evidence became a kind of edition")
 	}
 }

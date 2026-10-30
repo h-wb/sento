@@ -182,19 +182,22 @@ func scanTags(lower string) segmentHints {
 
 	phrase := func(p string) bool { return indexWord(scanned, p) >= 0 }
 
-	if phrase("digital colored comics") || phrase("full color") || phrase("colored") || phrase("coloured") {
+	// Edition words come from the one vocabulary (edition.go); the flags
+	// are what custom formats can test.
+	claim := ReadEdition(scanned)
+	for _, k := range claim.Regroup {
+		if k == "deluxe" {
+			h.edition.Deluxe = true
+		} else {
+			h.edition.Omnibus = true
+		}
+		h.recognized = true
+	}
+	if claim.Color {
 		h.edition.Colored = true
 		h.recognized = true
 	}
-	if phrase("omnibus") || phrase("2-in-1") || phrase("3-in-1") || phrase("2in1") || phrase("3in1") {
-		h.edition.Omnibus = true
-		h.recognized = true
-	}
-	if phrase("deluxe") {
-		h.edition.Deluxe = true
-		h.recognized = true
-	}
-	if phrase("box set") || phrase("boxset") {
+	if claim.Box {
 		h.edition.BoxSet = true
 		h.recognized = true
 	}

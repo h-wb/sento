@@ -61,8 +61,10 @@ type Result struct {
 	Language    string       `json:"language,omitempty"`
 	ContentType ContentType  `json:"contentType"`
 	Edition     EditionHints `json:"edition"`
-	Quality     QualityHints `json:"quality"`
-	Anchored    bool         `json:"anchored,omitempty"` // title matched a known candidate
+	// Claim is what the name says about the numbering it belongs to.
+	Claim    EditionClaim `json:"claim"`
+	Quality  QualityHints `json:"quality"`
+	Anchored bool         `json:"anchored,omitempty"` // title matched a known candidate
 	// TitleLeftover holds unexplained words around an anchored title
 	// ("WANTED! Eiichiro Oda Before" around "One Piece") — a strong signal
 	// the release is a different work that merely contains the title.

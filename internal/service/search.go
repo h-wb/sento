@@ -71,6 +71,8 @@ type ReleaseCandidate struct {
 	// languageSource names where an inferred Parse.Language came from
 	// when the release name did not state it.
 	languageSource string
+	// editionWhy is why the edition was ruled out or left to confirm.
+	editionWhy string
 
 	Decision        ReleaseDecision         `json:"decision"`
 	ScoreParts      []ScorePart             `json:"scoreParts,omitempty"`
@@ -336,6 +338,7 @@ type searchRun struct {
 	priorities      map[[2]string]int
 	searched        []string
 	editions        []store.Edition
+	shelf           *shelf
 	blocked         map[string]bool // "protocol/externalKey" bans
 	// profiles is the effective release profile per edition id, with
 	// the series-level profile under key 0 (nil map = built-ins).

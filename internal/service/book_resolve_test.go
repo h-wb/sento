@@ -79,7 +79,7 @@ func TestScanDoesNotConfirmBooksThatOnlyShareANumber(t *testing.T) {
 	if _, err := st.SaveBook(ctx, sid, bonus); err != nil {
 		t.Fatal(err)
 	}
-	links := sc.linksFor(ctx, parsed, []store.Edition{c}, nil)
+	links := sc.linksFor(ctx, newShelf([]store.Edition{c}), parsed, []store.Edition{c}, nil)
 	if len(links) != 1 || links[0].BookID != ws[0].ID {
 		t.Fatalf("volume file should confirm only the volume, got %+v", links)
 	}
@@ -89,7 +89,7 @@ func TestScanDoesNotConfirmBooksThatOnlyShareANumber(t *testing.T) {
 	if _, err := st.SaveBook(ctx, sid, revision); err != nil {
 		t.Fatal(err)
 	}
-	if links := sc.linksFor(ctx, parsed, []store.Edition{c}, nil); len(links) != 0 {
+	if links := sc.linksFor(ctx, newShelf([]store.Edition{c}), parsed, []store.Edition{c}, nil); len(links) != 0 {
 		t.Fatalf("two revisions share the number; the file needs review, got %+v", links)
 	}
 }

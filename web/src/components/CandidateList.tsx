@@ -48,8 +48,7 @@ const firstNumber = (c: ReleaseCandidate) =>
 const reasonNames: Record<string, string> = {
   'rejected.series_match': 'Different series',
   'rejected.edition_routing': 'Different edition',
-  'rejected.edition_ambiguous': 'Fits several editions',
-  'rejected.edition_unsure': 'Edition not confirmed',
+  'rejected.edition_ambiguous': 'Edition to confirm',
   'rejected.language': 'Wrong language',
   'rejected.language_unknown': 'Language not confirmed',
   'rejected.content_type': 'Not manga',

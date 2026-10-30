@@ -147,50 +147,17 @@ func (s *Store) ListWorks(ctx context.Context, bookID int64) ([]Work, error) {
 	return works, nil
 }
 
-// decorate attaches to each edition its collections and the names of the
-// series' other catalog editions.
+// decorate attaches to each edition its collections.
 func (s *Store) decorate(ctx context.Context, seriesID int64, eds []Edition) error {
 	cols, err := s.ListCollections(ctx, seriesID)
 	if err != nil {
 		return err
 	}
-	labels, err := list[struct {
-		ID                  int64
-		ProviderEditionName string
-		Type                string
-		Language            string
-	}](ctx, s, `SELECT id,CASE WHEN provider_edition_name<>'' THEN provider_edition_name ELSE edition_name END AS provider_edition_name,type,language FROM editions WHERE series_id=?`, seriesID)
-	if err != nil {
-		return err
-	}
-	last, err := list[struct {
-		EditionID int64
-		Last      int64
-	}](ctx, s, `SELECT edition_id,MAX(sequence_num) AS last FROM books WHERE count_type='main' AND number_known=TRUE AND edition_id IN(SELECT id FROM editions WHERE series_id=?) GROUP BY edition_id`, seriesID)
-	if err != nil {
-		return err
-	}
 	for i := range eds {
-		base := func(lang string) string { return strings.ToLower(strings.SplitN(lang, "-", 2)[0]) }
-		for _, l := range last {
-			if l.EditionID == eds[i].ID {
-				eds[i].LastNumber = l.Last
-			}
-			for _, o := range labels {
-				if o.ID == l.EditionID && o.ID != eds[i].ID && o.Type == eds[i].Type && base(o.Language) == base(eds[i].Language) {
-					eds[i].OtherLast = max(eds[i].OtherLast, l.Last)
-				}
-			}
-		}
 		eds[i].Collections = []Collection{}
 		for _, c := range cols {
 			if c.EditionID == eds[i].ID {
 				eds[i].Collections = append(eds[i].Collections, c)
-			}
-		}
-		for _, l := range labels {
-			if l.ID != eds[i].ID && l.Type == eds[i].Type && !strings.EqualFold(l.ProviderEditionName, eds[i].ProviderEditionName) && !strings.EqualFold(l.ProviderEditionName, eds[i].EditionName) {
-				eds[i].OtherLabels = append(eds[i].OtherLabels, l.ProviderEditionName)
 			}
 		}
 	}

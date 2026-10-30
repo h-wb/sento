@@ -13,6 +13,7 @@ import (
 // version fulfillment is derived from those contents by the existing rules.
 func (im *Importer) fileBooks(ctx context.Context, res parse.Result, expected []store.BookRef) (contents, covered []store.BookRef, err error) {
 	seen := map[int64]bool{}
+	var sh *shelf
 	for _, sl := range expected {
 		if seen[sl.EditionID] {
 			continue
@@ -22,7 +23,14 @@ func (im *Importer) fileBooks(ctx context.Context, res parse.Result, expected []
 		if e != nil {
 			return nil, nil, e
 		}
-		if !editionCompatible(res, *col) {
+		if sh == nil {
+			eds, e := im.store.ListEditions(ctx, col.SeriesID)
+			if e != nil {
+				return nil, nil, e
+			}
+			sh = newShelf(eds)
+		}
+		if !sh.fits(res, *col) {
 			continue
 		}
 		books, e := im.store.ListBooks(ctx, sl.EditionID)

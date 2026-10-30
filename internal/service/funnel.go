@@ -5,6 +5,7 @@ package service
 // the searchRun inputs — no I/O happens here.
 
 import (
+	"fmt"
 	"regexp"
 	"slices"
 	"sort"
@@ -100,7 +101,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 				for _, t := range run.versions {
 					col := editionByID(run.editions, t.EditionID)
 					if run.wantedBooks[t.ID] != nil && col != nil {
-						if v, _ := judgeWithEvidence(rc.Parse, *col, evidence); v == fitYes {
+						if v, _ := run.shelf.judge(rc.Parse, *col, evidence); v == fitYes {
 							compatible++
 						}
 					}
@@ -114,7 +115,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					if col == nil {
 						continue
 					}
-					verdict, _ := judgeWithEvidence(rc.Parse, *col, evidence)
+					verdict, why := run.shelf.judge(rc.Parse, *col, evidence)
 					if verdict != fitYes && run.scope == nil {
 						if compatible > 0 || rejectedShown {
 							continue
@@ -143,7 +144,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 						cp.Rejections = append(cp.Rejections, "rejected.language")
 					case verdict == fitNo:
 						cp.Rejections = append(cp.Rejections, "rejected.edition_routing")
-						cp.OtherEdition = otherEdition(cp.Parse, cp.Title, *col, run.editions)
+						cp.editionWhy, cp.OtherEdition = why, run.shelf.offer(cp.Parse, *col)
 					default:
 						s.funnel(&scoped, &cp, ranges)
 						// Words alone leave the numbering open, or the release
@@ -151,10 +152,11 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 						// the user, not a contradiction — never grabbed
 						// automatically, downloadable after review.
 						if verdict == fitUnsure {
-							cp.Rejections = append(cp.Rejections, "rejected.edition_unsure")
-							cp.OtherEdition = otherEdition(cp.Parse, cp.Title, *col, run.editions)
-						} else if evidence == 0 && run.ambiguousEdition(cp.Parse, *col) {
 							cp.Rejections = append(cp.Rejections, "rejected.edition_ambiguous")
+							cp.editionWhy, cp.OtherEdition = why, run.shelf.offer(cp.Parse, *col)
+						} else if other := run.ambiguousEdition(cp.Parse, *col); evidence == 0 && other != "" {
+							cp.Rejections = append(cp.Rejections, "rejected.edition_ambiguous")
+							cp.editionWhy = fmt.Sprintf("This release also fits %s, which you collect. Confirm it belongs to this one.", other)
 						}
 					}
 					if t.RequiredGroup != "" {

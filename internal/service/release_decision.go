@@ -72,7 +72,6 @@ func (c *ReleaseCandidate) explain() {
 		"rejected.series_match":      "The release name does not identify this series unambiguously.",
 		"rejected.edition_routing":   "The release states a different edition than this one.",
 		"rejected.edition_ambiguous": "This release also fits another edition you collect. Confirm it belongs to this one.",
-		"rejected.edition_unsure":    "The release name does not settle whether it is this edition. Confirm it belongs to this one.",
 		"rejected.no_coverage":       "No books in this release need a download in the current selection.",
 		"rejected.numbers_unknown":   "No confirmed volume or chapter numbers were found.",
 		"rejected.pack_unverified":   "Nothing in the name says which books this pack holds. Confirm it is the whole edition; the import checks what is inside.",
@@ -95,10 +94,8 @@ func (c *ReleaseCandidate) explain() {
 		}
 		seen[code] = true
 		message := labels[code]
-		if (code == "rejected.edition_routing" || code == "rejected.edition_unsure") && c.EditionSnapshot != nil {
-			if why := editionConflict(c.Parse, *c.EditionSnapshot); why != "" {
-				message = why
-			}
+		if (code == "rejected.edition_routing" || code == "rejected.edition_ambiguous") && c.editionWhy != "" {
+			message = c.editionWhy
 		}
 		if message == "" {
 			message = "Does not meet rule: " + strings.TrimPrefix(code, "rejected.")

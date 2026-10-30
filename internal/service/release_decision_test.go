@@ -115,6 +115,7 @@ func TestEditionAmbiguity(t *testing.T) {
 	parsed := func(name string) parse.Result { return parse.ParseAnchored(name, parse.ChannelTorrent, titles) }
 	run := func(collected ...int64) *searchRun {
 		r := &searchRun{editions: []store.Edition{paper, digital, french, chapters}}
+		r.shelf = newShelf(r.editions)
 		for _, id := range []int64{1, 2, 3, 4} {
 			r.versions = append(r.versions, store.CollectedVersion{ID: id, EditionID: id, Monitored: slices.Contains(collected, id)})
 		}
@@ -140,18 +141,18 @@ func TestEditionAmbiguity(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := parsed(tc.release)
-			if !editionCompatible(p, tc.edition) {
+			if !newShelf(nil).fits(p, tc.edition) {
 				t.Fatalf("release should fit the edition: %+v", p)
 			}
-			if got := run(tc.collected...).ambiguousEdition(p, tc.edition); got != tc.ambiguous {
+			if got := run(tc.collected...).ambiguousEdition(p, tc.edition); (got != "") != tc.ambiguous {
 				t.Fatalf("ambiguous = %v, want %v", got, tc.ambiguous)
 			}
 		})
 	}
-	if editionCompatible(parsed("ONE PIECE v01 [French] (Digital)"), paper) {
+	if newShelf(nil).fits(parsed("ONE PIECE v01 [French] (Digital)"), paper) {
 		t.Fatal("an explicit other language must stay incompatible")
 	}
-	if editionCompatible(parsed("ONE PIECE v01 (Omnibus) [English]"), paper) {
+	if newShelf(nil).fits(parsed("ONE PIECE v01 (Omnibus) [English]"), paper) {
 		t.Fatal("an omnibus must not fit a standard edition")
 	}
 }
@@ -345,6 +346,10 @@ func TestEditionRules(t *testing.T) {
 	edition := func(id int64, medium, name string) store.Edition {
 		return store.Edition{ID: id, Type: "volume", Language: "en", Medium: medium, EditionName: name}
 	}
+	// alone judges an edition with no sibling to tell it from.
+	alone := func(p parse.Result, e store.Edition, evidence int64) (fitVerdict, string) {
+		return newShelf([]store.Edition{e}).judge(p, e, evidence)
+	}
 	standard, box, deluxeBox, threeInOne := edition(1, "paperback", "Standard Edition"), edition(2, "paperback", "Box Set Edition"), edition(3, "hardcover", "Deluxe Box Set Edition"), edition(4, "paperback", "3-in-1 Edition")
 	color := edition(5, "paperback", "Full Color Edition")
 	for _, tc := range []struct {
@@ -366,26 +371,39 @@ func TestEditionRules(t *testing.T) {
 		{"a color edition is not plain volumes", "NAUSICAA v01 [English]", color, fitNo},
 		{"language still decides first", "NAUSICAA v01 [French]", standard, fitNo},
 	} {
-		if got, why := judge(parsed(tc.release), tc.edition, false); got != tc.want {
+		if got, why := alone(parsed(tc.release), tc.edition, 0); got != tc.want {
 			t.Errorf("%s: %v (%s), want %v", tc.name, got, why, tc.want)
 		}
 	}
 	// Packaging and color pick between editions that both fit.
-	if best := preferByPackaging(parsed("NAUSICAA Box Set v01-07 [English]"), []store.Edition{standard, box}); len(best) != 1 || best[0].ID != box.ID {
+	sh := newShelf([]store.Edition{standard, box})
+	if best := sh.prefer(parsed("NAUSICAA Box Set v01-07 [English]"), []store.Edition{standard, box}); len(best) != 1 || best[0].ID != box.ID {
 		t.Errorf("a release sold as a box should prefer the box set edition: %+v", best)
 	}
-	if best := preferByPackaging(parsed("NAUSICAA v01 [English]"), []store.Edition{standard, box}); len(best) != 2 {
+	if best := sh.prefer(parsed("NAUSICAA v01 [English]"), []store.Edition{standard, box}); len(best) != 2 {
 		t.Errorf("no packaging stated: both editions stay: %+v", best)
 	}
-	// A verified listing settles words, not numbers or color.
-	if !editionFits(parsed("NAUSICAA v01"), deluxeBox, true) || !editionFits(parsed("NAUSICAA Omnibus v01"), deluxeBox, true) || editionFits(parsed("NAUSICAA v01"), color, true) {
-		t.Error("established edition: words should pass, a color claim should not")
+	// A verified listing settles words, not a color the edition claims;
+	// one naming another edition is no.
+	for _, tc := range []struct {
+		release  string
+		edition  store.Edition
+		evidence int64
+		want     fitVerdict
+	}{
+		{"NAUSICAA v01", deluxeBox, deluxeBox.ID, fitYes},
+		{"NAUSICAA Omnibus v01", deluxeBox, deluxeBox.ID, fitYes},
+		{"NAUSICAA v01", color, color.ID, fitNo},
+		{"NAUSICAA v01", standard, deluxeBox.ID, fitNo},
+	} {
+		if got, why := alone(parsed(tc.release), tc.edition, tc.evidence); got != tc.want {
+			t.Errorf("%s in %s, listed under %d: %v (%s), want %v", tc.release, tc.edition.EditionName, tc.evidence, got, why, tc.want)
+		}
 	}
 	// A name the vocabulary does not know is a numbering of its own; a
 	// release naming another of the series' editions is that one.
 	fullmetal := store.Edition{ID: 6, Type: "volume", Language: "en", EditionName: "Fullmetal Edition", ProviderEditionID: "x", ProviderEditionName: "Fullmetal Edition"}
-	rival := standard
-	rival.OtherLabels = []string{"Fullmetal Edition", "3-in-1 Edition"}
+	series := newShelf([]store.Edition{standard, threeInOne, fullmetal})
 	for _, tc := range []struct {
 		name    string
 		release string
@@ -395,15 +413,15 @@ func TestEditionRules(t *testing.T) {
 		{"its own name", "NAUSICAA Fullmetal Edition v01 [English]", fullmetal, fitYes},
 		{"without the word edition", "NAUSICAA (Fullmetal) v01 [English]", fullmetal, fitYes},
 		{"a plain volume might be it", "NAUSICAA v01 [English]", fullmetal, fitUnsure},
-		{"and it is not a plain volume", "NAUSICAA Fullmetal Edition v01 [English]", rival, fitNo},
-		{"nor is another regrouping of the series", "NAUSICAA 3-in-1 v01 [English]", rival, fitNo},
-		{"a plain volume is still the standard one", "NAUSICAA v01 [English]", rival, fitYes},
+		{"and it is not a plain volume", "NAUSICAA Fullmetal Edition v01 [English]", standard, fitNo},
+		{"nor is another regrouping of the series", "NAUSICAA 3-in-1 v01 [English]", standard, fitNo},
+		{"a plain volume is still the standard one", "NAUSICAA v01 [English]", standard, fitYes},
 	} {
-		if got, why := judge(parsed(tc.release), tc.edition, false); got != tc.want {
+		if got, why := series.judge(parsed(tc.release), tc.edition, 0); got != tc.want {
 			t.Errorf("%s: %v (%s), want %v", tc.name, got, why, tc.want)
 		}
 	}
-	if !editionFits(parsed("NAUSICAA v01"), fullmetal, true) {
+	if v, _ := series.judge(parsed("NAUSICAA v01"), fullmetal, fullmetal.ID); v != fitYes {
 		t.Error("an established edition need not be named by the release")
 	}
 }
@@ -411,55 +429,68 @@ func TestEditionRules(t *testing.T) {
 // The rules on real release names (Nyaa, English-translated) against the
 // series' MangaBaka editions, as surveyed for edition-rules.md.
 func TestEditionRulesOnRealNames(t *testing.T) {
-	ed := func(name string, last int64, others ...string) store.Edition {
-		return store.Edition{Type: "volume", Language: "en", EditionName: name, ProviderEditionName: name, ProviderEditionID: "x", LastNumber: last * 100, OtherLabels: others}
+	id := int64(0)
+	ed := func(name string, last int64) store.Edition {
+		id++
+		return store.Edition{ID: id, Type: "volume", Language: "en", EditionName: name, ProviderEditionName: name, ProviderEditionID: "x", LastNumber: last * 100}
 	}
-	vinlandStandard, vinlandDeluxe := ed("Standard Edition", 15, "Deluxe Edition"), ed("Deluxe Edition", 8, "Standard Edition")
-	vinlandStandard.OtherLast, vinlandDeluxe.OtherLast = 800, 1500
-	dbOthers := []string{"3-in-1 Edition", "VIZBIG Edition", "Full Color Edition"}
-	dbStandard, dbVizbig := ed("Standard Edition", 26, dbOthers...), ed("VIZBIG Edition", 9, "Standard Edition", "3-in-1 Edition", "Full Color Edition")
-	dbColor := ed("Full Color Edition", 0, "Standard Edition", "3-in-1 Edition", "VIZBIG Edition")
-	dbStandard.OtherLast, dbVizbig.OtherLast, dbColor.OtherLast = 1400, 2600, 2600
+	vinlandStandard, vinlandDeluxe := ed("Standard Edition", 15), ed("Deluxe Edition", 8)
+	vinland := newShelf([]store.Edition{vinlandStandard, vinlandDeluxe})
+	dbStandard, dbThreeInOne, dbVizbig, dbColor := ed("Standard Edition", 26), ed("3-in-1 Edition", 14), ed("VIZBIG Edition", 9), ed("Full Color Edition", 0)
+	dragonBall := newShelf([]store.Edition{dbStandard, dbThreeInOne, dbVizbig, dbColor})
+	bleachStandard := ed("Standard Edition", 74)
+	bleach := newShelf([]store.Edition{bleachStandard, ed("3-in-1 Edition", 25)})
+	boysStandard, boysPerfect := ed("Standard Edition", 22), ed("Perfect Edition", 11)
+	boys := newShelf([]store.Edition{boysStandard, boysPerfect})
+	moonStandard := ed("Standard Edition", 12)
+	moon := newShelf([]store.Edition{moonStandard, ed("Eternal Edition", 10), ed("Collection Edition", 12)})
+	fmaStandard := ed("Standard Edition", 27)
+	fma := newShelf([]store.Edition{fmaStandard, ed("3-in-1 Edition", 9), ed("Fullmetal Edition", 18)})
+	nausicaaBox, nausicaaStandard := ed("Box Set Edition", 0), ed("Standard Edition", 7)
+	nausicaa := newShelf([]store.Edition{nausicaaBox, nausicaaStandard})
+	akiraStandard := ed("Standard Edition", 6)
+	akira := newShelf([]store.Edition{akiraStandard})
 	for _, tc := range []struct {
 		series, release string
+		shelf           *shelf
 		edition         store.Edition
 		want            fitVerdict
 	}{
-		{"Vinland Saga", "Vinland Saga v14 (2025) (Omnibus Edition) (Digital) (Rillant)", vinlandStandard, fitUnsure},
-		{"Vinland Saga", "Vinland Saga v14 (2025) (Omnibus Edition) (Digital) (Rillant)", vinlandDeluxe, fitNo},
-		{"Dragon Ball", "[Tuxedo Time] Dragon Ball V13 - SoM Kanzenban English", dbStandard, fitUnsure},
-		{"Dragon Ball", "[Tuxedo Time] Dragon Ball V13 - SoM Kanzenban English", dbVizbig, fitNo},
-		{"Dragon Ball", "Dragon Ball v01-09 (VIZBIG Edition) (Digital)", dbVizbig, fitYes},
-		{"Dragon Ball", "Dragon Ball v01-09 (VIZBIG Edition) (Digital)", dbStandard, fitNo},
-		{"Dragon Ball", "[Tracksuit] Dragon Ball - Full Color - Vols. 01 - 16", dbColor, fitYes},
-		{"Dragon Ball", "[Tracksuit] Dragon Ball - Full Color - Vols. 01 - 16", dbStandard, fitUnsure},
-		{"Bleach", "Bleach - Digital Colored Comics v01-74 (2021) (Colored Council)", ed("Standard Edition", 74, "3-in-1 Edition"), fitYes},
-		{"20th Century Boys", "20th Century Boys v01-02 (2018) (The Perfect Edition) (Scan-HQ)", ed("Standard Edition", 22, "Perfect Edition"), fitNo},
-		{"20th Century Boys", "20th Century Boys v01-02 (2018) (The Perfect Edition) (Scan-HQ)", ed("Perfect Edition", 11, "Standard Edition"), fitYes},
-		{"Sailor Moon", "Sailor Moon Eternal Edition v01-v04 (Digital) (BlackManta-Empire)", ed("Standard Edition", 12, "Eternal Edition", "Collection Edition"), fitNo},
-		{"Fullmetal Alchemist", "Fullmetal Alchemist (Fullmetal Edition) Volume 01", ed("Standard Edition", 27, "3-in-1 Edition", "Fullmetal Edition"), fitNo},
-		{"Nausicaa", "Nausicaa / Nausicaä of the Valley of the Wind - Deluxe Edition (2012) (c2c) (Trite)", ed("Box Set Edition", 0, "Standard Edition"), fitNo},
+		{"Vinland Saga", "Vinland Saga v14 (2025) (Omnibus Edition) (Digital) (Rillant)", vinland, vinlandStandard, fitUnsure},
+		{"Vinland Saga", "Vinland Saga v14 (2025) (Omnibus Edition) (Digital) (Rillant)", vinland, vinlandDeluxe, fitNo},
+		{"Dragon Ball", "[Tuxedo Time] Dragon Ball V13 - SoM Kanzenban English", dragonBall, dbStandard, fitUnsure},
+		{"Dragon Ball", "[Tuxedo Time] Dragon Ball V13 - SoM Kanzenban English", dragonBall, dbVizbig, fitNo},
+		{"Dragon Ball", "Dragon Ball v01-09 (VIZBIG Edition) (Digital)", dragonBall, dbVizbig, fitYes},
+		{"Dragon Ball", "Dragon Ball v01-09 (VIZBIG Edition) (Digital)", dragonBall, dbStandard, fitNo},
+		{"Dragon Ball", "[Tracksuit] Dragon Ball - Full Color - Vols. 01 - 16", dragonBall, dbColor, fitYes},
+		{"Dragon Ball", "[Tracksuit] Dragon Ball - Full Color - Vols. 01 - 16", dragonBall, dbStandard, fitUnsure},
+		{"Bleach", "Bleach - Digital Colored Comics v01-74 (2021) (Colored Council)", bleach, bleachStandard, fitYes},
+		{"20th Century Boys", "20th Century Boys v01-02 (2018) (The Perfect Edition) (Scan-HQ)", boys, boysStandard, fitNo},
+		{"20th Century Boys", "20th Century Boys v01-02 (2018) (The Perfect Edition) (Scan-HQ)", boys, boysPerfect, fitYes},
+		{"Sailor Moon", "Sailor Moon Eternal Edition v01-v04 (Digital) (BlackManta-Empire)", moon, moonStandard, fitNo},
+		{"Fullmetal Alchemist", "Fullmetal Alchemist (Fullmetal Edition) Volume 01", fma, fmaStandard, fitNo},
+		{"Nausicaa", "Nausicaa / Nausicaä of the Valley of the Wind - Deluxe Edition (2012) (c2c) (Trite)", nausicaa, nausicaaBox, fitNo},
 	} {
 		p := parse.ParseAnchored(tc.release, parse.ChannelTorrent, []string{tc.series, "Nausicaä of the Valley of the Wind"})
-		if got, why := judge(p, tc.edition, false); got != tc.want {
+		if got, why := tc.shelf.judge(p, tc.edition, 0); got != tc.want {
 			t.Errorf("%s in %s: %v (%s), want %v", tc.release, tc.edition.EditionName, got, why, tc.want)
 		}
 	}
 	// What the search offers to add, in the release's own words and numbers.
 	for _, tc := range []struct {
 		series, release string
-		eds             []store.Edition
+		shelf           *shelf
+		edition         store.Edition
 		want            OtherEdition
 	}{
-		{"Nausicaa", "Nausicaa / Nausicaä of the Valley of the Wind - Deluxe Edition (2012) (c2c) (Trite)", []store.Edition{ed("Box Set Edition", 0, "Standard Edition"), ed("Standard Edition", 7, "Box Set Edition")}, OtherEdition{Name: "Deluxe Edition", Language: "en"}},
-		{"Dragon Ball", "Dragon Ball v01-34 (Kanzenban) (Scan)", []store.Edition{dbStandard, dbVizbig, dbColor}, OtherEdition{Name: "Kanzenban Edition", Language: "en", Volumes: 34}},
-		{"Vinland Saga", "Vinland Saga v01-13 (2013-2022) (Omnibus Edition) (Digital) (danke-Empire)", []store.Edition{vinlandStandard, vinlandDeluxe}, OtherEdition{Name: "Omnibus Edition", Language: "en", Volumes: 13}},
-		{"Akira", "Akira (35th Anniversary Edition) (2017) (c2c) (Trite)", []store.Edition{ed("Standard Edition", 6)}, OtherEdition{Name: "35th Anniversary Edition", Language: "en"}},
-		{"20th Century Boys", "20th Century Boys v01-02 (2018) (The Perfect Edition) (Scan-HQ)", []store.Edition{ed("Standard Edition", 22, "Perfect Edition"), ed("Perfect Edition", 11, "Standard Edition")}, OtherEdition{Name: "Perfect Edition", Language: "en", Volumes: 2, InLibrary: true}},
+		{"Nausicaa", "Nausicaa / Nausicaä of the Valley of the Wind - Deluxe Edition (2012) (c2c) (Trite)", nausicaa, nausicaaBox, OtherEdition{Name: "Deluxe Edition", Language: "en"}},
+		{"Dragon Ball", "Dragon Ball v01-34 (Kanzenban) (Scan)", dragonBall, dbStandard, OtherEdition{Name: "Kanzenban Edition", Language: "en", Volumes: 34}},
+		{"Vinland Saga", "Vinland Saga v01-13 (2013-2022) (Omnibus Edition) (Digital) (danke-Empire)", vinland, vinlandStandard, OtherEdition{Name: "Omnibus Edition", Language: "en", Volumes: 13}},
+		{"Akira", "Akira (35th Anniversary Edition) (2017) (c2c) (Trite)", akira, akiraStandard, OtherEdition{Name: "35th Anniversary Edition", Language: "en"}},
+		{"20th Century Boys", "20th Century Boys v01-02 (2018) (The Perfect Edition) (Scan-HQ)", boys, boysStandard, OtherEdition{Name: "Perfect Edition", Language: "en", Volumes: 2, InLibrary: true}},
 	} {
 		p := parse.ParseAnchored(tc.release, parse.ChannelTorrent, []string{tc.series, "Nausicaä of the Valley of the Wind"})
-		got := otherEdition(p, tc.release, tc.eds[0], tc.eds)
-		if got == nil || *got != tc.want {
+		if got := tc.shelf.offer(p, tc.edition); got == nil || *got != tc.want {
 			t.Errorf("%s: offers %+v, want %+v", tc.release, got, tc.want)
 		}
 	}

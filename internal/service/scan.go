@@ -77,6 +77,7 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 	if err != nil {
 		return nil, err
 	}
+	sh := newShelf(collections)
 	// Edition evidence determines file contents even when edition is paused.
 	// Ambiguous archives remain available for explicit review.
 	var monitored, chapterCols []store.Edition
@@ -132,7 +133,7 @@ func (sc *Scanner) ScanSeriesFolder(ctx context.Context, seriesID int64, dir str
 		res.Scanned++
 
 		parsed := parse.ParseAnchored(filepath.Base(path), parse.ChannelFile, titles)
-		links := sc.linksFor(ctx, parsed, monitored, chapterCols)
+		links := sc.linksFor(ctx, sh, parsed, monitored, chapterCols)
 
 		info, ierr := d.Info()
 		size := int64(0)
@@ -207,7 +208,7 @@ func (sc *Scanner) replaced(ctx context.Context, f store.File, d fs.DirEntry) (b
 // volume edition, a chapter file to the first monitored chapter
 // edition (language-matched when the filename is tagged). A file is one
 // or the other (bookRanges).
-func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chapters []store.Edition) []store.BookLink {
+func (sc *Scanner) linksFor(ctx context.Context, sh *shelf, parsed parse.Result, vols, chapters []store.Edition) []store.BookLink {
 	if parsed.ContentType != parse.ContentManga || !parsed.Anchored || parsed.TitleLeftover != "" {
 		return nil
 	}
@@ -222,11 +223,11 @@ func (sc *Scanner) linksFor(ctx context.Context, parsed parse.Result, vols, chap
 		}
 		var matches []store.Edition
 		for _, c := range axis.cols {
-			if editionCompatible(parsed, c) {
+			if sh.fits(parsed, c) {
 				matches = append(matches, c)
 			}
 		}
-		matches = preferByPackaging(parsed, matches)
+		matches = sh.prefer(parsed, matches)
 		if len(matches) != 1 {
 			continue
 		}

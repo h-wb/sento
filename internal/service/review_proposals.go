@@ -40,6 +40,7 @@ func (l *Library) ReviewItems(ctx context.Context, seriesID int64) ([]store.Revi
 type proposer struct {
 	titles   []string
 	editions []store.Edition
+	shelf    *shelf
 	defaults map[int64]int64 // edition → default version
 	books    map[int64][]store.Book
 	files    map[int64]store.File
@@ -55,6 +56,7 @@ func (l *Library) newProposer(ctx context.Context, seriesID int64) (*proposer, e
 	if p.editions, err = l.store.ListEditions(ctx, seriesID); err != nil {
 		return nil, err
 	}
+	p.shelf = newShelf(p.editions)
 	versions, err := l.store.ListVersions(ctx, seriesID)
 	if err != nil {
 		return nil, err
@@ -125,7 +127,7 @@ func (p *proposer) propose(fileID int64) *store.ReviewProposal {
 	ranges := bookRanges(parsed, ledger)
 	var fits []store.Edition
 	for _, e := range p.editions {
-		if e.Type == ledger && editionCompatible(parsed, e) {
+		if e.Type == ledger && p.shelf.fits(parsed, e) {
 			fits = append(fits, e)
 		}
 	}
@@ -134,7 +136,7 @@ func (p *proposer) propose(fileID int64) *store.ReviewProposal {
 		books   []store.Book
 	}
 	var found []match
-	for _, e := range preferByPackaging(parsed, fits) {
+	for _, e := range p.shelf.prefer(parsed, fits) {
 		books, ambiguous := resolveBooks(p.books[e.ID], ranges, parsed.Extra)
 		if !ambiguous && len(books) > 0 && p.defaults[e.ID] != 0 {
 			found = append(found, match{e, books})

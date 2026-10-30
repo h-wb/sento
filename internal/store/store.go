@@ -145,15 +145,9 @@ type Edition struct {
 	// Collections are the catalog collections grouped under this edition,
 	// the preferred first; none for a local edition.
 	Collections []Collection `json:"collections" db:"-"`
-	// OtherLabels names the series' other catalog editions of this type.
-	OtherLabels []string `json:"-" db:"-"`
 	// LastNumber is the highest numbered main book (hundredths), 0 when
-	// none is numbered: a release past it is not this numbering.
-	LastNumber int64 `json:"-" db:"-"`
-	// OtherLast is the highest LastNumber among the series' other editions
-	// of this type and language: numbers past LastNumber only prove a
-	// release is another numbering when another edition reaches them.
-	OtherLast int64 `json:"-" db:"-"`
+	// none is numbered.
+	LastNumber int64 `json:"-" db:"last_number"`
 }
 
 // HasMedium reports whether the edition exists in a medium.
@@ -384,7 +378,8 @@ const editionColumns = `
 	COALESCE(count_main,0) AS count_main, COALESCE(count_extra,0) AS count_extra,
 	COALESCE(count_other,0) AS count_other,
 	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date, custom, split,
-	COALESCE(profile_id,0) AS profile_id, COALESCE((SELECT t.cutoff_num FROM versions t WHERE t.edition_id=editions.id AND t.is_default=TRUE),0) AS cutoff_num,sync_state,discover_chapters,numbering_source,overrides_json`
+	COALESCE(profile_id,0) AS profile_id, COALESCE((SELECT t.cutoff_num FROM versions t WHERE t.edition_id=editions.id AND t.is_default=TRUE),0) AS cutoff_num,sync_state,discover_chapters,numbering_source,overrides_json,
+	COALESCE((SELECT MAX(w.sequence_num) FROM books w WHERE w.edition_id=editions.id AND w.count_type='main' AND w.number_known=TRUE),0) AS last_number`
 
 func (s *Store) ListEditions(ctx context.Context, seriesID int64) ([]Edition, error) {
 	eds, err := list[Edition](ctx, s, `SELECT `+editionColumns+`
