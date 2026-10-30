@@ -283,6 +283,13 @@ export interface BookRef {
 //////////
 // source: review.go
 
+/**
+ * ReviewItem is one question for a person: a file to match ("file"), a
+ * download that needs attention ("download"), a new chapter from a source
+ * ("chapter"), a catalog edition that looks like a local one ("edition"),
+ * a source that found nothing for the series ("source", ItemID the
+ * indexer entry).
+ */
 export interface ReviewItem {
   status: string;
   id: string;
