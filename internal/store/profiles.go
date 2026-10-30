@@ -171,17 +171,6 @@ func (s *Store) CountProfileUses(ctx context.Context, id int64) (int, error) {
 	return n, err
 }
 
-// SetEditionProfile overrides the collection's release profile
-// (0 = inherit from the series, stored NULL).
-func (s *Store) SetEditionProfile(ctx context.Context, seriesID, editionID, profileID int64) error {
-	var v any
-	if profileID > 0 {
-		v = profileID
-	}
-	return s.touch(ctx, `UPDATE editions SET profile_id = ? WHERE id = ? AND series_id = ?`,
-		v, editionID, seriesID)
-}
-
 // SetSeriesProfile assigns the series' release profile (0 = back to the
 // instance default, stored NULL).
 func (s *Store) SetSeriesProfile(ctx context.Context, seriesID, profileID int64) error {

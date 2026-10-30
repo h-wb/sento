@@ -202,7 +202,7 @@ export default function EditionManager({
               // A profile is worth a word only when it was chosen here.
               const profile =
                 stats?.profileName &&
-                (stats.profileSource === 'this version' || stats.profileSource === 'edition') &&
+                stats.profileSource === 'this version' &&
                 stats.profileName
               const missing = stats?.wanted ?? 0
               const findMissing = () =>
@@ -315,7 +315,7 @@ export default function EditionManager({
                           {t && <Menu.Item onClick={findMissing}>Search releases</Menu.Item>}
                           <Menu.Item onClick={() => setEdition(c)}>Edit edition</Menu.Item>
                           {t && (
-                            <Menu.Item onClick={() => setVersion(t)}>Collecting settings</Menu.Item>
+                            <Menu.Item onClick={() => setVersion(t)}>Download settings</Menu.Item>
                           )}
                           <Menu.Item
                             onClick={() =>
@@ -615,8 +615,6 @@ export default function EditionManager({
               ...patch,
               reset: [],
             })
-            if (patch.profileId !== edition.profileId)
-              await api.setEditionProfile(seriesID, edition.id, patch.profileId || 0)
             await changed()
             setEdition(null)
           }}

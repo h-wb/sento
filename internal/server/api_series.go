@@ -246,7 +246,7 @@ func (s *Server) handleUpdateEdition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.library.UpdateEdition(r.Context(), id, cid, service.EditionUpdate{
-		Monitored: body.Monitored, ProfileID: body.ProfileID,
+		Monitored: body.Monitored,
 		CutoffNum: body.CutoffNum, Language: body.Language,
 	}); err != nil {
 		writeErr(w, err)

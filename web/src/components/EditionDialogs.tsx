@@ -72,7 +72,7 @@ export function VersionEditor({
       dirty={JSON.stringify(v) !== JSON.stringify(value)}
       busy={edit.busy}
       onClose={close}
-      title={v.id ? 'Collecting settings' : 'Keep another copy of this edition'}
+      title={v.id ? 'Download settings' : 'Keep another copy of this edition'}
     >
       <form
         onSubmit={(e) => {
@@ -81,21 +81,26 @@ export function VersionEditor({
         }}
       >
         <Stack>
-          <Text size="sm" c="dimmed">
-            Keep another release of this edition, such as a second release group. A group preference
-            alone can be set in a profile. Files are preserved when a version is removed.
-          </Text>
+          {!v.id && (
+            <Text size="sm" c="dimmed">
+              Keep another release of this edition, such as a second release group. A group
+              preference alone can be set in a profile. Files are preserved when a copy is removed.
+            </Text>
+          )}
           <fieldset className="formFields" disabled={edit.busy}>
             <Stack>
-              <TextInput
-                label="Version name"
-                required
-                value={v.name}
-                onChange={(e) => set({ ...v, name: e.currentTarget.value })}
-              />
+              {/* The default copy is the edition itself: nothing to name. */}
+              {!v.isDefault && (
+                <TextInput
+                  label="Copy name"
+                  required
+                  value={v.name}
+                  onChange={(e) => set({ ...v, name: e.currentTarget.value })}
+                />
+              )}
               <Select
                 label="Release profile"
-                placeholder="Inherit edition profile"
+                placeholder="The series' profile"
                 clearable
                 data={
                   q.data?.map((p) => ({
@@ -108,7 +113,7 @@ export function VersionEditor({
               />
               <TextInput
                 label="Required release group"
-                description="Optional regular expression; other groups cannot satisfy this version"
+                description="Optional regular expression; releases from other groups are not downloaded"
                 value={v.requiredGroup}
                 onChange={(e) => set({ ...v, requiredGroup: e.currentTarget.value })}
               />
@@ -139,7 +144,7 @@ export function VersionEditor({
                 onChange={(e) => set({ ...v, acquireUnknown: e.currentTarget.checked })}
               />
               <Switch
-                label="Collect this version"
+                label={v.isDefault ? 'Collect' : 'Collect this copy'}
                 checked={v.monitored}
                 onChange={(e) => set({ ...v, monitored: e.currentTarget.checked })}
               />
@@ -148,7 +153,7 @@ export function VersionEditor({
           {edit.error && <Alert color="red">{edit.error}</Alert>}
           <Group justify="flex-end">
             <Button type="submit" loading={edit.busy}>
-              Save version
+              Save
             </Button>
           </Group>
         </Stack>
@@ -374,7 +379,6 @@ export function EditionEditor({
 }: {
   value: Edition
   save: (p: {
-    profileId?: number
     editionName: string
     language: string
     publisher: string
@@ -391,7 +395,6 @@ export function EditionEditor({
     value.overrides.includes('publisher') || value.overrides.includes('medium'),
   )
   const edit = useEditor()
-  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
   return (
     <EditorModal
       dirty={JSON.stringify(v) !== JSON.stringify(value)}
@@ -465,16 +468,6 @@ export function EditionEditor({
               />
             ),
           )}
-          <Select
-            label="Edition release profile"
-            description="Used by versions that inherit this edition’s profile."
-            placeholder="Inherit series profile"
-            clearable
-            data={(profiles.data ?? []).map((p) => ({ value: String(p.id), label: p.name }))}
-            value={v.profileId ? String(v.profileId) : null}
-            onChange={(id) => set({ ...v, profileId: Number(id) || 0 })}
-            disabled={edit.busy}
-          />
           {v.type === 'chapter' && v.custom && (
             <Select
               label="Chapter numbering"

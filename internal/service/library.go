@@ -235,7 +235,6 @@ func (l *Library) CreateEdition(ctx context.Context, seriesID int64, p CreateEdi
 // EditionUpdate is a partial edition patch (nil = keep).
 type EditionUpdate struct {
 	Monitored *bool
-	ProfileID *int64
 	CutoffNum *int64
 	Language  *string
 }
@@ -246,11 +245,6 @@ type EditionUpdate struct {
 func (l *Library) UpdateEdition(ctx context.Context, seriesID, editionID int64, u EditionUpdate) error {
 	if u.Monitored != nil {
 		if err := l.store.SetEditionMonitored(ctx, seriesID, editionID, *u.Monitored); err != nil {
-			return err
-		}
-	}
-	if u.ProfileID != nil {
-		if err := l.store.SetEditionProfile(ctx, seriesID, editionID, *u.ProfileID); err != nil {
 			return err
 		}
 	}

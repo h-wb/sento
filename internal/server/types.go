@@ -63,12 +63,11 @@ type SeriesPatch struct {
 	ProfileID *int64 `json:"profileId"`
 }
 
-// EditionPatch is PUT /series/{id}/editions/{cid} (nil = keep);
-// ProfileID 0 = inherit the series profile. CutoffNum applies to chapter
-// editions, Language to custom editions only.
+// EditionPatch is PUT /series/{id}/editions/{cid} (nil = keep).
+// CutoffNum applies to chapter editions, Language to custom editions
+// only. A release profile is set on the series or on a copy, not here.
 type EditionPatch struct {
 	Monitored *bool   `json:"monitored"`
-	ProfileID *int64  `json:"profileId"`
 	CutoffNum *int64  `json:"cutoffNum"`
 	Language  *string `json:"language"`
 }

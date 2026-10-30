@@ -198,12 +198,10 @@ func (s *ProfileService) EffectiveProfiles(ctx context.Context, seriesID int64) 
 		return nil, nil, err
 	}
 	out := map[int64]*profile.Profile{0: seriesEff}
+	// An edition's copies inherit the series' profile (a copy may set its
+	// own); editions carry none of their own.
 	for _, col := range collections {
-		if p := byID[col.ProfileID]; p != nil {
-			out[col.ID] = p
-		} else {
-			out[col.ID] = seriesEff
-		}
+		out[col.ID] = seriesEff
 	}
 	formats, err := s.store.ListFormats(ctx)
 	if err != nil {

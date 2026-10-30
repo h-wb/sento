@@ -36,12 +36,8 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 	unique := map[int64]bool{}
 	for _, t := range v.Versions {
 		row := VersionSummary{VersionID: t.ID, EditionID: t.EditionID, Total: len(v.Status[t.ID]), ProfileSource: "instance default"}
-		c := editionByID(v.Editions, t.EditionID)
 		if series.ProfileID > 0 {
 			row.ProfileSource = "series"
-		}
-		if c.ProfileID > 0 {
-			row.ProfileSource = "edition"
 		}
 		if t.ProfileID > 0 {
 			row.ProfileSource = "this version"

@@ -314,7 +314,6 @@ export interface SeriesPublisher {
  */
 export interface EditionUpdate {
   Monitored?: boolean;
-  ProfileID?: number /* int64 */;
   CutoffNum?: number /* int64 */;
   Language?: string;
 }

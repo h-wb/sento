@@ -95,13 +95,12 @@ export interface SeriesPatch {
   profileId?: number /* int64 */;
 }
 /**
- * EditionPatch is PUT /series/{id}/editions/{cid} (nil = keep);
- * ProfileID 0 = inherit the series profile. CutoffNum applies to chapter
- * editions, Language to custom editions only.
+ * EditionPatch is PUT /series/{id}/editions/{cid} (nil = keep).
+ * CutoffNum applies to chapter editions, Language to custom editions
+ * only. A release profile is set on the series or on a copy, not here.
  */
 export interface EditionPatch {
   monitored?: boolean;
-  profileId?: number /* int64 */;
   cutoffNum?: number /* int64 */;
   language?: string;
 }

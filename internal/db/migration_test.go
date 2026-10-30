@@ -91,3 +91,65 @@ func TestEditionMigrationResetsLibrary(t *testing.T) {
 		t.Fatal("migration left dangling foreign keys")
 	}
 }
+
+// Migration 24 moves an edition's release profile onto the copies that
+// inherited it, and leaves editions with none.
+func TestProfileMovesFromEditionsToCopies(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profiles.db")
+	conn, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.SetMaxOpenConns(1)
+	if _, err = conn.Exec(`PRAGMA foreign_keys=ON; CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL DEFAULT '')`); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := migrationsFS.ReadDir("migrations/sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		var version int
+		if _, err = fmt.Sscanf(entry.Name(), "%d_", &version); err != nil {
+			t.Fatal(err)
+		}
+		if version >= 24 {
+			continue
+		}
+		body, e := migrationsFS.ReadFile("migrations/sqlite/" + entry.Name())
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, e = conn.Exec(string(body)); e != nil {
+			t.Fatal(entry.Name(), e)
+		}
+		if _, e = conn.Exec(`INSERT INTO schema_migrations(version) VALUES(?)`, version); e != nil {
+			t.Fatal(e)
+		}
+	}
+	fixture := `INSERT INTO profiles(id,name,body_json) VALUES(7,'Edition profile','{}'),(8,'Copy profile','{}');
+ INSERT INTO series(id,mangabaka_id,title,sort_title,raw_json) VALUES(1,377,'One Piece','One Piece','{}');
+ INSERT INTO editions(id,series_id,edition_name,language,type,custom,profile_id) VALUES(10,1,'Standard Edition','en','volume',FALSE,7),(11,1,'Omnibus Edition','en','volume',FALSE,NULL);
+ INSERT INTO versions(id,edition_id,name,is_default,monitored,profile_id) VALUES(20,10,'Default',TRUE,TRUE,NULL),(21,10,'Group copy',FALSE,TRUE,8),(22,11,'Default',TRUE,TRUE,NULL);`
+	if _, err = conn.Exec(fixture); err != nil {
+		t.Fatal(err)
+	}
+	if err = conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	conn, err = openSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	for id, want := range map[int]sql.NullInt64{20: {Int64: 7, Valid: true}, 21: {Int64: 8, Valid: true}, 22: {}} {
+		var got sql.NullInt64
+		if err := conn.QueryRow(`SELECT profile_id FROM versions WHERE id=?`, id).Scan(&got); err != nil || got != want {
+			t.Errorf("copy %d: profile %v, want %v (%v)", id, got, want, err)
+		}
+	}
+	var left int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM editions WHERE profile_id IS NOT NULL`).Scan(&left); err != nil || left != 0 {
+		t.Errorf("editions still carry a profile: %d %v", left, err)
+	}
+}

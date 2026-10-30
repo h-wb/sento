@@ -275,11 +275,6 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ monitored }),
     }),
-  setEditionProfile: (id: number, cid: number, profileId: number) =>
-    request<void>(`/series/${id}/editions/${cid}`, {
-      method: 'PUT',
-      body: JSON.stringify({ profileId }),
-    }),
   createEdition: (id: number, body: CreateEditionBody) =>
     request<Edition>(`/series/${id}/editions`, {
       method: 'POST',
