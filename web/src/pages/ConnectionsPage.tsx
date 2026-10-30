@@ -681,19 +681,30 @@ function Repos() {
   const saveRepos = useMutation({
     mutationFn: (urls: string[]) => api.setExtensionRepos(urls),
     onSuccess: (data) => {
-      setNewRepo('')
       notify.ok('Extension repos updated')
       queryClient.setQueryData(['extension-repos'], data)
       queryClient.invalidateQueries({ queryKey: ['extensions'] })
     },
-    onError: notify.err,
+    onError: (e, sent) => {
+      // Give back what was being added, so it can be corrected.
+      const added = sent.find((u) => !urls.includes(u))
+      if (added) setNewRepo(added)
+      notify.err(e)
+    },
   })
   const urls = repos.data?.urls ?? []
+  const typed = newRepo.trim()
+  const known = urls.includes(typed)
   // Given by the deployment's configuration: shown with their status,
   // not editable.
   const managed = repos.data?.managed ?? false
   const rows: RepoStatus[] = repos.data?.repos ?? urls.map((url) => ({ url, extensions: 0 }))
-  const add = () => { if (newRepo.trim() && !saveRepos.isPending && !urls.includes(newRepo.trim())) saveRepos.mutate([...urls, newRepo.trim()]) }
+  // The field empties as the repo is added; an error gives it back.
+  const add = () => {
+    if (!typed || known || saveRepos.isPending) return
+    setNewRepo('')
+    saveRepos.mutate([...urls, typed])
+  }
 
   return (
     <>
@@ -742,14 +753,15 @@ function Repos() {
             value={newRepo}
             onChange={(e) => setNewRepo(e.currentTarget.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && newRepo.trim()) add()
+              if (e.key === 'Enter') add()
             }}
+            error={known ? 'Already added' : undefined}
           />
           <Button
             size="xs"
             variant="default"
             loading={saveRepos.isPending}
-            disabled={!newRepo.trim() || urls.includes(newRepo.trim())}
+            disabled={!typed || known}
             onClick={add}
           >
             Add repo
