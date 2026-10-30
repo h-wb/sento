@@ -24,7 +24,7 @@ test('editions retain independent versions, editable books, and mobile layout', 
     await page.getByRole('menuitem', { name: 'Keep another copy of this edition', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Keep another copy of this edition', exact: true })
     await dialog.getByRole('textbox', { name: 'Copy name', exact: true }).fill('Preferred group')
-    await dialog.getByRole('textbox', { name: 'Required release group', exact: true }).fill('LuCaZ')
+    await expect(dialog.getByRole('textbox', { name: 'Required release group', exact: true })).toHaveCount(0)
     await dialog.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(dialog).toBeHidden()
     const versions = await (await request.get(`/api/v1/series/${id}/versions`)).json()

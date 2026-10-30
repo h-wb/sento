@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/h-wb/sento/internal/apperr"
@@ -67,10 +68,14 @@ func (s *ProfileService) DeleteFormat(ctx context.Context, id int64) error {
 		return err
 	}
 	for _, p := range profiles {
-		if _, ok := p.FormatScores[id]; !ok {
+		_, scored := p.FormatScores[id]
+		required, refused := slices.Contains(p.Required, id), slices.Contains(p.Refused, id)
+		if !scored && !required && !refused {
 			continue
 		}
 		delete(p.FormatScores, id)
+		p.Required = slices.DeleteFunc(p.Required, func(x int64) bool { return x == id })
+		p.Refused = slices.DeleteFunc(p.Refused, func(x int64) bool { return x == id })
 		if err := s.store.UpdateProfile(ctx, p); err != nil {
 			return err
 		}
@@ -96,6 +101,16 @@ func (s *ProfileService) validateProfile(ctx context.Context, p profile.Profile)
 	for id := range p.FormatScores {
 		if !known[id] {
 			return apperr.Invalidf("profile scores unknown format %d", id)
+		}
+	}
+	for _, id := range append(slices.Clone(p.Required), p.Refused...) {
+		if !known[id] {
+			return apperr.Invalidf("profile requires or refuses unknown format %d", id)
+		}
+	}
+	for _, id := range p.Required {
+		if slices.Contains(p.Refused, id) {
+			return apperr.Invalidf("a format cannot be both required and refused")
 		}
 	}
 	return nil
@@ -229,6 +244,8 @@ type FormatDoc struct {
 	Name       string              `json:"name"`
 	Score      int                 `json:"score"`
 	Conditions []profile.Condition `json:"conditions"`
+	// Rule is "required" or "refused" when the profile holds releases to it.
+	Rule string `json:"rule,omitempty"`
 }
 
 func (s *ProfileService) ExportProfile(ctx context.Context, id int64) (*ProfileDoc, error) {
@@ -247,10 +264,17 @@ func (s *ProfileService) ExportProfile(ctx context.Context, id int64) (*ProfileD
 	}
 	for _, f := range formats {
 		score, scored := p.FormatScores[f.ID]
-		if !scored {
+		rule := ""
+		switch {
+		case slices.Contains(p.Required, f.ID):
+			rule = "required"
+		case slices.Contains(p.Refused, f.ID):
+			rule = "refused"
+		}
+		if !scored && rule == "" {
 			continue // only the formats the profile cares about travel
 		}
-		doc.Formats = append(doc.Formats, FormatDoc{Name: f.Name, Score: score, Conditions: f.Conditions})
+		doc.Formats = append(doc.Formats, FormatDoc{Name: f.Name, Score: score, Conditions: f.Conditions, Rule: rule})
 	}
 	return doc, nil
 }
@@ -262,6 +286,9 @@ func (s *ProfileService) ImportProfile(ctx context.Context, doc ProfileDoc) (*pr
 		return nil, apperr.Invalidf("profile doc needs a name")
 	}
 	for _, fd := range doc.Formats {
+		if fd.Rule != "" && fd.Rule != "required" && fd.Rule != "refused" {
+			return nil, apperr.Invalidf("unknown format rule %q", fd.Rule)
+		}
 		if err := validateFormat(profile.Format{Name: fd.Name, Conditions: fd.Conditions}); err != nil {
 			return nil, apperr.Invalidf("format %q: %w", fd.Name, err)
 		}
@@ -275,6 +302,7 @@ func (s *ProfileService) ImportProfile(ctx context.Context, doc ProfileDoc) (*pr
 		byName[strings.ToLower(f.Name)] = f
 	}
 	scores := map[int64]int{}
+	var required, refused []int64
 	for _, fd := range doc.Formats {
 		f, ok := byName[strings.ToLower(fd.Name)]
 		if ok {
@@ -289,12 +317,18 @@ func (s *ProfileService) ImportProfile(ctx context.Context, doc ProfileDoc) (*pr
 			}
 		}
 		scores[f.ID] = fd.Score
+		switch fd.Rule {
+		case "required":
+			required = append(required, f.ID)
+		case "refused":
+			refused = append(refused, f.ID)
+		}
 	}
 
 	p := profile.Profile{
 		UpgradesEnabled: doc.UpgradesEnabled, UpgradeUntilScore: doc.UpgradeUntilScore, MinUpgradeScore: doc.MinUpgradeScore,
 		Name: doc.Name, MinFormatScore: doc.MinFormatScore,
-		FormatScores: scores, Volume: doc.Volume, Chapter: doc.Chapter,
+		FormatScores: scores, Required: required, Refused: refused, Volume: doc.Volume, Chapter: doc.Chapter,
 	}
 	if p.Volume == (profile.LedgerRules{}) && p.Chapter == (profile.LedgerRules{}) {
 		p.Volume, p.Chapter = profile.DefaultRules()

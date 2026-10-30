@@ -510,8 +510,6 @@ export interface CollectedVersion {
   monitored: boolean;
   profileId: number /* int64 */;
   cutoffNum: number /* int64 */;
-  requiredGroup: string;
-  allowUnknown: boolean;
   acquireUnknown: boolean;
 }
 export interface AssetFacts {

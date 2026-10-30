@@ -459,6 +459,10 @@ export interface FormatDoc {
   name: string;
   score: number /* int */;
   conditions: Condition[];
+  /**
+   * Rule is "required" or "refused" when the profile holds releases to it.
+   */
+  rule?: string;
 }
 
 //////////

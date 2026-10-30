@@ -22,7 +22,7 @@ A `Format` is a named list of `Condition`s. The matching rule
 Condition types (`CondTitle`, `CondGroup`, `CondLanguage`, `CondFlag`,
 `CondProtocol`, `CondSite`, `CondResolution`) each have a `test`:
 title/group/site are case-insensitive regex; language is base-language
-equality (`fr` matches `fr-ca` via `baseLang`); flag looks up a boolean
+equality (`fr` matches `fr-ca` via `baseLang`), or `*` for any stated language; flag looks up a boolean
 parse fact; protocol is case-insensitive equality; resolution is a
 minimum. `Validate` rejects malformed conditions before persistence
 (bad regex, unknown flag, non-torrent/source protocol, non-positive
@@ -32,17 +32,18 @@ resolution).
 *already-parsed* facts (Title, Group, Language, Flags…), not a raw name.
 This is the clean layer boundary: `parse` produces facts, `profile`
 matches facts. (It does NOT re-tokenize names — that's why `profile`
-imports nothing.)
+does not depend on I/O.)
 
 ### Profiles — scores + funnel knobs
 
-A `Profile` does two jobs:
+A `Profile` does three jobs:
 
 1. **Scores formats**: `FormatScores` maps format id → score; the funnel
    sums the scores of every format a candidate matches. Below
    `MinFormatScore` is a *soft* reject (force-grab overrides);
    `MinScoreOff` (-10000) disables the floor.
-2. **Parameterizes the funnel per ledger**: `Volume` and `Chapter`
+2. **Requires or refuses formats**: every ID in `Required` must match, and no ID in `Refused` may match. These are hard restrictions that force-grab cannot override. `Profile.Judge` supplies both the score and the first broken rule to search, import, and existing-file fulfillment. Scores remain independent per profile, including for required formats.
+3. **Parameterizes the funnel per ledger**: `Volume` and `Chapter`
    `LedgerRules` carry size min/max, min seeders, and a preferred
    protocol (a +200 scoring bonus, not a hard filter — both protocols
    stay eligible). `DefaultRules` are the constants that applied before

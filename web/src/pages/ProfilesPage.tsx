@@ -328,7 +328,7 @@ export default function ProfilesPage() {
                       onClick={() =>
                         confirm({
                           title: 'Delete custom format?',
-                          message: `Delete “${f.name}”? Its scores will be removed from every profile.`,
+                          message: `Delete “${f.name}”? Its scores and rules will be removed from every profile.`,
                           label: 'Delete format',
                           onConfirm: () => deleteFormat.mutateAsync(f.id),
                         })
@@ -391,6 +391,8 @@ function ProfileModal({
   const [scores, setScores] = useState<Record<number, number>>({
     ...(profile?.formatScores ?? {}),
   })
+  const [required, setRequired] = useState<number[]>(profile?.required ?? [])
+  const [refused, setRefused] = useState<number[]>(profile?.refused ?? [])
   const [volume, setVolume] = useState(
     profile?.volume ?? {
       sizeMinMB: 20,
@@ -416,6 +418,8 @@ function ProfileModal({
         upgradesEnabled,
         upgradeUntilScore,
         minUpgradeScore,
+        required,
+        refused,
         formatScores: Object.fromEntries(Object.entries(scores).filter(([, v]) => v !== 0)),
         volume,
         chapter,
@@ -479,13 +483,38 @@ function ProfileModal({
             />
           </Group>
         )}
-        <Divider label="Format scores" />
+        <Divider label="Formats" />
+        <Text size="sm" c="dimmed">
+          Scores rank releases within this profile. Require every selected format, or refuse any match.
+          These rules also apply to files on disk and cannot be overridden when downloading.
+        </Text>
+        <Table.ScrollContainer minWidth={460}>
         <Table verticalSpacing={4}>
+          <Table.Thead>
+            <Table.Tr><Table.Th>Format</Table.Th><Table.Th>Rule</Table.Th><Table.Th>Score</Table.Th></Table.Tr>
+          </Table.Thead>
           <Table.Tbody>
             {formats.map((f) => (
               <Table.Tr key={f.id}>
                 <Table.Td>
                   <Text size="sm">{f.name}</Text>
+                </Table.Td>
+                <Table.Td w={170}>
+                  <Select
+                    size="xs"
+                    aria-label={`Rule for ${f.name}`}
+                    allowDeselect={false}
+                    data={[
+                      { value: 'score', label: 'Score only' },
+                      { value: 'required', label: 'Required' },
+                      { value: 'refused', label: 'Refused' },
+                    ]}
+                    value={required.includes(f.id) ? 'required' : refused.includes(f.id) ? 'refused' : 'score'}
+                    onChange={(rule) => {
+                      setRequired((ids) => [...ids.filter((id) => id !== f.id), ...(rule === 'required' ? [f.id] : [])])
+                      setRefused((ids) => [...ids.filter((id) => id !== f.id), ...(rule === 'refused' ? [f.id] : [])])
+                    }}
+                  />
                 </Table.Td>
                 <Table.Td w={120}>
                   <NumberInput
@@ -499,6 +528,7 @@ function ProfileModal({
             ))}
           </Table.Tbody>
         </Table>
+        </Table.ScrollContainer>
 
         <Divider label="Download rules" />
         <Group grow align="flex-start">
@@ -651,7 +681,7 @@ function FormatModal({
                 size="xs"
                 style={{ flex: 1 }}
                 placeholder={
-                  c.type === 'resolution' ? '1600' : c.type === 'language' ? 'fr' : 'regex…'
+                  c.type === 'resolution' ? '1600' : c.type === 'language' ? 'fr, or * for any stated language' : 'regex…'
                 }
                 value={c.value}
                 onChange={(e) => setCond(i, { value: e.currentTarget.value })}

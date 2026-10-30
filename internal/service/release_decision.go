@@ -55,7 +55,7 @@ func (c *ReleaseCandidate) explain() {
 		d.Kind = string(c.Parse.ContentType)
 	}
 	if c.Parse.Language == "" {
-		d.Warnings = append(d.Warnings, "Language is not stated; this version allows unknown language only if configured.")
+		d.Warnings = append(d.Warnings, "Language is not stated; acceptance depends on the release profile.")
 	}
 	if len(c.Parse.Bare) > 0 {
 		d.Warnings = append(d.Warnings, "Some numbers have no confirmed volume or chapter marker.")
@@ -81,6 +81,7 @@ func (c *ReleaseCandidate) explain() {
 		"rejected.book_ambiguous":    "Several books share this number. Search from the specific book to disambiguate.",
 		"rejected.version_group":     "The release group does not match this version’s required group.",
 		"rejected.no_upgrade":        "This release does not improve the existing copy enough.",
+		"rejected.profile_rule":      "The release breaks a required or refused format rule.",
 		"rejected.format_score":      "The release does not meet the profile’s minimum format score.",
 		"rejected.pack_threshold":    fmt.Sprintf("Only %d of %d represented books are wanted; automatic packs require at least half.", len(c.Coverage), c.RepresentedBooks),
 		"rejected.size":              "The estimated size per book is outside the profile’s limits.",
@@ -94,6 +95,9 @@ func (c *ReleaseCandidate) explain() {
 		}
 		seen[code] = true
 		message := labels[code]
+		if code == "rejected.profile_rule" && c.profileWhy != "" {
+			message = c.profileWhy
+		}
 		if (code == "rejected.edition_routing" || code == "rejected.edition_ambiguous") && c.editionWhy != "" {
 			message = c.editionWhy
 		}

@@ -83,8 +83,8 @@ export function VersionEditor({
         <Stack>
           {!v.id && (
             <Text size="sm" c="dimmed">
-              Keep another release of this edition, such as a second release group. A group
-              preference alone can be set in a profile. Files are preserved when a copy is removed.
+              Collect this edition with another release profile, such as one requiring a second
+              release group. Files are preserved when a copy is removed.
             </Text>
           )}
           <fieldset className="formFields" disabled={edit.busy}>
@@ -111,12 +111,6 @@ export function VersionEditor({
                 value={v.profileId ? String(v.profileId) : null}
                 onChange={(s) => set({ ...v, profileId: Number(s) || 0 })}
               />
-              <TextInput
-                label="Required release group"
-                description="Optional regular expression; releases from other groups are not downloaded"
-                value={v.requiredGroup}
-                onChange={(e) => set({ ...v, requiredGroup: e.currentTarget.value })}
-              />
               {chapter && (
                 <NumberInput
                   label="Skip through chapter"
@@ -132,11 +126,6 @@ export function VersionEditor({
                 description="Collect bonus and other books too. Individual choices override this setting."
                 checked={v.includeExtras}
                 onChange={(e) => set({ ...v, includeExtras: e.currentTarget.checked })}
-              />
-              <Checkbox
-                label="Allow releases with unknown language"
-                checked={v.allowUnknown}
-                onChange={(e) => set({ ...v, allowUnknown: e.currentTarget.checked })}
               />
               <Checkbox
                 label="Search books with unknown publication dates"

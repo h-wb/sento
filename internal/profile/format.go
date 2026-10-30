@@ -12,12 +12,16 @@ import (
 const (
 	CondTitle      = "title"      // regex against the raw release title
 	CondGroup      = "group"      // regex against release group / scanlator
-	CondLanguage   = "language"   // base-language equality ("fr" matches fr-ca)
+	CondLanguage   = "language"   // base-language equality ("fr" matches fr-ca); AnyLanguage: any stated
 	CondFlag       = "flag"       // one boolean parse fact (see Flags)
 	CondProtocol   = "protocol"   // torrent | source
 	CondSite       = "site"       // regex against the indexer entry name
 	CondResolution = "resolution" // minimum parsed pixel height
 )
+
+// AnyLanguage as a language condition's value matches any stated
+// language: "the release says its language".
+const AnyLanguage = "*"
 
 // Flags are the boolean parse facts a flag condition can reference.
 var Flags = []string{
@@ -94,7 +98,7 @@ func (c Condition) test(in Input) bool {
 	case CondGroup:
 		return in.Group != "" && matchRegexp(c.Value, in.Group)
 	case CondLanguage:
-		return in.Language != "" && baseLang(in.Language) == baseLang(c.Value)
+		return in.Language != "" && (c.Value == AnyLanguage || baseLang(in.Language) == baseLang(c.Value))
 	case CondFlag:
 		return in.Flags[strings.ToLower(c.Value)]
 	case CondProtocol:

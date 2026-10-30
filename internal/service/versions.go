@@ -198,7 +198,11 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 			if a.Evidence == "manual" {
 				facts.Language = col.Language
 			}
-			score := assetScore(facts, prof, formats)
+			judgement := assetJudgement(facts, prof, formats)
+			score := judgement.Score
+			if judgement.Broken != "" {
+				reason = "Existing copy " + judgement.Broken
+			}
 			scores[a.FileID] = score
 			if prof != nil && prof.MinFormatScore > profile.MinScoreOff && facts.FactsKnown && score < prof.MinFormatScore {
 				reason = "Existing copy does not meet the release profile"
@@ -298,18 +302,8 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	return view, nil
 }
 
-func assetScore(f store.AssetFacts, p *profile.Profile, formats []profile.Format) int {
-	if p == nil {
-		return 0
-	}
-	score := 0
-	input := profile.Input{Title: f.Title, Group: f.Group, Language: f.Language, Protocol: f.Protocol, Site: f.Site, Resolution: f.Resolution, Flags: f.Flags}
-	for _, format := range formats {
-		if format.Matches(input) {
-			score += p.FormatScores[format.ID]
-		}
-	}
-	return score
+func assetJudgement(f store.AssetFacts, p *profile.Profile, formats []profile.Format) profile.Judgement {
+	return p.Judge(profile.Input{Title: f.Title, Group: f.Group, Language: f.Language, Protocol: f.Protocol, Site: f.Site, Resolution: f.Resolution, Flags: f.Flags}, formats)
 }
 
 func (l *Library) BooksByVersion(ctx context.Context, seriesID int64) (map[int64][]BookStatus, error) {

@@ -15,7 +15,7 @@ export const CondGroup = "group"; // regex against release group / scanlator
 /**
  * Condition types.
  */
-export const CondLanguage = "language"; // base-language equality ("fr" matches fr-ca)
+export const CondLanguage = "language"; // base-language equality ("fr" matches fr-ca); AnyLanguage: any stated
 /**
  * Condition types.
  */
@@ -32,6 +32,11 @@ export const CondSite = "site"; // regex against the indexer entry name
  * Condition types.
  */
 export const CondResolution = "resolution"; // minimum parsed pixel height
+/**
+ * AnyLanguage as a language condition's value matches any stated
+ * language: "the release says its language".
+ */
+export const AnyLanguage = "*";
 /**
  * Condition is one testable predicate of a custom format.
  */
@@ -95,11 +100,18 @@ export interface LedgerRules {
 }
 /**
  * Profile scores formats and parameterizes the funnel. FormatScores maps
- * format id → score; unlisted formats score 0. Candidates whose summed
- * format score is below MinFormatScore are soft-rejected (force-grab
- * still works); MinScoreOff disables the floor.
+ * format id → score; unlisted formats score 0, so one profile can rank a
+ * group high and another low. Candidates whose summed format score is
+ * below MinFormatScore are soft-rejected (force-grab still works);
+ * MinScoreOff disables the floor.
+ * Required lists formats a release must match, every one (Sonarr's "must
+ * contain"); Refused, formats it must match none of ("must not contain").
+ * Both are hard: a release that breaks one is not downloaded for this
+ * profile, and a file on disk that breaks one does not count toward it.
  */
 export interface Profile {
+  required: number /* int64 */[];
+  refused: number /* int64 */[];
   upgradesEnabled: boolean;
   upgradeUntilScore: number /* int */;
   minUpgradeScore: number /* int */;
@@ -109,4 +121,14 @@ export interface Profile {
   formatScores: { [key: number /* int64 */]: number /* int */};
   volume: LedgerRules;
   chapter: LedgerRules;
+}
+/**
+ * Judgement is what a profile says about one release or file: its summed
+ * format score, the formats it matched (in list order), and the first
+ * hard rule it breaks, in words ("" when it breaks none).
+ */
+export interface Judgement {
+  Score: number /* int */;
+  Matched: Format[];
+  Broken: string;
 }

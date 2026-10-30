@@ -199,7 +199,6 @@ function MergePreview({
             {p.localVersions.map((t) => (
               <Text size="xs" key={t.id}>
                 Version: {t.name}
-                {t.requiredGroup ? ` · group ${t.requiredGroup}` : ''}
                 {t.profileId ? ` · profile ${t.profileId}` : ' · inherited profile'}
               </Text>
             ))}

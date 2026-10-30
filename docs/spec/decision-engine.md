@@ -96,7 +96,7 @@ when it covers more wanted slots than any single.
 
 ## 5. Release profiles
 
-Profiles inherit version → edition → series → instance default. They contain custom-format scores, hard required conditions, soft score/size/seed gates, protocol preferences, and optional upgrade thresholds. Upgrades compare current per-file facts under the current profile, respect pins, and retain earlier copies. See [profiles and acquisition state](../domain/profiles-ledger.md) for matching semantics.
+Profiles inherit copy → series → instance default. They contain custom-format scores, hard required/refused format rules, soft score/size/seed gates, protocol preferences, and optional upgrade thresholds. Upgrades compare current per-file facts under the current profile, respect pins, and retain earlier copies. See [profiles and acquisition state](../domain/profiles-ledger.md) for matching semantics.
 
 ## 6. Queue interaction & failure handling
 

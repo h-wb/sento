@@ -18,8 +18,8 @@ type CollectedVersion struct {
 	Monitored      bool   `json:"monitored"`
 	ProfileID      int64  `json:"profileId"`
 	CutoffNum      int64  `json:"cutoffNum"`
-	RequiredGroup  string `json:"requiredGroup"`
-	AllowUnknown   bool   `json:"allowUnknown"`
+	RequiredGroup  string `json:"-"` // Legacy storage only; startup migrates this into a profile.
+	AllowUnknown   bool   `json:"-"` // Legacy storage only; new API saves always allow unknown here.
 	AcquireUnknown bool   `json:"acquireUnknown"`
 }
 

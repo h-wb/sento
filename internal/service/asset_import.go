@@ -114,10 +114,24 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		return err
 	}
 	review := false
+	profiles, formats, err := NewProfiles(im.store).EffectiveProfiles(ctx, item.SeriesID)
+	if err != nil {
+		return err
+	}
 	for _, sl := range slots {
 		version, e := im.store.GetVersion(ctx, sl.VersionID)
 		if e != nil {
 			return e
+		}
+		prof := profiles[version.EditionID]
+		if version.ProfileID > 0 {
+			prof, e = im.store.GetProfile(ctx, version.ProfileID)
+			if e != nil {
+				return e
+			}
+		}
+		if assetJudgement(facts, prof, formats).Broken != "" {
+			review = true
 		}
 		if version.RequiredGroup != "" && !matchGroup(version.RequiredGroup, facts.Group) {
 			review = true
@@ -129,7 +143,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 	}
 	_, err = im.store.AddFile(ctx, store.File{ContentBooks: contentBooks, SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol, Facts: facts, Claims: claims, Hash: hash, NeedsReview: review}, parsed, links)
 	if err == nil && review {
-		return fmt.Errorf("file's observed release group differs from the requested copy; confirm its facts in review")
+		return fmt.Errorf("file's observed facts do not meet the requested release profile; confirm its facts in review")
 	}
 	return err
 }

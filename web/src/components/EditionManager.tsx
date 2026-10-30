@@ -280,7 +280,6 @@ export default function EditionManager({
                                       id: 0,
                                       name: '',
                                       isDefault: false,
-                                      requiredGroup: '',
                                     })
                                   }
                                 >

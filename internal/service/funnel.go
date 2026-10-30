@@ -404,13 +404,14 @@ func (c *ReleaseCandidate) evalFormats(prof *profile.Profile, formats []profile.
 		Protocol: c.Protocol, Site: c.Site, Resolution: c.Parse.Quality.Resolution,
 		Flags: candidateFlags(*c),
 	}
-	for _, f := range formats {
-		if !f.Matches(in) {
-			continue
-		}
-		score := prof.FormatScores[f.ID]
-		c.Formats = append(c.Formats, FormatHit{Name: f.Name, Score: score})
-		c.FormatScore += score
+	j := prof.Judge(in, formats)
+	c.FormatScore = j.Score
+	for _, f := range j.Matched {
+		c.Formats = append(c.Formats, FormatHit{Name: f.Name, Score: prof.FormatScores[f.ID]})
+	}
+	if j.Broken != "" {
+		c.Rejections = append(c.Rejections, "rejected.profile_rule")
+		c.profileWhy = j.Broken
 	}
 }
 
@@ -421,6 +422,7 @@ func baseLang(lang string) string {
 
 // Rejections that survive a force-grab (decision-engine.md §7).
 var hardRejections = map[string]bool{
+	"rejected.profile_rule":      true,
 	"rejected.previous_download": true,
 	"rejected.numbers_unknown":   true,
 	"rejected.language":          true,

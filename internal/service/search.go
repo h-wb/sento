@@ -73,6 +73,7 @@ type ReleaseCandidate struct {
 	languageSource string
 	// editionWhy is why the edition was ruled out or left to confirm.
 	editionWhy string
+	profileWhy string
 
 	Decision        ReleaseDecision         `json:"decision"`
 	ScoreParts      []ScorePart             `json:"scoreParts,omitempty"`

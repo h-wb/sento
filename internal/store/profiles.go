@@ -75,6 +75,8 @@ type profileBody struct {
 	MinUpgradeScore   int                 `json:"minUpgradeScore"`
 	MinFormatScore    int                 `json:"minFormatScore"`
 	FormatScores      map[int64]int       `json:"formatScores"`
+	Required          []int64             `json:"required,omitempty"`
+	Refused           []int64             `json:"refused,omitempty"`
 	Volume            profile.LedgerRules `json:"volume"`
 	Chapter           profile.LedgerRules `json:"chapter"`
 }
@@ -97,6 +99,7 @@ func (r profileRow) decode() (profile.Profile, error) {
 		ID: r.ID, Name: r.Name,
 		UpgradesEnabled: body.UpgradesEnabled, UpgradeUntilScore: body.UpgradeUntilScore, MinUpgradeScore: body.MinUpgradeScore,
 		MinFormatScore: body.MinFormatScore, FormatScores: body.FormatScores,
+		Required: body.Required, Refused: body.Refused,
 		Volume: body.Volume, Chapter: body.Chapter,
 	}, nil
 }
@@ -105,6 +108,7 @@ func encodeProfileBody(p profile.Profile) (string, error) {
 	body, err := json.Marshal(profileBody{
 		UpgradesEnabled: p.UpgradesEnabled, UpgradeUntilScore: p.UpgradeUntilScore, MinUpgradeScore: p.MinUpgradeScore,
 		MinFormatScore: p.MinFormatScore, FormatScores: p.FormatScores,
+		Required: p.Required, Refused: p.Refused,
 		Volume: p.Volume, Chapter: p.Chapter,
 	})
 	return string(body), err

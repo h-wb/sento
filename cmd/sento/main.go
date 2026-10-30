@@ -18,6 +18,8 @@ import (
 	"github.com/h-wb/sento/internal/metadata/mangabaka"
 	"github.com/h-wb/sento/internal/scheduler"
 	"github.com/h-wb/sento/internal/server"
+	"github.com/h-wb/sento/internal/service"
+	"github.com/h-wb/sento/internal/store"
 	"github.com/h-wb/sento/internal/version"
 )
 
@@ -49,6 +51,14 @@ func run(configPath string) error {
 	if cfg.Server.APIKey != "" {
 		// Honest about a setting that reads like protection but isn't yet.
 		slog.Warn("server.api_key / SENTO_API_KEY is set but not enforced: the API has no authentication; restrict access at the network or reverse-proxy level")
+	}
+
+	st := store.New(database, string(dialect))
+	if err := service.NewProfiles(st).EnsureDefaults(context.Background()); err != nil {
+		return fmt.Errorf("seed release profiles: %w", err)
+	}
+	if err := st.MigrateCopyRules(context.Background()); err != nil {
+		return fmt.Errorf("migrate copy rules: %w", err)
 	}
 
 	provider := mangabaka.New(cfg.MangaBaka.BaseURL)

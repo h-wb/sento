@@ -9,6 +9,8 @@
 // formats and parameterizes the funnel.
 package profile
 
+import "fmt"
+
 // MinScoreOff disables the profile's format-score floor.
 const MinScoreOff = -10000
 
@@ -22,10 +24,18 @@ type LedgerRules struct {
 }
 
 // Profile scores formats and parameterizes the funnel. FormatScores maps
-// format id → score; unlisted formats score 0. Candidates whose summed
-// format score is below MinFormatScore are soft-rejected (force-grab
-// still works); MinScoreOff disables the floor.
+// format id → score; unlisted formats score 0, so one profile can rank a
+// group high and another low. Candidates whose summed format score is
+// below MinFormatScore are soft-rejected (force-grab still works);
+// MinScoreOff disables the floor.
+//
+// Required lists formats a release must match, every one (Sonarr's "must
+// contain"); Refused, formats it must match none of ("must not contain").
+// Both are hard: a release that breaks one is not downloaded for this
+// profile, and a file on disk that breaks one does not count toward it.
 type Profile struct {
+	Required          []int64       `json:"required"`
+	Refused           []int64       `json:"refused"`
 	UpgradesEnabled   bool          `json:"upgradesEnabled"`
 	UpgradeUntilScore int           `json:"upgradeUntilScore"`
 	MinUpgradeScore   int           `json:"minUpgradeScore"`
@@ -42,4 +52,52 @@ type Profile struct {
 func DefaultRules() (volume, chapter LedgerRules) {
 	return LedgerRules{SizeMinMB: 20, SizeMaxMB: 1500, MinSeeders: 1, PreferredProtocol: "torrent"},
 		LedgerRules{SizeMinMB: 2, SizeMaxMB: 200, MinSeeders: 1, PreferredProtocol: "source"}
+}
+
+// Judgement is what a profile says about one release or file: its summed
+// format score, the formats it matched (in list order), and the first
+// hard rule it breaks, in words ("" when it breaks none).
+type Judgement struct {
+	Score   int
+	Matched []Format
+	Broken  string
+}
+
+// Judge applies the profile to a release or file. The one place a
+// profile's scores and rules meet a candidate: search, the ledger and the
+// importer all ask here.
+func (p *Profile) Judge(in Input, formats []Format) Judgement {
+	var j Judgement
+	if p == nil {
+		return j
+	}
+	matched := map[int64]bool{}
+	for _, f := range formats {
+		if f.Matches(in) {
+			matched[f.ID] = true
+			j.Matched = append(j.Matched, f)
+			j.Score += p.FormatScores[f.ID]
+		}
+	}
+	name := func(id int64) string {
+		for _, f := range formats {
+			if f.ID == id {
+				return f.Name
+			}
+		}
+		return fmt.Sprintf("format %d", id)
+	}
+	for _, id := range p.Required {
+		if !matched[id] {
+			j.Broken = fmt.Sprintf("does not match “%s”, which %s requires", name(id), p.Name)
+			return j
+		}
+	}
+	for _, id := range p.Refused {
+		if matched[id] {
+			j.Broken = fmt.Sprintf("matches “%s”, which %s refuses", name(id), p.Name)
+			return j
+		}
+	}
+	return j
 }

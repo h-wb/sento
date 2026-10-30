@@ -112,3 +112,33 @@ func TestRegexConditionsAreCachedSafely(t *testing.T) {
 		t.Fatal("unrelated pattern matched")
 	}
 }
+
+// A profile scores what a release matches and holds it to its hard
+// rules: every required format, no refused one.
+func TestJudge(t *testing.T) {
+	lucaz := Format{ID: 1, Name: "LuCaZ", Conditions: []Condition{{Type: CondGroup, Value: "^lucaz$"}}}
+	stated := Format{ID: 2, Name: "Stated language", Conditions: []Condition{{Type: CondLanguage, Value: AnyLanguage}}}
+	raw := Format{ID: 3, Name: "Raw", Conditions: []Condition{{Type: CondFlag, Value: "raw"}}}
+	formats := []Format{lucaz, stated, raw}
+	p := &Profile{Name: "LuCaZ only", FormatScores: map[int64]int{1: 100, 2: 10}, Required: []int64{1, 2}, Refused: []int64{3}}
+	for _, tc := range []struct {
+		name   string
+		in     Input
+		score  int
+		broken string
+	}{
+		{"meets every rule", Input{Group: "LuCaZ", Language: "en"}, 110, ""},
+		{"another group", Input{Group: "1r0n", Language: "en"}, 10, "does not match “LuCaZ”, which LuCaZ only requires"},
+		{"no stated language", Input{Group: "LuCaZ"}, 100, "does not match “Stated language”, which LuCaZ only requires"},
+		{"a refused format", Input{Group: "LuCaZ", Language: "en", Flags: map[string]bool{"raw": true}}, 110, "matches “Raw”, which LuCaZ only refuses"},
+	} {
+		if j := p.Judge(tc.in, formats); j.Score != tc.score || j.Broken != tc.broken {
+			t.Errorf("%s: score %d %q, want %d %q", tc.name, j.Score, j.Broken, tc.score, tc.broken)
+		}
+	}
+	// Another profile ranks the same group differently and requires nothing.
+	other := &Profile{Name: "Any group", FormatScores: map[int64]int{1: -50}}
+	if j := other.Judge(Input{Group: "LuCaZ"}, formats); j.Score != -50 || j.Broken != "" {
+		t.Errorf("another profile: %+v", j)
+	}
+}
