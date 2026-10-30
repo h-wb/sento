@@ -58,6 +58,9 @@ func ParseAnchored(name string, ch Channel, titles []string) Result {
 	if end := bestSpan[1] - 1; end >= bestSpan[0] && end < len(runes) {
 		runes[end] = anchorMark
 	}
+	// What the name says about its edition is read around the title, not
+	// in it: a series called "Perfect Blue Deluxe" claims nothing.
+	res.Claim = ReadEdition(strings.ReplaceAll(string(runes), string(anchorMark), " "))
 	parseInto(string(runes), ch, &res, bestTitle, titles)
 	return res
 }
