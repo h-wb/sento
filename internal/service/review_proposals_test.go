@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/h-wb/sento/internal/parse"
@@ -116,5 +117,46 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 	// Its books are free for another download.
 	if _, _, err = st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "next", Title: "ONE PIECE v02"}, []store.BookRef{modelRef(standard, books[1], version)}); err != nil {
 		t.Errorf("volume still reserved: %v", err)
+	}
+}
+
+// Keeping a file without claiming a book is an answer: it leaves review,
+// and a download waiting on it closes (an extra chapter like 92.1 that the
+// catalog has no book for).
+func TestKeepingAnExtraResolvesReview(t *testing.T) {
+	lib, st, sid, standard, books, version := modelFixture(t)
+	ctx := context.Background()
+	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "pack", Title: "ONE PIECE pack"}, []store.BookRef{modelRef(standard, books[0], version)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.UpdateQueueItem(ctx, qid, store.QueueNeedsReview, "partial import"); err != nil {
+		t.Fatal(err)
+	}
+	extra := t.TempDir() + "/ONE PIECE 092.1.cbz"
+	if err = os.WriteFile(extra, []byte("pages"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: extra, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "ONE PIECE 092.1.cbz", ReleaseKey: "pack"}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.MapFile(ctx, sid, fid, nil); err != nil {
+		t.Fatal(err)
+	}
+	items, err := lib.ReviewItems(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, i := range items {
+		if i.Kind == "file" && i.ItemID == fid {
+			t.Fatalf("a file kept as an extra is still waiting: %+v", i)
+		}
+	}
+	if err = NewImporter(st, nil, t.TempDir(), nil).SettleReviewedJobs(ctx, sid); err != nil {
+		t.Fatal(err)
+	}
+	if job, _ := st.GetQueueItem(ctx, qid); job.Status != store.QueueImported {
+		t.Fatalf("download still held: %s", job.Status)
 	}
 }

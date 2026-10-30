@@ -92,7 +92,7 @@ func (l *Library) newProposer(ctx context.Context, seriesID int64) (*proposer, e
 
 func (p *proposer) propose(fileID int64) *store.ReviewProposal {
 	f, ok := p.files[fileID]
-	if !ok || !f.Unrequested || f.Presence == "unavailable" {
+	if !ok || !f.NeedsReview || !f.Unrequested || f.Presence == "unavailable" {
 		return nil
 	}
 	name := f.Facts.Title

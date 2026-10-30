@@ -570,7 +570,7 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 		for _, f := range files {
 			if f.Facts.ReleaseKey == job.ReleaseKey {
 				delivered[f.ID] = true
-				waiting = waiting || f.NeedsReview || f.Unrequested
+				waiting = waiting || f.NeedsReview
 			}
 		}
 		// No files at all is an import that never happened (a path the
