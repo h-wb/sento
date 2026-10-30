@@ -337,7 +337,7 @@ function IndexerModal({
   const [browse, setBrowse] = useState<{ url: string; apiKey: string } | null>(null)
   const [found, setFound] = useState<ProwlarrIndexer[] | null>(null)
   const browseMut = useMutation({
-    mutationFn: () => api.browseProwlarr(browse!),
+    mutationFn: (b: { url: string; apiKey: string }) => api.browseProwlarr(b),
     onSuccess: setFound,
     onError: notify.err,
   })
@@ -463,7 +463,15 @@ function IndexerModal({
                 variant="subtle"
                 size="compact-sm"
                 style={{ alignSelf: 'flex-start' }}
-                onClick={() => setBrowse({ url: '', apiKey: torznab.apiKey })}
+                onClick={async () => {
+                  // The Prowlarr Sento already knows (seeded by the
+                  // deployment or remembered from the last browse): list
+                  // its indexers at once instead of asking again.
+                  const known = (await api.connections().catch(() => null))?.prowlarr
+                  const start = { url: known?.url ?? '', apiKey: known?.apiKey || torznab.apiKey }
+                  setBrowse(start)
+                  if (start.url && start.apiKey) browseMut.mutate(start)
+                }}
               >
                 Choose from Prowlarr…
               </Button>
@@ -496,7 +504,7 @@ function IndexerModal({
                   variant="default"
                   loading={browseMut.isPending}
                   disabled={!browse.url}
-                  onClick={() => browseMut.mutate()}
+                  onClick={() => browseMut.mutate(browse)}
                 >
                   List indexers
                 </Button>
