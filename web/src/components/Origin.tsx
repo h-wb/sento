@@ -156,24 +156,25 @@ const fieldNames: Record<string, string> = {
 const editedTip = (fields: string[]) =>
   `You set the ${[...new Set(fields.map((f) => fieldNames[f] ?? f))].join(', ')}. A refresh keeps your values.`
 
-// The markers of an edition: where it comes from, and whether it was edited.
+// The marker of an edition: one mark for where it comes from (the MB mark,
+// or "Local edition"), plus "Edited" when you changed what MangaBaka says.
 export function EditionOrigin({ edition: c, href }: { edition: Edition; href?: string }) {
   return (
     <>
       {c.syncState === 'stale' ? (
         <Origin kind="missing" label="Catalog entry missing" />
       ) : c.custom ? (
-        <Origin kind="local" label="Local edition" />
-      ) : (
-        <Origin kind="catalog" href={href} />
-      )}
-      {c.custom && c.numberingSource === 'series_count' && (
         <Origin
-          kind="catalog"
-          label="Counted"
-          href={href}
-          tip="The edition is yours, but its numbering is MangaBaka’s: 1 to the chapter count it gives for the series. Chapters are not listed one by one."
+          kind="local"
+          label="Local edition"
+          tip={
+            c.numberingSource === 'series_count'
+              ? 'Not from MangaBaka, but numbered from it: 1 to the chapter count it gives for the series. A refresh never changes it.'
+              : undefined
+          }
         />
+      ) : (
+        <Origin kind="catalog" href={href} compact />
       )}
       {!c.custom && c.overrides.length > 0 && <Origin kind="edited" tip={editedTip(c.overrides)} />}
     </>
