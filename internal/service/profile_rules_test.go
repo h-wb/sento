@@ -2,15 +2,27 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
+	"github.com/h-wb/sento/internal/db/dbtest"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 )
 
 func TestCopyRuleMigrationPreservesProfilesAndIsRepeatable(t *testing.T) {
-	_, st, sid, _, _, version := modelFixture(t)
+	conn, dialect := dbtest.Open(t)
+	st := store.New(conn, dialect)
 	ctx := context.Background()
+	sid, err := NewLibrary(st, testProvider()).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions, err := st.ListVersions(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := versions[0]
 	svc := NewProfiles(st)
 	if err := svc.EnsureDefaults(ctx); err != nil {
 		t.Fatal(err)
@@ -20,8 +32,6 @@ func TestCopyRuleMigrationPreservesProfilesAndIsRepeatable(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := profiles[0]
-	version.RequiredGroup = "^LuCaZ$"
-	version.AllowUnknown = false
 	version.ProfileID = base.ID
 	if _, err = st.SaveVersion(ctx, sid, version); err != nil {
 		t.Fatal(err)
@@ -32,6 +42,12 @@ func TestCopyRuleMigrationPreservesProfilesAndIsRepeatable(t *testing.T) {
 	oid, err := st.SaveVersion(ctx, sid, other)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Saving no longer writes the old restrictions; an older database has them.
+	for _, id := range []int64{version.ID, oid} {
+		if _, err = conn.ExecContext(ctx, fmt.Sprintf(`UPDATE versions SET required_group='^LuCaZ$', allow_unknown=FALSE WHERE id=%d`, id)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err = st.MigrateCopyRules(ctx); err != nil {
 		t.Fatal(err)

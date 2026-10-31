@@ -241,7 +241,6 @@ func TestModelTargetsReserveOnceAndFreezeCombinedPlan(t *testing.T) {
 	other := version
 	other.ID = 0
 	other.Name = "Another group"
-	other.RequiredGroup = "Other"
 	oid, err := st.SaveVersion(ctx, id, other)
 	if err != nil {
 		t.Fatal(err)
@@ -562,7 +561,11 @@ func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
 			version = v
 		}
 	}
-	version.RequiredGroup = "LuCaZ"
+	kept, err := NewProfiles(st).CreateProfile(ctx, profile.Profile{Name: "Kept", MinFormatScore: profile.MinScoreOff})
+	if err != nil {
+		t.Fatal(err)
+	}
+	version.ProfileID = kept.ID
 	if _, err = st.SaveVersion(ctx, id, version); err != nil {
 		t.Fatal(err)
 	}
@@ -574,7 +577,7 @@ func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	retained, err := st.GetVersion(ctx, version.ID)
-	if err != nil || retained.EditionID != c.ID || retained.RequiredGroup != "LuCaZ" || retained.IsDefault {
+	if err != nil || retained.EditionID != c.ID || retained.ProfileID != kept.ID || retained.IsDefault {
 		t.Fatalf("merge lost version policy: %+v %v", retained, err)
 	}
 	cv, err := st.Coverage(ctx, id)
@@ -737,7 +740,19 @@ func TestCalendarSeparatesVersionsAndDuplicateNumbers(t *testing.T) {
 	lib, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	ownedModelFile(t, st, id, c, ws[0], version)
-	other := store.CollectedVersion{EditionID: c.ID, Name: "Another group", Monitored: true, AcquireUnknown: true}
+	profiles := NewProfiles(st)
+	if err := profiles.EnsureDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+	group, err := profiles.CreateFormat(ctx, profile.Format{Name: "Group A", Conditions: []profile.Condition{{Type: profile.CondGroup, Value: "^A$"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	onlyA, err := profiles.CreateProfile(ctx, profile.Profile{Name: "A only", MinFormatScore: profile.MinScoreOff, Required: []int64{group.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := store.CollectedVersion{EditionID: c.ID, Name: "Another group", Monitored: true, AcquireUnknown: true, ProfileID: onlyA.ID}
 	if tid, err := st.SaveVersion(ctx, id, other); err != nil {
 		t.Fatal(err)
 	} else {

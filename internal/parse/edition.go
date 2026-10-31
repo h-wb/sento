@@ -33,7 +33,7 @@ type EditionClaim struct {
 	// Color. Colored alone ("(Colored)", "Digital Colored Comics") is a
 	// colorization of the original volumes, a variant.
 	ColorEdition bool `json:"colorEdition,omitempty"`
-	Box     bool   `json:"box,omitempty"`
+	Box          bool `json:"box,omitempty"`
 }
 
 // Named reports whether the claim names a numbering: a regrouping or a

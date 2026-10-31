@@ -133,9 +133,6 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		if assetJudgement(facts, prof, formats).Broken != "" {
 			review = true
 		}
-		if version.RequiredGroup != "" && !matchGroup(version.RequiredGroup, facts.Group) {
-			review = true
-		}
 	}
 	var contentBooks []store.BookRef
 	for _, refs := range contents {

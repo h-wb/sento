@@ -186,14 +186,8 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 			f := byFile[a.FileID]
 			facts := f.Facts
 			reason := ""
-			if version.RequiredGroup != "" && !matchGroup(version.RequiredGroup, facts.Group) {
-				reason = "Existing copy does not match the required release group"
-			}
 			if a.Evidence != "manual" && facts.Language != "" && facts.Language != "multi" && baseLang(facts.Language) != baseLang(col.Language) {
 				reason = "Existing copy has a different language"
-			}
-			if a.Evidence != "manual" && !version.AllowUnknown && facts.Language == "" {
-				reason = "Existing copy has no confirmed language"
 			}
 			if a.Evidence == "manual" {
 				facts.Language = col.Language
@@ -410,6 +404,5 @@ func (l *Library) SaveVersion(ctx context.Context, seriesID int64, t store.Colle
 	if taken {
 		return 0, apperr.Conflictf("this edition is already collected with that release profile")
 	}
-	t.AllowUnknown = true
 	return l.store.SaveVersion(ctx, seriesID, t)
 }

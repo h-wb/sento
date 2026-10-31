@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/h-wb/sento/internal/parse"
+	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -46,9 +47,22 @@ func TestEditionDisappearanceSuspendsCollection(t *testing.T) {
 func TestContentsSurviveTargetDeletionAndPolicyChanges(t *testing.T) {
 	lib, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
+	only := func(group string) int64 {
+		profiles := NewProfiles(st)
+		f, err := profiles.CreateFormat(ctx, profile.Format{Name: "Group " + group, Conditions: []profile.Condition{{Type: profile.CondGroup, Value: "^" + group + "$"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err := profiles.CreateProfile(ctx, profile.Profile{Name: group + " only", MinFormatScore: profile.MinScoreOff, Required: []int64{f.ID}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p.ID
+	}
+	onlyA, onlyB := only("A"), only("B")
 	version.ID = 0
 	version.Name = "Group A"
-	version.RequiredGroup = "^A$"
+	version.ProfileID = onlyA
 	tid, err := st.SaveVersion(ctx, id, version)
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +72,7 @@ func TestContentsSurviveTargetDeletionAndPolicyChanges(t *testing.T) {
 	if err = st.SetAssetFacts(ctx, fid, store.AssetFacts{Language: "en", Group: "A", FactsKnown: true}, ""); err != nil {
 		t.Fatal(err)
 	}
-	version.RequiredGroup = "^B$"
+	version.ProfileID = onlyB
 	if _, err = st.SaveVersion(ctx, id, version); err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +93,7 @@ func TestContentsSurviveTargetDeletionAndPolicyChanges(t *testing.T) {
 	}
 	version.ID = 0
 	version.Name = "New A copy"
-	version.RequiredGroup = "^A$"
+	version.ProfileID = onlyA
 	tid, err = st.SaveVersion(ctx, id, version)
 	if err != nil {
 		t.Fatal(err)

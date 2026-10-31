@@ -6,7 +6,6 @@ package service
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -158,18 +157,6 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 							cp.Rejections = append(cp.Rejections, "rejected.edition_ambiguous")
 							cp.editionWhy = fmt.Sprintf("This release also fits %s, which you collect. Confirm it belongs to this one.", other)
 						}
-					}
-					if t.RequiredGroup != "" {
-						group := cp.Parse.Group
-						if group == "" {
-							group = cp.Scanlator
-						}
-						if !matchGroup(t.RequiredGroup, group) {
-							cp.Rejections = append(cp.Rejections, "rejected.version_group")
-						}
-					}
-					if !t.AllowUnknown && cp.Parse.Language == "" {
-						cp.Rejections = append(cp.Rejections, "rejected.language_unknown")
 					}
 					if !t.IsDefault || compatible > 1 {
 						cp.GUID = rc.GUID + "@" + strconv.FormatInt(t.ID, 10)
@@ -427,9 +414,7 @@ var hardRejections = map[string]bool{
 	"rejected.numbers_unknown":   true,
 	"rejected.language":          true,
 	"rejected.book_ambiguous":    true,
-	"rejected.language_unknown":  true,
 	"rejected.no_upgrade":        true,
-	"rejected.version_group":     true,
 	"rejected.content_type":      true,
 	"rejected.series_match":      true,
 	"rejected.edition_routing":   true,
@@ -444,10 +429,6 @@ func editionByID(cols []store.Edition, id int64) *store.Edition {
 		}
 	}
 	return nil
-}
-func matchGroup(expr, value string) bool {
-	r, err := regexp.Compile("(?i)" + expr)
-	return err == nil && r.MatchString(value)
 }
 
 // Publishers that only release in English: their rip tag is language

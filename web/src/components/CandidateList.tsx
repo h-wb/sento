@@ -51,7 +51,6 @@ const reasonNames: Record<string, string> = {
   'rejected.edition_routing': 'Different edition',
   'rejected.edition_ambiguous': 'Edition to confirm',
   'rejected.language': 'Wrong language',
-  'rejected.language_unknown': 'Language not confirmed',
   'rejected.content_type': 'Not manga',
   'rejected.numbers_unknown': 'No book number',
   'rejected.pack_unverified': 'Contents not confirmed',

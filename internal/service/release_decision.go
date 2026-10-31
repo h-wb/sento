@@ -23,7 +23,6 @@ var reasonOwners = map[string]string{
 	"rejected.edition_routing": "book", "rejected.numbers_unknown": "book", "rejected.book_ambiguous": "book",
 	"rejected.profile_rule": "profile", "rejected.format_score": "profile", "rejected.size": "profile",
 	"rejected.seeders": "profile", "rejected.pack_threshold": "profile", "rejected.no_upgrade": "profile",
-	"rejected.language_unknown": "profile", "rejected.version_group": "profile",
 	"rejected.edition_ambiguous": "confirm", "rejected.pack_unverified": "confirm",
 }
 
@@ -100,9 +99,7 @@ func (c *ReleaseCandidate) explain() {
 		"rejected.pack_unverified":   "Nothing in the name says which books this pack holds. Confirm it is the whole edition; the import checks what is inside.",
 		"rejected.blocklisted":       "This release is on your blocklist.",
 		"rejected.language":          "The stated language does not match this edition.",
-		"rejected.language_unknown":  "This version requires a confirmed language.",
 		"rejected.book_ambiguous":    "Several books share this number. Search from the specific book to disambiguate.",
-		"rejected.version_group":     "The release group does not match this version’s required group.",
 		"rejected.no_upgrade":        "This release does not improve the existing copy enough.",
 		"rejected.profile_rule":      "The release breaks a required or refused format rule.",
 		"rejected.format_score":      "The release does not meet the profile’s minimum format score.",

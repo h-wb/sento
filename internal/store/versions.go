@@ -5,21 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/h-wb/sento/internal/apperr"
-	"regexp"
 	"strings"
 )
 
 type CollectedVersion struct {
-	IncludeExtras  bool   `json:"includeExtras"`
-	ID             int64  `json:"id"`
-	EditionID      int64  `json:"editionId"`
-	Name           string `json:"name"`
-	IsDefault      bool   `json:"isDefault"`
-	Monitored      bool   `json:"monitored"`
-	ProfileID      int64  `json:"profileId"`
-	CutoffNum      int64  `json:"cutoffNum"`
-	RequiredGroup  string `json:"-"` // Legacy storage only; startup migrates this into a profile.
-	AllowUnknown   bool   `json:"-"` // Legacy storage only; new API saves always allow unknown here.
+	IncludeExtras bool   `json:"includeExtras"`
+	ID            int64  `json:"id"`
+	EditionID     int64  `json:"editionId"`
+	Name          string `json:"name"`
+	IsDefault     bool   `json:"isDefault"`
+	Monitored     bool   `json:"monitored"`
+	ProfileID     int64  `json:"profileId"`
+	CutoffNum     int64  `json:"cutoffNum"`
+	// RequiredGroup and AllowUnknown are the old copy restrictions, read
+	// only by MigrateCopyRules, which turns them into profiles. Saving
+	// never writes them.
+	RequiredGroup  string `json:"-"`
+	AllowUnknown   bool   `json:"-"`
 	AcquireUnknown bool   `json:"acquireUnknown"`
 }
 
@@ -46,11 +48,6 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 	if t.Name == "" {
 		return 0, apperr.Invalidf("version name is required")
 	}
-	if t.RequiredGroup != "" {
-		if _, err = regexp.Compile("(?i)" + t.RequiredGroup); err != nil {
-			return 0, apperr.Invalidf("invalid group expression: %v", err)
-		}
-	}
 	var prof any
 	if t.ProfileID > 0 {
 		if _, err = s.GetProfile(ctx, t.ProfileID); err != nil {
@@ -69,7 +66,7 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 			return 0, e
 		}
 		var id int64
-		e = tx.QueryRowContext(ctx, s.q(`INSERT INTO versions(edition_id,name,monitored,profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras) VALUES(?,?,?,?,?,?,?,?,?) RETURNING id`), t.EditionID, t.Name, t.Monitored, prof, t.CutoffNum, t.RequiredGroup, t.AllowUnknown, t.AcquireUnknown, t.IncludeExtras).Scan(&id)
+		e = tx.QueryRowContext(ctx, s.q(`INSERT INTO versions(edition_id,name,monitored,profile_id,cutoff_num,acquire_unknown,include_extras) VALUES(?,?,?,?,?,?,?) RETURNING id`), t.EditionID, t.Name, t.Monitored, prof, t.CutoffNum, t.AcquireUnknown, t.IncludeExtras).Scan(&id)
 		if e != nil {
 			return 0, conflict(e, "a collected version already uses this name")
 		}
@@ -87,7 +84,7 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 	if err != nil {
 		return 0, err
 	}
-	if pending && (t.Name != old.Name || t.ProfileID != old.ProfileID || t.CutoffNum != old.CutoffNum || t.RequiredGroup != old.RequiredGroup || t.AllowUnknown != old.AllowUnknown || t.AcquireUnknown != old.AcquireUnknown || t.IncludeExtras != old.IncludeExtras) {
+	if pending && (t.Name != old.Name || t.ProfileID != old.ProfileID || t.CutoffNum != old.CutoffNum || t.AcquireUnknown != old.AcquireUnknown || t.IncludeExtras != old.IncludeExtras) {
 		return 0, apperr.Conflictf("finish pending downloads before changing acquisition versions")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -95,17 +92,18 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	monitorOnly := t.Name == old.Name && t.ProfileID == old.ProfileID && t.CutoffNum == old.CutoffNum && t.RequiredGroup == old.RequiredGroup && t.AllowUnknown == old.AllowUnknown && t.AcquireUnknown == old.AcquireUnknown && t.IncludeExtras == old.IncludeExtras
+	monitorOnly := t.Name == old.Name && t.ProfileID == old.ProfileID && t.CutoffNum == old.CutoffNum && t.AcquireUnknown == old.AcquireUnknown && t.IncludeExtras == old.IncludeExtras
 	if err = s.lockEditions(ctx, tx, monitorOnly, c.ID); err != nil {
 		return 0, err
 	}
-	_, err = tx.ExecContext(ctx, s.q(`UPDATE versions SET name=?,monitored=?,profile_id=?,cutoff_num=?,required_group=?,allow_unknown=?,acquire_unknown=?,include_extras=? WHERE id=?`), t.Name, t.Monitored, prof, t.CutoffNum, t.RequiredGroup, t.AllowUnknown, t.AcquireUnknown, t.IncludeExtras, t.ID)
+	_, err = tx.ExecContext(ctx, s.q(`UPDATE versions SET name=?,monitored=?,profile_id=?,cutoff_num=?,acquire_unknown=?,include_extras=? WHERE id=?`), t.Name, t.Monitored, prof, t.CutoffNum, t.AcquireUnknown, t.IncludeExtras, t.ID)
 	if err == nil {
 		err = tx.Commit()
 	}
 
 	return t.ID, err
 }
+
 // ProfileTaken reports whether another way of collecting the edition
 // (not versionID) already uses the release profile (0: the series').
 func (s *Store) ProfileTaken(ctx context.Context, editionID, versionID, profileID int64) (bool, error) {

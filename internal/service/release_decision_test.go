@@ -183,10 +183,6 @@ func TestAmbiguousEditionIsReviewable(t *testing.T) {
 	if !collecting {
 		t.Fatal("the French edition has no collected version")
 	}
-	version.AllowUnknown = true
-	if _, err = st.SaveVersion(ctx, id, version); err != nil {
-		t.Fatal(err)
-	}
 	svc := NewSearchService(st, provider.NewRegistry())
 	run := &searchRun{seriesID: id, ledger: LedgerVolume, scope: &SearchScope{VersionID: version.ID, All: true}, titles: []string{"ONE PIECE"}}
 	if err = svc.prepareVersions(ctx, run); err != nil {
