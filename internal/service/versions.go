@@ -397,3 +397,19 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 	}
 	return nil
 }
+
+// SaveVersion saves a way of collecting an edition, as a person sets it:
+// an edition is collected once per release profile (two of its cards with
+// one profile would want the same releases for the same books), and
+// release restrictions live in the profile, never here.
+func (l *Library) SaveVersion(ctx context.Context, seriesID int64, t store.CollectedVersion) (int64, error) {
+	taken, err := l.store.ProfileTaken(ctx, t.EditionID, t.ID, t.ProfileID)
+	if err != nil {
+		return 0, err
+	}
+	if taken {
+		return 0, apperr.Conflictf("this edition is already collected with that release profile")
+	}
+	t.AllowUnknown = true
+	return l.store.SaveVersion(ctx, seriesID, t)
+}

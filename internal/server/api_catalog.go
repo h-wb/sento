@@ -31,8 +31,7 @@ func (s *Server) handleSaveVersion(w http.ResponseWriter, r *http.Request) {
 		}
 		t.ID = vid
 	}
-	t.AllowUnknown = true // Language restrictions belong to the release profile.
-	vid, err := s.store.SaveVersion(r.Context(), id, t)
+	vid, err := s.library.SaveVersion(r.Context(), id, t)
 	if err != nil {
 		writeErr(w, err)
 		return

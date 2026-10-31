@@ -58,6 +58,7 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 		}
 		prof = t.ProfileID
 	}
+
 	if t.ID == 0 {
 		tx, e := s.db.BeginTx(ctx, nil)
 		if e != nil {
@@ -105,6 +106,14 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 
 	return t.ID, err
 }
+// ProfileTaken reports whether another way of collecting the edition
+// (not versionID) already uses the release profile (0: the series').
+func (s *Store) ProfileTaken(ctx context.Context, editionID, versionID, profileID int64) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM versions WHERE edition_id=? AND id<>? AND COALESCE(profile_id,0)=?`), editionID, versionID, profileID).Scan(&n)
+	return n > 0, err
+}
+
 func (s *Store) DeleteVersion(ctx context.Context, seriesID, id int64) error {
 	t, err := s.GetVersion(ctx, id)
 	if err != nil {
@@ -117,8 +126,14 @@ func (s *Store) DeleteVersion(ctx context.Context, seriesID, id int64) error {
 	if c.SeriesID != seriesID {
 		return ErrNotFound
 	}
-	if t.IsDefault {
-		return apperr.Invalidf("the default version cannot be deleted; pause it instead")
+	// Any way an edition is collected can be removed but the last: that
+	// one is switched off instead, and the edition stays in the library.
+	var count int
+	if err = s.db.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM versions WHERE edition_id=?`), c.ID).Scan(&count); err != nil {
+		return err
+	}
+	if count <= 1 {
+		return apperr.Invalidf("an edition is always collected one way; stop collecting it instead")
 	}
 	pending, err := s.EditionPending(ctx, c.ID)
 	if err != nil {
@@ -138,6 +153,13 @@ func (s *Store) DeleteVersion(ctx context.Context, seriesID, id int64) error {
 	}
 	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM versions WHERE id=?`), id); err != nil {
 		return err
+	}
+	// The edition's remaining oldest way of collecting it becomes its
+	// default (it carries the edition's catalog-link and scan defaults).
+	if t.IsDefault {
+		if _, err = tx.ExecContext(ctx, s.q(`UPDATE versions SET is_default=TRUE WHERE id=(SELECT MIN(id) FROM versions WHERE edition_id=?)`), c.ID); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
