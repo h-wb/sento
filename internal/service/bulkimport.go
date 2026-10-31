@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/match"
+	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/metadata"
 )
 
@@ -58,6 +60,15 @@ func (l *Library) ProposeImports(ctx context.Context, root string) ([]ImportProp
 			continue
 		}
 
+		// Files Sento tagged name their series: re-adoption after a
+		// reinstall is exact (§11.4, step 1).
+		if id, title := taggedSeries(dir); id > 0 {
+			p.BestID, p.Confidence = id, 1
+			p.Candidates = []metadata.SeriesRef{{MangaBakaID: id, Title: title}}
+			proposals = append(proposals, p)
+			continue
+		}
+
 		// Our own naming embeds the id — definitive match, no lookup.
 		if m := reMangaBakaHint.FindStringSubmatch(e.Name()); m != nil {
 			id, _ := strconv.ParseInt(m[1], 10, 64)
@@ -83,6 +94,41 @@ func (l *Library) ProposeImports(ctx context.Context, root string) ([]ImportProp
 		proposals = append(proposals, p)
 	}
 	return proposals, nil
+}
+
+// taggedSeries is the MangaBaka series the archives Sento tagged in dir
+// name, and its title as they write it. It reads a handful of archives;
+// 0 when none is tagged, or when they disagree (a folder holding two
+// series is the user's to sort out).
+func taggedSeries(dir string) (id int64, title string) {
+	const enough, budget = 3, 20
+	agree, read := 0, 0
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.EqualFold(filepath.Ext(path), ".cbz") {
+			return nil
+		}
+		if read++; read > budget {
+			return fs.SkipAll
+		}
+		ci := mediafile.ReadComicInfo(path)
+		if ci == nil {
+			return nil
+		}
+		p, ok := mediafile.ReadProvenance(ci.Notes)
+		switch {
+		case !ok || p.MangaBaka <= 0:
+			return nil
+		case id != 0 && p.MangaBaka != id:
+			id, title = 0, ""
+			return fs.SkipAll
+		}
+		id, title = p.MangaBaka, ci.Series
+		if agree++; agree >= enough {
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return id, title
 }
 
 // cleanFolderName strips release-style noise from a folder name before

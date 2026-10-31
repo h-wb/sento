@@ -74,5 +74,10 @@ language, flags, provider and site, so a profile judges it as it judged the
 download. When any of that does not resolve (an edition renamed or merged
 since), the file is matched by its name, as any other.
 
-Not yet: identifying the series of a folder from this line (spec §11.4,
-step 1), and reading ComicInfo that another tool wrote.
+Importing a library reads it first too (spec §11.4, step 1): a folder
+whose archives Sento tagged is proposed as the series they name, with the
+title their `Series` field gives, before its name is looked up. A few
+archives are read; when they name different series, the folder is matched
+by its name instead.
+
+Not yet: reading ComicInfo that another tool wrote.

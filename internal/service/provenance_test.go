@@ -107,3 +107,39 @@ func TestEditionFormat(t *testing.T) {
 		}
 	}
 }
+
+// A folder of files Sento tagged is identified by them before its name is
+// looked up; files that disagree decide nothing.
+func TestImportProposalsReadTaggedFiles(t *testing.T) {
+	lib, _ := setup(t)
+	root := t.TempDir()
+	tag := func(dir, name string, id int64, series string) {
+		t.Helper()
+		raw := filepath.Join(t.TempDir(), "raw.cbz")
+		writeCBZ(t, raw, dir+name)
+		info := mediafile.ComicInfo{Series: series, Notes: mediafile.Provenance{MangaBaka: id}.Notes()}
+		if err := mediafile.Process(raw, filepath.Join(root, dir, "Volumes", name), &info); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tag("old backup 2019", "a.cbz", 377, "ONE PIECE")
+	tag("old backup 2019", "b.cbz", 377, "ONE PIECE")
+	tag("mixed", "a.cbz", 9001, "One")
+	tag("mixed", "b.cbz", 9002, "Other")
+	proposals, err := lib.ProposeImports(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range proposals {
+		switch filepath.Base(p.Dir) {
+		case "old backup 2019":
+			if p.BestID != 377 || p.Confidence != 1 || len(p.Candidates) != 1 || p.Candidates[0].Title != "ONE PIECE" {
+				t.Errorf("tagged folder proposed as %+v", p)
+			}
+		case "mixed":
+			if p.BestID == 9001 || p.BestID == 9002 {
+				t.Errorf("disagreeing tags decided the series: %+v", p)
+			}
+		}
+	}
+}
