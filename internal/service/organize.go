@@ -136,12 +136,9 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePl
 		if processable {
 			ext = ".cbz"
 		}
-		release, group := f.Claims.Title, f.Facts.Group
+		group := f.Facts.Group
 		p.name = reHashSuffix.ReplaceAllString(strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path)), "") + ext
-		p.info = im.bookInfo(ctx, series, slots[0], release, group)
-		if len(slots) > 1 {
-			p.info = im.packInfo(ctx, series, slots, release, group)
-		}
+		p.info = im.fileInfo(ctx, series, slots, tagSource{Release: f.Claims.Title, Group: group, Via: f.Facts.Protocol, Site: f.Facts.Site, Flags: f.Facts.Flags})
 		if ms.RenameImports {
 			p.name = im.bookFileName(ctx, ms, series, slots, group, ext)
 		}

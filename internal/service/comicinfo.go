@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/h-wb/sento/internal/mediafile"
+	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -17,16 +19,34 @@ import (
 // community tags per series, most of them noise in a reader's filter list.
 const maxTags = 30
 
-// bookInfo builds the ComicInfo for one book of an edition: everything a
-// reader needs to file and describe the file without Sento. release is
-// the name of the download it came from and group its release group; both
-// may be empty.
-func (im *Importer) bookInfo(ctx context.Context, series *store.Series, sl store.BookRef, release, group string) mediafile.ComicInfo {
+// tagSource is what a file came as: the release, its group, how and where
+// it was found, and the release's flags. Any of it may be empty.
+type tagSource struct {
+	Release, Group, Via, Site string
+	Flags                     map[string]bool
+}
+
+// releaseSource is the tagSource of a queued download.
+func releaseSource(item store.QueueItem) tagSource {
+	var snap ReleaseCandidate
+	_ = json.Unmarshal(item.Snapshot, &snap)
+	group := snap.Parse.Group
+	if group == "" {
+		group = snap.Scanlator
+	}
+	return tagSource{Release: item.Title, Group: group, Via: item.Protocol, Site: snap.Site, Flags: candidateFlags(snap)}
+}
+
+// fileInfo builds the ComicInfo for a file holding the given books of one
+// edition: everything a reader needs to file and describe it without
+// Sento, and Sento's Notes line to adopt it back by (docs/domain/metadata.md).
+func (im *Importer) fileInfo(ctx context.Context, series *store.Series, slots []store.BookRef, src tagSource) mediafile.ComicInfo {
+	first, last := slotSpan(slots)
 	info := mediafile.ComicInfo{
 		Series:          series.Title,
 		Summary:         series.Description,
 		Web:             fmt.Sprintf("https://mangabaka.org/%d", series.MangaBakaID),
-		ScanInformation: group,
+		ScanInformation: src.Group,
 	}
 	if series.Year > 0 {
 		info.Year = strconv.Itoa(series.Year)
@@ -34,22 +54,58 @@ func (im *Importer) bookInfo(ctx context.Context, series *store.Series, sl store
 	if series.Type == "manga" {
 		info.Manga = "YesAndRightToLeft"
 	}
-	notes := []string{"sento:v1", fmt.Sprintf("mangabaka:%d", series.MangaBakaID)}
-
-	col, _ := im.store.GetEdition(ctx, sl.EditionID)
-	if col != nil {
-		info.LanguageISO = col.Language
-		info.Publisher = col.Publisher
-		// What kind of edition it is, when its name says more than "standard".
-		if kind := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(col.ProviderEditionName), "Edition")); kind != "" && !strings.EqualFold(kind, "standard") {
-			info.Format = kind
+	prov := mediafile.Provenance{MangaBaka: series.MangaBakaID, Ledger: first.Ledger, Release: src.Release, Via: src.Via, Site: src.Site}
+	for flag, on := range src.Flags {
+		if on {
+			prov.Flags = append(prov.Flags, flag)
 		}
-		notes = append(notes, "edition:"+strconv.Quote(col.EditionName))
+	}
+	slices.Sort(prov.Flags)
+
+	if col, _ := im.store.GetEdition(ctx, first.EditionID); col != nil {
+		info.LanguageISO = col.Language
+		info.Format = editionFormat(col.EditionName)
+		// A scanlator's chapter is a fan translation, not the publisher's
+		// book, unless the release names a publisher or platform.
+		if src.Via == "source" && !src.Flags["official"] {
+			info.Translator = src.Group
+		} else {
+			info.Publisher = col.Publisher
+		}
+		prov.Edition = col.EditionName
+		if !col.Custom {
+			prov.CatalogEdition = col.ProviderEditionID
+		}
+	}
+	books := map[int64]*store.Book{}
+	for _, sl := range slots {
+		prov.Books = append(prov.Books, mediafile.RenderPlainNum(sl.Number))
+		if w, err := im.store.GetBook(ctx, sl.BookID); err == nil {
+			books[sl.BookID] = w
+			if w.ProviderID != "" {
+				prov.Works = append(prov.Works, w.ProviderID)
+			}
+		}
+	}
+	info.Notes = prov.Notes()
+
+	// Several books: series-level facts only, since no single number,
+	// date or ISBN describes the file.
+	if len(slots) > 1 {
+		seriesRaw, _, _ := im.store.CatalogPayloads(ctx, series.ID, 0)
+		applyCatalog(&info, seriesRaw, "")
+		info.Summary = series.Description
+		kind := "Volumes"
+		if first.Ledger == "chapter" {
+			kind = "Chapters"
+		}
+		info.Title = kind + " " + mediafile.RenderPlainNum(first.Number) + "–" + mediafile.RenderPlainNum(last.Number)
+		return info
 	}
 
-	number := mediafile.RenderPlainNum(sl.Number)
+	number := mediafile.RenderPlainNum(first.Number)
 	completed := series.Status == "completed"
-	if sl.Ledger == "volume" {
+	if first.Ledger == "volume" {
 		// Number too: a merge would otherwise keep whatever the source's
 		// own ComicInfo guessed (often a year mis-parse).
 		info.Volume, info.Number = number, number
@@ -62,29 +118,36 @@ func (im *Importer) bookInfo(ctx context.Context, series *store.Series, sl store
 			info.Count = strconv.Itoa(series.TotalChapters)
 		}
 	}
-
-	if w, err := im.store.GetBook(ctx, sl.BookID); err == nil {
+	if w := books[first.BookID]; w != nil {
 		info.GTIN = w.ISBN
 		if y, m, d, ok := splitDate(w.ReleaseDate); ok {
 			info.Year, info.Month, info.Day = y, m, d
-		}
-		if w.ProviderID != "" {
-			notes = append(notes, "work:"+w.ProviderID)
 		}
 		if !w.NumberKnown {
 			info.Number, info.Volume = "", ""
 			info.Title = w.SequenceStr
 		}
 	}
-
-	seriesRaw, workRaw, _ := im.store.CatalogPayloads(ctx, series.ID, sl.BookID)
+	seriesRaw, workRaw, _ := im.store.CatalogPayloads(ctx, series.ID, first.BookID)
 	applyCatalog(&info, seriesRaw, workRaw)
-
-	if release != "" {
-		notes = append(notes, "release:"+strconv.Quote(release))
-	}
-	info.Notes = strings.Join(notes, " ")
 	return info
+}
+
+// editionFormat is what an edition's name says it is, for ComicInfo's
+// Format: "Deluxe", "Box Set", "Full Color"; empty for a standard edition.
+func editionFormat(name string) string {
+	c := parse.ReadEdition(name)
+	if c.Written != "" {
+		w := strings.TrimSpace(c.Written)
+		if strings.HasSuffix(strings.ToLower(w), " edition") {
+			w = strings.TrimSpace(w[:len(w)-len(" edition")])
+		}
+		return w
+	}
+	if c.Box {
+		return "Box Set"
+	}
+	return ""
 }
 
 // applyCatalog fills what only the raw MangaBaka documents carry: credits,
@@ -128,21 +191,6 @@ func applyCatalog(info *mediafile.ComicInfo, seriesRaw, workRaw string) {
 			info.Summary = d
 		}
 	}
-}
-
-// packInfo is bookInfo for an archive holding several books: series-level
-// facts only, since no single number, date or ISBN describes it.
-func (im *Importer) packInfo(ctx context.Context, series *store.Series, slots []store.BookRef, release, group string) mediafile.ComicInfo {
-	info := im.bookInfo(ctx, series, store.BookRef{Ledger: slots[0].Ledger, EditionID: slots[0].EditionID}, release, group)
-	info.Number, info.Volume, info.Count = "", "", ""
-	info.Summary = series.Description
-	first, last := slotSpan(slots)
-	kind := "Volumes"
-	if first.Ledger == "chapter" {
-		kind = "Chapters"
-	}
-	info.Title = kind + " " + mediafile.RenderPlainNum(first.Number) + "–" + mediafile.RenderPlainNum(last.Number)
-	return info
 }
 
 // slotSpan returns the lowest- and highest-numbered of the books a file
@@ -196,16 +244,6 @@ func installProcessed(src, dest, hash string, info mediafile.ComicInfo) error {
 		return err
 	}
 	return installAsset(stage, dest, hash, false)
-}
-
-// releaseGroup is the release group recorded with a queued download.
-func releaseGroup(item store.QueueItem) string {
-	var snap ReleaseCandidate
-	_ = json.Unmarshal(item.Snapshot, &snap)
-	if snap.Parse.Group != "" {
-		return snap.Parse.Group
-	}
-	return snap.Scanlator
 }
 
 func splitDate(date string) (y, m, d string, ok bool) {

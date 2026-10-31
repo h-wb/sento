@@ -99,13 +99,14 @@ func TestProcess(t *testing.T) {
 		t.Errorf("fingerprint changed by processing: %s → %s", before, after)
 	}
 
-	// Re-tagging in place: new values win, the original stays the original,
-	// and the fingerprint still does not move.
+	// Re-tagging in place: new values win over the original, not over the
+	// first tag (whose Volume this one leaves out), the original stays the
+	// original, and the fingerprint still does not move.
 	if err := Process(dest, dest, &ComicInfo{Series: "Title", Number: "1", Summary: "Now with a summary", Notes: "sento:v1"}); err != nil {
 		t.Fatal(err)
 	}
 	got = entries(t, dest)
-	if !strings.Contains(got["ComicInfo.xml"], "Now with a summary") || !strings.Contains(got["ComicInfo.orig.xml"], "Wrong Name") || len(got) != 5 {
+	if !strings.Contains(got["ComicInfo.xml"], "Now with a summary") || strings.Contains(got["ComicInfo.xml"], "<Volume>") || !strings.Contains(got["ComicInfo.xml"], "<Colorist>Someone</Colorist>") || !strings.Contains(got["ComicInfo.orig.xml"], "Wrong Name") || len(got) != 5 {
 		t.Errorf("re-tag result: %v", got)
 	}
 	if after, _ := Fingerprint(dest); after != before {

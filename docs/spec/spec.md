@@ -33,6 +33,7 @@ clean library for readers like Komga/Kavita.
 | D14 | Existing-library import | First-class, Sonarr-style: scan root folders, match series, link files to slots **in place** — non-destructive by default, renaming/organizing only as an explicit separate action (§11.4) |
 | D15 | Metadata/download separation | Verified source observations enter review or an explicitly trusted binding; never expand numbering from source maxima. |
 | D16 | Review proposes | Review items carry a proposed resolution read from evidence (a file's name, the download it came in), accepted one by one or together; nothing is recorded until accepted, and automatic acquisition stays as strict as before ([propose-dont-ask.md](../reviews/propose-dont-ask.md)). |
+| D17 | Files describe themselves | Each archive carries the facts that make it what it is (edition, books, published or fan-made, group, release, flags) in standard ComicInfo fields and Sento's `Notes` line, never preferences (profile, card); a rescan adopts a file back from that line before guessing from its name ([metadata.md](../domain/metadata.md)). |
 
 ## 2. Goals / non-goals
 
@@ -276,6 +277,12 @@ original preserved as `ComicInfo.orig.xml` once):
   edition:{name}/{lang}/{medium} sento:v1` (machine-readable provenance —
   deliberately the series ID + edition *descriptor*, not the collection UUID,
   since UUIDs are volatile (D13) and CBZs are effectively immutable).
+
+*Correction (2026-10-31):* the fields and the `Notes` keys are now listed in
+[domain/metadata.md](../domain/metadata.md) (D17): `Format` names the
+edition, `Publisher` is written only for published material, `Translator`
+carries a fan translation's group, and `Notes` carries the books, the
+release and its flags; a rescan reads it back.
 
 ### 11.4 Existing-library import & rescan (D14)
 

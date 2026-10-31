@@ -6,6 +6,7 @@ import (
 	"github.com/h-wb/sento/internal/mediafile"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -146,6 +147,15 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 
 		parsed := parse.ParseAnchored(filepath.Base(path), parse.ChannelFile, titles)
 		links := sc.linksFor(ctx, sh, parsed, monitored, chapterCols)
+		facts := store.AssetFacts{Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}, Title: filepath.Base(path), Protocol: "torrent", FactsKnown: true, Flags: candidateFlags(ReleaseCandidate{Parse: parsed}), Language: parsed.Language, Group: parsed.Group, Format: strings.TrimPrefix(filepath.Ext(path), "."), Resolution: parsed.Quality.Resolution, Revision: parsed.Version, Digital: parsed.Quality.Digital}
+		// A file Sento tagged says what it is; its name is the fallback.
+		if ci := mediafile.ReadComicInfo(path); ci != nil {
+			if p, ok := mediafile.ReadProvenance(ci.Notes); ok && p.MangaBaka == series.MangaBakaID && series.MangaBakaID > 0 {
+				if own := sc.linksFromProvenance(ctx, p, ci.LanguageISO, collections); len(own) > 0 {
+					links, facts = own, provenanceFacts(p, ci, path)
+				}
+			}
+		}
 
 		info, ierr := d.Info()
 		size := int64(0)
@@ -157,7 +167,7 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 			return herr
 		}
 		_, aerr := sc.store.AddFile(ctx, store.File{
-			Facts:       store.AssetFacts{Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}, Title: filepath.Base(path), Protocol: "torrent", FactsKnown: true, Flags: candidateFlags(ReleaseCandidate{Parse: parsed}), Language: parsed.Language, Group: parsed.Group, Format: strings.TrimPrefix(filepath.Ext(path), "."), Resolution: parsed.Quality.Resolution, Revision: parsed.Version, Digital: parsed.Quality.Digital},
+			Facts:       facts,
 			Hash:        hash,
 			SeriesID:    seriesID,
 			Path:        path,
@@ -270,6 +280,86 @@ func (sc *Scanner) linksFor(ctx context.Context, sh *shelf, parsed parse.Result,
 		}
 	}
 	return links
+}
+
+// linksFromProvenance links a file by the Notes line Sento wrote into it
+// (docs/domain/metadata.md): the edition by MangaBaka's edition id, or a
+// local edition by its name, in the file's language and ledger; the books
+// by number, the works telling apart two that share one. Nil when any of
+// it does not resolve, and the file is matched by its name instead.
+func (sc *Scanner) linksFromProvenance(ctx context.Context, p mediafile.Provenance, language string, editions []store.Edition) []store.BookLink {
+	if (p.Ledger != "volume" && p.Ledger != "chapter") || len(p.Books) == 0 {
+		return nil
+	}
+	var col *store.Edition
+	for i, c := range editions {
+		if c.Type != p.Ledger || c.Language != language {
+			continue
+		}
+		catalog := p.CatalogEdition != "" && !c.Custom && c.ProviderEditionID == p.CatalogEdition
+		named := p.CatalogEdition == "" && c.EditionName == p.Edition && (c.Custom || c.ProviderEditionID == "")
+		if !catalog && !named {
+			continue
+		}
+		if col != nil {
+			return nil // two editions answer: not the line's to choose
+		}
+		col = &editions[i]
+	}
+	if col == nil {
+		return nil
+	}
+	versions, err := sc.store.ListVersions(ctx, col.SeriesID)
+	if err != nil {
+		return nil
+	}
+	var versionID int64
+	for _, v := range versions {
+		if v.EditionID == col.ID && v.IsDefault {
+			versionID = v.ID
+		}
+	}
+	books, err := sc.store.ListBooks(ctx, col.ID)
+	if err != nil {
+		return nil
+	}
+	var links []store.BookLink
+	for _, n := range p.Books {
+		var found []store.Book
+		for _, b := range books {
+			if mediafile.RenderPlainNum(b.SequenceNum) == n {
+				found = append(found, b)
+			}
+		}
+		if len(found) > 1 {
+			found = slices.DeleteFunc(found, func(b store.Book) bool { return !slices.Contains(p.Works, b.ProviderID) })
+		}
+		if len(found) != 1 {
+			return nil
+		}
+		links = append(links, store.BookLink{Ledger: p.Ledger, EditionID: col.ID, BookID: found[0].ID, VersionID: versionID, Number: found[0].SequenceNum})
+	}
+	return links
+}
+
+// provenanceFacts are a tagged file's facts: the release's, as the line
+// and the standard fields recorded them when Sento imported it.
+func provenanceFacts(p mediafile.Provenance, ci *mediafile.ComicInfo, path string) store.AssetFacts {
+	via := p.Via
+	if via == "" {
+		via = "torrent"
+	}
+	release := parse.Parse(p.Release, parse.Channel(via))
+	flags := map[string]bool{}
+	for _, f := range p.Flags {
+		flags[f] = true
+	}
+	return store.AssetFacts{
+		Sources: map[string]string{"language": "comicinfo", "group": "comicinfo", "quality": "comicinfo"},
+		Title:   p.Release, Site: p.Site, Protocol: via, FactsKnown: true, Flags: flags,
+		Language: ci.LanguageISO, Group: ci.ScanInformation, Format: strings.TrimPrefix(filepath.Ext(path), "."),
+		Resolution: release.Quality.Resolution, Revision: release.Version, Digital: flags["digital"],
+	}
 }
 
 // LowestOwnedChapters returns the lowest linked chapter number per chapter

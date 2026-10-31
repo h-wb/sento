@@ -255,7 +255,14 @@ func Process(src, dest string, info *ComicInfo) error {
 		err = write("ComicInfo.xml", existing)
 	case info != nil:
 		merged := *info
-		if prior, perr := ParseComicInfo(existing); existing != nil && perr == nil {
+		// Sento's fields go over what the release itself carried: over its
+		// preserved original on a re-tag, so a field this tag leaves empty
+		// does not keep what an earlier tag wrote.
+		base := existing
+		if existing != nil && sentoTagged(existing) {
+			base = original
+		}
+		if prior, perr := ParseComicInfo(base); base != nil && perr == nil {
 			merged = Merge(*prior, *info)
 		}
 		merged.PageCount = strconv.Itoa(pages)

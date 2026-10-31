@@ -239,11 +239,9 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 
 	// One book, or an archive holding several (a volume's worth of
 	// chapters): named and tagged for what it actually holds.
-	group := releaseGroup(item)
-	info := im.bookInfo(ctx, series, first, item.Title, group)
-	if len(slots) > 1 {
-		info = im.packInfo(ctx, series, slots, item.Title, group)
-	}
+	src := releaseSource(item)
+	group := src.Group
+	info := im.fileInfo(ctx, series, slots, src)
 	fileName := mediafile.Sanitize(item.Title) + ".cbz"
 	if ms.RenameImports {
 		fileName = im.bookFileName(ctx, ms, series, slots, group, ".cbz")
@@ -399,10 +397,9 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			return e
 		}
 		if ms.WriteComicInfo {
-			info := im.packInfo(ctx, series, contents, item.Title, res.Group)
-			if len(contents) == 1 {
-				info = im.bookInfo(ctx, series, contents[0], item.Title, res.Group)
-			}
+			came := releaseSource(item)
+			came.Group = res.Group
+			info := im.fileInfo(ctx, series, contents, came)
 			e = installProcessed(src, dest, hash, info)
 		} else {
 			e = installAsset(src, dest, hash, ms.AlwaysCopy)

@@ -425,7 +425,7 @@ func TestMultiBookFileIsNamedForItsRange(t *testing.T) {
 	if got := im.bookFileName(ctx, ms, series, slots[:1], "", ".cbz"); !strings.Contains(got, "v02") || strings.Contains(got, "-") {
 		t.Errorf("single name = %q", got)
 	}
-	info := im.packInfo(ctx, series, slots, "", "")
+	info := im.fileInfo(ctx, series, slots, tagSource{})
 	if info.Title != "Volumes 1–2" || info.Number != "" {
 		t.Errorf("pack info = %+v", info)
 	}
