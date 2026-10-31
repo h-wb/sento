@@ -9,7 +9,10 @@
 // formats and parameterizes the funnel.
 package profile
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // MinScoreOff disables the profile's format-score floor.
 const MinScoreOff = -10000
@@ -45,6 +48,24 @@ type Profile struct {
 	FormatScores      map[int64]int `json:"formatScores"`
 	Volume            LedgerRules   `json:"volume"`
 	Chapter           LedgerRules   `json:"chapter"`
+	// ApartFrom lists the profiles no release can satisfy together with
+	// this one (Apart), filled when profiles are listed; never stored.
+	ApartFrom []int64 `json:"apartFrom"`
+}
+
+// Apart reports whether no release can satisfy both profiles: one refuses
+// a format the other requires. Otherwise a release both accept fills an
+// edition's card for each, and a file both accept counts for both.
+func Apart(a, b Profile) bool {
+	refuses := func(p, q Profile) bool {
+		for _, f := range q.Required {
+			if slices.Contains(p.Refused, f) {
+				return true
+			}
+		}
+		return false
+	}
+	return refuses(a, b) || refuses(b, a)
 }
 
 // DefaultRules returns the funnel constants that applied before profiles

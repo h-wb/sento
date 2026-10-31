@@ -83,13 +83,10 @@ export function CollectAgain({
   const used = versions.map((v) => v.profileId || inherited)
   const all = profiles.data ?? []
   const choice = all.find((p) => String(p.id) === picked)
-  // Two profiles keep apart when one refuses a format the other requires;
-  // otherwise a release both accept fills both cards.
-  const apart = (a: (typeof all)[number], b: (typeof all)[number]) =>
-    (a.required ?? []).some((f) => (b.refused ?? []).includes(f)) ||
-    (b.required ?? []).some((f) => (a.refused ?? []).includes(f))
+  // Cards whose profiles a release can satisfy together share files; the
+  // server says which profiles cannot (profile.Apart).
   const overlapping = choice
-    ? used.map((id) => all.find((p) => p.id === id)).filter((p) => p && !apart(choice, p))
+    ? used.map((id) => all.find((p) => p.id === id)).filter((p) => p && !choice.apartFrom.includes(p.id))
     : []
   const base = versions.find((v) => v.isDefault) ?? versions[0]
   const available = all.filter((p) => !used.includes(p.id))

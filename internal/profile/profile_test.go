@@ -142,3 +142,28 @@ func TestJudge(t *testing.T) {
 		t.Errorf("another profile: %+v", j)
 	}
 }
+
+// Two profiles keep an edition's cards apart only when no release can
+// satisfy both: one refuses a format the other requires.
+func TestApart(t *testing.T) {
+	const colored, bw = 1, 2
+	standard := Profile{}
+	onlyColored := Profile{Required: []int64{colored}}
+	noColor := Profile{Refused: []int64{colored}}
+	bwOnly := Profile{Required: []int64{bw}}
+	for _, tc := range []struct {
+		name string
+		a, b Profile
+		want bool
+	}{
+		{"no rules overlap", standard, onlyColored, false},
+		{"different requirements can meet", onlyColored, bwOnly, false},
+		{"refusing what the other requires", onlyColored, noColor, true},
+		{"either way round", noColor, onlyColored, true},
+		{"a profile and itself", onlyColored, onlyColored, false},
+	} {
+		if got := Apart(tc.a, tc.b); got != tc.want {
+			t.Errorf("%s: Apart = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

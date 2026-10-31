@@ -121,6 +121,11 @@ export interface Profile {
   formatScores: { [key: number /* int64 */]: number /* int */};
   volume: LedgerRules;
   chapter: LedgerRules;
+  /**
+   * ApartFrom lists the profiles no release can satisfy together with
+   * this one (Apart), filled when profiles are listed; never stored.
+   */
+  apartFrom: number /* int64 */[];
 }
 /**
  * Judgement is what a profile says about one release or file: its summed
