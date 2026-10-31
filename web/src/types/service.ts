@@ -573,6 +573,10 @@ export interface ReleaseCandidate {
    */
   otherEdition?: OtherEdition;
   representedBooks: number /* int */;
+  /**
+   * IndexerPriority breaks ties between equal scores (lower wins).
+   */
+  indexerPriority?: number /* int */;
   versionId?: number /* int64 */;
   coverage?: BookRef[];
   profileId?: number /* int64 */;

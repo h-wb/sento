@@ -161,6 +161,8 @@ export default function CandidateList({
       return (
         rank[status(a)] - rank[status(b)] ||
         b.score - a.score ||
+        // Indexer priority only breaks ties (lower wins), as the server does.
+        (a.indexerPriority ?? 0) - (b.indexerPriority ?? 0) ||
         a.title.localeCompare(b.title) ||
         releaseKey(a).localeCompare(releaseKey(b))
       )

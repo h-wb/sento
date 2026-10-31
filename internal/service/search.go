@@ -83,28 +83,30 @@ type ReleaseCandidate struct {
 	PolicySnapshot  *profile.Profile        `json:"policySnapshot,omitempty"`
 	EditionSnapshot *store.Edition          `json:"editionSnapshot,omitempty"`
 	// OtherEdition is the edition a release ruled out of this one is.
-	OtherEdition     *OtherEdition   `json:"otherEdition,omitempty"`
-	RepresentedBooks int             `json:"representedBooks"`
-	VersionID        int64           `json:"versionId,omitempty"`
-	Coverage         []store.BookRef `json:"coverage,omitempty"`
-	ProfileID        int64           `json:"profileId,omitempty"`
-	GUID             string          `json:"guid"`
-	Provider         string          `json:"provider"`
-	Protocol         string          `json:"protocol"`
-	Site             string          `json:"site"`
-	SiteID           string          `json:"siteId"`
-	Title            string          `json:"title"`
-	URL              string          `json:"url,omitempty"` // release page on the indexer/source site
-	Size             int64           `json:"size,omitempty"`
-	Seeders          int             `json:"seeders,omitempty"`
-	Scanlator        string          `json:"scanlator,omitempty"`
-	EditionID        int64           `json:"editionId,omitempty"`
-	Score            int             `json:"score"`
-	Formats          []FormatHit     `json:"formats,omitempty"`     // matched custom formats
-	FormatScore      int             `json:"formatScore,omitempty"` // their summed score
-	Rejections       []string        `json:"rejections,omitempty"`
-	Parse            parse.Result    `json:"parse"`
-	cand             provider.Candidate
+	OtherEdition     *OtherEdition `json:"otherEdition,omitempty"`
+	RepresentedBooks int           `json:"representedBooks"`
+	// IndexerPriority breaks ties between equal scores (lower wins).
+	IndexerPriority int             `json:"indexerPriority,omitempty"`
+	VersionID       int64           `json:"versionId,omitempty"`
+	Coverage        []store.BookRef `json:"coverage,omitempty"`
+	ProfileID       int64           `json:"profileId,omitempty"`
+	GUID            string          `json:"guid"`
+	Provider        string          `json:"provider"`
+	Protocol        string          `json:"protocol"`
+	Site            string          `json:"site"`
+	SiteID          string          `json:"siteId"`
+	Title           string          `json:"title"`
+	URL             string          `json:"url,omitempty"` // release page on the indexer/source site
+	Size            int64           `json:"size,omitempty"`
+	Seeders         int             `json:"seeders,omitempty"`
+	Scanlator       string          `json:"scanlator,omitempty"`
+	EditionID       int64           `json:"editionId,omitempty"`
+	Score           int             `json:"score"`
+	Formats         []FormatHit     `json:"formats,omitempty"`     // matched custom formats
+	FormatScore     int             `json:"formatScore,omitempty"` // their summed score
+	Rejections      []string        `json:"rejections,omitempty"`
+	Parse           parse.Result    `json:"parse"`
+	cand            provider.Candidate
 }
 
 // FormatHit is one custom format the candidate matched, with the score
@@ -651,8 +653,8 @@ func (s *SearchService) FindCandidates(ctx context.Context, seriesID int64, sear
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(result.Candidates, func(i, j int) bool {
-		return result.Candidates[i].Score > result.Candidates[j].Score
+	sort.SliceStable(result.Candidates, func(i, j int) bool {
+		return betterRelease(result.Candidates[i], result.Candidates[j])
 	})
 	return result, nil
 }

@@ -82,7 +82,11 @@ func BuildPlan(candidates []ReleaseCandidate, books []PlanBook, complete bool) A
 			additional := max(0, c.RepresentedBooks-newBooks)
 			// Replace the static coverage term with current useful coverage.
 			score := c.Score - 1000*len(c.Coverage) + 1000*newBooks - 150*additional
-			if best < 0 || score > bestScore || (score == bestScore && smallerKnown(c.Size, pool[best].Size)) {
+			// The profile's score decides; the indexer's priority, then
+			// the smaller size, only break ties.
+			tie := best >= 0 && score == bestScore
+			if best < 0 || score > bestScore || tie && (c.IndexerPriority < pool[best].IndexerPriority ||
+				c.IndexerPriority == pool[best].IndexerPriority && smallerKnown(c.Size, pool[best].Size)) {
 				best, bestScore = i, score
 			}
 		}

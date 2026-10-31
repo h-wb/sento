@@ -81,12 +81,13 @@ user-tunable, with these shipped defaults:
 | Scored terms (profile) | shipped: `(Digital)` +100, `Premium` +50, `(LQ)` −100, `Compressed` −50; user-extensible `(pattern, score)` list |
 | Scanlator preference (chapter) | preferred list: +100 by rank; `Official` +50 unless listed |
 | Source priority (chapter, per-series override > global order) | +50 by rank |
-| Indexer priority (Prowlarr value) | ±25 normalized |
 | Seeder tiers (torrent) | 6–20: +25 · >20: +50 |
 | Parse confidence < 0.8 | −100 (prefer names we understood fully) |
 
-Tie-breakers, in order: fewer overshoot slots (most targeted release),
-higher seeders, newest publish date.
+Tie-breakers, in order: the indexer's priority (lower number wins; a
+property of the indexer, never part of the score — *correction
+2026-10-31*: it used to be subtracted from the score), fewer overshoot
+slots (most targeted release), higher seeders, newest publish date.
 
 Selection: per ledger, greedily pick the highest-scoring candidate; remove
 the slots it covers from the request; repeat until no wanted slots remain

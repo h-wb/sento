@@ -174,13 +174,13 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					if !t.IsDefault || compatible > 1 {
 						cp.GUID = rc.GUID + "@" + strconv.FormatInt(t.ID, 10)
 					}
-					cp.applySitePriority(run.priorities[[2]string{cp.Provider, cp.SiteID}])
+					cp.IndexerPriority = run.priorities[[2]string{cp.Provider, cp.SiteID}]
 					out = append(out, cp)
 				}
 				continue
 			}
 		}
-		rc.applySitePriority(run.priorities[[2]string{rc.Provider, rc.SiteID}])
+		rc.IndexerPriority = run.priorities[[2]string{rc.Provider, rc.SiteID}]
 		out = append(out, rc)
 	}
 	for i := range out {
@@ -192,7 +192,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 		}
 		out[i].explain()
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	sort.SliceStable(out, func(i, j int) bool { return betterRelease(out[i], out[j]) })
 	return out, dropped
 }
 
@@ -468,14 +468,14 @@ func candidateFlags(c ReleaseCandidate) map[string]bool {
 	return map[string]bool{"digital": c.Parse.Quality.Digital, "scan": c.Parse.Quality.Scan, "web": c.Parse.Quality.Web, "premium": c.Parse.Quality.Premium, "colored": c.Parse.Edition.Colored, "omnibus": c.Parse.Edition.Omnibus, "deluxe": c.Parse.Edition.Deluxe, "boxset": c.Parse.Edition.BoxSet, "official": c.Parse.Edition.Official, "raw": c.Parse.Edition.Raw, "complete": c.Parse.Complete}
 }
 
-func (c *ReleaseCandidate) applySitePriority(priority int) {
-	if len(c.Rejections) > 0 {
-		return
+// betterRelease orders releases: the profile's score decides; between
+// equal scores, the indexer with the higher priority (the lower number)
+// wins. Priority is a property of the indexer, never part of the score.
+func betterRelease(a, b ReleaseCandidate) bool {
+	if a.Score != b.Score {
+		return a.Score > b.Score
 	}
-	c.Score -= priority
-	if priority != 0 {
-		c.ScoreParts = append(c.ScoreParts, ScorePart{"Indexer priority", -priority})
-	}
+	return a.IndexerPriority < b.IndexerPriority
 }
 
 func languageCompatible(p parse.Result, want string) bool {

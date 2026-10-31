@@ -200,3 +200,23 @@ func TestReplacementKeepsOldDownloadUntilPicked(t *testing.T) {
 		t.Fatalf("old download still tracked: %s", job.Status)
 	}
 }
+
+// The profile's score decides between releases; an indexer's priority
+// (lower wins) only breaks a tie, in the plan and in the result order.
+func TestIndexerPriorityOnlyBreaksTies(t *testing.T) {
+	low := planCandidate("low priority", 1, 1)
+	low.IndexerPriority = 50
+	high := planCandidate("high priority", 1, 1)
+	high.IndexerPriority = 1
+	if plan := BuildPlan([]ReleaseCandidate{low, high}, nil, true); len(plan.Picks) != 1 || plan.Picks[0].Key != high.Key {
+		t.Fatalf("equal scores: picked %+v, want the higher-priority indexer", plan.Picks)
+	}
+	low.Score += 10
+	low.Key = candidateKey(low)
+	if plan := BuildPlan([]ReleaseCandidate{low, high}, nil, true); len(plan.Picks) != 1 || plan.Picks[0].Key != low.Key {
+		t.Fatalf("a better score lost to indexer priority: %+v", plan.Picks)
+	}
+	if !betterRelease(low, high) || betterRelease(planCandidate("a", 1, 1), planCandidate("b", 1, 1)) {
+		t.Error("result order: score first, priority only between equals")
+	}
+}
