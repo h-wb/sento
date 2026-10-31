@@ -10,7 +10,30 @@ type ReleaseReason struct {
 	Code     string `json:"code"`
 	Message  string `json:"message"`
 	Override bool   `json:"override"`
+	// Owner says who decides it: "book" (the release is not this book:
+	// series, language, edition, numbers — nothing to change), "profile"
+	// (the release profile's rules and limits), "confirm" (a person
+	// decides), "other" (this search: not needed, blocklisted).
+	Owner string `json:"owner" tstype:"'book' | 'profile' | 'confirm' | 'other'"`
 }
+
+// reasonOwners files every rejection under the one thing that decides it.
+var reasonOwners = map[string]string{
+	"rejected.series_match": "book", "rejected.content_type": "book", "rejected.language": "book",
+	"rejected.edition_routing": "book", "rejected.numbers_unknown": "book", "rejected.book_ambiguous": "book",
+	"rejected.profile_rule": "profile", "rejected.format_score": "profile", "rejected.size": "profile",
+	"rejected.seeders": "profile", "rejected.pack_threshold": "profile", "rejected.no_upgrade": "profile",
+	"rejected.language_unknown": "profile", "rejected.version_group": "profile",
+	"rejected.edition_ambiguous": "confirm", "rejected.pack_unverified": "confirm",
+}
+
+func reasonOwner(code string) string {
+	if o, ok := reasonOwners[code]; ok {
+		return o
+	}
+	return "other"
+}
+
 type ScorePart struct {
 	Label string `json:"label"`
 	Value int    `json:"value"`
@@ -106,7 +129,7 @@ func (c *ReleaseCandidate) explain() {
 		}
 		override := !hardRejections[code]
 		hard = hard || !override
-		d.Reasons = append(d.Reasons, ReleaseReason{code, message, override})
+		d.Reasons = append(d.Reasons, ReleaseReason{Code: code, Message: message, Override: override, Owner: reasonOwner(code)})
 	}
 	if len(d.Reasons) > 0 {
 		d.Status = "review"

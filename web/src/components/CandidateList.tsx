@@ -16,6 +16,7 @@ import {
   UnstyledButton,
 } from '@mantine/core'
 import { IconChevronDown, IconChevronRight, IconSearch } from '@tabler/icons-react'
+import { Link } from 'react-router-dom'
 import classes from './CandidateList.module.css'
 import { useConfirmAction } from './ConfirmAction'
 import { fmtNum, fmtSize, type ReleaseCandidate } from '../api'
@@ -62,6 +63,14 @@ const reasonNames: Record<string, string> = {
   'rejected.target_group': 'Other release group',
 }
 const reasonCode = (c: ReleaseCandidate) => c.decision?.reasons[0]?.code ?? c.rejections?.[0] ?? ''
+// Who decides a rejection, in the order the reasons are grouped.
+const owners = [
+  ['book', 'Not this book'],
+  ['profile', 'Your profile'],
+  ['confirm', 'To confirm'],
+  ['other', 'Other'],
+] as const
+const reasonOwner = (c: ReleaseCandidate) => c.decision?.reasons[0]?.owner ?? 'other'
 const reasonName = (code: string) => {
   const fallback = code.replace(/^rejected\./, '').replace(/_/g, ' ')
   return reasonNames[code] ?? fallback.charAt(0).toUpperCase() + fallback.slice(1)
@@ -118,9 +127,14 @@ export default function CandidateList({
   const reasonCounts = new Map<string, number>()
   for (const c of blocked)
     reasonCounts.set(reasonCode(c), (reasonCounts.get(reasonCode(c)) ?? 0) + 1)
+  const ownerOf = new Map(blocked.map((c) => [reasonCode(c), reasonOwner(c)]))
   const reasons = [...reasonCounts]
-    .map(([code, count]) => ({ code, count }))
+    .map(([code, count]) => ({ code, count, owner: ownerOf.get(code) ?? 'other' }))
     .sort((a, b) => b.count - a.count)
+  // The reasons grouped by who decides them, empty groups left out.
+  const reasonGroups = owners
+    .map(([owner, label]) => ({ label, reasons: reasons.filter((r) => r.owner === owner) }))
+    .filter((g) => g.reasons.length > 0)
   const resetPage = (fn: () => void) => {
     fn()
     setPage(1)
@@ -292,10 +306,17 @@ export default function CandidateList({
             <Chip value="any" size="xs" variant="light">
               Any reason {blocked.length}
             </Chip>
-            {reasons.map((r) => (
-              <Chip key={r.code} value={r.code} size="xs" variant="light">
-                {reasonName(r.code)} {r.count}
-              </Chip>
+            {reasonGroups.map((g) => (
+              <Group key={g.label} gap={6}>
+                <Text size="xs" c="dimmed">
+                  {g.label}
+                </Text>
+                {g.reasons.map((r) => (
+                  <Chip key={r.code} value={r.code} size="xs" variant="light">
+                    {reasonName(r.code)} {r.count}
+                  </Chip>
+                ))}
+              </Group>
             ))}
           </Group>
         </Chip.Group>
@@ -319,18 +340,25 @@ export default function CandidateList({
               <Text size="sm" c="dimmed" mt={4}>
                 {blocked.length} {blocked.length === 1 ? 'result was' : 'results were'} ruled out:
               </Text>
-              <Group gap={6} mt="xs">
-                {reasons.map((r) => (
-                  <Button
-                    key={r.code}
-                    size="compact-xs"
-                    variant="default"
-                    onClick={() => showBlocked(r.code)}
-                  >
-                    {reasonName(r.code)} · {r.count}
-                  </Button>
+              <Stack gap={4} mt="xs">
+                {reasonGroups.map((g) => (
+                  <Group key={g.label} gap={6}>
+                    <Text size="xs" c="dimmed" w={90}>
+                      {g.label}
+                    </Text>
+                    {g.reasons.map((r) => (
+                      <Button
+                        key={r.code}
+                        size="compact-xs"
+                        variant="default"
+                        onClick={() => showBlocked(r.code)}
+                      >
+                        {reasonName(r.code)} · {r.count}
+                      </Button>
+                    ))}
+                  </Group>
                 ))}
-              </Group>
+              </Stack>
             </>
           )}
         </div>
@@ -530,8 +558,20 @@ function ReleaseRow({
                 <Text key={r.code} size="sm" style={{ overflowWrap: 'anywhere' }}>
                   {r.message}{' '}
                   <Text span size="xs" c="dimmed">
-                    {r.override ? 'Can be overridden for this download.' : 'Cannot be overridden.'}
+                    {r.owner === 'book'
+                      ? 'Not this book: nothing to change.'
+                      : r.override
+                        ? 'Can be overridden for this download.'
+                        : 'Cannot be overridden.'}
                   </Text>
+                  {r.owner === 'profile' && !!c.profileId && (
+                    <>
+                      {' '}
+                      <Anchor component={Link} to={`/profiles?profile=${c.profileId}`} size="xs">
+                        Open profile
+                      </Anchor>
+                    </>
+                  )}
                 </Text>
               ))}
             </Stack>

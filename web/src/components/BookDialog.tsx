@@ -251,7 +251,8 @@ function Inner({
   }
   const missing = [...byEdition.values()].map((m) => ({ ...m, releases: m.titles.size }))
   const [problemsOpen, setProblemsOpen] = useState<boolean | null>(null)
-  const showProblems = problemsOpen ?? (!!result?.done && result.candidates.length === 0)
+  const showProblems =
+    problems.length > 0 && (problemsOpen ?? (!!result?.done && result.candidates.length === 0))
 
   const label = editionWide
     ? `${sel.editionLabel ?? 'Edition'} — ${allBooks ? 'all' : 'wanted'} ${sel.ledger}s`

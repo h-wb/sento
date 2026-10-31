@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   ActionIcon,
   Badge,
@@ -95,6 +96,14 @@ export default function ProfilesPage() {
   })
 
   const [editProfile, setEditProfile] = useState<Profile | 'new' | null>(null)
+  // ?profile=<id> opens that profile (a search's "Open profile" link).
+  const [searchParams, setSearchParams] = useSearchParams()
+  const linked = profiles.data?.find((p) => String(p.id) === searchParams.get('profile'))
+  const openProfile = editProfile ?? linked ?? null
+  const closeProfile = () => {
+    setEditProfile(null)
+    if (searchParams.has('profile')) setSearchParams({}, { replace: true })
+  }
   const [editFormat, setEditFormat] = useState<Format | 'new' | null>(null)
   const [importOpen, setImportOpen] = useState(false)
 
@@ -350,11 +359,11 @@ export default function ProfilesPage() {
       )}
       {confirmation}
 
-      {editProfile && (
+      {openProfile && (
         <ProfileModal
-          profile={editProfile === 'new' ? null : editProfile}
+          profile={openProfile === 'new' ? null : openProfile}
           formats={formats.data ?? []}
-          onClose={() => setEditProfile(null)}
+          onClose={closeProfile}
           onSaved={invalidate}
         />
       )}

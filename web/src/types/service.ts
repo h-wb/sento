@@ -472,6 +472,13 @@ export interface ReleaseReason {
   code: string;
   message: string;
   override: boolean;
+  /**
+   * Owner says who decides it: "book" (the release is not this book:
+   * series, language, edition, numbers — nothing to change), "profile"
+   * (the release profile's rules and limits), "confirm" (a person
+   * decides), "other" (this search: not needed, blocklisted).
+   */
+  owner: 'book' | 'profile' | 'confirm' | 'other';
 }
 export interface ScorePart {
   label: string;
