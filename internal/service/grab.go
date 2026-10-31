@@ -88,7 +88,7 @@ func (s *SearchService) SubmitPlan(ctx context.Context, seriesID int64, ledger s
 			}
 			if !found {
 				outcome.Status = "skipped"
-				outcome.Message = "The edition or version is no longer selected."
+				outcome.Message = "The edition is no longer collected."
 			}
 			break
 		}

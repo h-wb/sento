@@ -6,10 +6,11 @@ import { api, type Edition } from '../api'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
 import { editionDetails } from './editionText'
-// Local edition management lives alongside its books and collected versions.
+// A card's menu: what it collects, then the edition's rarer maintenance.
 export default function EditionActions({
   seriesID,
   edition,
+  title,
   others,
   run,
   children,
@@ -20,6 +21,8 @@ export default function EditionActions({
   more?: ReactNode
   seriesID: number
   edition: Edition
+  // The card's title, which names the menu.
+  title: string
   others: Edition[]
   run: (fn: () => Promise<unknown>, msg?: string) => void
 }) {
@@ -50,7 +53,7 @@ export default function EditionActions({
             size="compact-xs"
             variant="subtle"
             px={4}
-            aria-label={`More actions for ${edition.editionName}`}
+            aria-label={`More actions for ${title}`}
           >
             <IconDotsVertical size={14} />
           </Button>

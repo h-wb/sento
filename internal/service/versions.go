@@ -187,7 +187,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 			facts := f.Facts
 			reason := ""
 			if a.Evidence != "manual" && facts.Language != "" && facts.Language != "multi" && baseLang(facts.Language) != baseLang(col.Language) {
-				reason = "Existing copy has a different language"
+				reason = "The file on disk is in another language"
 			}
 			if a.Evidence == "manual" {
 				facts.Language = col.Language
@@ -195,11 +195,11 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 			judgement := assetJudgement(facts, prof, formats)
 			score := judgement.Score
 			if judgement.Broken != "" {
-				reason = "Existing copy " + judgement.Broken
+				reason = "The file on disk " + judgement.Broken
 			}
 			scores[a.FileID] = score
 			if prof != nil && prof.MinFormatScore > profile.MinScoreOff && facts.FactsKnown && score < prof.MinFormatScore {
-				reason = "Existing copy does not meet the release profile"
+				reason = "The file on disk is below the profile’s minimum score"
 			}
 			if reason != "" {
 				reasons[a.BookID] = reason
@@ -236,9 +236,9 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 			case sl.Book.SyncState == "stale" || sl.Book.SyncState == "retired":
 				sl.Reason = "This book is retired or unavailable in the catalog"
 			case !version.Monitored:
-				sl.Reason = "Collecting is paused for this version"
+				sl.Reason = "Collecting is paused for this edition"
 			case !sl.Monitored:
-				sl.Reason = "This book is excluded by the version's collecting rules"
+				sl.Reason = "This book is outside what you collect of this edition"
 			}
 			if !sl.Monitored {
 				sl.Wanted = false
@@ -257,7 +257,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 				sl.State = "unsatisfactory"
 				sl.Reason = reasons[sl.Book.ID]
 				if sl.Reason == "" {
-					sl.Reason = "Existing copy is not selected for this version"
+					sl.Reason = "The file on disk is not mapped to this edition"
 				}
 			}
 			if hasReview && len(sl.FileIDs) == 0 {
@@ -288,7 +288,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 			if sl.State == "owned" && sl.Monitored && !storageUnavailable && prof != nil && prof.UpgradesEnabled && known && !pinned && (prof.UpgradeUntilScore == 0 || best < prof.UpgradeUntilScore) {
 				sl.State = "upgrade_eligible"
 				sl.Wanted = true
-				sl.Reason = "Current copy is below the upgrade cutoff"
+				sl.Reason = "The file on disk is below the upgrade cutoff"
 			}
 		}
 		view.Status[version.ID] = slots
@@ -395,7 +395,8 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 // SaveVersion saves a way of collecting an edition, as a person sets it:
 // an edition is collected once per release profile (two of its cards with
 // one profile would want the same releases for the same books), and
-// release restrictions live in the profile, never here.
+// release restrictions live in the profile, never here. A card beside the
+// first is named after its profile: the name is its folder.
 func (l *Library) SaveVersion(ctx context.Context, seriesID int64, t store.CollectedVersion) (int64, error) {
 	taken, err := l.store.ProfileTaken(ctx, t.EditionID, t.ID, t.ProfileID)
 	if err != nil {
@@ -403,6 +404,13 @@ func (l *Library) SaveVersion(ctx context.Context, seriesID int64, t store.Colle
 	}
 	if taken {
 		return 0, apperr.Conflictf("this edition is already collected with that release profile")
+	}
+	if !t.IsDefault && t.ProfileID > 0 {
+		p, err := l.store.GetProfile(ctx, t.ProfileID)
+		if err != nil {
+			return 0, err
+		}
+		t.Name = p.Name
 	}
 	return l.store.SaveVersion(ctx, seriesID, t)
 }

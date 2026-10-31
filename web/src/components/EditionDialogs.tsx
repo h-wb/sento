@@ -1,4 +1,4 @@
-import { fileName } from './editionText'
+import { cardLabel, fileName } from './editionText'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useUnsavedChanges } from '../useUnsavedChanges'
 import {
@@ -175,7 +175,7 @@ export function VersionEditor({
       dirty={JSON.stringify(v) !== JSON.stringify(value)}
       busy={edit.busy}
       onClose={close}
-      title={v.id ? 'Download settings' : 'Keep another copy of this edition'}
+      title="Download settings"
     >
       <form
         onSubmit={(e) => {
@@ -184,23 +184,8 @@ export function VersionEditor({
         }}
       >
         <Stack>
-          {!v.id && (
-            <Text size="sm" c="dimmed">
-              Collect this edition with another release profile, such as one requiring a second
-              release group. Files are preserved when a copy is removed.
-            </Text>
-          )}
           <fieldset className="formFields" disabled={edit.busy}>
             <Stack>
-              {/* The default copy is the edition itself: nothing to name. */}
-              {!v.isDefault && (
-                <TextInput
-                  label="Copy name"
-                  required
-                  value={v.name}
-                  onChange={(e) => set({ ...v, name: e.currentTarget.value })}
-                />
-              )}
               <Select
                 label="Release profile"
                 placeholder="The series' profile"
@@ -212,11 +197,7 @@ export function VersionEditor({
                   })) ?? []
                 }
                 value={v.profileId ? String(v.profileId) : null}
-                onChange={(s) => {
-                  // A second card is named after its profile; it follows.
-                  const name = q.data?.find((p) => String(p.id) === s)?.name
-                  set({ ...v, profileId: Number(s) || 0, ...(!v.isDefault && name ? { name } : {}) })
-                }}
+                onChange={(s) => set({ ...v, profileId: Number(s) || 0 })}
               />
               {chapter && (
                 <NumberInput
@@ -240,7 +221,7 @@ export function VersionEditor({
                 onChange={(e) => set({ ...v, acquireUnknown: e.currentTarget.checked })}
               />
               <Switch
-                label={v.isDefault ? 'Collect' : 'Collect this copy'}
+                label="Collect"
                 checked={v.monitored}
                 onChange={(e) => set({ ...v, monitored: e.currentTarget.checked })}
               />
@@ -298,7 +279,7 @@ function BookCopies({
     (m) => !copies.some((w) => w.medium === m && w.syncState === 'linked'),
   )
   return (
-    <Stack gap={6} aria-label="Copies listed in MangaBaka">
+    <Stack gap={6} aria-label="Media listed in MangaBaka">
       <Group gap="xs">
         <Origin kind="catalog" compact />
         <Text size="sm" fw={600}>
@@ -834,10 +815,10 @@ export function MappingEditor({
           />
         </Group>
         <Select
-          label="Collected version"
+          label="Edition"
           data={versions.map((t) => ({
             value: String(t.id),
-            label: `${editionLabel(editions.find((c) => c.id === t.editionId)!)} · ${t.name}`,
+            label: cardLabel(editions.find((c) => c.id === t.editionId)!, t, versions),
           }))}
           value={version}
           onChange={setVersion}

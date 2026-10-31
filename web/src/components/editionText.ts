@@ -1,4 +1,4 @@
-import type { Edition } from '../types/store'
+import type { CollectedVersion, Edition } from '../types/store'
 
 const unique = (values: string[]) => [...new Set(values.filter(Boolean))]
 
@@ -15,6 +15,19 @@ export const editionDetails = (c: Edition, ...more: (string | false | null | und
   [c.language, editionPublishers(c).join(' / '), editionMedia(c).join(' + '), ...more]
     .filter(Boolean)
     .join(' · ')
+
+// A card is one way of collecting an edition. It is titled by the edition,
+// and by its own release profile too when the edition has several cards:
+// "Standard Edition · Colored".
+export const cardTitle = (c: Edition, v: CollectedVersion, versions: CollectedVersion[]) =>
+  v.profileName && versions.filter((t) => t.editionId === c.id).length > 1
+    ? `${c.editionName} · ${v.profileName}`
+    : c.editionName
+
+// The card named away from the edition list (a search, a file's mapping):
+// "en · Standard Edition · Colored".
+export const cardLabel = (c: Edition, v: CollectedVersion, versions: CollectedVersion[]) =>
+  [c.language, cardTitle(c, v, versions)].filter(Boolean).join(' · ')
 
 // A stored file's name as people know it: no folders, no content hash.
 export const fileName = (path: string) =>

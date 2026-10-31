@@ -535,7 +535,7 @@ function Inner({
                         onClick={() =>
                           confirm({
                             title: 'Delete file from disk?',
-                            message: `Delete ${f.path}? This removes the archive from every book and collected version that uses it. This cannot be undone. Missing books may download again.`,
+                            message: `Delete ${f.path}? This removes the archive from every book and edition that uses it. This cannot be undone. Missing books may download again.`,
                             label: 'Delete file',
                             onConfirm: async () => {
                               await api.deleteFile(f.id)

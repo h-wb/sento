@@ -40,7 +40,7 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 			row.ProfileSource = "series"
 		}
 		if t.ProfileID > 0 {
-			row.ProfileSource = "this version"
+			row.ProfileSource = "card"
 		}
 		if p := v.Profiles[t.ID]; p != nil {
 			row.ProfileName = p.Name

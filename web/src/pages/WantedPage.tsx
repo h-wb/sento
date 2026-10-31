@@ -112,7 +112,7 @@ function SeriesWanted({ rows }: { rows: WantedRow[] }) {
 function Status({ row }: { row: WantedRow }) {
   if (row.state === 'upgrade_eligible')
     return (
-      <Tooltip label={row.reason || 'Current copy is below the upgrade cutoff'}>
+      <Tooltip label={row.reason || 'The file on disk is below the upgrade cutoff'}>
         <Badge variant="light" color="yellow" size="sm">
           Upgrade due
         </Badge>

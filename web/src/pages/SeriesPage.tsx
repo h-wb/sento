@@ -45,6 +45,7 @@ import { fmtWhen, notify, usePageTitle } from '../ui'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { EmptyState } from '../components/EmptyState'
 import { useConfirmAction } from '../components/ConfirmAction'
+import { cardLabel } from '../components/editionText'
 import classes from './SeriesPage.module.css'
 
 export default function SeriesPage() {
@@ -60,7 +61,8 @@ export default function SeriesPage() {
   // edition), or {} for a blank form; null: closed.
   const [addEdition, setAddEdition] = useState<(Partial<EditionStart> & { search?: boolean }) | null>(null)
   const searchEdition = async (e: Edition) => {
-    const v = (await api.versions(seriesID)).find((v) => v.editionId === e.id && v.isDefault)
+    const versions = await api.versions(seriesID)
+    const v = versions.find((v) => v.editionId === e.id && v.isDefault)
     if (!v) return
     setBookSel({
       versionId: v.id,
@@ -68,7 +70,7 @@ export default function SeriesPage() {
       ledger: e.type === 'chapter' ? 'chapter' : 'volume',
       number: 0,
       editionId: e.id,
-      editionLabel: `${e.language} · ${e.editionName} · ${v.name}`,
+      editionLabel: cardLabel(e, v, versions),
       monitored: v.monitored,
       wanted: true,
       fileIds: [],
@@ -721,7 +723,7 @@ function IndexersTab({
       {sources.length > 0 && (
         <IndexerSection
           title="Extension sources"
-          hint="A source is searched through the entries matched to this series. Matches are found automatically when you search; untick one that returns the wrong series. Set the edition a match publishes so its releases count as evidence for that edition; a selected download version alone is not evidence."
+          hint="A source is searched through the entries matched to this series. Matches are found automatically when you search; untick one that returns the wrong series. Set the edition a match publishes so its releases count as evidence for that edition; searching from an edition alone is not evidence."
         >
           {sources.map(row)}
         </IndexerSection>

@@ -39,11 +39,9 @@ import type { BookSelection } from './BookDialog'
 import type { EditionStart } from './AddEdition'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
-import { editionDetails, editionMedia } from './editionText'
+import { cardLabel, cardTitle, editionDetails, editionMedia } from './editionText'
 import { EditionOrigin, MangaBakaMark } from './Origin'
 
-const editionLabel = (c: Edition) =>
-  [c.language, c.editionName, c.publisher, c.medium].filter(Boolean).join(' · ')
 // The series page shows one section per tab. They share this component
 // because all three open the same book, version and file-mapping dialogs.
 export type EditionSection = 'editions' | 'review' | 'files'
@@ -204,13 +202,7 @@ export default function EditionManager({
               const noun = (c.type === 'chapter' ? 'chapter' : 'volume') + (total === 1 ? '' : 's')
               // With one or two cards there is nothing to scan past.
               const show = expanded[t.id] ?? cardCount <= 2
-              // A profile is worth a word only when it was chosen here; it
-              // names the card when the edition has several.
-              const profile =
-                stats?.profileName &&
-                stats.profileSource === 'this version' &&
-                stats.profileName
-              const title = versions.length > 1 && profile ? `${c.editionName} · ${profile}` : c.editionName
+              const title = cardTitle(c, t, allVersions)
               const missing = stats?.wanted ?? 0
               const findMissing = () =>
                 t &&
@@ -220,7 +212,7 @@ export default function EditionManager({
                   versionId: t.id,
                   all: true,
                   number: 0,
-                  editionLabel: versions.length > 1 && profile ? `${editionLabel(c)} · ${profile}` : editionLabel(c),
+                  editionLabel: cardLabel(c, t, allVersions),
                   monitored: t.monitored,
                   wanted: true,
                   fileIds: [],
@@ -238,7 +230,8 @@ export default function EditionManager({
                           <EditionOrigin edition={c} href={catalogUrl} />
                         </Group>
                         <Text size="xs" c="dimmed" mt={2}>
-                          {editionDetails(c, versions.length === 1 && profile)}
+                          {/* A profile chosen here and not in the title. */}
+                          {editionDetails(c, versions.length === 1 && t.profileName)}
                         </Text>
                       </div>
                       <Group gap="xs" wrap="nowrap">
@@ -273,6 +266,7 @@ export default function EditionManager({
                         <EditionActions
                           seriesID={seriesID}
                           edition={c}
+                          title={title}
                           others={visible.filter((o) => o.id !== c.id)}
                           run={async (fn) => {
                             await run(fn)
@@ -380,6 +374,7 @@ export default function EditionManager({
                         seriesID={seriesID}
                         edition={c}
                         version={t}
+                        label={cardLabel(c, t, allVersions)}
                         files={files}
                         coverage={coverage.data ?? []}
                         onBook={onBook}

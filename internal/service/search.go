@@ -522,7 +522,7 @@ func (s *SearchService) FindCandidatesStream(ctx context.Context, seriesID int64
 		notes = append(notes, "Checked the linked sources for new chapters.")
 	}
 	if len(run.versions) > 0 && len(run.wantedBooks) == 0 {
-		emit(SearchEvent{Type: "sites", Ledger: searchLedger, BindingNotes: append(notes, "No books can be acquired in this selection. Check the edition’s book statuses, or open a specific book to search for another copy.")})
+		emit(SearchEvent{Type: "sites", Ledger: searchLedger, BindingNotes: append(notes, "No books can be acquired in this selection. Check the edition’s book statuses, or open a specific book to search for another release.")})
 		emit(SearchEvent{Type: "done", Ledger: searchLedger})
 		return nil
 	}

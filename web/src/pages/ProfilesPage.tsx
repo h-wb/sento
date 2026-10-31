@@ -472,7 +472,7 @@ function ProfileModal({
 
         <Switch
           label="Download better releases automatically"
-          description="Previous copies stay on disk. Pinned copies are never upgraded."
+          description="Previous files stay on disk. Pinned files are never upgraded."
           checked={upgradesEnabled}
           onChange={(e) => setUpgradesEnabled(e.currentTarget.checked)}
         />

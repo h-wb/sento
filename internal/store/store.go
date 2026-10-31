@@ -431,7 +431,7 @@ func (s *Store) AddCustomEdition(ctx context.Context, c Edition, basedOn int64, 
 		return 0, err
 	}
 	if duplicate > 0 {
-		return 0, apperr.Conflictf("a local edition with these details already exists; add a version instead")
+		return 0, apperr.Conflictf("a local edition with these details already exists; collect it again with another profile instead")
 	}
 	ctype := orDefault(c.Type, "volume")
 	var colID int64

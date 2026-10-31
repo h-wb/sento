@@ -100,7 +100,7 @@ func (c *ReleaseCandidate) explain() {
 		"rejected.blocklisted":       "This release is on your blocklist.",
 		"rejected.language":          "The stated language does not match this edition.",
 		"rejected.book_ambiguous":    "Several books share this number. Search from the specific book to disambiguate.",
-		"rejected.no_upgrade":        "This release does not improve the existing copy enough.",
+		"rejected.no_upgrade":        "This release does not improve the file on disk enough.",
 		"rejected.profile_rule":      "The release breaks a required or refused format rule.",
 		"rejected.format_score":      "The release does not meet the profile’s minimum format score.",
 		"rejected.pack_threshold":    fmt.Sprintf("Only %d of %d represented books are wanted; automatic packs require at least half.", len(c.Coverage), c.RepresentedBooks),

@@ -509,6 +509,10 @@ export interface CollectedVersion {
   isDefault: boolean;
   monitored: boolean;
   profileId: number /* int64 */;
+  /**
+   * ProfileName names the card's own profile; empty when it inherits.
+   */
+  profileName: string;
   cutoffNum: number /* int64 */;
   acquireUnknown: boolean;
 }

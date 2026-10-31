@@ -39,7 +39,7 @@ const labels: Record<string, string> = {
   unmonitored: 'Paused',
   unknown: 'Date unknown',
   upgrade_eligible: 'Upgrade wanted',
-  unsatisfactory: 'Different copy on disk',
+  unsatisfactory: 'On disk, not accepted',
   needs_review: 'Needs review',
   storage_unavailable: 'Storage unavailable',
 }
@@ -110,7 +110,7 @@ const filters: Filter[] = [
   { value: 'review', label: 'Needs attention', tone: 'review', match: (s) => tone(s) === 'review' },
 ]
 
-function bookSelection(c: Edition, t: CollectedVersion, s: BookStatus): BookSelection {
+function bookSelection(c: Edition, t: CollectedVersion, label: string, s: BookStatus): BookSelection {
   return {
     ledger: c.type === 'chapter' ? 'chapter' : 'volume',
     editionId: c.id,
@@ -118,7 +118,7 @@ function bookSelection(c: Edition, t: CollectedVersion, s: BookStatus): BookSele
     bookId: s.book.id,
     number: s.book.sequenceNum,
     label: s.book.sequenceStr,
-    editionLabel: `${c.editionName} · ${t.name}`,
+    editionLabel: label,
     fileIds: s.fileIds,
     monitored: s.monitored,
     wanted: s.wanted,
@@ -129,6 +129,7 @@ export default function EditionBooks({
   seriesID,
   edition: c,
   version: t,
+  label,
   files,
   coverage,
   onBook,
@@ -140,6 +141,8 @@ export default function EditionBooks({
   seriesID: number
   edition: Edition
   version: CollectedVersion
+  // The card's name in a search opened from it.
+  label: string
   files: SeriesFile[]
   coverage: AssetCoverage[]
   onBook: (s: BookSelection) => void
@@ -216,7 +219,7 @@ export default function EditionBooks({
       pick(s, e.shiftKey)
       return
     }
-    onBook(bookSelection(c, t, s))
+    onBook(bookSelection(c, t, label, s))
   }
 
   const jump = () => {
@@ -536,7 +539,7 @@ export default function EditionBooks({
                           void run(() => api.pinCoverage(seriesID, { ...a, pinned: !a.pinned }))
                         }
                       >
-                        {a.pinned ? 'Unpin copy' : 'Pin copy'}
+                        {a.pinned ? 'Unpin file' : 'Pin file'}
                       </Menu.Item>
                     ))}
                   </Menu.Dropdown>

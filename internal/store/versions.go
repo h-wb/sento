@@ -16,7 +16,9 @@ type CollectedVersion struct {
 	IsDefault     bool   `json:"isDefault"`
 	Monitored     bool   `json:"monitored"`
 	ProfileID     int64  `json:"profileId"`
-	CutoffNum     int64  `json:"cutoffNum"`
+	// ProfileName names the card's own profile; empty when it inherits.
+	ProfileName string `json:"profileName"`
+	CutoffNum   int64  `json:"cutoffNum"`
 	// RequiredGroup and AllowUnknown are the old copy restrictions, read
 	// only by MigrateCopyRules, which turns them into profiles. Saving
 	// never writes them.
@@ -25,7 +27,7 @@ type CollectedVersion struct {
 	AcquireUnknown bool   `json:"acquireUnknown"`
 }
 
-const versionColumns = `id,edition_id,name,is_default,monitored,COALESCE(profile_id,0) AS profile_id,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras`
+const versionColumns = `id,edition_id,name,is_default,monitored,COALESCE(profile_id,0) AS profile_id,COALESCE((SELECT name FROM profiles WHERE profiles.id=versions.profile_id),'') AS profile_name,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras`
 
 func (s *Store) ListVersions(ctx context.Context, seriesID int64) ([]CollectedVersion, error) {
 	return list[CollectedVersion](ctx, s, `SELECT `+versionColumns+` FROM versions WHERE edition_id IN(SELECT id FROM editions WHERE series_id=?) ORDER BY edition_id,is_default DESC,id`, seriesID)
@@ -46,7 +48,7 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 		return 0, apperr.Invalidf("chapter cutoff cannot be negative")
 	}
 	if t.Name == "" {
-		return 0, apperr.Invalidf("version name is required")
+		return 0, apperr.Invalidf("a name is required")
 	}
 	var prof any
 	if t.ProfileID > 0 {
@@ -68,7 +70,7 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 		var id int64
 		e = tx.QueryRowContext(ctx, s.q(`INSERT INTO versions(edition_id,name,monitored,profile_id,cutoff_num,acquire_unknown,include_extras) VALUES(?,?,?,?,?,?,?) RETURNING id`), t.EditionID, t.Name, t.Monitored, prof, t.CutoffNum, t.AcquireUnknown, t.IncludeExtras).Scan(&id)
 		if e != nil {
-			return 0, conflict(e, "a collected version already uses this name")
+			return 0, conflict(e, "this edition is already collected under that name")
 		}
 		return id, tx.Commit()
 	}
@@ -85,7 +87,7 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 		return 0, err
 	}
 	if pending && (t.Name != old.Name || t.ProfileID != old.ProfileID || t.CutoffNum != old.CutoffNum || t.AcquireUnknown != old.AcquireUnknown || t.IncludeExtras != old.IncludeExtras) {
-		return 0, apperr.Conflictf("finish pending downloads before changing acquisition versions")
+		return 0, apperr.Conflictf("finish pending downloads before changing how this edition is collected")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
