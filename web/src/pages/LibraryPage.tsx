@@ -44,7 +44,7 @@ import type { Series } from '../types/store'
 import { fmtWhen, notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { useAddSeries } from '../addSeries'
-import { useConfirmAction } from '../components/ConfirmAction'
+import { RemoveSeries } from '../components/RemoveSeries'
 import { QueryFeedback } from '../components/QueryFeedback'
 import classes from './LibraryPage.module.css'
 
@@ -67,7 +67,6 @@ function compare(a: Series, b: Series, field: SortField): number {
 export default function LibraryPage() {
   usePageTitle('Library')
   const navigate = useNavigate()
-  const { confirm, confirmation } = useConfirmAction()
   const queryClient = useQueryClient()
   const openAddSeries = useAddSeries()
   const { data: series, error, isPending, refetch } = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
@@ -126,15 +125,8 @@ export default function LibraryPage() {
     onError: notify.err,
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['series'] }),
   })
-  const bulkDelete = useMutation({
-    mutationFn: (ids: number[]) => Promise.all(ids.map((id) => api.deleteSeries(id))),
-    onSuccess: (_d, ids) => notify.ok(`Deleted ${ids.length} series`),
-    onError: notify.err,
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['series'] })
-      setSelected(new Set())
-    },
-  })
+  // The series being removed, once the user asked to.
+  const [removing, setRemoving] = useState<number[] | null>(null)
 
   const sortTh = (label: string, field: SortField, align: 'left' | 'right' = 'left') => (
     <Table.Th
@@ -428,7 +420,6 @@ export default function LibraryPage() {
                   variant="light"
                   leftSection={<IconEye size={14} />}
                   loading={bulkMonitor.isPending}
-                  disabled={bulkDelete.isPending}
                   onClick={() => bulkMonitor.mutate({ ids: visibleSelected, monitored: true })}
                 >
                   Monitor
@@ -440,7 +431,6 @@ export default function LibraryPage() {
                   color="gray"
                   leftSection={<IconEyeOff size={14} />}
                   loading={bulkMonitor.isPending}
-                  disabled={bulkDelete.isPending}
                   onClick={() => bulkMonitor.mutate({ ids: visibleSelected, monitored: false })}
                 >
                   Unmonitor
@@ -451,14 +441,8 @@ export default function LibraryPage() {
                   variant="light"
                   color="red"
                   leftSection={<IconTrash size={14} />}
-                  loading={bulkDelete.isPending}
                   disabled={bulkMonitor.isPending}
-                  onClick={() => confirm({
-                    title: `Remove ${visibleSelected.length} series?`,
-                    message: 'Remove these series from Sento, including monitoring and history. Your library files stay on disk.',
-                    label: 'Remove series',
-                    onConfirm: () => bulkDelete.mutateAsync(visibleSelected),
-                  })}
+                  onClick={() => setRemoving(visibleSelected)}
                 >
                   Delete
                 </Button>
@@ -470,7 +454,17 @@ export default function LibraryPage() {
           )}
         </Transition>
       </Affix>
-      {confirmation}
+      {removing && (
+        <RemoveSeries
+          ids={removing}
+          close={() => setRemoving(null)}
+          removed={() => {
+            setRemoving(null)
+            setSelected(new Set())
+            void queryClient.invalidateQueries({ queryKey: ['series'] })
+          }}
+        />
+      )}
     </>
   )
 }

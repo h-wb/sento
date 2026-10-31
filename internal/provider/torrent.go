@@ -410,9 +410,21 @@ func (p *TorrentProvider) Fetch(ctx context.Context, externalID string) (*Payloa
 	return &Payload{Dir: t.SavePath, Files: files}, nil
 }
 
+// Remove takes a torrent Sento added out of its client, with its data.
+// Only Sento's category is searched, so a torrent someone else added is
+// never touched; one the client no longer has is already gone.
+func (p *TorrentProvider) Remove(ctx context.Context, externalID string) error {
+	t, client, err := p.find(ctx, externalID)
+	if err != nil || t == nil {
+		return err
+	}
+	return client.Delete(ctx, t.Hash, true)
+}
+
 // Cleanup is a no-op: torrent data must stay in place for seeding
 // (spec.md §7); imports hardlink.
 func (p *TorrentProvider) Cleanup(context.Context, string) error { return nil }
 
 var _ Provider = (*TorrentProvider)(nil)
 var _ ClientRouter = (*TorrentProvider)(nil)
+var _ Remover = (*TorrentProvider)(nil)

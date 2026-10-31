@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -216,6 +217,14 @@ func (c *Client) List(ctx context.Context, category string) ([]Torrent, error) {
 		return nil, fmt.Errorf("qbittorrent: decoding torrent list: %w", err)
 	}
 	return torrents, nil
+}
+
+// Delete removes a torrent from the client, and its downloaded data with
+// it when deleteFiles is set. A torrent the client no longer has is gone
+// already: qBittorrent answers success either way.
+func (c *Client) Delete(ctx context.Context, hash string, deleteFiles bool) error {
+	_, err := c.do(ctx, http.MethodPost, "/api/v2/torrents/delete", url.Values{"hashes": {hash}, "deleteFiles": {strconv.FormatBool(deleteFiles)}})
+	return err
 }
 
 // Files returns the file paths inside a torrent (relative to its save path).

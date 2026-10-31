@@ -118,6 +118,14 @@ func (s *Store) ListQueueItems(ctx context.Context, activeOnly bool) ([]QueueIte
 	return list[QueueItem](ctx, s, q)
 }
 
+// DownloadShared reports whether a job of another series holds the same
+// download (one pack can serve two series).
+func (s *Store) DownloadShared(ctx context.Context, seriesID int64, protocol, externalID string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM queue_items WHERE protocol=? AND external_id=? AND series_id<>?`), protocol, externalID, seriesID).Scan(&n)
+	return n > 0, err
+}
+
 // SeriesQueueItems is every job of one series, whatever its state.
 func (s *Store) SeriesQueueItems(ctx context.Context, seriesID int64) ([]QueueItem, error) {
 	return list[QueueItem](ctx, s, `SELECT `+queueColumns+` FROM queue_items WHERE series_id = ? ORDER BY id`, seriesID)

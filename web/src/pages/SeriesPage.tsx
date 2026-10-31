@@ -36,8 +36,8 @@ import BookDialog, { type BookSelection } from '../components/BookDialog'
 import { notify, usePageTitle } from '../ui'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { EmptyState } from '../components/EmptyState'
-import { useConfirmAction } from '../components/ConfirmAction'
 import { cardLabel } from '../components/editionText'
+import { RemoveSeries } from '../components/RemoveSeries'
 import classes from './SeriesPage.module.css'
 import { SeriesHistory } from '../components/SeriesHistory'
 import { ProfileBarButton, ProfileMenuItems } from '../components/SeriesProfile'
@@ -47,11 +47,11 @@ export default function SeriesPage() {
   const { id } = useParams()
   const seriesID = Number(id)
   const navigate = useNavigate()
-  const { confirm, confirmation } = useConfirmAction()
 
   const [busy, setBusy] = useState(false)
   const [bookSel, setBookSel] = useState<BookSelection | null>(null)
   const [fullDesc, setFullDesc] = useState(false)
+  const [removing, setRemoving] = useState(false)
   // Add edition: a start from the search (which reopens on the new
   // edition), or {} for a blank form; null: closed.
   const [addEdition, setAddEdition] = useState<(Partial<EditionStart> & { search?: boolean }) | null>(null)
@@ -363,18 +363,7 @@ export default function SeriesPage() {
                 color="red"
                 leftSection={<IconTrash size={15} />}
                 disabled={busy}
-                onClick={() =>
-                  confirm({
-                    title: 'Remove series?',
-                    message: `Remove “${series.title}” from Sento, including monitoring and history. Your library files stay on disk.`,
-                    label: 'Remove series',
-                    onConfirm: async () => {
-                      await api.deleteSeries(seriesID)
-                      await queryClient.invalidateQueries({ queryKey: ['series'] })
-                      navigate('/')
-                    },
-                  })
-                }
+                onClick={() => setRemoving(true)}
               >
                 Remove series
               </Menu.Item>
@@ -388,7 +377,17 @@ export default function SeriesPage() {
           editions.
         </Text>
       )}
-      {confirmation}
+      {removing && (
+        <RemoveSeries
+          ids={[seriesID]}
+          name={series.title}
+          close={() => setRemoving(false)}
+          removed={() => {
+            void queryClient.invalidateQueries({ queryKey: ['series'] })
+            navigate('/')
+          }}
+        />
+      )}
       {addEdition && (
         <AddEdition
           seriesID={seriesID}

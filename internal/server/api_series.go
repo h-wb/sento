@@ -133,16 +133,21 @@ func (s *Server) handleUpdateSeries(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleDeleteSeries removes a series; ?deleteFiles=true deletes its files
+// too, ?removeDownloads=true its torrents and their data. Both opt in.
 func (s *Server) handleDeleteSeries(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	if err := s.store.DeleteSeries(r.Context(), id); err != nil {
+	q := r.URL.Query()
+	opts := service.RemoveOptions{DeleteFiles: q.Get("deleteFiles") == "true", RemoveDownloads: q.Get("removeDownloads") == "true"}
+	removed, err := s.importer.RemoveSeries(r.Context(), id, opts)
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, removed)
 }
 
 func (s *Server) handleRefreshSeries(w http.ResponseWriter, r *http.Request) {

@@ -287,6 +287,13 @@ type ClientRouter interface {
 
 type clientKey struct{}
 
+// Remover is a provider that can take back a download it started, with
+// what it downloaded (a torrent and its data). Optional: a source's pages
+// are staged and cleaned up by the import itself.
+type Remover interface {
+	Remove(ctx context.Context, externalID string) error
+}
+
 // InClient binds calls made with the returned context to one download
 // client. An empty id binds nothing (jobs recorded before clients were
 // tracked).

@@ -1,5 +1,5 @@
 import type { ReviewItem } from './types/store'
-import type { EditionOverview, FileChange, HealthReport, OrganizeResult, WantedRow } from './types/service'
+import type { EditionOverview, FileChange, HealthReport, OrganizeResult, RemovedSeries, WantedRow } from './types/service'
 import type {
   CollectedVersion,
   Book,
@@ -253,7 +253,11 @@ export const api = {
   addSeries: (body: Partial<AddSeriesRequest> & Pick<AddSeriesRequest, 'mangabakaId'>) =>
     request<Series>('/series/', { method: 'POST', body: JSON.stringify(body) }),
   getSeries: (id: number) => request<SeriesDetail>(`/series/${id}/`),
-  deleteSeries: (id: number) => request<void>(`/series/${id}/`, { method: 'DELETE' }),
+  deleteSeries: (id: number, opts: { deleteFiles?: boolean; removeDownloads?: boolean } = {}) =>
+    request<RemovedSeries>(
+      `/series/${id}/?deleteFiles=${!!opts.deleteFiles}&removeDownloads=${!!opts.removeDownloads}`,
+      { method: 'DELETE' },
+    ),
   setSeriesMonitored: (id: number, monitored: boolean) =>
     request<void>(`/series/${id}/`, {
       method: 'PUT',

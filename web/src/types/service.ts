@@ -496,6 +496,37 @@ export interface ReleaseDecision {
 }
 
 //////////
+// source: remove.go
+
+/**
+ * RemoveOptions is what goes with a series besides its records.
+ */
+export interface RemoveOptions {
+  /**
+   * DeleteFiles deletes every file Sento has on record for the series,
+   * and the folders that leaves empty inside the library.
+   */
+  deleteFiles: boolean;
+  /**
+   * RemoveDownloads takes the torrents Sento added for it out of the
+   * download client, with their data. Imports are hardlinks: deleting the
+   * library files frees no space while the torrent keeps its copy.
+   */
+  removeDownloads: boolean;
+}
+/**
+ * RemovedSeries says what removing a series did beyond its records.
+ */
+export interface RemovedSeries {
+  filesDeleted: number /* int */;
+  downloadsRemoved: number /* int */;
+  /**
+   * Kept lists what was asked for but stayed, and why.
+   */
+  kept?: string[];
+}
+
+//////////
 // source: review_proposals.go
 
 

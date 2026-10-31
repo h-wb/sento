@@ -18,6 +18,7 @@ type fakeQBit struct {
 	adds    []string // content types of accepted add requests
 	// duplicate answers adds as qBittorrent does for a torrent it has.
 	duplicate bool
+	deletes   []string // "hash deleteFiles" of accepted deletes
 }
 
 func (f *fakeQBit) expire() {
@@ -53,6 +54,9 @@ func (f *fakeQBit) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.adds = append(f.adds, r.Header.Get("Content-Type"))
 		_, _ = w.Write([]byte("Ok."))
+	case "/api/v2/torrents/delete":
+		_ = r.ParseForm()
+		f.deletes = append(f.deletes, r.Form.Get("hashes")+" "+r.Form.Get("deleteFiles"))
 	case "/api/v2/torrents/info":
 		_, _ = w.Write([]byte(`[{"hash":"ABC","name":"x","progress":1,"state":"uploading","save_path":"/dl"}]`))
 	case "/api/v2/app/version":
@@ -131,5 +135,15 @@ func TestAddingATorrentTheClientHasSucceeds(t *testing.T) {
 	}
 	if err := c.AddTorrentFile(ctx, "x.torrent", []byte("d4:infoe"), "sento"); err != nil {
 		t.Errorf("file: %v", err)
+	}
+}
+
+func TestDeleteSendsTheHashAndWhetherDataGoes(t *testing.T) {
+	fake, c := newFake(t)
+	if err := c.Delete(context.Background(), "ABC", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.deletes) != 1 || fake.deletes[0] != "ABC true" {
+		t.Fatalf("deletes = %v", fake.deletes)
 	}
 }
