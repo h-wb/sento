@@ -28,12 +28,17 @@ type EditionClaim struct {
 	// Edition", "Kanzenban Edition"); empty when the name names none.
 	Written string `json:"written,omitempty"`
 	Color   bool   `json:"color,omitempty"`
+	// ColorEdition: the name names a color edition ("Full Color", "Color
+	// Edition") — a numbering of its own, like Viz's Dragon Ball Full
+	// Color. Colored alone ("(Colored)", "Digital Colored Comics") is a
+	// colorization of the original volumes, a variant.
+	ColorEdition bool `json:"colorEdition,omitempty"`
 	Box     bool   `json:"box,omitempty"`
 }
 
 // Named reports whether the claim names a numbering: a regrouping or a
 // name of its own.
-func (c EditionClaim) Named() bool { return len(c.Regroup) > 0 || c.Own != "" }
+func (c EditionClaim) Named() bool { return len(c.Regroup) > 0 || c.Own != "" || c.ColorEdition }
 
 // Shares reports whether two claims name the same numbering.
 func (c EditionClaim) Shares(o EditionClaim) bool {
@@ -42,7 +47,7 @@ func (c EditionClaim) Shares(o EditionClaim) bool {
 			return true
 		}
 	}
-	return c.Own != "" && c.Own == o.Own
+	return c.Own != "" && c.Own == o.Own || c.ColorEdition && o.ColorEdition
 }
 
 // regroupings is the regrouping vocabulary: canonical key, then the
@@ -75,6 +80,10 @@ var spelled = map[string]string{"two": "2", "three": "3", "four": "4"}
 var colorPhrases = []string{"digital colored comics", "full color", "full colour", "colored", "coloured", "color", "colour"}
 
 var boxPhrases = []string{"box set", "boxset", "box edition"}
+
+// colorEditionPhrases name a color edition. "Digital Colored Comics" says
+// "full color" too, but colorizes the original volumes: it is a variant.
+var colorEditionPhrases = []string{"full color", "full colour", "full-color", "color edition", "colour edition", "complete color"}
 
 // plainEditions name no numbering of their own: "Standard Edition",
 // "Digital Edition", "Box Set Edition", "Limited Edition".
@@ -125,6 +134,14 @@ func ReadEdition(name string) EditionClaim {
 		for _, at := range wordIndexes(lower, p) {
 			c.Color = true
 			found(at, len(p), false)
+		}
+	}
+	if len(wordIndexes(lower, "digital colored comics")) == 0 {
+		for _, p := range colorEditionPhrases {
+			for _, at := range wordIndexes(lower, p) {
+				c.ColorEdition = true
+				found(at, len(p), true)
+			}
 		}
 	}
 	for _, p := range boxPhrases {

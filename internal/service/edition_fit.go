@@ -112,16 +112,6 @@ func (s *shelf) judge(p parse.Result, e store.Edition, evidence int64) (fitVerdi
 			return fitNo, fmt.Sprintf("The release is the %s; %s boxes the original volumes.", r.Written, e.EditionName)
 		}
 	}
-	// Color names an edition where the series has a color edition: then a
-	// colored release is that edition's, as a name would make it. Where it
-	// has none, colorized volumes are a variant, the profile's to rank.
-	if r.Color && !ec.Color {
-		for _, o := range siblings {
-			if s.claim(o).Color {
-				return fitNo, fmt.Sprintf("The release is colored; %s is this series' color edition.", o.EditionName)
-			}
-		}
-	}
 	verdict, why := fitYes, ""
 	switch {
 	case r.Named():

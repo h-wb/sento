@@ -465,6 +465,10 @@ func TestEditionRulesOnRealNames(t *testing.T) {
 		{"Dragon Ball", "[Tracksuit] Dragon Ball - Full Color - Vols. 01 - 16", dragonBall, dbColor, fitYes},
 		{"Dragon Ball", "[Tracksuit] Dragon Ball - Full Color - Vols. 01 - 16", dragonBall, dbStandard, fitNo},
 		{"Bleach", "Bleach - Digital Colored Comics v01-74 (2021) (Colored Council)", bleach, bleachStandard, fitYes},
+		// A fan colorization of the original volumes is a variant of the
+		// Standard Edition, even where an official color edition exists.
+		{"Dragon Ball", "Dragon Ball v13 (Colored) (Fan Colorization)", dragonBall, dbStandard, fitYes},
+		{"Dragon Ball", "Dragon Ball v13 (Colored) (Fan Colorization)", dragonBall, dbColor, fitUnsure},
 		{"20th Century Boys", "20th Century Boys v01-02 (2018) (The Perfect Edition) (Scan-HQ)", boys, boysStandard, fitNo},
 		{"20th Century Boys", "20th Century Boys v01-02 (2018) (The Perfect Edition) (Scan-HQ)", boys, boysPerfect, fitYes},
 		{"Sailor Moon", "Sailor Moon Eternal Edition v01-v04 (Digital) (BlackManta-Empire)", moon, moonStandard, fitNo},

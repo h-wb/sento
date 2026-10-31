@@ -116,11 +116,14 @@ highest number those releases name (asked only when none does).
 numbering: whole-run packs and original-numbered releases are its
 content. It never competes as a layout.
 
-**R5. Color follows R1.** Colored releases of the original numbering are a
-variant of the standard edition: a profile prefers or refuses them with
-the existing `colored` custom-format flag. A series edition whose name
-says color and that has its own numbering (Dragon Ball Full Color) takes
-the releases that name it (R2.1).
+**R5. Color follows R1.** An official color edition with its own
+numbering (Viz's Dragon Ball Full Color) is an edition, named by "Full
+Color" / "Color Edition": releases that say so are its, and no other
+edition's. A colorization of the original volumes — a fan colorization,
+or Shueisha's Digital Colored Comics — says only "colored": it is a
+variant of the standard edition, which a profile prefers, ranks or
+refuses with the `colored` (and `official`) flags. Against the official
+color edition, such a release is left to confirm, never taken for it.
 
 **R6. Preferences between editions are not scores.** Which edition you
 collect is a choice — collect the omnibus, the standard, or both as two

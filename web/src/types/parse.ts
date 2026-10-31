@@ -29,6 +29,13 @@ export interface EditionClaim {
    */
   written?: string;
   color?: boolean;
+  /**
+   * ColorEdition: the name names a color edition ("Full Color", "Color
+   * Edition") — a numbering of its own, like Viz's Dragon Ball Full
+   * Color. Colored alone ("(Colored)", "Digital Colored Comics") is a
+   * colorization of the original volumes, a variant.
+   */
+  colorEdition?: boolean;
   box?: boolean;
 }
 
