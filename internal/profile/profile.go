@@ -50,7 +50,7 @@ type Profile struct {
 	Chapter           LedgerRules   `json:"chapter"`
 	// ApartFrom lists the profiles no release can satisfy together with
 	// this one (Apart), filled when profiles are listed; never stored.
-	ApartFrom []int64 `json:"apartFrom"`
+	ApartFrom []int64 `json:"apartFrom,omitempty"`
 }
 
 // Apart reports whether no release can satisfy both profiles: one refuses

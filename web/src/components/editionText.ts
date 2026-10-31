@@ -32,3 +32,7 @@ export const cardLabel = (c: Edition, v: CollectedVersion, versions: CollectedVe
 // A stored file's name as people know it: no folders, no content hash.
 export const fileName = (path: string) =>
   (path.split(/[\\/]/).pop() ?? path).replace(/ \[[0-9a-f]{64}\](?=\.\w+$)/, '')
+
+// The note under a field someone changed from what MangaBaka lists.
+export const edited = (v: { overrides: string[]; custom?: boolean }, field: string) =>
+  !v.custom && v.overrides.includes(field) ? 'Edited by you; a refresh keeps it' : undefined

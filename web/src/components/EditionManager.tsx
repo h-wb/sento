@@ -1,12 +1,10 @@
-import {
-  EditorModal,
-  VersionEditor,
-  BookEditor,
-  EditionEditor,
-  CatalogLink,
-  CollectAgain,
-  MappingEditor,
-} from './EditionDialogs'
+import { EditorModal } from './EditorModal'
+import { DownloadSettings } from './DownloadSettings'
+import { BookEditor } from './BookEditor'
+import { EditionEditor } from './EditionEditor'
+import { CatalogLink } from './CatalogLink'
+import { CollectAgain } from './CollectAgain'
+import { MappingEditor } from './MappingEditor'
 import ReviewInbox from './ReviewInbox'
 import EditionBooks from './EditionBooks'
 import EditionActions from './EditionActions'
@@ -538,7 +536,7 @@ export default function EditionManager({
         </Stack>
       )}
       {version && (
-        <VersionEditor
+        <DownloadSettings
           key={version.id}
           value={version}
           chapter={editions.find((c) => c.id === version.editionId)?.type === 'chapter'}

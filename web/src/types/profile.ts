@@ -125,7 +125,7 @@ export interface Profile {
    * ApartFrom lists the profiles no release can satisfy together with
    * this one (Apart), filled when profiles are listed; never stored.
    */
-  apartFrom: number /* int64 */[];
+  apartFrom?: number /* int64 */[];
 }
 /**
  * Judgement is what a profile says about one release or file: its summed

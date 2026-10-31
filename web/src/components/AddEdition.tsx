@@ -16,7 +16,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api, type Edition } from '../api'
 import type { Series } from '../types/store'
 import type { SeriesPublisher } from '../types/service'
-import { EditorModal } from './EditionDialogs'
+import { EditorModal } from './EditorModal'
 import { editionDetails } from './editionText'
 import { Origin } from './Origin'
 

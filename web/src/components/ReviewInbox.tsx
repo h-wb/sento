@@ -6,7 +6,7 @@ import { api } from '../api'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
 import type { Edition, ReviewItem, ReviewProposal } from '../types/store'
-import { CatalogLink } from './EditionDialogs'
+import { CatalogLink } from './CatalogLink'
 import { fileName } from './editionText'
 
 export default function ReviewInbox({

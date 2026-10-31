@@ -25,7 +25,7 @@ import type { DownloadClientConn } from '../types/service'
 import { notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
-import { EditorModal } from '../components/EditionDialogs'
+import { EditorModal } from '../components/EditorModal'
 import classes from './ConnectionsPage.module.css'
 
 // The download clients Sento fetches through. They come in two types:

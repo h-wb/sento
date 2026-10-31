@@ -119,7 +119,6 @@ func (s *ProfileService) validateProfile(ctx context.Context, p profile.Profile)
 func (s *ProfileService) ListProfiles(ctx context.Context) ([]profile.Profile, error) {
 	profiles, err := s.store.ListProfiles(ctx)
 	for i := range profiles {
-		profiles[i].ApartFrom = []int64{}
 		for _, o := range profiles {
 			if profile.Apart(profiles[i], o) {
 				profiles[i].ApartFrom = append(profiles[i].ApartFrom, o.ID)
