@@ -4,6 +4,7 @@ import {
   BookEditor,
   EditionEditor,
   CatalogLink,
+  CollectAgain,
   MappingEditor,
 } from './EditionDialogs'
 import ReviewInbox from './ReviewInbox'
@@ -58,6 +59,8 @@ type Props = {
   onBook: (s: BookSelection) => void
   onAddEdition: (start?: EditionStart) => void
   onSources: () => void
+  // The series' release profile (0: the instance default).
+  seriesProfileId: number
 }
 export default function EditionManager({
   section,
@@ -69,6 +72,7 @@ export default function EditionManager({
   onBook,
   onAddEdition,
   onSources,
+  seriesProfileId,
 }: Props) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})
@@ -84,7 +88,7 @@ export default function EditionManager({
     queryKey: ['series', seriesID, 'coverage'],
     queryFn: () => api.coverage(seriesID),
   })
-  const [chosen, setChosen] = useState<Record<number, string>>({})
+  const [collectAgain, setCollectAgain] = useState<Edition | null>(null)
   const [version, setVersion] = useState<CollectedVersion | null>(null)
   const [book, setBook] = useState<Book | null>(null)
   const [edition, setEdition] = useState<Edition | null>(null)
@@ -141,6 +145,7 @@ export default function EditionManager({
       (t) => t.editionId === c.id && (t.monitored || (summary(t.id)?.onDisk ?? 0) > 0),
     )
   const yours = visible.filter(isYours)
+  const cardCount = allVersions.filter((t) => yours.some((c) => c.id === t.editionId)).length
   const others = visible.filter((c) => !isYours(c))
 
   return (
@@ -187,23 +192,25 @@ export default function EditionManager({
             </Text>
           )}
           {!pending &&
-            yours.map((c) => {
+            // One card per way of collecting an edition: the edition with
+            // a release profile. Two cards of one edition are the same
+            // books wanted as different releases (colored, black-and-white).
+            yours.flatMap((c) => {
               const versions = allVersions.filter((t) => t.editionId === c.id)
-              const t =
-                versions.find((t) => String(t.id) === chosen[c.id]) ??
-                versions.find((t) => t.isDefault) ??
-                versions[0]
-              const stats = t ? summary(t.id) : undefined
+              return versions.map((t) => {
+              const stats = summary(t.id)
               const owned = stats?.owned ?? 0
               const total = stats?.total ?? 0
               const noun = (c.type === 'chapter' ? 'chapter' : 'volume') + (total === 1 ? '' : 's')
-              // With one or two editions there is nothing to scan past.
-              const show = expanded[c.id] ?? yours.length <= 2
-              // A profile is worth a word only when it was chosen here.
+              // With one or two cards there is nothing to scan past.
+              const show = expanded[t.id] ?? cardCount <= 2
+              // A profile is worth a word only when it was chosen here; it
+              // names the card when the edition has several.
               const profile =
                 stats?.profileName &&
                 stats.profileSource === 'this version' &&
                 stats.profileName
+              const title = versions.length > 1 && profile ? `${c.editionName} · ${profile}` : c.editionName
               const missing = stats?.wanted ?? 0
               const findMissing = () =>
                 t &&
@@ -213,25 +220,25 @@ export default function EditionManager({
                   versionId: t.id,
                   all: true,
                   number: 0,
-                  editionLabel: `${editionLabel(c)} · ${t.name}`,
+                  editionLabel: versions.length > 1 && profile ? `${editionLabel(c)} · ${profile}` : editionLabel(c),
                   monitored: t.monitored,
                   wanted: true,
                   fileIds: [],
                   autoSearch: true,
                 })
               return (
-                <Card key={c.id} padding="md" withBorder>
+                <Card key={t.id} padding="md" withBorder>
                   <Stack gap="sm">
                     <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
                       <div style={{ minWidth: 0 }}>
                         <Group gap="xs">
                           <Text fw={600} style={{ overflowWrap: 'anywhere' }}>
-                            {c.editionName}
+                            {title}
                           </Text>
                           <EditionOrigin edition={c} href={catalogUrl} />
                         </Group>
                         <Text size="xs" c="dimmed" mt={2}>
-                          {editionDetails(c, t && profile)}
+                          {editionDetails(c, versions.length === 1 && profile)}
                         </Text>
                       </div>
                       <Group gap="xs" wrap="nowrap">
@@ -272,29 +279,18 @@ export default function EditionManager({
                           }}
                           more={
                             <>
-                              {t && (
-                                <Menu.Item
-                                  onClick={() =>
-                                    setVersion({
-                                      ...t,
-                                      id: 0,
-                                      name: '',
-                                      isDefault: false,
-                                    })
-                                  }
-                                >
-                                  Keep another copy of this edition
-                                </Menu.Item>
-                              )}
-                              {t && !t.isDefault && (
+                              <Menu.Item onClick={() => setCollectAgain(c)}>
+                                Collect again with another profile…
+                              </Menu.Item>
+                              {versions.length > 1 && (
                                 <Menu.Item
                                   color="red"
                                   onClick={() =>
                                     confirm({
-                                      title: 'Remove this copy?',
+                                      title: `Stop collecting ${title} this way?`,
                                       message:
-                                        'Files stay on disk. Other copies keep their files and ownership.',
-                                      label: 'Remove copy',
+                                        'The card goes; files stay on disk, and the edition’s other cards keep theirs.',
+                                      label: 'Remove card',
                                       onConfirm: async () => {
                                         await api.deleteVersion(seriesID, t.id)
                                         await changed()
@@ -302,7 +298,7 @@ export default function EditionManager({
                                     })
                                   }
                                 >
-                                  Remove this copy
+                                  Remove this card
                                 </Menu.Item>
                               )}
                               {c.custom && (
@@ -311,11 +307,9 @@ export default function EditionManager({
                             </>
                           }
                         >
-                          {t && <Menu.Item onClick={findMissing}>Search releases</Menu.Item>}
+                          <Menu.Item onClick={findMissing}>Search releases</Menu.Item>
                           <Menu.Item onClick={() => setEdition(c)}>Edit edition</Menu.Item>
-                          {t && (
-                            <Menu.Item onClick={() => setVersion(t)}>Download settings</Menu.Item>
-                          )}
+                          <Menu.Item onClick={() => setVersion(t)}>Download settings</Menu.Item>
                           <Menu.Item
                             onClick={() =>
                               setBook({
@@ -337,7 +331,7 @@ export default function EditionManager({
                         </EditionActions>
                       </Group>
                     </Group>
-                    {t && (
+                    {(
                       <Group justify="space-between" gap="sm">
                         <Group gap="sm">
                           {total > 0 ? (
@@ -354,7 +348,7 @@ export default function EditionManager({
                               }
                               aria-expanded={show}
                               aria-label={`${show ? 'Hide' : 'Show'} ${noun} (${total})`}
-                              onClick={() => setExpanded({ ...expanded, [c.id]: !show })}
+                              onClick={() => setExpanded({ ...expanded, [t.id]: !show })}
                             >
                               {total} {noun} · {owned} owned
                             </Button>
@@ -363,25 +357,10 @@ export default function EditionManager({
                               No {noun} yet
                             </Text>
                           )}
-                          {versions.length > 1 && (
-                            <Select
-                              aria-label="Collected version"
-                              size="xs"
-                              data={versions.map((v) => ({
-                                value: String(v.id),
-                                label: v.name,
-                              }))}
-                              value={String(t.id)}
-                              onChange={(v) => {
-                                if (v) setChosen({ ...chosen, [c.id]: v })
-                              }}
-                              w={190}
-                            />
-                          )}
                         </Group>
                         <Switch
                           size="sm"
-                          label={versions.length > 1 ? 'Collect this version' : 'Collect'}
+                          label="Collect"
                           checked={t.monitored}
                           disabled={busy}
                           onChange={(e) =>
@@ -395,7 +374,7 @@ export default function EditionManager({
                         />
                       </Group>
                     )}
-                    {show && t && (
+                    {show && (
                       <EditionBooks
                         key={t.id}
                         seriesID={seriesID}
@@ -413,6 +392,7 @@ export default function EditionManager({
                   </Stack>
                 </Card>
               )
+              })
             })}
           <Group justify="space-between">
             <Button
@@ -618,6 +598,19 @@ export default function EditionManager({
             setEdition(null)
           }}
           close={() => setEdition(null)}
+        />
+      )}
+      {collectAgain && (
+        <CollectAgain
+          seriesID={seriesID}
+          edition={collectAgain}
+          versions={allVersions.filter((t) => t.editionId === collectAgain.id)}
+          seriesProfileId={seriesProfileId}
+          save={async () => {
+            await changed()
+            setCollectAgain(null)
+          }}
+          close={() => setCollectAgain(null)}
         />
       )}
       {link && (

@@ -146,6 +146,7 @@ export default function SeriesPage() {
       onBook={setBookSel}
       onAddEdition={(start) => setAddEdition(start ?? {})}
       onSources={() => setSourcesOpen(true)}
+      seriesProfileId={series?.profileId ?? 0}
     />
   )
 

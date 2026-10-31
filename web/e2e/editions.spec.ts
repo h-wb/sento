@@ -19,22 +19,32 @@ test('editions retain independent versions, editable books, and mobile layout', 
       .locator('.mantine-Card-root')
       .filter({ hasText: 'Standard Edition' })
       .first()
+    // Collecting an edition again is choosing another release profile;
+    // the second card is named after it.
+    const created = await request.post('/api/v1/profiles/', {
+      data: { name: 'Preferred group', formatScores: {}, minFormatScore: -10000 },
+    })
+    expect(created.ok()).toBeTruthy()
+    const profileId = (await created.json()).id
     await edition.getByRole('button', { name: /More actions/ }).click()
     await page.getByRole('menuitem', { name: 'More', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Keep another copy of this edition', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Keep another copy of this edition', exact: true })
-    await dialog.getByRole('textbox', { name: 'Copy name', exact: true }).fill('Preferred group')
-    await expect(dialog.getByRole('textbox', { name: 'Required release group', exact: true })).toHaveCount(0)
-    await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Collect again with another profile…', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Collect again with another profile', exact: true })
+    await dialog.getByRole('combobox', { name: 'Release profile' }).click()
+    await page.getByRole('option', { name: 'Preferred group', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Collect', exact: true }).click()
     await expect(dialog).toBeHidden()
     const versions = await (await request.get(`/api/v1/series/${id}/versions`)).json()
-    expect(versions.filter((t: { name: string }) => t.name === 'Preferred group')).toHaveLength(1)
+    expect(versions.filter((t: { profileId: number }) => t.profileId === profileId)).toHaveLength(1)
+    await expect(page.locator('.mantine-Card-root').filter({ hasText: 'Standard Edition · Preferred group' })).toHaveCount(1)
     await edition.getByRole('button', { name: /More actions/ }).click()
     await page.getByRole('menuitem', { name: 'Add volume', exact: true }).click()
     const bookDialog = page.getByRole('dialog', { name: 'Add book', exact: true })
     await bookDialog.getByRole('textbox', { name: 'Display label', exact: true }).fill('0')
     await bookDialog.getByRole('button', { name: 'Save book', exact: true }).click()
     await expect(bookDialog).toBeHidden()
+    // Three cards now (the second profile's included): each opens on demand.
+    await edition.getByRole('button', { name: /Show volumes/ }).click()
     await expect(edition.getByRole('button', { name: /Hide volumes/ })).toBeVisible()
     await expect(edition.getByRole('button', { name: '0', exact: true })).toBeVisible()
     await edition.getByRole('button', { name: '0', exact: true }).click()
