@@ -15,8 +15,10 @@ import {
   SegmentedControl,
   Stack,
   Text,
+  Tooltip,
 } from '@mantine/core'
-import { IconDots } from '@tabler/icons-react'
+import { IconDots, IconSortAscendingNumbers, IconSortDescendingNumbers } from '@tabler/icons-react'
+import { useLocalStorage } from '@mantine/hooks'
 import { api } from '../api'
 import type {
   Edition,
@@ -172,7 +174,16 @@ export default function EditionBooks({
     queryKey: ['series', seriesID, 'books', t.id],
     queryFn: () => api.versionBooksOf(seriesID, t.id),
   })
-  const all = useMemo(() => q.data ?? [], [q.data])
+  // Newest first by default: new and wanted books are what is looked for.
+  // Remembered per ledger, volumes and chapters apart.
+  const [order, setOrder] = useLocalStorage<'newest' | 'oldest'>({
+    key: `sento.bookOrder.${noun}`,
+    defaultValue: 'newest',
+  })
+  const all = useMemo(
+    () => (order === 'newest' ? [...(q.data ?? [])].reverse() : (q.data ?? [])),
+    [q.data, order],
+  )
   const active = filters.find((f) => f.value === filter) ?? filters[0]
   const books = useMemo(() => all.filter(active.match), [all, active])
   const view = viewChoice ?? (all.length > GRID_FROM ? 'grid' : 'list')
@@ -225,10 +236,13 @@ export default function EditionBooks({
   const jump = () => {
     const wantedNumber = Number(goTo)
     if (goTo === '' || Number.isNaN(wantedNumber)) return
-    const at = (list: BookStatus[]) =>
-      list.findIndex(
-        (s) => s.book.numberKnown && s.book.sequenceNum >= Math.round(wantedNumber * 100),
-      )
+    // The first book numbered at least that, in either order.
+    const at = (list: BookStatus[]) => {
+      const target = list
+        .filter((s) => s.book.numberKnown && s.book.sequenceNum >= Math.round(wantedNumber * 100))
+        .reduce<BookStatus | null>((low, s) => (!low || s.book.sequenceNum < low.book.sequenceNum ? s : low), null)
+      return target ? list.indexOf(target) : -1
+    }
     let list = books
     let index = at(list)
     if (index < 0 && filter !== 'all') {
@@ -367,6 +381,16 @@ export default function EditionBooks({
             onChange={setGoTo}
             onKeyDown={(e) => e.key === 'Enter' && jump()}
           />
+          <Tooltip label={order === 'newest' ? 'Newest first' : 'Oldest first'}>
+            <ActionIcon
+              variant="default"
+              size="md"
+              aria-label={order === 'newest' ? 'Newest first; show oldest first' : 'Oldest first; show newest first'}
+              onClick={() => setOrder(order === 'newest' ? 'oldest' : 'newest')}
+            >
+              {order === 'newest' ? <IconSortDescendingNumbers size={16} /> : <IconSortAscendingNumbers size={16} />}
+            </ActionIcon>
+          </Tooltip>
           <SegmentedControl
             size="xs"
             aria-label="Book layout"

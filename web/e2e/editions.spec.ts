@@ -408,6 +408,8 @@ test('a book shows its MangaBaka copies and marks what was edited', async ({
     const card = page.locator('.mantine-Card-root').filter({ hasText: 'Standard Edition' }).first()
     await expect(card.getByRole('link', { name: 'From MangaBaka' })).toBeVisible()
     await card.getByRole('radio', { name: 'List' }).check({ force: true })
+    // Books list newest first; volume 1 leads once the order is turned.
+    await card.getByRole('button', { name: 'Newest first; show oldest first' }).click()
     const row = card.locator('[data-book]').first()
     await row.getByRole('button', { name: /More|actions/i }).click()
     await page.getByRole('menuitem', { name: 'Edit', exact: true }).click()
