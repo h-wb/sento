@@ -81,7 +81,8 @@ func New(cfg config.Config, db *sql.DB, dialect string, mdProvider metadata.Prov
 
 // reconcileExtensions converges the host's installed extensions with the
 // desired list, off the request path (installs dex2jar APKs and can take
-// a while).
+// a while). The sidecar starts beside Sento and is often not up yet, so a
+// failure is retried, backing off, for as long as the reconcile may take.
 func (s *Server) reconcileExtensions() {
 	if !s.extensions.HasManager() {
 		return
@@ -89,8 +90,22 @@ func (s *Server) reconcileExtensions() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		if err := s.extensions.Reconcile(ctx); err != nil {
-			slog.Warn("extension reconcile failed", "error", err)
+		for wait := 5 * time.Second; ; wait = min(2*wait, time.Minute) {
+			err := s.extensions.Reconcile(ctx)
+			if err == nil {
+				return
+			}
+			if ctx.Err() != nil {
+				slog.Warn("extension reconcile failed", "error", err)
+				return
+			}
+			slog.Info("extension reconcile will retry", "error", err, "in", wait)
+			select {
+			case <-ctx.Done():
+				slog.Warn("extension reconcile failed", "error", err)
+				return
+			case <-time.After(wait):
+			}
 		}
 	}()
 }
