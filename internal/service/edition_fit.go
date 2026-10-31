@@ -112,28 +112,27 @@ func (s *shelf) judge(p parse.Result, e store.Edition, evidence int64) (fitVerdi
 			return fitNo, fmt.Sprintf("The release is the %s; %s boxes the original volumes.", r.Written, e.EditionName)
 		}
 	}
+	// Color names an edition where the series has a color edition: then a
+	// colored release is that edition's, as a name would make it. Where it
+	// has none, colorized volumes are a variant, the profile's to rank.
+	if r.Color && !ec.Color {
+		for _, o := range siblings {
+			if s.claim(o).Color {
+				return fitNo, fmt.Sprintf("The release is colored; %s is this series' color edition.", o.EditionName)
+			}
+		}
+	}
 	verdict, why := fitYes, ""
 	switch {
 	case r.Named():
 		verdict, why = fitUnsure, fmt.Sprintf("The release calls itself the %s; %s does not. Confirm it is this numbering.", r.Written, e.EditionName)
 	case ec.Named():
 		verdict, why = fitUnsure, fmt.Sprintf("%s is a numbering of its own; the release does not name it. Confirm it is this one.", e.EditionName)
-	case r.Color && !ec.Color && s.anyColor(siblings):
-		verdict, why = fitUnsure, "The release is colored and this series has a color edition. Confirm it is this one."
 	}
 	if verdict == fitUnsure && evidence == e.ID {
 		return fitYes, ""
 	}
 	return verdict, why
-}
-
-func (s *shelf) anyColor(eds []store.Edition) bool {
-	for _, o := range eds {
-		if s.claim(o).Color {
-			return true
-		}
-	}
-	return false
 }
 
 // fits reports whether a release known only by its name is surely a book

@@ -463,7 +463,7 @@ func TestEditionRulesOnRealNames(t *testing.T) {
 		{"Dragon Ball", "Dragon Ball v01-09 (VIZBIG Edition) (Digital)", dragonBall, dbVizbig, fitYes},
 		{"Dragon Ball", "Dragon Ball v01-09 (VIZBIG Edition) (Digital)", dragonBall, dbStandard, fitNo},
 		{"Dragon Ball", "[Tracksuit] Dragon Ball - Full Color - Vols. 01 - 16", dragonBall, dbColor, fitYes},
-		{"Dragon Ball", "[Tracksuit] Dragon Ball - Full Color - Vols. 01 - 16", dragonBall, dbStandard, fitUnsure},
+		{"Dragon Ball", "[Tracksuit] Dragon Ball - Full Color - Vols. 01 - 16", dragonBall, dbStandard, fitNo},
 		{"Bleach", "Bleach - Digital Colored Comics v01-74 (2021) (Colored Council)", bleach, bleachStandard, fitYes},
 		{"20th Century Boys", "20th Century Boys v01-02 (2018) (The Perfect Edition) (Scan-HQ)", boys, boysStandard, fitNo},
 		{"20th Century Boys", "20th Century Boys v01-02 (2018) (The Perfect Edition) (Scan-HQ)", boys, boysPerfect, fitYes},
