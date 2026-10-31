@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, Button, Checkbox, Group, Select, Stack, Text, TextInput } from '@mantine/core'
+import { Alert, Button, Group, Select, Stack, Text, TextInput } from '@mantine/core'
 import type { Edition } from '../types/store'
 import { EditionOrigin } from './Origin'
 import { EditorModal } from './EditorModal'
@@ -19,7 +19,6 @@ export function EditionEditor({
     publisher: string
     medium: string
     numberingSource: string
-    discoverChapters?: boolean
   }) => Promise<void>
   reset: () => Promise<void>
   close: () => void
@@ -117,14 +116,6 @@ export function EditionEditor({
               onChange={(source) => set({ ...v, numberingSource: source ?? 'manual' })}
             />
           )}
-          {v.type === 'chapter' && (
-            <Checkbox
-              label="Collect source observations for review"
-              description="Only verified source edition mappings can submit chapter observations"
-              checked={v.discoverChapters}
-              onChange={(e) => set({ ...v, discoverChapters: e.currentTarget.checked })}
-            />
-          )}{' '}
           {edit.error && <Alert color="red">{edit.error}</Alert>}
           <Group justify="space-between">
             {(v.syncState === 'linked' || v.syncState === 'stale') && (

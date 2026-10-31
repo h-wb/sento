@@ -587,7 +587,9 @@ func (run *searchRun) planCandidates(cs []ReleaseCandidate) []ReleaseCandidate {
 }
 
 // discovers reports whether this run covers a chapter edition that learns
-// its books from a linked source.
+// its books from a source: one a match is placed on, or the one chapter
+// edition the series collects, whose sources may not be matched yet. A
+// chapter edition with nothing wanted still checks for new chapters.
 func (s *SearchService) discovers(run *searchRun) bool {
 	if run.ledger != LedgerChapter || (run.scope != nil && run.scope.BookID != 0) {
 		return false
@@ -600,9 +602,12 @@ func (s *SearchService) discovers(run *searchRun) bool {
 			}
 		}
 	}
+	if home := run.chapterHome(); home > 0 && (run.scope == nil || scoped == home) {
+		return true
+	}
 	for _, eid := range run.sourceEditions {
 		col := editionByID(run.editions, eid)
-		if col != nil && col.Type == LedgerChapter && col.DiscoverChapters && (run.scope == nil || scoped == eid) {
+		if col != nil && col.Type == LedgerChapter && (run.scope == nil || scoped == eid) {
 			return true
 		}
 	}

@@ -114,7 +114,6 @@ type Series struct {
 // and Medium are those of its preferred collection, or as entered.
 type Edition struct {
 	NumberingSource  string `json:"numberingSource"`
-	DiscoverChapters bool   `json:"discoverChapters"`
 	SyncState        string `json:"syncState"`
 	ID               int64  `json:"id"`
 	SeriesID         int64  `json:"seriesId"`
@@ -378,7 +377,7 @@ const editionColumns = `
 	COALESCE(count_main,0) AS count_main, COALESCE(count_extra,0) AS count_extra,
 	COALESCE(count_other,0) AS count_other,
 	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date, custom, split,
-	COALESCE(profile_id,0) AS profile_id, COALESCE((SELECT t.cutoff_num FROM versions t WHERE t.edition_id=editions.id AND t.is_default=TRUE),0) AS cutoff_num,sync_state,discover_chapters,numbering_source,overrides_json,
+	COALESCE(profile_id,0) AS profile_id, COALESCE((SELECT t.cutoff_num FROM versions t WHERE t.edition_id=editions.id AND t.is_default=TRUE),0) AS cutoff_num,sync_state,numbering_source,overrides_json,
 	COALESCE((SELECT MAX(w.sequence_num) FROM books w WHERE w.edition_id=editions.id AND w.count_type='main' AND w.number_known=TRUE),0) AS last_number`
 
 func (s *Store) ListEditions(ctx context.Context, seriesID int64) ([]Edition, error) {
@@ -814,8 +813,8 @@ func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
 			source_name = excluded.source_name,
 			manga_title = excluded.manga_title,
 			state = excluded.state,
-			trust_chapters=excluded.trust_chapters,
- edition_id=CASE WHEN excluded.edition_id>0 THEN excluded.edition_id ELSE source_bindings.edition_id END
+			trust_chapters=CASE WHEN excluded.edition_id>0 THEN excluded.trust_chapters ELSE source_bindings.trust_chapters END,
+			edition_id=CASE WHEN excluded.edition_id>0 THEN excluded.edition_id ELSE source_bindings.edition_id END
 		RETURNING id`),
 		b.SeriesID, b.SourceID, b.SourceMangaKey, b.SourceName, b.MangaTitle, state, b.Priority, b.EditionID, b.TrustChapters).Scan(&id)
 	if err != nil {

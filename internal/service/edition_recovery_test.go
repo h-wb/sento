@@ -414,10 +414,6 @@ func TestTrustedChaptersRequireVerifiedBindingAndDoNotFillGaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	yes := true
-	if err = st.EditEdition(ctx, id, c.ID, store.EditionMetadataPatch{DiscoverChapters: &yes}); err != nil {
-		t.Fatal(err)
-	}
 	bid, err := st.AddBinding(ctx, store.Binding{SeriesID: id, SourceID: "reader", SourceMangaKey: "manga", State: "active", EditionID: c.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -441,6 +437,65 @@ func TestTrustedChaptersRequireVerifiedBindingAndDoNotFillGaps(t *testing.T) {
 		if b.ID == bid && b.TrustChapters {
 			t.Fatal("changing edition preserved trust")
 		}
+	}
+}
+
+// A source's only match that lists chapters is placed on the one chapter
+// edition the series collects, and trusted: its new chapters are added
+// without asking. A listing of volumes, or a source with several matches,
+// is left for a person to place.
+func TestASoleChapterListingIsPlacedAndTrusted(t *testing.T) {
+	_, st, id, _, _, _ := modelFixture(t)
+	ctx := context.Background()
+	editions, err := st.ListEditions(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions, err := st.ListVersions(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var home int64
+	books := map[int64][]store.Book{}
+	for _, e := range editions {
+		if e.Type == LedgerChapter {
+			home = e.ID
+			books[e.ID], _ = st.ListBooks(ctx, e.ID)
+		}
+	}
+	bind := func(source, key string) int64 {
+		bid, err := st.AddBinding(ctx, store.Binding{SeriesID: id, SourceID: source, SourceMangaKey: key, State: "active"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bid
+	}
+	weeb, mado, dup1, dup2 := bind("weeb", "op"), bind("mado", "op"), bind("dup", "a"), bind("dup", "b")
+	cand := func(bid int64, source, title string, n float64) provider.Candidate {
+		return provider.Candidate{Title: title, Protocol: provider.ProtocolSource, Source: &provider.SourceRef{BindingID: bid, SourceID: source, ChapterKey: title, ChapterNumber: n, Lang: "en"}}
+	}
+	run := &searchRun{seriesID: id, ledger: LedgerChapter, editions: editions, versions: versions, sourceEditions: map[int64]int64{}, books: books, titles: []string{"ONE PIECE"}}
+	svc := &SearchService{store: st}
+	svc.observeCandidates(ctx, run, []provider.Candidate{
+		cand(weeb, "weeb", "ONE PIECE Chapter 9001", 9001),
+		cand(mado, "mado", "ONE PIECE Vol. 01", 0),
+		cand(dup1, "dup", "ONE PIECE Chapter 9002", 9002),
+		cand(dup2, "dup", "ONE PIECE Chapter 9002", 9002),
+	})
+	bindings, _ := st.ListBindings(ctx, id)
+	for _, b := range bindings {
+		placed := b.EditionID == home && b.TrustChapters
+		if placed != (b.ID == weeb) {
+			t.Errorf("%s/%s: edition %d trusted %v", b.SourceID, b.SourceMangaKey, b.EditionID, b.TrustChapters)
+		}
+	}
+	added, _ := st.ListBooks(ctx, home)
+	found := false
+	for _, w := range added {
+		found = found || w.SequenceNum == 900100
+	}
+	if !found {
+		t.Fatal("the placed listing's new chapter was not added")
 	}
 }
 

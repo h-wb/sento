@@ -372,6 +372,10 @@ export const BookFolderByType = "{type}/{edition} [{lang}] ({version})";
 export const BookFolderByID = "editions/{editionId}/versions/{versionId}";
 
 //////////
+// source: observations.go
+
+
+//////////
 // source: organize.go
 
 /**

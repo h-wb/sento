@@ -118,10 +118,6 @@ func TestEmptyChapterEditionDiscoversItsFirstBooks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	yes := true
-	if err = st.EditEdition(ctx, sid, c.ID, store.EditionMetadataPatch{DiscoverChapters: &yes}); err != nil {
-		t.Fatal(err)
-	}
 	iid, err := st.AddIndexer(ctx, store.Indexer{Name: "Reader", Protocol: store.IndexerSource, Enabled: true, UseChapters: true, Settings: []byte(`{"sourceId":"reader"}`)})
 	if err != nil {
 		t.Fatal(err)

@@ -272,7 +272,10 @@ func (s *Store) SetBindingEdition(ctx context.Context, seriesID, bindingID, cid 
 			return ErrNotFound
 		}
 	}
-	return s.touch(ctx, `UPDATE source_bindings SET trust_chapters=CASE WHEN edition_id=? THEN trust_chapters ELSE FALSE END,edition_id=? WHERE id=? AND series_id=?`, cid, cid, bindingID, seriesID)
+	// Placing a match on a chapter edition verifies it: its new chapters
+	// are trusted until someone says otherwise. Anywhere else, or nowhere,
+	// nothing is.
+	return s.touch(ctx, `UPDATE source_bindings SET trust_chapters=EXISTS(SELECT 1 FROM editions WHERE id=? AND type='chapter'),edition_id=? WHERE id=? AND series_id=?`, cid, cid, bindingID, seriesID)
 }
 
 func (s *Store) ResetBook(ctx context.Context, seriesID, id int64) error {

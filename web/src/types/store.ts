@@ -40,7 +40,6 @@ export interface BookObservation {
 export interface EditionMetadataPatch {
   makeLocal?: boolean;
   numberingSource?: string;
-  discoverChapters?: boolean;
   editionName?: string;
   language?: string;
   publisher?: string;
@@ -381,7 +380,6 @@ export interface Series {
  */
 export interface Edition {
   numberingSource: string;
-  discoverChapters: boolean;
   syncState: string;
   id: number /* int64 */;
   seriesId: number /* int64 */;

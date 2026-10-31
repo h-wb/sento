@@ -366,7 +366,7 @@ function BindingList({
                 size="xs"
                 className={classes.matchTrust}
                 label="Trust new chapters from this listing"
-                description="Add observed chapters automatically when chapter discovery is enabled for this edition."
+                description="Add the new chapters it lists automatically. Untrusted, they wait in Review."
                 checked={b.trustChapters}
                 disabled={busy}
                 onChange={(e) => run(() => api.trustBinding(seriesID, b.id, e.currentTarget.checked))}

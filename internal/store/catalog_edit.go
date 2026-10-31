@@ -13,7 +13,6 @@ import (
 type EditionMetadataPatch struct {
 	MakeLocal        bool     `json:"makeLocal,omitempty"`
 	NumberingSource  *string  `json:"numberingSource"`
-	DiscoverChapters *bool    `json:"discoverChapters"`
 	EditionName      *string  `json:"editionName"`
 	Language         *string  `json:"language"`
 	Publisher        *string  `json:"publisher"`
@@ -75,14 +74,6 @@ func (s *Store) EditEdition(ctx context.Context, seriesID, cid int64, p EditionM
 			return apperr.Invalidf("series counts apply only to local chapter editions")
 		}
 		if _, err = tx.ExecContext(ctx, s.q(`UPDATE editions SET numbering_source=? WHERE id=?`), v, cid); err != nil {
-			return err
-		}
-	}
-	if p.DiscoverChapters != nil {
-		if c.Type != "chapter" && *p.DiscoverChapters {
-			return apperr.Invalidf("source discovery applies to chapter editions")
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`UPDATE editions SET discover_chapters=? WHERE id=?`), *p.DiscoverChapters, cid); err != nil {
 			return err
 		}
 	}
