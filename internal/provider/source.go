@@ -520,7 +520,7 @@ func (p *SourceProvider) State(ctx context.Context, externalID string) (Download
 		// only this failed attempt; never reset other jobs through Recover.
 		delete(p.jobs, externalID)
 		p.mu.Unlock()
-		return DownloadState{Detail: err.Error()}, &DownloadError{Err: err, Retryable: retryable, RetryAfter: retryAfter}
+		return DownloadState{Detail: err.Error()}, &DownloadError{Err: err, Retryable: retryable, RetryAfter: retryAfter, Gone: sourceGone(err)}
 	}
 	p.mu.Unlock()
 	p.startJob(externalID)

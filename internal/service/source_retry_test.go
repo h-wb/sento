@@ -103,3 +103,31 @@ func TestSourceFailureQueueRecovery(t *testing.T) {
 		})
 	}
 }
+
+// A source that no longer has the listing (404) fails the job and
+// blocklists the release, so the next sweep picks another one, instead
+// of leaving the job for review.
+func TestGoneSourceListingIsBlocklisted(t *testing.T) {
+	ctx := context.Background()
+	_, st, sid, edition, books, version := modelFixture(t)
+	failure := &provider.DownloadError{Err: errors.New("listing pages: host: HTTP error 404"), Gone: true}
+	p := &recoveryProvider{stateErr: failure}
+	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, ProviderID: p.ID(), Protocol: p.Protocol(), ReleaseKey: "gone-release"}, []store.BookRef{modelRef(edition, books[0], version)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.SetQueueExternalID(ctx, qid, "remote"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = NewImporter(st, provider.NewRegistry(p), t.TempDir(), nil).ProcessQueue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	q, err := st.GetQueueItem(ctx, qid)
+	if err != nil || q.Status != store.QueueFailed {
+		t.Fatalf("a gone listing is not failed: %+v %v", q, err)
+	}
+	blocked, err := st.BlockedKeys(ctx)
+	if err != nil || len(blocked) == 0 {
+		t.Fatalf("a gone listing is not blocklisted: %v %v", blocked, err)
+	}
+}

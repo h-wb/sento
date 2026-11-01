@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -203,5 +204,21 @@ func TestSourceCooldownDoesNotAppearStalled(t *testing.T) {
 	state, err = p.State(context.Background(), id)
 	if err != nil || !state.StallEligible || state.Detail != "downloading" {
 		t.Fatalf("cooldown did not expire: %+v, %v", state, err)
+	}
+}
+
+func TestSourceGone(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		gone bool
+	}{
+		{fmt.Errorf("listing pages: %w", &extensions.HTTPError{StatusCode: 404}), true},
+		{&extensions.HTTPError{StatusCode: 410}, true},
+		{&extensions.HTTPError{StatusCode: 503, Retryable: true}, false},
+		{errors.New("connection reset"), false},
+	} {
+		if got := sourceGone(tc.err); got != tc.gone {
+			t.Errorf("%v: gone = %v", tc.err, got)
+		}
 	}
 }
