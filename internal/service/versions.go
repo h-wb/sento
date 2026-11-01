@@ -210,112 +210,129 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	if err != nil {
 		return nil, err
 	}
-	coverageByVersion := map[int64][]store.AssetCoverage{}
+	idx := ledgerIndex{
+		series: series, profiles: profiles, today: time.Now().Format("2006-01-02"),
+		coverage: map[int64][]store.AssetCoverage{}, overrides: map[int64]map[int64]bool{},
+		files: map[int64]store.File{}, present: map[int64]bool{}, unavailable: map[string]bool{},
+		contents: map[int64][]store.AssetContent{}, pending: pending,
+	}
 	for _, a := range coverage {
-		coverageByVersion[a.VersionID] = append(coverageByVersion[a.VersionID], a)
+		idx.coverage[a.VersionID] = append(idx.coverage[a.VersionID], a)
 	}
-	view := &ledgerView{Versions: versions, Editions: cols, Books: map[int64][]store.Book{}, Status: map[int64][]BookStatus{}, Profiles: map[int64]*profile.Profile{}}
-	byCol := map[int64]store.Edition{}
-	for _, c := range cols {
-		byCol[c.ID] = c
-	}
-	for _, w := range works {
-		view.Books[w.EditionID] = append(view.Books[w.EditionID], w)
-	}
-	byOverride := map[int64]map[int64]bool{}
 	for _, o := range overrides {
-		if byOverride[o.VersionID] == nil {
-			byOverride[o.VersionID] = map[int64]bool{}
+		if idx.overrides[o.VersionID] == nil {
+			idx.overrides[o.VersionID] = map[int64]bool{}
 		}
-		byOverride[o.VersionID][o.BookID] = o.Monitored
+		idx.overrides[o.VersionID][o.BookID] = o.Monitored
 	}
-	byFile := map[int64]store.File{}
-	present := map[int64]bool{}
 	// Storage health is per folder: with chapters in their own folder, an
 	// unreachable chapter folder says nothing about the volumes, and the
 	// other way round. In a shared folder one bad file blocks both.
-	unavailable := map[string]bool{}
 	for _, f := range files {
-		byFile[f.ID] = f
-		present[f.ID] = f.Presence == "present" && !f.NeedsReview
+		idx.files[f.ID] = f
+		idx.present[f.ID] = f.Presence == "present" && !f.NeedsReview
 		if f.Presence == "unavailable" || f.Presence == "unknown" {
 			switch {
 			case series.ChapterPath == "":
-				unavailable[LedgerVolume], unavailable[LedgerChapter] = true, true
+				idx.unavailable[LedgerVolume], idx.unavailable[LedgerChapter] = true, true
 			case series.InChapterFolder(f.Path):
-				unavailable[LedgerChapter] = true
+				idx.unavailable[LedgerChapter] = true
 			default:
-				unavailable[LedgerVolume] = true
+				idx.unavailable[LedgerVolume] = true
 			}
 		}
 	}
-	byContent := map[int64][]store.AssetContent{}
 	for _, c := range contents {
-		byContent[c.BookID] = append(byContent[c.BookID], c)
+		idx.contents[c.BookID] = append(idx.contents[c.BookID], c)
 	}
-	today := time.Now().Format("2006-01-02")
+	view := &ledgerView{Versions: versions, Editions: cols, Books: map[int64][]store.Book{}, Status: map[int64][]BookStatus{}, Profiles: map[int64]*profile.Profile{}}
+	for _, w := range works {
+		view.Books[w.EditionID] = append(view.Books[w.EditionID], w)
+	}
 	for _, version := range versions {
-		col := byCol[version.EditionID]
-		prof := profiles.For(version)
-		view.Profiles[version.ID] = prof
-		judged := judgeCardFiles(col, prof, profiles.Formats, coverageByVersion[version.ID], byFile, present)
-		chapter := col.Type == LedgerChapter
-		books := view.Books[col.ID]
-		slots := make([]BookStatus, 0, len(books))
-		for _, w := range books {
-			sl := BookStatus{Book: w, VersionID: version.ID, Availability: availability(w.ReleaseDate, today), FileIDs: judged.accepted[w.ID], OnDiskFileIDs: []int64{}}
-			if sl.FileIDs == nil {
-				sl.FileIDs = []int64{}
-			}
-			review := false
-			for _, c := range byContent[w.ID] {
-				f := byFile[c.FileID]
-				if f.Presence == "present" {
-					sl.OnDiskFileIDs = append(sl.OnDiskFileIDs, f.ID)
-				}
-				review = review || !c.Verified || f.NeedsReview
-			}
-			// Whether the card collects the book, and if not, why: the
-			// first refusal from the series down to the book itself.
-			inScope := (w.CountType == "main" || version.IncludeExtras) && (!chapter || !w.NumberKnown || w.SequenceNum > version.CutoffNum)
-			if v, ok := byOverride[version.ID][w.ID]; ok {
-				inScope = v
-			}
-			why := ""
-			switch {
-			case !series.Monitored:
-				why = "Automatic downloads are paused for this series"
-			case col.SyncState == "stale":
-				why = "Edition is unavailable in the catalog; review it before collecting"
-			case w.SyncState == "stale" || w.SyncState == "retired":
-				why = "This book is retired or unavailable in the catalog"
-			case !version.Monitored:
-				why = "Collecting is paused for this edition"
-			case !inScope:
-				why = "This book is outside what you collect of this edition"
-			}
-			sl.Monitored = why == ""
-			best, known := 0, true
-			for i, fid := range sl.FileIDs {
-				if i == 0 || judged.scores[fid] > best {
-					best = judged.scores[fid]
-				}
-				known = known && byFile[fid].Facts.FactsKnown
-			}
-			sl.CurrentScore = best
-			upgrade := prof != nil && prof.UpgradesEnabled && known && !judged.pinned[w.ID] && (prof.UpgradeUntilScore == 0 || best < prof.UpgradeUntilScore)
-			sl.State, sl.Reason, sl.Wanted = bookState(bookFacts{
-				Collected: sl.Monitored, Why: why,
-				Owned: len(sl.FileIDs) > 0, OnDisk: len(sl.OnDiskFileIDs) > 0, Review: review,
-				Reserved:     pending[store.BookKey(version.ID, w.ID)],
-				Availability: sl.Availability, AcquireUnknown: version.AcquireUnknown,
-				StorageDown: unavailable[col.Type], Upgrade: upgrade, Refused: judged.refused[w.ID],
-			})
-			slots = append(slots, sl)
+		col := editionByID(cols, version.EditionID)
+		if col == nil {
+			continue
 		}
-		view.Status[version.ID] = slots
+		view.Profiles[version.ID] = profiles.For(version)
+		view.Status[version.ID] = idx.cardBooks(version, *col, view.Books[col.ID])
 	}
 	return view, nil
+}
+
+// ledgerIndex is a series' files, mappings and settings, indexed for
+// evaluating its cards.
+type ledgerIndex struct {
+	series      *store.Series
+	profiles    CardProfiles
+	today       string
+	coverage    map[int64][]store.AssetCoverage // card → mappings
+	overrides   map[int64]map[int64]bool        // card → book → collected
+	files       map[int64]store.File
+	present     map[int64]bool                 // file → on disk and confirmed
+	unavailable map[string]bool                // ledger → its folder cannot be checked
+	contents    map[int64][]store.AssetContent // book → files holding it
+	pending     map[string]bool                // store.BookKey → reserved
+}
+
+// cardBooks is where each book of a card stands.
+func (idx ledgerIndex) cardBooks(version store.CollectedVersion, col store.Edition, books []store.Book) []BookStatus {
+	prof := idx.profiles.For(version)
+	judged := judgeCardFiles(col, prof, idx.profiles.Formats, idx.coverage[version.ID], idx.files, idx.present)
+	chapter := col.Type == LedgerChapter
+	slots := make([]BookStatus, 0, len(books))
+	for _, w := range books {
+		sl := BookStatus{Book: w, VersionID: version.ID, Availability: availability(w.ReleaseDate, idx.today), FileIDs: judged.accepted[w.ID], OnDiskFileIDs: []int64{}}
+		if sl.FileIDs == nil {
+			sl.FileIDs = []int64{}
+		}
+		review := false
+		for _, c := range idx.contents[w.ID] {
+			f := idx.files[c.FileID]
+			if f.Presence == "present" {
+				sl.OnDiskFileIDs = append(sl.OnDiskFileIDs, f.ID)
+			}
+			review = review || !c.Verified || f.NeedsReview
+		}
+		// Whether the card collects the book, and if not, why: the
+		// first refusal from the series down to the book itself.
+		inScope := (w.CountType == "main" || version.IncludeExtras) && (!chapter || !w.NumberKnown || w.SequenceNum > version.CutoffNum)
+		if v, ok := idx.overrides[version.ID][w.ID]; ok {
+			inScope = v
+		}
+		why := ""
+		switch {
+		case !idx.series.Monitored:
+			why = "Automatic downloads are paused for this series"
+		case col.SyncState == "stale":
+			why = "Edition is unavailable in the catalog; review it before collecting"
+		case w.SyncState == "stale" || w.SyncState == "retired":
+			why = "This book is retired or unavailable in the catalog"
+		case !version.Monitored:
+			why = "Collecting is paused for this edition"
+		case !inScope:
+			why = "This book is outside what you collect of this edition"
+		}
+		sl.Monitored = why == ""
+		best, known := 0, true
+		for i, fid := range sl.FileIDs {
+			if i == 0 || judged.scores[fid] > best {
+				best = judged.scores[fid]
+			}
+			known = known && idx.files[fid].Facts.FactsKnown
+		}
+		sl.CurrentScore = best
+		upgrade := prof != nil && prof.UpgradesEnabled && known && !judged.pinned[w.ID] && (prof.UpgradeUntilScore == 0 || best < prof.UpgradeUntilScore)
+		sl.State, sl.Reason, sl.Wanted = bookState(bookFacts{
+			Collected: sl.Monitored, Why: why,
+			Owned: len(sl.FileIDs) > 0, OnDisk: len(sl.OnDiskFileIDs) > 0, Review: review,
+			Reserved:     idx.pending[store.BookKey(version.ID, w.ID)],
+			Availability: sl.Availability, AcquireUnknown: version.AcquireUnknown,
+			StorageDown: idx.unavailable[col.Type], Upgrade: upgrade, Refused: judged.refused[w.ID],
+		})
+		slots = append(slots, sl)
+	}
+	return slots
 }
 
 func assetJudgement(f store.AssetFacts, p *profile.Profile, formats []profile.Format) profile.Judgement {
