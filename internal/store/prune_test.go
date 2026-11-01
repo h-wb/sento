@@ -16,7 +16,8 @@ func TestPruneFinishedQueueAndDecisions(t *testing.T) {
 	s := New(conn, dialect)
 	ctx := context.Background()
 	now := time.Now().UTC().Format("2006-01-02 15:04:05")
-	if _, err := s.db.ExecContext(ctx, s.q(`INSERT INTO series (id, mangabaka_id, title, sort_title, raw_json) VALUES (1, 999999, 'Prune Test', 'prune test', '{}')`)); err != nil {
+	var sid int64
+	if err := s.db.QueryRowContext(ctx, s.q(`INSERT INTO series (mangabaka_id, title, sort_title, raw_json) VALUES (999999, 'Prune Test', 'prune test', '{}') RETURNING id`)).Scan(&sid); err != nil {
 		t.Fatal(err)
 	}
 	// 5 terminal jobs, oldest first, plus one active job.
@@ -29,17 +30,17 @@ func TestPruneFinishedQueueAndDecisions(t *testing.T) {
 			status = "failed"
 		}
 		created := time.Now().Add(time.Duration(-i-1) * time.Hour).UTC().Format("2006-01-02 15:04:05")
-		if _, err := s.db.ExecContext(ctx, s.q(`INSERT INTO queue_items (series_id, protocol, external_id, title, status, books_json, snapshot_json, created_at, updated_at) VALUES (1,'torrent',?,'old',?,?,?,?,?)`),
-			fmt.Sprintf("ext-%d", i), status, "[]", "{}", created, now); err != nil {
+		if _, err := s.db.ExecContext(ctx, s.q(`INSERT INTO queue_items (series_id, protocol, external_id, title, status, books_json, snapshot_json, created_at, updated_at) VALUES (?,'torrent',?,'old',?,?,?,?,?)`),
+			sid, fmt.Sprintf("ext-%d", i), status, "[]", "{}", created, now); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := s.db.ExecContext(ctx, s.q(`INSERT INTO queue_items (series_id, protocol, external_id, title, status, books_json, snapshot_json, created_at, updated_at) VALUES (1,'torrent','active-ext','active','queued','[]','{}',?,?)`), now, now); err != nil {
+	if _, err := s.db.ExecContext(ctx, s.q(`INSERT INTO queue_items (series_id, protocol, external_id, title, status, books_json, snapshot_json, created_at, updated_at) VALUES (?,'torrent','active-ext','active','queued','[]','{}',?,?)`), sid, now, now); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 5; i++ {
 		created := time.Now().Add(time.Duration(-i) * time.Hour).UTC().Format("2006-01-02 15:04:05")
-		if _, err := s.db.ExecContext(ctx, s.q(`INSERT INTO decisions (series_id, body_json, created_at) VALUES (1,'{}',?)`), created); err != nil {
+		if _, err := s.db.ExecContext(ctx, s.q(`INSERT INTO decisions (series_id, body_json, created_at) VALUES (?,'{}',?)`), sid, created); err != nil {
 			t.Fatal(err)
 		}
 	}
