@@ -5,7 +5,6 @@ import { EditionEditor } from './EditionEditor'
 import { CatalogLink } from './CatalogLink'
 import { CollectAgain } from './CollectAgain'
 import { MappingEditor } from './MappingEditor'
-import ReviewInbox from './ReviewInbox'
 import EditionBooks from './EditionBooks'
 import EditionActions from './EditionActions'
 import { useState } from 'react'
@@ -31,7 +30,6 @@ import type {
   CollectedVersion,
   Book,
   File as SeriesFile,
-  ReviewProposal,
 } from '../types/store'
 import type { BookSelection } from './BookDialog'
 import type { EditionStart } from './AddEdition'
@@ -40,9 +38,8 @@ import { useConfirmAction } from './ConfirmAction'
 import { cardLabel, cardTitle, editionDetails, editionMedia } from './editionText'
 import { EditionOrigin, MangaBakaMark } from './Origin'
 
-// The series page shows one section per tab. They share this component
-// because all three open the same book, version and file-mapping dialogs.
-export type EditionSection = 'editions' | 'review' | 'files'
+// Editions and Files share their book, version and file-mapping dialogs.
+export type EditionSection = 'editions' | 'files'
 type Props = {
   section: EditionSection
   seriesID: number
@@ -54,7 +51,6 @@ type Props = {
   files: SeriesFile[]
   onBook: (s: BookSelection) => void
   onAddEdition: (start?: EditionStart) => void
-  onSources: () => void
   // The series' release profile (0: the instance default).
   seriesProfileId: number
 }
@@ -67,7 +63,6 @@ export default function EditionManager({
   files,
   onBook,
   onAddEdition,
-  onSources,
   seriesProfileId,
 }: Props) {
   const qc = useQueryClient()
@@ -90,10 +85,6 @@ export default function EditionManager({
   const [edition, setEdition] = useState<Edition | null>(null)
   const [link, setLink] = useState<Edition | null>(null)
   const [file, setFile] = useState<SeriesFile | null>(null)
-  // Review's proposal for the file it opened; other ways in open it plain.
-  const [proposal, setProposal] = useState<{ fileId: number; value: ReviewProposal } | null>(
-    null,
-  )
   const [fileFilter, setFileFilter] = useState('')
   const [filePage, setFilePage] = useState(1)
   const [error, setError] = useState('')
@@ -103,6 +94,7 @@ export default function EditionManager({
     await Promise.all([
       qc.invalidateQueries({ queryKey: ['series', seriesID] }),
       qc.invalidateQueries({ queryKey: ['review'] }),
+      qc.invalidateQueries({ queryKey: ['activity'] }),
     ])
   }
   const run = async (fn: () => Promise<unknown>) => {
@@ -454,19 +446,6 @@ export default function EditionManager({
           )}
         </>
       )}
-      {section === 'review' && (
-        <ReviewInbox
-          seriesID={seriesID}
-          onSources={onSources}
-          onFile={(id, proposal) => {
-            const f = files.find((f) => f.id === id)
-            if (f) {
-              setFile(f)
-              setProposal(proposal ? { fileId: id, value: proposal } : null)
-            }
-          }}
-        />
-      )}
       {section === 'files' && files.length > 0 && (
         <Stack gap="sm">
           {error && <Alert color="red">{error}</Alert>}
@@ -641,7 +620,6 @@ export default function EditionManager({
           value={file}
           versions={allVersions}
           existing={coverage.data?.filter((a) => a.fileId === file.id) ?? []}
-          proposal={proposal?.fileId === file.id ? proposal.value : undefined}
           books={allBooks}
           editions={editions}
           save={async (books) => {

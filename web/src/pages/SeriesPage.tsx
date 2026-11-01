@@ -39,7 +39,9 @@ import { EmptyState } from '../components/EmptyState'
 import { cardLabel } from '../components/editionText'
 import { RemoveSeries } from '../components/RemoveSeries'
 import classes from './SeriesPage.module.css'
-import { SeriesHistory } from '../components/SeriesHistory'
+import ActivityPanel from '../components/ActivityPanel'
+import { useActivity } from '../components/useActivity'
+import { activityCounts } from '../components/activityModel'
 import { ProfileBarButton, ProfileMenuItems } from '../components/SeriesProfile'
 import { SeriesSources } from '../components/SeriesSources'
 
@@ -76,7 +78,7 @@ export default function SeriesPage() {
   // to; ?view=review is the deep link the global review inbox uses.
   const [searchParams, setSearchParams] = useSearchParams()
   const view = searchParams.get('view')
-  const tab = view && SERIES_TABS.includes(view) ? view : 'editions'
+  const tab = view === 'review' || view === 'history' ? 'activity' : view && SERIES_TABS.includes(view) ? view : 'editions'
   const setParam = (key: string, value: string | null) =>
     setSearchParams(
       (prev) => {
@@ -102,13 +104,8 @@ export default function SeriesPage() {
     queryKey: ['series', seriesID],
     queryFn: () => api.getSeries(seriesID),
   })
-  // Same key as the review inbox, so the tab count and the list agree.
-  const review = useQuery({
-    queryKey: ['review', seriesID],
-    queryFn: () => api.review(seriesID),
-    refetchInterval: 15000,
-  })
-  const reviewCount = review.data?.length ?? 0
+  const activity = useActivity(seriesID)
+  const attentionCount = activityCounts(activity.data).attention
   const overviewQuery = useQuery({
     queryKey: ['series', seriesID, 'edition-overview'],
     queryFn: () => api.editionOverview(seriesID),
@@ -127,11 +124,11 @@ export default function SeriesPage() {
   // Refresh everything under this series (books, files, indexers, detail).
   const load = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['queue'] })
+    void queryClient.invalidateQueries({ queryKey: ['activity'] })
     return queryClient.invalidateQueries({ queryKey: ['series'] })
   }, [queryClient])
 
-  // Editions, Review and Files are three views of the same manager: they
-  // share its book, version and file-mapping dialogs.
+  // Editions and Files share their book, version and file-mapping dialogs.
   const editionManager = (section: EditionSection) => (
     <EditionManager
       section={section}
@@ -142,7 +139,6 @@ export default function SeriesPage() {
       files={files}
       onBook={setBookSel}
       onAddEdition={(start) => setAddEdition(start ?? {})}
-      onSources={() => setSourcesOpen(true)}
       seriesProfileId={series?.profileId ?? 0}
     />
   )
@@ -406,20 +402,7 @@ export default function SeriesPage() {
         <Tabs.List>
           <Tabs.Tab value="editions">Editions</Tabs.Tab>
           <Tabs.Tab value="files">Files ({files.length})</Tabs.Tab>
-          <Tabs.Tab
-            value="review"
-            aria-description={reviewCount > 0 ? `${reviewCount} to review` : undefined}
-            rightSection={
-              reviewCount > 0 ? (
-                <Badge aria-hidden size="xs" circle color="yellow">
-                  {reviewCount}
-                </Badge>
-              ) : undefined
-            }
-          >
-            Review
-          </Tabs.Tab>
-          <Tabs.Tab value="history">History</Tabs.Tab>
+          <Tabs.Tab value="activity" rightSection={attentionCount > 0 ? <Badge aria-hidden size="xs" circle color="yellow">{attentionCount}</Badge> : undefined} aria-description={attentionCount > 0 ? `${attentionCount} needs attention` : undefined}>Activity</Tabs.Tab>
         </Tabs.List>
         <QueryFeedback error={overviewQuery.error} onRetry={() => void overviewQuery.refetch()} />
         <QueryFeedback error={filesQuery.error} onRetry={() => void filesQuery.refetch()} />
@@ -427,8 +410,8 @@ export default function SeriesPage() {
         <Tabs.Panel value="editions" pt="md">
           {editionManager('editions')}
         </Tabs.Panel>
-        <Tabs.Panel value="review" pt="md">
-          {editionManager('review')}
+        <Tabs.Panel value="activity" pt="md">
+          <ActivityPanel key={seriesID} seriesID={seriesID} onSources={() => setSourcesOpen(true)} legacyFilter={view === 'review' ? 'attention' : view === 'history' ? 'history' : undefined} />
         </Tabs.Panel>
 
         <Tabs.Panel value="files" pt="md">
@@ -469,9 +452,7 @@ export default function SeriesPage() {
             )}
           </Stack>
         </Tabs.Panel>
-        <Tabs.Panel value="history" pt="md">
-          <SeriesHistory seriesID={seriesID} />
-        </Tabs.Panel>
+
       </Tabs>
 
       <Modal opened={sourcesOpen} onClose={() => setSourcesOpen(false)} title="Sources" size="xl">
@@ -499,4 +480,4 @@ export default function SeriesPage() {
   )
 }
 
-const SERIES_TABS = ['editions', 'files', 'review', 'history']
+const SERIES_TABS = ['editions', 'files', 'activity']

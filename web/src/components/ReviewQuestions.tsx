@@ -1,36 +1,28 @@
 import { useState } from 'react'
-import { Alert, Button, Card, Group, Modal, Stack, Text, TextInput } from '@mantine/core'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Alert, Button, Group, Stack, Text } from '@mantine/core'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
-import { QueryFeedback } from './QueryFeedback'
-import { useConfirmAction } from './ConfirmAction'
-import type { Edition, ReviewItem, ReviewProposal } from '../types/store'
+import type { Edition, ReviewItem } from '../types/store'
 import { CatalogLink } from './CatalogLink'
 import { fileName } from './editionText'
+import { FileReviewDialog } from './FileReviewDialog'
 
-export default function ReviewInbox({
+export default function ReviewQuestions({
+  items,
   seriesID = 0,
-  onFile,
   onSources,
 }: {
+  items: ReviewItem[]
   seriesID?: number
-  onFile?: (id: number, proposal?: ReviewProposal) => void
   // Open the series' sources, for a source that found nothing.
   onSources?: () => void
 }) {
   const qc = useQueryClient()
-  const q = useQuery({
-    queryKey: ['review', seriesID],
-    queryFn: () => api.review(seriesID),
-    refetchInterval: 15000,
-  })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [remote, setRemote] = useState<ReviewItem | null>(null)
-  const [remoteID, setRemoteID] = useState('')
+  const [fileReview, setFileReview] = useState<ReviewItem | null>(null)
   const [link, setLink] = useState<{ item: ReviewItem; editions: Edition[] } | null>(null)
-  const { confirm, confirmation } = useConfirmAction()
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true)
     setError('')
@@ -41,25 +33,20 @@ export default function ReviewInbox({
     } finally {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['review'] }),
+        qc.invalidateQueries({ queryKey: ['activity'] }),
         qc.invalidateQueries({ queryKey: ['series'] }),
         qc.invalidateQueries({ queryKey: ['queue'] }),
       ])
       setBusy(false)
     }
   }
-  const chapters = (q.data ?? []).filter((i) => i.kind === 'chapter')
-  const proposed = (q.data ?? []).filter((i) => i.proposal)
+  const chapters = items.filter((i) => i.kind === 'chapter')
+  const proposed = items.filter((i) => i.proposal)
   // Series with files waiting: one recheck for them all, not one per file.
-  const fileSeries = [...new Set((q.data ?? []).filter((i) => i.kind === 'file').map((i) => i.seriesId))]
+  const fileSeries = [...new Set(items.filter((i) => i.kind === 'file').map((i) => i.seriesId))]
   const accept = (i: ReviewItem) => api.mapFile(i.seriesId, i.itemId, i.proposal!.books)
   return (
     <Stack gap="sm">
-      <Text size="sm" c="dimmed">
-        Resolve file matches, new chapters, catalog editions that match yours, sources that found
-        nothing, and downloads that need attention. Existing downloads stay reserved until you
-        resolve or cancel them.
-      </Text>
-      <QueryFeedback pending={q.isPending} error={q.error} onRetry={() => void q.refetch()} />
       {error && <Alert color="red">{error}</Alert>}
       {chapters.length > 1 && (
         <Group>
@@ -119,13 +106,14 @@ export default function ReviewInbox({
           )}
         </Group>
       )}
-      {q.data?.length === 0 && (
-        <Text c="dimmed" size="sm">
-          Nothing needs review.
-        </Text>
-      )}
-      {q.data?.map((i) => (
-        <Card key={i.id} withBorder padding="sm">
+      {items.map((i) => (
+        <div
+          key={i.id}
+          style={{
+            paddingBlock: 10,
+            borderBottom: '1px solid var(--mantine-color-default-border)',
+          }}
+        >
           <Stack gap={6}>
             <Text size="xs" c="dimmed">
               {seriesID ? '' : `${i.seriesTitle} · `}
@@ -181,25 +169,11 @@ export default function ReviewInbox({
                   Accept
                 </Button>
               )}
-              {i.kind === 'file' &&
-                (onFile ? (
-                  <Button
-                    size="xs"
-                    variant="default"
-                    onClick={() => onFile(i.itemId, i.proposal)}
-                  >
-                    Review file
-                  </Button>
-                ) : (
-                  <Button
-                    size="xs"
-                    variant="default"
-                    component={Link}
-                    to={`/series/${i.seriesId}?view=review`}
-                  >
-                    Review files
-                  </Button>
-                ))}
+              {i.kind === 'file' && (
+                <Button size="xs" variant="default" onClick={() => setFileReview(i)}>
+                  Review file
+                </Button>
+              )}
               {i.kind === 'edition' && (
                 <>
                   <Button
@@ -263,95 +237,10 @@ export default function ReviewInbox({
                   </Button>
                 </>
               )}
-              {i.kind === 'download' && (
-                <>
-                  {i.status !== 'failed' && (
-                    <Button
-                      size="xs"
-                      variant="default"
-                      disabled={busy}
-                      onClick={() => void run(() => api.retryQueue(i.itemId))}
-                    >
-                      Retry existing download
-                    </Button>
-                  )}
-                  {i.status === 'dispatch_unknown' && (
-                    <Button
-                      size="xs"
-                      variant="subtle"
-                      onClick={() => {
-                        setRemote(i)
-                        setRemoteID('')
-                      }}
-                    >
-                      Attach client ID
-                    </Button>
-                  )}
-                  <Button
-                    size="xs"
-                    variant="subtle"
-                    color="red"
-                    onClick={() =>
-                      confirm({
-                        title: 'Cancel this job?',
-                        message:
-                          'Release its book reservations. Downloaded files stay on disk; the remote client is not modified.',
-                        label: 'Cancel job',
-                        onConfirm: async () => {
-                          await api.cancelQueue(i.itemId)
-                          await qc.invalidateQueries({ queryKey: ['review'] })
-                          await qc.invalidateQueries({ queryKey: ['queue'] })
-                          await qc.invalidateQueries({ queryKey: ['series'] })
-                        },
-                      })
-                    }
-                  >
-                    Cancel job
-                  </Button>
-                  <Button
-                    component={Link}
-                    to={`/series/${i.seriesId}?view=review`}
-                    size="xs"
-                    variant="subtle"
-                  >
-                    Review files
-                  </Button>
-                </>
-              )}
             </Group>
           </Stack>
-        </Card>
+        </div>
       ))}
-      <Modal
-        opened={!!remote}
-        onClose={() => {
-          if (!busy) setRemote(null)
-        }}
-        title="Attach existing download"
-      >
-        <Stack>
-          <Text size="sm">
-            Enter the existing download's client ID (torrent hash for torrents). Sento will check
-            and import it without submitting a new download.
-          </Text>
-          <TextInput
-            label="Client download ID"
-            value={remoteID}
-            onChange={(e) => setRemoteID(e.currentTarget.value)}
-          />
-          <Button
-            disabled={!remoteID.trim() || busy}
-            onClick={() =>
-              void run(async () => {
-                await api.retryQueue(remote!.itemId, remoteID.trim())
-                setRemote(null)
-              })
-            }
-          >
-            Attach download
-          </Button>
-        </Stack>
-      </Modal>
       {link && link.editions.some((e) => e.id === link.item.itemId) && (
         <CatalogLink
           seriesID={link.item.seriesId}
@@ -362,13 +251,14 @@ export default function ReviewInbox({
             setLink(null)
             await Promise.all([
               qc.invalidateQueries({ queryKey: ['review'] }),
+              qc.invalidateQueries({ queryKey: ['activity'] }),
               qc.invalidateQueries({ queryKey: ['series'] }),
             ])
           }}
           close={() => setLink(null)}
         />
       )}
-      {confirmation}
+      {fileReview && <FileReviewDialog item={fileReview} close={() => setFileReview(null)} />}
     </Stack>
   )
 }

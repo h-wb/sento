@@ -1,6 +1,8 @@
-import { Badge, Table, Text } from '@mantine/core'
+import { Anchor, Badge, Group, Stack, Text } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { api } from '../api'
+import type { Decision } from '../types/store'
 import { fmtWhen } from '../ui'
 import { QueryFeedback } from './QueryFeedback'
 import { EmptyState } from './EmptyState'
@@ -18,82 +20,83 @@ const eventColor: Record<string, string> = {
   listing_switched_off: 'orange',
 }
 
-// The series' history: what was grabbed, imported or refused, newest first.
-export function SeriesHistory({ seriesID }: { seriesID: number }) {
-  const {
-    data: events,
-    error,
-    isPending,
-    refetch,
-  } = useQuery({
+export function SeriesHistory({
+  seriesID,
+  events: supplied,
+  titles = {},
+}: {
+  seriesID: number
+  events?: Decision[]
+  titles?: Record<number, string>
+}) {
+  const q = useQuery({
     queryKey: ['series', seriesID, 'history'],
     queryFn: () => api.history(seriesID),
+    enabled: !supplied,
   })
-
-  if (isPending || error)
-    return <QueryFeedback pending={isPending} error={error} onRetry={() => void refetch()} />
-  if (events && events.length === 0)
+  if (!supplied && (q.isPending || q.error))
+    return <QueryFeedback pending={q.isPending} error={q.error} onRetry={() => void q.refetch()} />
+  const events = supplied ?? q.data ?? []
+  if (!events.length)
     return (
       <EmptyState
-        title="No history yet"
-        description="Downloads, imports, and errors for this series will appear here."
+        title="No decision history yet"
+        description="Downloads, imports, and automatic decisions appear here."
       />
     )
   return (
-    <Table.ScrollContainer minWidth={580}>
-      <Table highlightOnHover verticalSpacing="sm">
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>When</Table.Th>
-            <Table.Th>Event</Table.Th>
-            <Table.Th>Release</Table.Th>
-            <Table.Th>Site</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {events?.map((d) => (
-            <Table.Tr key={d.id}>
-              <Table.Td>
-                <Text size="xs" c="dimmed" title={d.createdAt}>
-                  {fmtWhen(d.createdAt)}
-                </Text>
-              </Table.Td>
-              <Table.Td>
-                <Badge size="xs" color={eventColor[d.body.event] ?? 'gray'}>
-                  {d.body.event.replaceAll('_', ' ')}
-                  {d.body.force ? ' (forced)' : ''}
-                </Badge>
-                {d.body.by && (
-                  <Text size="xs" c="dimmed" mt={2}>
-                    {d.body.by === 'you' ? 'by you' : 'automatically'}
-                  </Text>
-                )}
-              </Table.Td>
-              <Table.Td>
-                <Text size="sm" lineClamp={1} title={d.body.title}>
-                  {d.body.title}
-                </Text>
-                {d.body.error && (
-                  <Text size="xs" c="red" lineClamp={1} title={d.body.error}>
-                    {d.body.error}
-                  </Text>
-                )}
-                {d.body.note && (
-                  <Text size="xs" c="dimmed">
-                    {d.body.note}
-                  </Text>
-                )}
-              </Table.Td>
-              <Table.Td>
-                <Text size="xs" c="dimmed">
-                  {d.body.provider}
-                  {d.body.site ? `/${d.body.site}` : ''}
-                </Text>
-              </Table.Td>
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
-    </Table.ScrollContainer>
+    <Stack gap={0} mt="md">
+      {events.map((event) => (
+        <Stack
+          key={event.id}
+          gap={4}
+          py="sm"
+          style={{ borderTop: '1px solid var(--mantine-color-default-border)', minWidth: 0 }}
+        >
+          <Group gap="xs">
+            <Badge size="xs" color={eventColor[event.body.event] ?? 'gray'}>
+              {event.body.event.replaceAll('_', ' ')}
+            </Badge>
+            <Text size="xs" c="dimmed">
+              {fmtWhen(event.createdAt)}
+              {event.body.by ? (event.body.by === 'you' ? ' · chosen by you' : ' · automatic') : ''}
+            </Text>
+            {!seriesID && event.seriesId > 0 && (
+              <Anchor
+                component={Link}
+                to={`/series/${event.seriesId}?view=activity&activity=history`}
+                size="xs"
+              >
+                {titles[event.seriesId] || `Series ${event.seriesId}`}
+              </Anchor>
+            )}
+          </Group>
+          {event.body.title && (
+            <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+              {event.body.title}
+            </Text>
+          )}
+          {event.body.note && (
+            <Text size="xs" c="dimmed">
+              {event.body.note}
+            </Text>
+          )}
+          {event.body.error && (
+            <details>
+              <summary style={{ cursor: 'pointer', fontSize: 'var(--mantine-font-size-xs)' }}>
+                Details
+              </summary>
+              <Text
+                size="xs"
+                component="pre"
+                style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+              >
+                {event.body.error}
+              </Text>
+            </details>
+          )}
+        </Stack>
+      ))}
+    </Stack>
   )
 }

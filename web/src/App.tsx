@@ -1,3 +1,5 @@
+import { useActivity } from './components/useActivity'
+import { activityCounts } from './components/activityModel'
 import {
   ActionIcon,
   AppShell,
@@ -126,14 +128,11 @@ export default function App() {
   // Light background polling so the shell can hint at what's going on.
   const status = useQuery({ queryKey: ['status'], queryFn: api.status, refetchInterval: 60_000 })
   const health = useQuery({ queryKey: ['health'], queryFn: api.healthChecks, refetchInterval: 60_000 })
-  const queue = useQuery({
-    queryKey: ['queue', 'active-count'],
-    queryFn: () => api.queue(false),
-    refetchInterval: 15_000,
-  })
+  const activity = useActivity()
   // Cached library list, shared with LibraryPage — powers ⌘K series search.
   const seriesList = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
-  const active = queue.data?.length ?? 0
+  const activityCount = activityCounts(activity.data)
+  const active = activityCount.attention || activityCount.progress
   const healthy = !status.isError && status.data?.database.ok === true
 
   // Drive the top progress bar off real network activity.
@@ -235,14 +234,14 @@ export default function App() {
       leftSection={<l.icon size={18} />}
       rightSection={
         l.to === '/queue' && active > 0 ? (
-          <Badge size="xs" circle color="brand">
+          <Badge size="xs" circle color={activityCount.attention > 0 ? 'orange' : 'brand'}>
             {active}
           </Badge>
         ) : l.to === '/system' ? (
           healthBadge
         ) : undefined
       }
-      aria-description={l.to === '/system' && healthIssues.length > 0 ? healthSummary : undefined}
+      aria-description={l.to === '/system' && healthIssues.length > 0 ? healthSummary : l.to === '/queue' && activityCount.attention > 0 ? `${activityCount.attention} ${activityCount.attention === 1 ? 'issue needs' : 'issues need'} attention` : undefined}
       active={isActive(l.to)}
       onClick={closeNav}
     />

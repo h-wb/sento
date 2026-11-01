@@ -124,10 +124,11 @@ test('editions retain independent versions, editable books, and mobile layout', 
       })
       expect(response.ok()).toBeTruthy()
     }
-    await page.getByRole('tab', { name: 'Review', exact: true }).click()
+    await page.getByRole('tab', { name: /^Activity/ }).click()
+    await page.getByRole('tab', { name: /Needs attention/ }).click()
     await expect(page.getByRole('button', { name: 'Add chapter', exact: true })).toHaveCount(2)
     await page.getByRole('button', { name: 'Accept new chapters (2)', exact: true }).click()
-    await expect(page.getByText('Nothing needs review.', { exact: true })).toBeVisible()
+    await expect(page.getByText('Nothing needs attention', { exact: true })).toBeVisible()
     const reviewed = await (await request.get(`/api/v1/series/${id}/books`)).json()
     expect(
       Object.values(reviewed)
@@ -165,7 +166,7 @@ test('a long chapter edition is browsed as a grid with filters, ranges and jump'
     await expect(page.getByRole('button', { name: /Hide chapters/ })).toBeVisible()
     // One tab row only: no nested section switcher above the editions.
     await expect(page.getByText('Your editions', { exact: true })).toHaveCount(0)
-    await expect(page.getByRole('tab')).toHaveText(['Editions', /^Files/, 'Review', 'History'])
+    await expect(page.getByRole('tab')).toHaveText(['Editions', /^Files/, /^Activity/])
     const chapters = page.locator('.mantine-Card-root').filter({ hasText: 'Local edition' })
     const layout = chapters.getByRole('radiogroup', { name: 'Book layout' })
     await expect(layout.getByRole('radio', { name: 'Grid' })).toBeChecked()

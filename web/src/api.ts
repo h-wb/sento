@@ -506,6 +506,7 @@ export const api = {
       body: JSON.stringify({ dir, mangabakaId }),
     }),
 
+  activity: (seriesId = 0) => request<import('./types/service').ActivityData>(`/activity?seriesId=${seriesId}`),
   queue: (all = false) => request<QueueItem[]>(`/queue${all ? '?all=1' : ''}`),
   tryAnotherRelease: (ids: number[]) => request<void>('/queue/another', { method: 'POST', body: JSON.stringify({ ids }) }),
   processQueue: () => request<{ processed: number }>('/queue/process', { method: 'POST' }),

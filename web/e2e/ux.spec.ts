@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { activityFixture } from './activity-fixtures'
 
 const longError = `Download failed: https://source.example/${'unbroken-path'.repeat(150)}\nUpstream returned HTTP 403.\n${'The source did not allow this request. '.repeat(40)}`
 const queueItems = [
@@ -32,8 +33,9 @@ const queueItems = [
 for (const width of [390, 1280]) {
   test(`activity handles long errors at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 844 })
-    await page.route('**/api/v1/queue?all=1', (route) => route.fulfill({ json: queueItems }))
-    await page.goto('/queue')
+    await page.route('**/api/v1/activity?seriesId=*', (route) => route.fulfill({ json: activityFixture(queueItems) }))
+    await page.goto('/queue?activity=progress')
+    await page.getByRole('button', { name: 'Show downloads for One Piece' }).click()
     await expect(page.getByText('Downloading release', { exact: true })).toBeVisible()
     await expect(page.getByText('42%', { exact: true })).toBeVisible()
     await expect(page.getByText('Finished release', { exact: true })).toHaveCount(0)
@@ -48,20 +50,13 @@ for (const width of [390, 1280]) {
       fullPage: true,
       animations: 'disabled',
     })
-    await page.getByRole('button', { name: 'View error', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: 'Download error' })
-    await expect(dialog.locator('pre')).toHaveText(longError)
-    await expect(dialog).toHaveCSS('opacity', '1')
-    expect(await dialog.locator('pre').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
-      true,
-    )
-    await page.screenshot({
-      path: testInfo.outputPath('error-details.png'),
-      fullPage: true,
-      animations: 'disabled',
-    })
-    await dialog.getByRole('button', { name: 'Close dialog', exact: true }).click()
-    await page.getByRole('tab', { name: /Completed/ }).click()
+    await page.getByRole('tab', { name: /Needs attention/ }).click()
+    await page.getByText('Details', { exact: true }).click()
+    const error = page.locator('[data-testid="download-row"] pre')
+    await expect(error).toHaveText(longError)
+    expect(await error.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath('error-details.png'), fullPage: true, animations: 'disabled' })
+    await page.getByRole('tab', { name: 'History', exact: true }).click()
     await expect(page.getByText('Finished release', { exact: true })).toBeVisible()
     await expect(page.getByText('Downloading release', { exact: true })).toHaveCount(0)
   })
@@ -69,10 +64,10 @@ for (const width of [390, 1280]) {
 
 test('activity shows a failed request and lets the user retry', async ({ page }) => {
   let fail = true
-  await page.route('**/api/v1/queue?all=1', (route) =>
+  await page.route('**/api/v1/activity?seriesId=*', (route) =>
     fail
       ? route.fulfill({ status: 503, json: { error: 'Queue unavailable' } })
-      : route.fulfill({ json: [] }),
+      : route.fulfill({ json: activityFixture() }),
   )
   await page.goto('/queue')
   await expect(page.getByText('Queue unavailable', { exact: true })).toBeVisible()
@@ -263,36 +258,55 @@ test('media settings preview the folder layout, including a split by type', asyn
 })
 
 for (const width of [390, 1280]) {
-  test(`activity groups downloads and recovers a series at ${width}px`, async ({ page }) => {
+  test(`activity groups problems and shares recovery with a series at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 844 })
     const jobs = Array.from({ length: 8 }, (_, i) => ({
       id: 1000 + i, seriesId: 901, seriesTitle: 'One Piece', protocol: 'source',
-      title: `Broken volume ${i + 1}`, status: i < 6 ? 'needs_review' : 'downloading',
-      canTryAnother: i < 6, error: i < 6 ? 'HTTP error 404' : '', createdAt: '2026-10-05T12:00:00Z',
+      title: `Broken volume ${i + 1}`, status: i < 6 ? 'needs_review' : 'retry_wait',
+      canTryAnother: true, error: i < 6 ? 'HTTP error 404' : 'HTTP error 503', retryAt: new Date(Date.now() + 120000).toISOString(),
     }))
-    const review = { id: 2000, seriesId: 902, seriesTitle: 'Death Note', protocol: 'torrent', title: 'Pack with files to review', status: 'needs_review', canTryAnother: false, createdAt: '2026-10-05T12:00:00Z' }
+    const pack = { id: 2000, seriesId: 902, seriesTitle: 'Death Note', protocol: 'torrent', title: 'Full Color pack', status: 'needs_review', canTryAnother: false }
+    const files = Array.from({ length: 8 }, (_, i) => ({ id: `file-${i}`, kind: 'file', seriesId: 902, seriesTitle: 'Death Note', itemId: 3000 + i, title: `Volume ${i + 1}.cbz`, detail: 'Confirm the edition and books', status: 'present' }))
+    const data = activityFixture([...jobs, pack], { 2000: { files, issue: 'files' } })
     let recovered: number[] = []
-    await page.route('**/api/v1/queue?all=1', (route) => route.fulfill({ json: [...jobs, review] }))
-    await page.route('**/api/v1/queue/another', (route) => {
-      recovered = route.request().postDataJSON().ids
-      return route.fulfill({ status: 204 })
+    let retried = 0
+    await page.route('**/api/v1/activity?seriesId=*', (route) => {
+      const scope = Number(new URL(route.request().url()).searchParams.get('seriesId'))
+      return route.fulfill({ json: { ...data, downloads: data.downloads.filter((d) => !scope || d.job.seriesId === scope) } })
     })
+    await page.route('**/api/v1/queue/another', (route) => { recovered = route.request().postDataJSON().ids; return route.fulfill({ status: 204 }) })
+    await page.route('**/api/v1/queue/1006/retry', (route) => { retried++; return route.fulfill({ status: 204 }) })
     await page.goto('/queue')
-    const group = page.getByTestId('queue-series').filter({ hasText: 'One Piece' })
-    await expect(page.getByTestId('queue-series')).toHaveCount(2)
-    await expect(group.getByText('6 needs review · 2 downloading')).toBeVisible()
-    await expect(group.getByText('Broken volume 1', { exact: true })).toHaveCount(0)
-    await group.getByRole('button', { name: 'Show 8 downloads' }).click()
-    await expect(group.getByText('Broken volume 1', { exact: true })).toBeVisible()
-    await expect(group.getByRole('button', { name: 'Try another release', exact: true })).toHaveCount(6)
-    const protectedGroup = page.getByTestId('queue-series').filter({ hasText: 'Death Note' })
-    await expect(protectedGroup.getByRole('button', { name: 'Review files' })).toBeVisible()
-    await expect(protectedGroup.getByRole('button', { name: /Try another/ })).toHaveCount(0)
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    await group.getByRole('button', { name: 'Try another for 6 downloads' }).click()
+    // Six identical failures and one pack are two questions, not 15 questions.
+    await expect(page.getByRole('tab', { name: 'Needs attention 2' })).toBeVisible()
+    await expect(page.getByTestId('activity-problem')).toHaveCount(2)
+    await expect(page.getByText('6 affected downloads')).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath('attention-overview.png'), fullPage: true, animations: 'disabled' })
+    await expect(page.getByText('Broken volume 1', { exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Try other releases', exact: true }).click()
     await expect.poll(() => recovered).toEqual([1000, 1001, 1002, 1003, 1004, 1005])
-    // A row recovers only that release, even when its series has many failures.
-    await group.getByRole('button', { name: 'Try another release', exact: true }).first().click()
+    await page.getByRole('button', { name: 'Show affected downloads' }).click()
+    await page.getByRole('button', { name: 'Try another release', exact: true }).first().click()
     await expect.poll(() => recovered).toEqual([1000])
+    await expect(page.getByRole('button', { name: 'Review 8 files' })).toBeVisible()
+    await expect(page.getByText('Volume 1.cbz', { exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Review 8 files' }).click()
+    await expect(page.getByRole('button', { name: 'Review file', exact: true })).toHaveCount(8)
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath('attention.png'), fullPage: true, animations: 'disabled' })
+    await page.getByRole('tab', { name: /In progress/ }).click()
+    await page.getByRole('button', { name: 'Show downloads for One Piece' }).click()
+    await expect(page.getByText(/Retrying in 2 min/)).toHaveCount(2)
+    await page.getByRole('button', { name: 'Retry now', exact: true }).first().click()
+    await expect.poll(() => retried).toBe(1)
+    await page.screenshot({ path: testInfo.outputPath('progress.png'), fullPage: true, animations: 'disabled' })
+    // The same row and action operate inside a series without a second inbox.
+    await page.route('**/api/v1/series/901/', (route) => route.fulfill({ json: { series: { id: 901, title: 'One Piece', monitored: true }, editions: [] } }))
+    await page.goto('/series/901?view=activity&activity=attention')
+    await expect(page.getByRole('tab', { name: 'Review', exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Show affected downloads' }).click()
+    await expect(page.getByRole('button', { name: 'Try another release', exact: true })).toHaveCount(6)
+    await page.getByRole('button', { name: 'Try another release', exact: true }).last().click()
+    await expect.poll(() => recovered).toEqual([1005])
   })
 }

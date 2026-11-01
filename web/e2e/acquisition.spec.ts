@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { activityFixture } from './activity-fixtures'
 
 for (const width of [390, 1280]) {
   test(`download plan edits coverage and reports partial outcomes at ${width}px`, async ({ page, request }, testInfo) => {
@@ -68,19 +69,19 @@ for (const width of [390, 1280]) {
 test('looking for a replacement leaves the stalled download alone', async ({ page }) => {
   let cancelled = false
   let scope: { replaceQueueId: number } | undefined
-  await page.route('**/api/v1/queue?all=1', (route) => route.fulfill({ json: [{
+  await page.route('**/api/v1/activity?seriesId=*', (route) => route.fulfill({ json: activityFixture([{
     id: 910, seriesId: 901, providerId: 'torrent', protocol: 'torrent', releaseKey: 'old-hash',
     title: 'Stalled release', status: 'downloading', stalled: true, progress: 0.2,
     books: [{ versionId: 10, bookId: 20, editionId: 30, ledger: 'volume', number: 100 }],
     createdAt: '2026-10-07T10:00:00Z',
-  }] }))
+  }]) }))
   await page.route('**/api/v1/queue/910/cancel', (route) => { cancelled = true; return route.fulfill({ status: 204 }) })
   await page.route('**/api/v1/series/901/search', (route) => {
     scope = route.request().postDataJSON().scope
     return route.fulfill({ contentType: 'application/x-ndjson', body: '{"type":"sites","searched":[]}\n{"type":"done"}\n' })
   })
   await page.goto('/queue')
-  await page.getByRole('button', { name: 'Find another release' }).click()
+  await page.getByRole('button', { name: 'Choose a replacement' }).click()
   await expect(page.getByText(/keeps downloading while you look/)).toBeVisible()
   await expect(page.getByText(/torrent and files stay/)).toBeVisible()
   await expect.poll(() => scope?.replaceQueueId).toBe(910)
@@ -101,7 +102,7 @@ test('a local edition is offered the catalog edition that matches it', async ({ 
     expect(created.ok()).toBeTruthy()
 
     await page.goto(`/series/${id}?view=review`)
-    const item = page.locator('.mantine-Card-root').filter({ hasText: 'Catalog edition available' })
+    const item = page.getByTestId('activity-problem').filter({ hasText: 'Catalog edition available' })
     await expect(item.getByText(/MangaBaka lists “Standard Edition/)).toBeVisible()
     await item.getByRole('button', { name: 'Review and link' }).click()
     const dialog = page.getByRole('dialog', { name: 'Link edition to MangaBaka' })

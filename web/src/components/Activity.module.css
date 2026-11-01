@@ -1,0 +1,109 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.series {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  overflow: hidden;
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  min-width: 0;
+}
+.headerText {
+  min-width: 0;
+  flex: 1;
+}
+.rows {
+  padding-inline: 16px;
+}
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px 20px;
+  padding-block: 14px;
+  border-top: 1px solid var(--mantine-color-default-border);
+  min-width: 0;
+}
+.content {
+  min-width: 0;
+}
+.title {
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+.expanded {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.files {
+  border-left: 2px solid var(--mantine-color-orange-6);
+  padding-left: 14px;
+  margin-block: 8px;
+}
+.error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow-y: auto;
+  font-family: var(--mantine-font-family-monospace);
+}
+.problem {
+  padding: 14px 16px;
+}
+.problemRows {
+  margin-top: 12px;
+}
+.sectionLabel {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+@media (max-width: 48em) {
+  .tabsList {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .tabsList [role='tab'] {
+    padding: 10px 4px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .tabsList :global(.tabCount) {
+    margin-left: 4px;
+  }
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .actions {
+    justify-content: flex-start;
+  }
+  .header {
+    padding: 12px;
+    gap: 8px;
+  }
+  .rows {
+    padding-inline: 12px;
+  }
+  .problem {
+    padding: 12px;
+  }
+  .toolbar > :first-child {
+    flex: 1;
+    min-width: 0;
+  }
+}
