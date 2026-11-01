@@ -48,19 +48,13 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 	if err != nil {
 		return err
 	}
+	if resp.StatusCode != http.StatusOK {
+		return responseError(resp)
+	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		var e struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(raw, &e) == nil && e.Error != "" {
-			return fmt.Errorf("host: %s", e.Error)
-		}
-		return fmt.Errorf("host: HTTP %d", resp.StatusCode)
 	}
 	return json.Unmarshal(raw, out)
 }
@@ -112,8 +106,7 @@ func (c *Client) Page(ctx context.Context, sourceID, pageRef string) (io.ReadClo
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("host: page fetch returned %d", resp.StatusCode)
+		return nil, responseError(resp)
 	}
 	return resp.Body, nil
 }

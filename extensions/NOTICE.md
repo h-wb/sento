@@ -27,12 +27,16 @@ fetches them from the upstream repository at build time, each with its
 original license header. The exact list of files is the `includePaths` /
 `excludePaths` in `vendir.yml`.
 
-One file in this repository is adapted from Suwayomi-Server's source and
-is therefore itself under the MPL 2.0, as its header states:
+Three files in this repository are adapted from Suwayomi-Server's source and
+are therefore themselves under the MPL 2.0, as their headers state:
 
 - `app/src/main/kotlin/sento/extensions/ExtensionManager.kt`, adapted from
   Suwayomi-Server's `Extension.kt` (install and uninstall logic, with the
   database replaced by a JSON index).
+- `app/src/main/kotlin/eu/kanade/tachiyomi/network/HttpException.kt` and
+  `OkHttpExtensions.kt`, adapted from the same upstream paths to retain
+  HTTP `Retry-After` metadata when an extension request fails. Existing
+  helper signatures and the one-argument exception constructor are preserved.
 
 The files under `app/src/main/kotlin/suwayomi/` are small stand-ins
 written for this project. They reuse Suwayomi's package and symbol names
@@ -46,7 +50,7 @@ compiled Suwayomi-Server code. Its source is available, under the MPL
 
     https://github.com/Suwayomi/Suwayomi-Server
 
-The source of sento-extensions itself, including the MPL-covered file
+The source of sento-extensions itself, including the MPL-covered files
 above, is in the `extensions/` directory of
 <https://github.com/h-wb/sento>.
 

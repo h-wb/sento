@@ -16,7 +16,7 @@ type Decision struct {
 
 // DecisionBody is the JSON payload of one history event.
 type DecisionBody struct {
-	Event    string `json:"event"` // grabbed | imported | imported_after_review | import_failed | download_failed | blocklisted | editions_grouped
+	Event    string `json:"event"` // grabbed | imported | imported_after_review | import_failed | download_failed | download_retry | download_needs_review | blocklisted | editions_grouped
 	Ledger   string `json:"ledger,omitempty"`
 	Title    string `json:"title,omitempty"` // release title
 	Provider string `json:"provider,omitempty"`

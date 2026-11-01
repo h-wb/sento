@@ -46,6 +46,10 @@ directories:
           - server/src/main/kotlin/suwayomi/tachidesk/manga/model/dataclass/ExtensionInfo.kt
           - server/src/main/kotlin/suwayomi/tachidesk/manga/model/dataclass/ExtensionStore.kt
         excludePaths:
+          # Runtime stand-ins retain HTTP status and Retry-After while
+          # keeping the extension API and JVM signatures compatible.
+          - server/src/main/kotlin/eu/kanade/tachiyomi/network/OkHttpExtensions.kt
+          - server/src/main/kotlin/eu/kanade/tachiyomi/network/HttpException.kt
           # Suwayomi's filesystem-manga source and app bootstrap (ours
           # lives in app/src/main/kotlin/sento/extensions).
           - server/src/main/kotlin/eu/kanade/tachiyomi/source/local/**

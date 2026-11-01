@@ -15,3 +15,14 @@ The common interaction is a coverage summary and editable selection of releases,
 Stall detection reports sustained lack of progress, excluding deliberate pauses and queued/checking states. Recovery is guided: a replacement search treats the stalled job's books as wanted and rules out the job's own release, while the job keeps running and keeps its reservations. Sento stops tracking the old job only when a chosen replacement claims one of its books; a search that finds nothing changes nothing. The torrent and its files are never removed from the client, and no replacement is made automatically.
 
 Loose-image imports must map a folder confidently to one book, order and validate its pages, build a staged CBZ, and pass through the normal non-overwriting import path. The source pages remain untouched for seeding. Ambiguous folders require review.
+
+Source downloads retry temporary HTTP failures (408, 425, 429 and 5xx),
+network failures and truncated page bodies for up to four attempts per page.
+Each attempt uses the source's shared page rate limiter; increasing delays
+with jitter and upstream `Retry-After` pause page requests across that source.
+Successful pages stay staged during another page's retries. An exhausted
+chapter attempt cleans up its temporary files and enters the persisted queue
+backoff (30 seconds, doubling up to 32 minutes, or longer for `Retry-After`).
+After five queue retries it moves to Review with its book reservations intact.
+Permanent source errors go directly to Review. Neither outcome blocklists
+the release. A chapter's 30-minute timeout starts when a download slot opens.

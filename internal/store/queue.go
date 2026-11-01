@@ -381,8 +381,20 @@ func (s *Store) BeginImport(ctx context.Context, id int64) (*QueueItem, error) {
 }
 
 func (s *Store) DeferQueue(ctx context.Context, q QueueItem, reason string) error {
+	return s.DeferQueueUntil(ctx, q, reason, time.Time{})
+}
+
+// DeferQueueUntil respects both the queue's backoff and the source's
+// Retry-After deadline. The latter may exceed the usual backoff cap.
+func (s *Store) DeferQueueUntil(ctx context.Context, q QueueItem, reason string, notBefore time.Time) error {
 	delay := 30 * time.Second * time.Duration(1<<min(q.RetryCount, 6))
-	return s.touch(ctx, `UPDATE queue_items SET status='retry_wait',error=?,retry_count=retry_count+1,retry_at=?,updated_at=?,progress_at='',stalled=FALSE WHERE id=? AND status NOT IN('cancelled','imported')`, reason, time.Now().UTC().Add(delay).Format("2006-01-02 15:04:05"), utcNow(), q.ID)
+	at := time.Now().UTC().Add(delay)
+	if notBefore.After(at) {
+		at = notBefore.UTC()
+	}
+	// Stored timestamps have second precision; round up, never retry early.
+	at = at.Add(time.Second - time.Nanosecond).Truncate(time.Second)
+	return s.touch(ctx, `UPDATE queue_items SET status='retry_wait',error=?,retry_count=retry_count+1,retry_at=?,updated_at=?,progress_at='',stalled=FALSE WHERE id=? AND status NOT IN('cancelled','imported')`, reason, at.Format("2006-01-02 15:04:05"), utcNow(), q.ID)
 }
 func (s *Store) ResumeQueue(ctx context.Context, id int64, remoteID string) error {
 	if remoteID != "" {

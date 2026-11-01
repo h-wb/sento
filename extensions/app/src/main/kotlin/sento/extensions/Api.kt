@@ -81,9 +81,6 @@ private data class PageRef(val index: Int, val url: String, val imageUrl: String
 @Serializable
 data class RepoListDto(val urls: List<String>)
 
-@Serializable
-private data class ErrorDto(val error: String)
-
 private inline fun <reified T> Context.respond(value: T) {
     contentType("application/json").result(json.encodeToString(value))
 }
@@ -101,8 +98,10 @@ fun buildApi(): Javalin =
 
 private fun io.javalin.config.RoutesConfig.defineEndpoints() {
     exception(Exception::class.java) { e, ctx ->
+        val error = sourceError(e)
         ctx.status(HttpStatus.BAD_GATEWAY)
-        ctx.respond(ErrorDto(e.message ?: e.javaClass.simpleName))
+        error.retryAfter?.let { ctx.header("Retry-After", it) }
+        ctx.respond(error)
     }
 
     get("/health") { ctx -> ctx.result("ok") }
@@ -201,8 +200,10 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
                 }
                 http.getImage(page)
             }
-        ctx.contentType(response.header("Content-Type") ?: "image/jpeg")
-        response.body.byteStream().use { ctx.result(it.readBytes()) }
+        response.use {
+            ctx.contentType(it.header("Content-Type") ?: "image/jpeg")
+            it.body.byteStream().use { body -> ctx.result(body.readBytes()) }
+        }
     }
 
     // --- source preferences (ConfigurableSource) ---
@@ -307,12 +308,12 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
 
 private fun Context.notFound(msg: String) {
     status(HttpStatus.NOT_FOUND)
-    respond(ErrorDto(msg))
+    respond(ErrorDto(msg, retryable = false))
 }
 
 private fun Context.badRequest(msg: String) {
     status(HttpStatus.BAD_REQUEST)
-    respond(ErrorDto(msg))
+    respond(ErrorDto(msg, retryable = false))
 }
 
 private fun isNsfw(source: CatalogueSource): Boolean =

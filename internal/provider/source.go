@@ -30,10 +30,11 @@ type SourceProvider struct {
 	pageConc   int     // max pages fetched in parallel per chapter
 	pageRate   float64 // page requests/sec per source; 0 disables
 
-	mu       sync.Mutex
-	jobs     map[string]*sourceJob    // externalID → live or failed job
-	limiters map[string]*rate.Limiter // sourceID → page-fetch limiter
-	sem      chan struct{}            // bounds concurrent chapter downloads
+	mu        sync.Mutex
+	jobs      map[string]*sourceJob    // externalID → live or failed job
+	limiters  map[string]*rate.Limiter // sourceID → page-fetch limiter
+	cooldowns map[string]time.Time     // sourceID → next allowed page attempt
+	sem       chan struct{}            // bounds concurrent chapter downloads
 }
 
 // DownloadConfig tunes per-chapter page fetching. Zero values fall back
@@ -62,6 +63,7 @@ func NewSource(host extensions.Host, stagingDir string, dl DownloadConfig,
 		pageRate:   dl.PageRatePerSecond,
 		jobs:       map[string]*sourceJob{},
 		limiters:   map[string]*rate.Limiter{},
+		cooldowns:  map[string]time.Time{},
 		sem:        make(chan struct{}, 2),
 	}
 }
@@ -239,6 +241,7 @@ type sourceJob struct {
 	total, done int
 	err         error
 	running     bool
+	active      bool // false while waiting for a chapter download slot
 }
 
 // stagedPath is the finished-CBZ location for an external id. Hashed: keys
@@ -276,13 +279,27 @@ func (p *SourceProvider) startJob(externalID string) {
 // download fetches all pages of one chapter and assembles the CBZ. Runs
 // detached from the request context: a grab outlives its HTTP call.
 func (p *SourceProvider) download(externalID string, job *sourceJob) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	defer cancel()
 	p.sem <- struct{}{}
 	defer func() { <-p.sem }()
+	p.mu.Lock()
+	job.active = true
+	p.mu.Unlock()
+	// Queuing for a slot is not part of the chapter's download budget.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
 
 	err := p.fetchChapter(ctx, externalID, job)
 	p.mu.Lock()
+	// Listing requests can be throttled too. Share their Retry-After with
+	// page requests from other chapters, just as for a failed image.
+	if retryable, delay := sourceRetry(err); retryable && delay > 0 {
+		if sourceID, _, parseErr := parseSourceExternalID(externalID); parseErr == nil {
+			until := time.Now().Add(delay)
+			if until.After(p.cooldowns[sourceID]) {
+				p.cooldowns[sourceID] = until
+			}
+		}
+	}
 	job.running = false
 	job.err = err
 	p.mu.Unlock()
@@ -361,8 +378,6 @@ type fetchedPage struct {
 // far is removed before returning.
 func (p *SourceProvider) fetchPages(ctx context.Context, sourceID string, pages []string, job *sourceJob) ([]fetchedPage, error) {
 	out := make([]fetchedPage, len(pages))
-	limiter := p.limiterFor(sourceID)
-
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(p.pageConc)
 
@@ -370,12 +385,7 @@ func (p *SourceProvider) fetchPages(ctx context.Context, sourceID string, pages 
 	for i, ref := range pages {
 		i, ref := i, ref
 		g.Go(func() error {
-			if limiter != nil {
-				if err := limiter.Wait(ctx); err != nil {
-					return err
-				}
-			}
-			f, err := p.fetchPage(ctx, ref, sourceID)
+			f, err := p.retryPage(ctx, ref, sourceID)
 			if err != nil {
 				return fmt.Errorf("page %d: %w", i+1, err)
 			}
@@ -413,23 +423,27 @@ func (p *SourceProvider) fetchPage(ctx context.Context, ref, sourceID string) (f
 	}
 	defer func() { _ = tmp.Close() }()
 
-	head := make([]byte, 512)
-	n, err := io.ReadFull(body, head)
-	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-		_ = os.Remove(tmp.Name())
-		return fetchedPage{}, err
-	}
-	head = head[:n]
-	ext := imageExt(head)
-
-	if _, err := tmp.Write(head); err != nil {
-		_ = os.Remove(tmp.Name())
-		return fetchedPage{}, err
-	}
+	// Copy first so a truncated HTTP body remains a read error, rather
+	// than being mistaken for a legitimately small image by ReadFull.
 	if _, err := io.Copy(tmp, body); err != nil {
 		_ = os.Remove(tmp.Name())
 		return fetchedPage{}, err
 	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		_ = os.Remove(tmp.Name())
+		return fetchedPage{}, err
+	}
+	head := make([]byte, 512)
+	n, err := tmp.Read(head)
+	if err != nil && err != io.EOF {
+		_ = os.Remove(tmp.Name())
+		return fetchedPage{}, err
+	}
+	if n == 0 {
+		_ = os.Remove(tmp.Name())
+		return fetchedPage{}, io.ErrUnexpectedEOF
+	}
+	ext := imageExt(head[:n])
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmp.Name())
 		return fetchedPage{}, err
@@ -481,7 +495,10 @@ func (p *SourceProvider) State(ctx context.Context, externalID string) (Download
 	p.mu.Lock()
 	job, ok := p.jobs[externalID]
 	if ok && job.running {
-		st := DownloadState{InFlight: true, Detail: "downloading", StallEligible: true}
+		st := DownloadState{InFlight: true, Detail: "waiting for download slot"}
+		if job.active {
+			st.Detail, st.StallEligible = "downloading", true
+		}
 		if job.total > 0 {
 			st.Progress = float64(job.done) / float64(job.total)
 		}
@@ -489,9 +506,18 @@ func (p *SourceProvider) State(ctx context.Context, externalID string) (Download
 		return st, nil
 	}
 	if ok && job.err != nil {
-		st := DownloadState{Detail: job.err.Error()}
+		err := job.err
+		retryable, retryAfter := sourceRetry(err)
+		if sourceID, _, parseErr := parseSourceExternalID(externalID); parseErr == nil {
+			// Persist an outstanding source cooldown even if the chapter
+			// timed out while waiting, so a process restart cannot lose it.
+			retryAfter = max(retryAfter, time.Until(p.cooldowns[sourceID]))
+		}
+		// The worker persists a cooldown before its next State call. Drop
+		// only this failed attempt; never reset other jobs through Recover.
+		delete(p.jobs, externalID)
 		p.mu.Unlock()
-		return st, nil
+		return DownloadState{Detail: err.Error()}, &DownloadError{Err: err, Retryable: retryable, RetryAfter: retryAfter}
 	}
 	p.mu.Unlock()
 	p.startJob(externalID)

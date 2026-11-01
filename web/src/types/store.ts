@@ -141,7 +141,7 @@ export interface Decision {
  * DecisionBody is the JSON payload of one history event.
  */
 export interface DecisionBody {
-  event: string; // grabbed | imported | imported_after_review | import_failed | download_failed | blocklisted | editions_grouped
+  event: string; // grabbed | imported | imported_after_review | import_failed | download_failed | download_retry | download_needs_review | blocklisted | editions_grouped
   ledger?: string;
   title?: string; // release title
   provider?: string;

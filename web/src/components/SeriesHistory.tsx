@@ -11,6 +11,8 @@ const eventColor: Record<string, string> = {
   imported_after_review: 'green',
   import_failed: 'red',
   download_failed: 'red',
+  download_retry: 'yellow',
+  download_needs_review: 'orange',
   blocklisted: 'orange',
   editions_grouped: 'blue',
 }

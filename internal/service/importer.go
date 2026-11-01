@@ -90,7 +90,26 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 		done, err := im.processItem(ctx, prov, item)
 		if err != nil {
 			slog.Warn("queue item failed", "id", item.ID, "title", item.Title, "error", err)
+			var sourceFailure *provider.DownloadError
+			event := "import_failed"
 			switch {
+			case errors.As(err, &sourceFailure):
+				// Source attempts finish with a classified error. Their age
+				// includes time waiting for a slot, so it is never evidence
+				// that the release is dead. Keep its claims through retries
+				// and review instead of blocklisting a temporary site outage.
+				const maxSourceRetries = 5
+				if !sourceFailure.Retryable || item.RetryCount >= maxSourceRetries {
+					event = "download_needs_review"
+					reason := err.Error()
+					if sourceFailure.Retryable {
+						reason = fmt.Sprintf("source download still failing after %d attempts: %s", item.RetryCount+1, reason)
+					}
+					_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueNeedsReview, reason)
+				} else {
+					event = "download_retry"
+					_ = im.store.DeferQueueUntil(ctx, item, err.Error(), time.Now().Add(sourceFailure.RetryAfter))
+				}
 			case errors.Is(err, errDownloadDead):
 				_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueFailed, err.Error())
 			case errors.Is(err, errImportReview):
@@ -100,7 +119,6 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 			default:
 				_ = im.store.DeferQueue(ctx, item, err.Error())
 			}
-			event := "import_failed"
 			if errors.Is(err, errDownloadDead) {
 				// Sonarr semantics: a download that never completes gets
 				// blocklisted so the next sweep picks another release.

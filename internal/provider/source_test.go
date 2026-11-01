@@ -3,6 +3,7 @@ package provider
 import (
 	"archive/zip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -142,8 +143,8 @@ func TestSourceDownloadResume(t *testing.T) {
 	}
 }
 
-// Failed jobs report their error; Recover clears them for a retry.
-func TestSourceDownloadFailureAndRecover(t *testing.T) {
+// A failed attempt is reported once; the next State call starts its retry.
+func TestSourceDownloadFailureAndRetry(t *testing.T) {
 	host := &fakeHost{failPages: true}
 	p := NewSource(host, t.TempDir(), DownloadConfig{}, testEntries)
 	externalID := "src1|/manga/op/ch-1100"
@@ -152,17 +153,26 @@ func TestSourceDownloadFailureAndRecover(t *testing.T) {
 	if st.Done {
 		t.Fatalf("unexpected done: %+v", st)
 	}
-	st = waitDone(t, p, externalID)
+	var failure *DownloadError
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var err error
+		st, err = p.State(context.Background(), externalID)
+		if errors.As(err, &failure) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if failure == nil || failure.Retryable {
+		t.Fatalf("want permanent classified failure, got %v", failure)
+	}
 	if st.Done || st.InFlight || !strings.Contains(st.Detail, "site down") {
 		t.Fatalf("want failed state, got %+v", st)
 	}
 
 	host.failPages = false
-	if err := p.(*SourceProvider).Recover(context.Background()); err != nil {
-		t.Fatal(err)
-	}
 	if st = waitDone(t, p, externalID); !st.Done {
-		t.Fatalf("want done after recover, got %+v", st)
+		t.Fatalf("want done after retry, got %+v", st)
 	}
 }
 

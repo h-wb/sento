@@ -12,6 +12,19 @@ export interface Client {
 }
 
 //////////
+// source: errors.go
+
+/**
+ * HTTPError retains the source failure behind the sidecar's gateway response.
+ */
+export interface HTTPError {
+  StatusCode: number /* int */;
+  Message: string;
+  Retryable: boolean;
+  RetryAfter: any /* time.Duration */;
+}
+
+//////////
 // source: extensions.go
 /*
 Package extensions defines the protocol-adapter contract for extension

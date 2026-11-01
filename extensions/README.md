@@ -35,6 +35,13 @@ materialized into the gitignored `vendor/` by
   `app/src` (extend the stand-ins; never patch vendored files — files we
   replace, like `GetCatalogueSource`, are excluded in `vendir.yml`).
 
+The HTTP helpers `HttpException` and `OkHttpExtensions` are MPL-covered
+adaptations under `app/src/main/kotlin/eu/kanade/tachiyomi/network` (their
+vendored originals are excluded). They preserve `Retry-After` along with
+HTTP status, including for the source's own image requests. The API returns
+`error`, `retryable`, optional `upstreamStatus` and `retryAfter`; Sento owns
+retry timing. See `NOTICE.md` for attribution.
+
 To pick up upstream fixes: bump the ref in `vendir.yml`, run
 `mise run extensions:vendor`, fix what moved.
 
