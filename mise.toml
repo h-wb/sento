@@ -13,17 +13,17 @@ experimental = true
 # range like "1.27" kept a cached go1.27.1 through its security release.
 [tools]
 go = "1.27.3"
-node = "24.20.0"
+node = "24.22.2"
 # Java keeps its upstream build metadata ("+9.0.LTS"): macOS resolves only
 # the full form, so the pin uses it.
 java = "temurin-21.0.13+9.0.LTS"
 vendir = "0.46.3"
 gradle = "9.8.0"
-golangci-lint = "2.14.0"
+golangci-lint = "2.15.0"
 actionlint = "1.7.12"
 shellcheck = "0.11.0" # actionlint runs it over every `run:` script
-pitchfork = "2.30.1" # supervises the [daemons] dev stack
-"github:jdx/fnox" = "1.44.0" # fetches fnox.toml secrets for granted tasks
+pitchfork = "2.33.0" # supervises the [daemons] dev stack
+"github:jdx/fnox" = "1.46.0" # fetches fnox.toml secrets for granted tasks
 "github:protonpass/pass-cli" = "2.5.1" # Proton Pass CLI (fnox backend)
 "go:golang.org/x/tools/gopls" = "latest"
 
