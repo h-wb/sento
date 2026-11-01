@@ -55,6 +55,15 @@ func (p *SourceProvider) waitPage(ctx context.Context, sourceID string) error {
 		}
 		if limiter != nil {
 			if err := limiter.Wait(ctx); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				// Wait can reject a reservation before ctx expires when
+				// the next token would exceed its deadline. That is still
+				// a temporary timeout, not a permanent source failure.
+				if _, ok := ctx.Deadline(); ok {
+					return context.DeadlineExceeded
+				}
 				return err
 			}
 		}

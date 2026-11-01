@@ -174,3 +174,17 @@ func TestSourceFailurePreservesOutstandingCooldown(t *testing.T) {
 		t.Fatal("reset another chapter's failure")
 	}
 }
+
+func TestSourceRateLimiterDeadlineIsRetryable(t *testing.T) {
+	p := NewSource(&fakeHost{}, t.TempDir(), DownloadConfig{PageRatePerSecond: 1}, testEntries).(*SourceProvider)
+	if err := p.waitPage(context.Background(), "src"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	err := p.waitPage(ctx, "src")
+	retryable, _ := sourceRetry(err)
+	if !errors.Is(err, context.DeadlineExceeded) || !retryable {
+		t.Fatalf("limiter timeout became permanent: %v", err)
+	}
+}
