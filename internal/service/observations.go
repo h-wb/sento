@@ -44,7 +44,7 @@ func (s *SearchService) observeCandidates(ctx context.Context, run *searchRun, c
 		if v, _ := run.shelf.judge(rc.Parse, *col, cid); rc.Parse.ContentType != parse.ContentManga || v != fitYes {
 			continue
 		}
-		ranges := s.coverageRanges(run.ledger, &rc)
+		ranges := coverageRanges(run.ledger, &rc)
 		for _, r := range ranges {
 			if r.From != r.To || r.From < 0 {
 				continue

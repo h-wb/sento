@@ -348,6 +348,14 @@ type searchRun struct {
 	profiles CardProfiles
 }
 
+// cardProfile is the profile that judges for one card of the run.
+func (run *searchRun) cardProfile(versionID int64) *profile.Profile {
+	if p, ok := run.versionProfiles[versionID]; ok {
+		return p
+	}
+	return run.profiles.Series
+}
+
 func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedger string, version *SearchScope) (*searchRun, error) {
 	if s.registry.Empty() {
 		return nil, apperr.Unavailablef("no search providers configured")

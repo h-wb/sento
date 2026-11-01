@@ -20,155 +20,16 @@ import (
 // process parses, funnels and scores one provider's raw candidates.
 func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out []ReleaseCandidate, dropped int) {
 	for _, cand := range cands {
-		rc := ReleaseCandidate{
-			GUID: cand.GUID(), Provider: cand.Provider, Protocol: cand.Protocol,
-			Site: cand.Site, SiteID: cand.SiteID, Title: cand.Title, cand: cand,
-		}
-		channel := parse.ChannelTorrent
-		if cand.Protocol == provider.ProtocolSource {
-			channel = parse.ChannelSource
-		}
-		if cand.Torrent != nil {
-			rc.Size = cand.Torrent.Size
-			rc.Seeders = cand.Torrent.Seeders
-			rc.URL = cand.Torrent.InfoURL
-		}
-		if cand.Source != nil {
-			rc.Scanlator = cand.Source.Scanlator
-			rc.URL = cand.Source.WebURL
-		}
-		rc.Parse = parse.ParseAnchored(cand.Title, channel, run.titles)
-		// Chapter names rarely tag a language; the source's own language is
-		// the release language (drives the R2 gate and edition routing).
-		if cand.Source != nil && rc.Parse.Language == "" {
-			rc.Parse.Language = cand.Source.Lang
-		}
-		// A torrent name that states no language still has evidence around
-		// it, strongest first: the indexer section it is filed under, an
-		// English-language publisher's tag, the indexer's own language.
-		if cand.Torrent != nil && rc.Parse.Language == "" {
-			switch {
-			case cand.Torrent.CategoryLanguage != "":
-				rc.Parse.Language, rc.languageSource = cand.Torrent.CategoryLanguage, "indexer category"
-			case englishPublisher(rc.Parse.Edition.Names):
-				rc.Parse.Language, rc.languageSource = "en", "publisher"
-			case cand.Torrent.DefaultLanguage != "":
-				rc.Parse.Language, rc.languageSource = cand.Torrent.DefaultLanguage, "indexer default"
-			}
-		}
-
-		ranges := s.coverageRanges(run.ledger, &rc)
-		// Keep number-less candidates only as potential whole-series packs
-		// (volume ledger).
-		isPack := run.ledger == LedgerVolume && rc.Parse.Complete
-		// A torrent named for the series alone, with no number anywhere,
-		// may well be the whole edition ("Title - Deluxe Edition (2012)").
-		// The name cannot confirm it, so it is treated as an inferred pack:
-		// offered for review, never grabbed automatically, and the import
-		// maps what is actually inside.
-		if run.ledger == LedgerVolume && !isPack && cand.Protocol == provider.ProtocolTorrent &&
-			len(rc.Parse.Volumes)+len(rc.Parse.Chapters)+len(rc.Parse.Bare) == 0 &&
-			rc.Parse.Anchored && rc.Parse.TitleLeftover == "" && rc.Parse.ContentType == parse.ContentManga {
-			rc.Parse.Complete, rc.Parse.CompleteInferred = true, true
-			isPack = true
-		}
-
-		if len(ranges) == 0 && !isPack {
-			if len(rc.Parse.Volumes)+len(rc.Parse.Chapters) > 0 {
-				dropped++
-				continue
-			}
-			if rc.Parse.ContentType != parse.ContentManga {
-				rc.Rejections = []string{"rejected.content_type"}
-			} else if cand.Protocol != provider.ProtocolSource && (!rc.Parse.Anchored || rc.Parse.TitleLeftover != "") {
-				rc.Rejections = []string{"rejected.series_match"}
-			} else {
-				rc.Rejections = []string{"rejected.numbers_unknown"}
-			}
+		rc, ranges, keep := readRelease(run, cand)
+		switch {
+		case !keep:
+			dropped++
+		case len(rc.Rejections) > 0:
+			rc.IndexerPriority = run.priorities[[2]string{rc.Provider, rc.SiteID}]
 			out = append(out, rc)
-			continue
+		default:
+			out = append(out, s.route(run, rc, ranges)...)
 		}
-		if run.blocked[cand.Protocol+"/"+cand.ExternalKey()] {
-			rc.Rejections = append(rc.Rejections, "rejected.blocklisted") // hard
-		} else {
-			{
-				evidence := int64(0)
-				if cand.Source != nil {
-					evidence = run.sourceEditions[cand.Source.BindingID]
-				}
-				compatible := 0
-				for _, t := range run.versions {
-					col := editionByID(run.editions, t.EditionID)
-					if run.wantedBooks[t.ID] != nil && col != nil {
-						if v, _ := run.shelf.judge(rc.Parse, *col, evidence); v == fitYes {
-							compatible++
-						}
-					}
-				}
-				rejectedShown := false
-				for _, t := range run.versions {
-					if run.wantedBooks[t.ID] == nil {
-						continue
-					}
-					col := editionByID(run.editions, t.EditionID)
-					if col == nil {
-						continue
-					}
-					verdict, why := run.shelf.judge(rc.Parse, *col, evidence)
-					if verdict != fitYes && run.scope == nil {
-						if compatible > 0 || rejectedShown {
-							continue
-						}
-						rejectedShown = true
-					}
-					scoped := *run
-					scoped.scope = &SearchScope{VersionID: t.ID}
-					if run.scope != nil {
-						scoped.scope.BookID = run.scope.BookID
-						scoped.scope.All = run.scope.All
-						scoped.scope.AllBooks = run.scope.AllBooks
-					}
-					cp := rc
-					cp.VersionID = t.ID
-					cp.EditionID = col.ID
-					cp.EditionSnapshot = col
-					cp.PolicySnapshot = run.versionProfiles[t.ID]
-					cp.VersionSnapshot = &t
-					cp.FormatSnapshot = run.profiles.Formats
-					cp.Rejections = nil
-					cp.Coverage = nil
-					cp.Contents = nil
-					switch {
-					case verdict == fitNo && !languageCompatible(cp.Parse, col.Language):
-						cp.Rejections = append(cp.Rejections, "rejected.language")
-					case verdict == fitNo:
-						cp.Rejections = append(cp.Rejections, "rejected.edition_routing")
-						cp.editionWhy, cp.OtherEdition = why, run.shelf.offer(cp.Parse, *col)
-					default:
-						s.funnel(&scoped, &cp, ranges)
-						// Words alone leave the numbering open, or the release
-						// fits another collected edition as well: a question for
-						// the user, not a contradiction — never grabbed
-						// automatically, downloadable after review.
-						if verdict == fitUnsure {
-							cp.Rejections = append(cp.Rejections, "rejected.edition_ambiguous")
-							cp.editionWhy, cp.OtherEdition = why, run.shelf.offer(cp.Parse, *col)
-						} else if other := run.ambiguousEdition(cp.Parse, *col); evidence == 0 && other != "" {
-							cp.Rejections = append(cp.Rejections, "rejected.edition_ambiguous")
-							cp.editionWhy = fmt.Sprintf("This release also fits %s, which you collect. Confirm it belongs to this one.", other)
-						}
-					}
-					if !t.IsDefault || compatible > 1 {
-						cp.GUID = rc.GUID + "@" + strconv.FormatInt(t.ID, 10)
-					}
-					cp.IndexerPriority = run.priorities[[2]string{cp.Provider, cp.SiteID}]
-					out = append(out, cp)
-				}
-				continue
-			}
-		}
-		rc.IndexerPriority = run.priorities[[2]string{rc.Provider, rc.SiteID}]
-		out = append(out, rc)
 	}
 	for i := range out {
 		out[i].Key = candidateKey(out[i])
@@ -183,8 +44,167 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 	return out, dropped
 }
 
+// readRelease is what a release is, before any card is asked: its parse,
+// the language its surroundings vouch for, and the books its name
+// covers. keep is false for a release whose numbers fall outside the
+// ledger; one that cannot be read at all, or is blocklisted, comes back
+// with its rejection.
+func readRelease(run *searchRun, cand provider.Candidate) (rc ReleaseCandidate, ranges []parse.Range, keep bool) {
+	rc = ReleaseCandidate{
+		GUID: cand.GUID(), Provider: cand.Provider, Protocol: cand.Protocol,
+		Site: cand.Site, SiteID: cand.SiteID, Title: cand.Title, cand: cand,
+	}
+	channel := parse.ChannelTorrent
+	if cand.Protocol == provider.ProtocolSource {
+		channel = parse.ChannelSource
+	}
+	if cand.Torrent != nil {
+		rc.Size = cand.Torrent.Size
+		rc.Seeders = cand.Torrent.Seeders
+		rc.URL = cand.Torrent.InfoURL
+	}
+	if cand.Source != nil {
+		rc.Scanlator = cand.Source.Scanlator
+		rc.URL = cand.Source.WebURL
+	}
+	rc.Parse = parse.ParseAnchored(cand.Title, channel, run.titles)
+	// Chapter names rarely tag a language; the source's own language is
+	// the release language (drives the R2 gate and edition routing).
+	if cand.Source != nil && rc.Parse.Language == "" {
+		rc.Parse.Language = cand.Source.Lang
+	}
+	// A torrent name that states no language still has evidence around
+	// it, strongest first: the indexer section it is filed under, an
+	// English-language publisher's tag, the indexer's own language.
+	if cand.Torrent != nil && rc.Parse.Language == "" {
+		switch {
+		case cand.Torrent.CategoryLanguage != "":
+			rc.Parse.Language, rc.languageSource = cand.Torrent.CategoryLanguage, "indexer category"
+		case englishPublisher(rc.Parse.Edition.Names):
+			rc.Parse.Language, rc.languageSource = "en", "publisher"
+		case cand.Torrent.DefaultLanguage != "":
+			rc.Parse.Language, rc.languageSource = cand.Torrent.DefaultLanguage, "indexer default"
+		}
+	}
+
+	ranges = coverageRanges(run.ledger, &rc)
+	// Keep number-less candidates only as potential whole-series packs
+	// (volume ledger).
+	isPack := run.ledger == LedgerVolume && rc.Parse.Complete
+	// A torrent named for the series alone, with no number anywhere,
+	// may well be the whole edition ("Title - Deluxe Edition (2012)").
+	// The name cannot confirm it, so it is treated as an inferred pack:
+	// offered for review, never grabbed automatically, and the import
+	// maps what is actually inside.
+	if run.ledger == LedgerVolume && !isPack && cand.Protocol == provider.ProtocolTorrent &&
+		len(rc.Parse.Volumes)+len(rc.Parse.Chapters)+len(rc.Parse.Bare) == 0 &&
+		rc.Parse.Anchored && rc.Parse.TitleLeftover == "" && rc.Parse.ContentType == parse.ContentManga {
+		rc.Parse.Complete, rc.Parse.CompleteInferred = true, true
+		isPack = true
+	}
+
+	if len(ranges) == 0 && !isPack {
+		switch {
+		case len(rc.Parse.Volumes)+len(rc.Parse.Chapters) > 0:
+			return rc, nil, false // numbered, but for the other ledger
+		case rc.Parse.ContentType != parse.ContentManga:
+			rc.Rejections = []string{"rejected.content_type"}
+		case cand.Protocol != provider.ProtocolSource && (!rc.Parse.Anchored || rc.Parse.TitleLeftover != ""):
+			rc.Rejections = []string{"rejected.series_match"}
+		default:
+			rc.Rejections = []string{"rejected.numbers_unknown"}
+		}
+		return rc, ranges, true
+	}
+	if run.blocked[cand.Protocol+"/"+cand.ExternalKey()] {
+		rc.Rejections = append(rc.Rejections, "rejected.blocklisted") // hard
+	}
+	return rc, ranges, true
+}
+
+// route asks every card with wanted books whether the release is one of
+// its books, and judges a copy of it for each card that says yes or
+// cannot say. A release no card takes is shown once, for the first card,
+// with why not; a run scoped to one card always shows it.
+func (s *SearchService) route(run *searchRun, rc ReleaseCandidate, ranges []parse.Range) []ReleaseCandidate {
+	var out []ReleaseCandidate
+	evidence := int64(0)
+	if rc.cand.Source != nil {
+		evidence = run.sourceEditions[rc.cand.Source.BindingID]
+	}
+	compatible := 0
+	for _, t := range run.versions {
+		col := editionByID(run.editions, t.EditionID)
+		if run.wantedBooks[t.ID] != nil && col != nil {
+			if v, _ := run.shelf.judge(rc.Parse, *col, evidence); v == fitYes {
+				compatible++
+			}
+		}
+	}
+	rejectedShown := false
+	for _, t := range run.versions {
+		if run.wantedBooks[t.ID] == nil {
+			continue
+		}
+		col := editionByID(run.editions, t.EditionID)
+		if col == nil {
+			continue
+		}
+		verdict, why := run.shelf.judge(rc.Parse, *col, evidence)
+		if verdict != fitYes && run.scope == nil {
+			if compatible > 0 || rejectedShown {
+				continue
+			}
+			rejectedShown = true
+		}
+		scoped := *run
+		scoped.scope = &SearchScope{VersionID: t.ID}
+		if run.scope != nil {
+			scoped.scope.BookID = run.scope.BookID
+			scoped.scope.All = run.scope.All
+			scoped.scope.AllBooks = run.scope.AllBooks
+		}
+		cp := rc
+		cp.VersionID = t.ID
+		cp.EditionID = col.ID
+		cp.EditionSnapshot = col
+		cp.PolicySnapshot = run.cardProfile(t.ID)
+		cp.VersionSnapshot = &t
+		cp.FormatSnapshot = run.profiles.Formats
+		cp.Rejections = nil
+		cp.Coverage = nil
+		cp.Contents = nil
+		switch {
+		case verdict == fitNo && !languageCompatible(cp.Parse, col.Language):
+			cp.Rejections = append(cp.Rejections, "rejected.language")
+		case verdict == fitNo:
+			cp.Rejections = append(cp.Rejections, "rejected.edition_routing")
+			cp.editionWhy, cp.OtherEdition = why, run.shelf.offer(cp.Parse, *col)
+		default:
+			s.funnel(&scoped, &cp, ranges)
+			// Words alone leave the numbering open, or the release
+			// fits another collected edition as well: a question for
+			// the user, not a contradiction — never grabbed
+			// automatically, downloadable after review.
+			if verdict == fitUnsure {
+				cp.Rejections = append(cp.Rejections, "rejected.edition_ambiguous")
+				cp.editionWhy, cp.OtherEdition = why, run.shelf.offer(cp.Parse, *col)
+			} else if other := run.ambiguousEdition(cp.Parse, *col); evidence == 0 && other != "" {
+				cp.Rejections = append(cp.Rejections, "rejected.edition_ambiguous")
+				cp.editionWhy = fmt.Sprintf("This release also fits %s, which you collect. Confirm it belongs to this one.", other)
+			}
+		}
+		if !t.IsDefault || compatible > 1 {
+			cp.GUID = rc.GUID + "@" + strconv.FormatInt(t.ID, 10)
+		}
+		cp.IndexerPriority = run.priorities[[2]string{cp.Provider, cp.SiteID}]
+		out = append(out, cp)
+	}
+	return out
+}
+
 // coverageRanges extracts the ledger-relevant number ranges of a candidate.
-func (s *SearchService) coverageRanges(searchLedger string, rc *ReleaseCandidate) []parse.Range {
+func coverageRanges(searchLedger string, rc *ReleaseCandidate) []parse.Range {
 	if searchLedger == LedgerVolume {
 		return bookRanges(rc.Parse, LedgerVolume)
 	}
@@ -198,59 +218,50 @@ func (s *SearchService) coverageRanges(searchLedger string, rc *ReleaseCandidate
 	return ranges
 }
 
-// funnel applies hard rejections then scoring (decision-engine.md §3–4),
-// parameterized by ledger and the series' release profile.
+// funnel judges a release routed to one card (the run is scoped to it):
+// first whether it holds that card's wanted books, then what the card's
+// profile says, then, when nothing stands against it, its score
+// (decision-engine.md §3–4).
 func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []parse.Range) {
-	searchLedger, scope := run.ledger, run.scope
-	collections := run.editions
-	reject := func(code string) { c.Rejections = append(c.Rejections, code) }
-
 	// An inferred pack runs the whole funnel so its books are known, then
 	// carries a soft rejection: a person has to confirm it.
 	if c.Parse.CompleteInferred && len(ranges) == 0 {
-		defer reject("rejected.pack_unverified")
+		defer c.reject("rejected.pack_unverified")
 	}
-	// R1 content-type gate.
-	if c.Parse.ContentType != parse.ContentManga {
-		reject("rejected.content_type")
-		return
-	}
-	// Series match (source candidates are binding-scoped; anchor waived).
-	if c.Protocol != provider.ProtocolSource {
-		if !c.Parse.Anchored || c.Parse.TitleLeftover != "" {
-			reject("rejected.series_match")
-			return
-		}
-	}
-
-	// The release is judged against one collected version at a time: the
-	// caller scoped the run to it.
-	colID := c.EditionID
-	wantLang := ""
-	for _, col := range collections {
-		if col.ID == colID {
-			wantLang = col.Language
-		}
-	}
-	c.EditionID = colID
-	// The card's profile decides scoring and health rules.
-	prof, ok := run.versionProfiles[c.VersionID]
-	if !ok {
-		prof = run.profiles.Series
-	}
+	prof := c.PolicySnapshot
 	if prof != nil {
 		c.ProfileID = prof.ID
 	}
-	c.PolicySnapshot = prof
-	c.EditionSnapshot = editionByID(collections, colID)
-	rules := ledgerRules(prof, searchLedger)
+	if !fitBooks(run, c, ranges) || !judgeByProfile(run, c, prof) || len(c.Rejections) > 0 {
+		return
+	}
+	c.score(ledgerRules(prof, run.ledger))
+}
 
+func (c *ReleaseCandidate) reject(code string) { c.Rejections = append(c.Rejections, code) }
+
+// fitBooks is the book's side: is the release manga of this series, in
+// the edition's language, and which of the card's books it holds and
+// covers. false stops the funnel: nothing more is worth judging.
+func fitBooks(run *searchRun, c *ReleaseCandidate, ranges []parse.Range) bool {
+	searchLedger, scope := run.ledger, run.scope
+	// R1 content-type gate.
+	if c.Parse.ContentType != parse.ContentManga {
+		c.reject("rejected.content_type")
+		return false
+	}
+	// Series match (source candidates are binding-scoped; anchor waived).
+	if c.Protocol != provider.ProtocolSource && (!c.Parse.Anchored || c.Parse.TitleLeftover != "") {
+		c.reject("rejected.series_match")
+		return false
+	}
 	// R2 language gate (untagged passes). Soft: record and keep going so
 	// Covered is still computed — a force-grab needs the book list.
-	if !languageCompatible(c.Parse, wantLang) {
-		reject("rejected.language")
+	if c.EditionSnapshot != nil && !languageCompatible(c.Parse, c.EditionSnapshot.Language) {
+		c.reject("rejected.language")
 	}
 
+	colID := c.EditionID
 	total := 0
 	for _, r := range ranges {
 		total += int((int64(r.To)-int64(r.From))/100) + 1
@@ -269,8 +280,8 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		if run.wantedBooks[c.VersionID][w.ID] {
 			if scope == nil || scope.BookID == 0 {
 				if sharesNumber(run.books[colID], w) {
-					reject("rejected.book_ambiguous")
-					return
+					c.reject("rejected.book_ambiguous")
+					return false
 				}
 			}
 			c.Coverage = append(c.Coverage, store.BookRef{Ledger: searchLedger, EditionID: colID, VersionID: c.VersionID, BookID: w.ID, Number: w.SequenceNum})
@@ -281,44 +292,42 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 	}
 	c.RepresentedBooks = total
 	if len(c.Coverage) > 0 && belowPackThreshold(len(c.Coverage), total) {
-		reject("rejected.pack_threshold")
+		c.reject("rejected.pack_threshold")
 	}
 	if len(c.Coverage) == 0 {
-		reject("rejected.no_coverage")
-		return
+		c.reject("rejected.no_coverage")
+		return false
 	}
+	return true
+}
 
+// judgeByProfile is the profile's side: its formats and hard rules, the
+// upgrade it asks for, its score floor and torrent health rules. false
+// stops the funnel.
+func judgeByProfile(run *searchRun, c *ReleaseCandidate, prof *profile.Profile) bool {
 	// Custom formats: matched on every routable candidate (rejected ones
 	// keep their chips), floor-gated softly so force-grab can override.
 	c.evalFormats(prof, run.profiles.Formats)
 	if prof != nil && prof.UpgradesEnabled && c.VersionID > 0 && (run.scope == nil || run.scope.BookID == 0) {
 		filtered := c.Coverage[:0]
 		for _, sl := range c.Coverage {
-			if old, ok := run.ownedScores[c.VersionID][sl.BookID]; ok {
-				min := prof.MinUpgradeScore
-				if min < 1 {
-					min = 1
-				}
-				if c.FormatScore-old < min {
-					continue
-				}
+			if old, ok := run.ownedScores[c.VersionID][sl.BookID]; ok && c.FormatScore-old < max(prof.MinUpgradeScore, 1) {
+				continue
 			}
 			filtered = append(filtered, sl)
 		}
 		c.Coverage = filtered
 		if len(filtered) == 0 {
-			reject("rejected.no_upgrade")
-			return
+			c.reject("rejected.no_upgrade")
+			return false
 		}
 	}
-
-	if prof != nil && prof.MinFormatScore > profile.MinScoreOff &&
-		c.FormatScore < prof.MinFormatScore {
-		reject("rejected.format_score")
+	if prof != nil && prof.MinFormatScore > profile.MinScoreOff && c.FormatScore < prof.MinFormatScore {
+		c.reject("rejected.format_score")
 	}
-
-	// Torrent-only health checks (profile rules).
+	// Torrent-only health checks.
 	if c.Protocol == provider.ProtocolTorrent {
+		rules := ledgerRules(prof, run.ledger)
 		if c.Size > 0 && rules.SizeMaxMB > 0 {
 			count := c.RepresentedBooks
 			if count <= 0 {
@@ -326,19 +335,20 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 			}
 			perBook := c.Size / int64(count)
 			if perBook < int64(rules.SizeMinMB)<<20 || perBook > int64(rules.SizeMaxMB)<<20 {
-				reject("rejected.size")
+				c.reject("rejected.size")
 			}
 		}
 		if c.Seeders < rules.MinSeeders {
-			reject("rejected.seeders")
+			c.reject("rejected.seeders")
 		}
 	}
-	if len(c.Rejections) > 0 {
-		return
-	}
+	return true
+}
 
-	// Scoring (decision-engine.md §4): the protocol preference comes from
-	// the profile's ledger rules; term scores from the custom formats.
+// score ranks a release nothing stands against (decision-engine.md §4):
+// wanted books first, the profile's preferred protocol, its custom
+// formats, torrent health, and a doubt for an uncertain name.
+func (c *ReleaseCandidate) score(rules profile.LedgerRules) {
 	score := len(c.Coverage) * 1000
 	c.ScoreParts = []ScorePart{{Label: "Wanted books", Value: score}}
 	if c.Protocol == rules.PreferredProtocol {
