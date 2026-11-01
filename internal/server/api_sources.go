@@ -32,6 +32,7 @@ func (s *Server) mountSourceAPI(r chi.Router) {
 
 	r.Post("/series/{id}/search", s.handleSearch)
 	r.Get("/queue", s.handleQueue)
+	r.Get("/activity", s.handleActivity)
 	r.Post("/queue/process", s.handleQueueProcess)
 	r.Post("/queue/{qid}/retry", s.handleQueueRetry)
 	r.Post("/queue/{qid}/cancel", s.handleQueueCancel)
@@ -451,25 +452,8 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		}
 		item.CanTryAnother = service.CanTryAnother(*item, files[item.SeriesID])
 	}
-	// Enrich in-flight items with live progress. Progress() is an in-memory
-	// read with no side effects, so it's safe per request (unlike State).
 	for i := range items {
-		observed, _ := time.Parse(time.RFC3339, items[i].ObservedAt)
-		if time.Since(observed) > 5*time.Minute {
-			items[i].Stalled = false
-		}
-		if items[i].Status != store.QueueDownloading {
-			continue
-		}
-		if items[i].ObservedAt != "" {
-			items[i].Progress = &items[i].DownloadProgress
-		}
-		prov := s.registry.Get(items[i].ProviderID)
-		if pr, ok := prov.(provider.Progresser); ok {
-			if frac, ok := pr.Progress(items[i].ExternalID); ok {
-				items[i].Progress = &frac
-			}
-		}
+		s.enrichQueueProgress(&items[i])
 	}
 	respondList(w, items, nil)
 }
@@ -545,4 +529,44 @@ func (s *Server) handleQueueAnother(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) enrichQueueProgress(item *store.QueueItem) {
+	observed, _ := time.Parse(time.RFC3339, item.ObservedAt)
+	if time.Since(observed) > 5*time.Minute {
+		item.Stalled = false
+	}
+	if item.Status != store.QueueDownloading {
+		return
+	}
+	if item.ObservedAt != "" {
+		item.Progress = &item.DownloadProgress
+	}
+	prov := s.registry.Get(item.ProviderID)
+	if pr, ok := prov.(provider.Progresser); ok {
+		if frac, ok := pr.Progress(item.ExternalID); ok {
+			item.Progress = &frac
+		}
+	}
+}
+
+func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
+	sid := int64(0)
+	if value := r.URL.Query().Get("seriesId"); value != "" {
+		var err error
+		sid, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || sid < 0 {
+			writeError(w, http.StatusBadRequest, "invalid series ID")
+			return
+		}
+	}
+	data, err := s.library.Activity(r.Context(), sid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	for i := range data.Downloads {
+		s.enrichQueueProgress(&data.Downloads[i].Job)
+	}
+	writeJSON(w, http.StatusOK, data)
 }

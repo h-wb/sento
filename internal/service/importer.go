@@ -773,6 +773,8 @@ func (im *Importer) TryAnother(ctx context.Context, ids []int64) ([]SearchTarget
 	defer im.mu.Unlock()
 	var jobs []store.QueueItem
 	files := map[int64][]store.File{}
+	views := map[int64]*ledgerView{}
+	pending := map[int64]map[string][]int64{}
 	for _, id := range slices.Compact(slices.Sorted(slices.Values(ids))) {
 		item, err := im.store.GetQueueItem(ctx, id)
 		if err != nil {
@@ -785,6 +787,23 @@ func (im *Importer) TryAnother(ctx context.Context, ids []int64) ([]SearchTarget
 			}
 		}
 		if CanTryAnother(*item, files[item.SeriesID]) {
+			if item.Status == store.QueueFailed {
+				if _, ok := views[item.SeriesID]; !ok {
+					var e error
+					views[item.SeriesID], e = loadLedger(ctx, im.store, item.SeriesID)
+					if e != nil {
+						return nil, e
+					}
+					others, e := im.store.SeriesQueueItems(ctx, item.SeriesID)
+					if e != nil {
+						return nil, e
+					}
+					pending[item.SeriesID] = activityPending(others)
+				}
+				if failedResolution(*item, views[item.SeriesID], pending[item.SeriesID]) != "" {
+					continue
+				}
+			}
 			jobs = append(jobs, *item)
 		}
 	}

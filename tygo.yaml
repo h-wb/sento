@@ -50,7 +50,7 @@ packages:
       import type { Result, Step } from "./parse"
       import type { Condition, LedgerRules } from "./profile"
       import type { ExtensionInfo } from "./extensions"
-      import type { Book, BookRef, CollectedVersion, Binding, Indexer, SiteOverride } from "./store"
+      import type { Book, BookRef, CollectedVersion, Binding, Indexer, SiteOverride, QueueItem, ReviewItem, Decision } from "./store"
     type_mappings:
       profile.Condition: "Condition"
       profile.LedgerRules: "LedgerRules"
@@ -62,6 +62,9 @@ packages:
       store.Binding: "Binding"
       store.Indexer: "Indexer"
       store.SiteOverride: "SiteOverride"
+      store.QueueItem: "QueueItem"
+      store.ReviewItem: "ReviewItem"
+      store.Decision: "Decision"
       metadata.SeriesRef: "SeriesRef"
       extensions.ExtensionInfo: "ExtensionInfo"
 

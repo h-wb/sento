@@ -92,5 +92,5 @@ func (s *Store) reviewRows(ctx context.Context, sid int64) ([]ReviewItem, error)
  WHERE (?=0 OR s.id=?) AND i.protocol='source' AND COALESCE(o.enabled,i.enabled)=TRUE AND b.state='unmatched'
  AND NOT EXISTS(SELECT 1 FROM source_bindings a WHERE a.series_id=b.series_id AND a.source_id=b.source_id AND a.state='active')
  GROUP BY b.series_id,b.source_id,s.title,i.id,i.name
- ORDER BY series_title,kind,item_id LIMIT 500`, sid, sid, sid, sid, sid, sid, sid, sid)
+ ORDER BY series_title,kind,item_id`, sid, sid, sid, sid, sid, sid, sid, sid)
 }

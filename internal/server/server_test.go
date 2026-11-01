@@ -181,3 +181,32 @@ func TestQueueAnotherRequiresSelectedDownloads(t *testing.T) {
 		t.Fatalf("missing job: %d %s", r.Code, r.Body.String())
 	}
 }
+
+func TestActivityScopesAndEmptyCollections(t *testing.T) {
+	h, _ := testServer(t)
+	for _, path := range []string{"/api/v1/activity", "/api/v1/activity?seriesId=0"} {
+		r := do(t, h, http.MethodGet, path, "")
+		if r.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, r.Code, r.Body.String())
+		}
+		var body struct {
+			Downloads []any `json:"downloads"`
+			Reviews   []any `json:"reviews"`
+			Events    []any `json:"events"`
+		}
+		if err := json.Unmarshal(r.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Downloads == nil || body.Reviews == nil || body.Events == nil {
+			t.Fatalf("empty lists must be arrays: %s", r.Body.String())
+		}
+	}
+	for _, path := range []string{"/api/v1/activity?seriesId=bad", "/api/v1/activity?seriesId=-1"} {
+		if r := do(t, h, http.MethodGet, path, ""); r.Code != http.StatusBadRequest {
+			t.Fatalf("invalid scope = %d", r.Code)
+		}
+	}
+	if r := do(t, h, http.MethodGet, "/api/v1/activity?seriesId=999", ""); r.Code != http.StatusNotFound {
+		t.Fatalf("missing scope = %d", r.Code)
+	}
+}

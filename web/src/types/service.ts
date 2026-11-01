@@ -4,7 +4,33 @@ import type { SeriesRef } from "./metadata"
 import type { Result, Step } from "./parse"
 import type { Condition, LedgerRules } from "./profile"
 import type { ExtensionInfo } from "./extensions"
-import type { Book, BookRef, CollectedVersion, Binding, Indexer, SiteOverride } from "./store"
+import type { Book, BookRef, CollectedVersion, Binding, Indexer, SiteOverride, QueueItem, ReviewItem, Decision } from "./store"
+
+//////////
+// source: activity.go
+
+/**
+ * ActivityData is the same work viewed across the library or for one series.
+ * It is derived from queue, coverage and review facts, never stored as a feed.
+ */
+export interface ActivityData {
+  downloads: ActivityDownload[];
+  reviews: ReviewItem[];
+  events: Decision[];
+  seriesTitles: { [key: number /* int64 */]: string};
+}
+export interface ActivityDownload {
+  job: QueueItem;
+  files: ReviewItem[];
+  attention: boolean;
+  history: boolean;
+  resolution?: string;
+  issue: string;
+  explanation: string;
+  listingId?: number /* int64 */;
+  listingName?: string;
+  sourceName?: string;
+}
 
 //////////
 // source: box.go
