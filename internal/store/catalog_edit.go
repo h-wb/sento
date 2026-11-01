@@ -11,13 +11,13 @@ import (
 )
 
 type EditionMetadataPatch struct {
-	MakeLocal        bool     `json:"makeLocal,omitempty"`
-	NumberingSource  *string  `json:"numberingSource"`
-	EditionName      *string  `json:"editionName"`
-	Language         *string  `json:"language"`
-	Publisher        *string  `json:"publisher"`
-	Medium           *string  `json:"medium"`
-	Reset            []string `json:"reset"`
+	MakeLocal       bool     `json:"makeLocal,omitempty"`
+	NumberingSource *string  `json:"numberingSource"`
+	EditionName     *string  `json:"editionName"`
+	Language        *string  `json:"language"`
+	Publisher       *string  `json:"publisher"`
+	Medium          *string  `json:"medium"`
+	Reset           []string `json:"reset"`
 }
 
 func (s *Store) EditEdition(ctx context.Context, seriesID, cid int64, p EditionMetadataPatch) error {

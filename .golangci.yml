@@ -12,3 +12,8 @@ linters:
   exclusions:
     paths:
       - web
+
+# Unformatted Go fails lint, as it would fail review.
+formatters:
+  enable:
+    - gofmt

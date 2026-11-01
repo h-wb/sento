@@ -305,14 +305,15 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []BookRef) 
 	}
 	created := errors.Is(err, sql.ErrNoRows)
 	var plan []BookRef
-	if created {
+	switch {
+	case created:
 		body, _ := json.Marshal(slots)
 		if err = tx.QueryRowContext(ctx, s.q(`INSERT INTO queue_items(series_id,protocol,external_id,title,status,books_json,provider_id,release_key,snapshot_json,download_client) VALUES(?,?,'',?,'queued',?,?,?,?,?) RETURNING id`), q.SeriesID, q.Protocol, q.Title, string(body), q.ProviderID, q.ReleaseKey, string(q.Snapshot), q.DownloadClient).Scan(&id); err != nil {
 			return 0, false, conflict(err, "release already has an active job")
 		}
-	} else if err != nil {
+	case err != nil:
 		return 0, false, err
-	} else {
+	default:
 		if err = json.Unmarshal([]byte(raw), &plan); err != nil {
 			return 0, false, err
 		}

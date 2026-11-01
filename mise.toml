@@ -245,7 +245,8 @@ run = [
 
 [tasks.lint]
 description = "Lint Go code"
-run = "golangci-lint run"
+# fmt --diff fails on unformatted Go; run does not check formatting.
+run = ["golangci-lint fmt --diff", "golangci-lint run"]
 
 [tasks."web:dev"]
 description = "Run the web UI dev server"

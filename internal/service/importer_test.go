@@ -265,7 +265,7 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 		t.Fatalf("import: %d %v", n, err)
 	}
 	before, _ := st.ListFiles(ctx, seriesID)
-	if len(before) != 2 || !strings.Contains(before[0].Path, filepath.Join("editions")) {
+	if len(before) != 2 || !strings.Contains(before[0].Path, "editions") {
 		t.Fatalf("old-layout import: %+v", before)
 	}
 	if _, info := readBook(t, before[0].Path); info != nil {

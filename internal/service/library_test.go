@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/h-wb/sento/internal/db/dbtest"
@@ -255,7 +256,7 @@ func TestRefreshReconciliation(t *testing.T) {
 	// Simulate MangaBaka regenerating collection UUIDs and adding a volume.
 	p := lib.provider.(*fakeProvider)
 	p.collections[0].ProviderID = "uuid-standard-REGENERATED"
-	p.works["uuid-standard-REGENERATED"] = append(p.works["uuid-standard"],
+	p.works["uuid-standard-REGENERATED"] = append(slices.Clone(p.works["uuid-standard"]),
 		metadata.Work{ProviderID: "w5", SequenceNum: 400, SequenceStr: "4", CountType: "main", ReleaseDate: "2024-01-01"})
 	p.series.FinalVolume = 115
 
