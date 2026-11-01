@@ -182,23 +182,29 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 	}
 
 	// Group: last unrecognized number-free segment wins; a leading one is
-	// the fallback (parser.md §5.8).
-	var leading, trailing string
+	// the fallback (parser.md §5.8). Curly braces carry notes ("{repack}",
+	// "{HD}"), so one only names the group when nothing else can.
+	var leading, trailing, note string
 	for _, info := range infos {
 		if info.recognized || info.hasNumbers {
 			continue
 		}
-		if info.seg.pos < freePos || freePos == -1 && info.seg.pos == 0 {
+		switch {
+		case info.seg.pos < freePos || freePos == -1 && info.seg.pos == 0:
 			if leading == "" {
 				leading = info.seg.text
 			}
-		} else {
+		case info.seg.delim == '{':
+			note = info.seg.text
+		default:
 			trailing = info.seg.text
 		}
 	}
 	switch {
 	case trailing != "":
 		res.Group = trailing
+	case note != "":
+		res.Group = note
 	case leading != "" && res.Title != "":
 		res.Group = leading
 	}

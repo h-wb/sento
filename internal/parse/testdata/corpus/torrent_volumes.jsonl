@@ -8,3 +8,7 @@
 {"in":"Vagabond v01 (2014) (Digital) (LostNerevarine-Empire)","ch":"torrent","want":{"title":"vagabond","volumes":[[1,1]],"group":"LostNerevarine-Empire"}}
 {"in":"Vinland Saga T05 (French)","ch":"torrent","want":{"title":"vinland saga","volumes":[[5,5]],"language":"fr"}}
 {"in":"Kingdom Tome 12","ch":"torrent","want":{"title":"kingdom","volumes":[[12,12]]}}
+{"in":"One Piece (Digital) [danke-Empire] {repack}","ch":"source","titles":["One Piece"],"want":{"group":"danke-Empire"}}
+{"in":"Shaman King (KODANSHA) (Digital) [Rillant] {~x4500}","ch":"source","titles":["Shaman King"],"want":{"group":"Rillant"}}
+{"in":"Kiseijuu [Anon-repack]{HD}","ch":"source","titles":["Kiseijuu"],"want":{"group":"Anon-repack"}}
+{"in":"Berserk v01 (Digital) {Asura}","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[1,1]],"group":"Asura"}}
