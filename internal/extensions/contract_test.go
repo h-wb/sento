@@ -222,6 +222,9 @@ func TestContractExtensionLifecycle(t *testing.T) {
 		t.Skipf("source %s returned no results for %q; nothing to drive chapters with", sid, query)
 	}
 
+	if _, err := c.Listings(ctx, sid, mangas[0].Key); err != nil {
+		t.Fatalf("Listings(%s): %v", mangas[0].Key, err)
+	}
 	chapters, err := c.Chapters(ctx, sid, mangas[0].Key)
 	if err != nil {
 		t.Fatalf("Chapters(%s): %v", mangas[0].Key, err)

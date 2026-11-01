@@ -299,6 +299,10 @@ func mountExtensions(mux *http.ServeMux) {
 		})
 	})
 
+	mux.HandleFunc("GET /host/api/v1/sources/{sid}/listings", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, []map[string]any{}) // the stub sources have no nested listings
+	})
+
 	mux.HandleFunc("GET /host/api/v1/sources/{sid}/chapters", func(w http.ResponseWriter, _ *http.Request) {
 		chs := []map[string]any{}
 		for i := 1; i <= 10; i++ {
