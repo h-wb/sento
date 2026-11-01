@@ -133,8 +133,8 @@ verify Connections and Nyaa's selected client in the UI before grabbing.
 Limits:
 
 - **Production Sento is off-limits**: no reads, changes, cancellations or
-  downloads at `sento.example.invalid` or its cluster API. Never use the real library
-  `/data/Literature/Manga/Sento` or another worktree's files.
+  downloads at the live instance or its cluster API. Never use the real
+  library or another worktree's files.
 - **Nyaa only** for a real torrent indexer. Select the test VPN client explicitly
   and verify category `sento-test`; never rely on a client name or default.
   Operate only on this run's recorded test hashes, even if the shared test

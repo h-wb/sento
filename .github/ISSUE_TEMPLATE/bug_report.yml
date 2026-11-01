@@ -1,0 +1,45 @@
+---
+name: Bug report
+description: Something is broken or behaves incorrectly
+labels: ['bug']
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what actually happened.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown in the sidebar and on the System page (e.g. 0.1.0, or a commit).
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The shorter the better — a series title and a button path is often enough.
+      placeholder: Add series → … → grab → …
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Screenshots, error text from the Activity page, file paths. Never include credentials or tokens.
+      placeholder: 'Queue error: … · library path: … · screenshot: …'
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Library / series / editions
+        - Search / decisions / profiles
+        - Downloads (qBittorrent / torrents)
+        - Chapter sources (extensions sidecar)
+        - Import / files / organization
+        - Web UI
+        - Other
+    validations:
+      required: true

@@ -127,8 +127,16 @@ description = "Stop everything the dev stack started"
 run = "mise daemons stop"
 
 [tasks.build]
-description = "Build the sento binary"
-run = "go build -o bin/sento ./cmd/sento"
+description = "Build the sento binary (version stamped from git)"
+run = '''
+#!/usr/bin/env bash
+set -eu
+v=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+c=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+go build -trimpath \
+  -ldflags "-X github.com/h-wb/sento/internal/version.Version=$v -X github.com/h-wb/sento/internal/version.Commit=$c" \
+  -o bin/sento ./cmd/sento
+'''
 
 [tasks.run]
 description = "Run sento (dev)"

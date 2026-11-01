@@ -1,0 +1,94 @@
+# Publishes a GitHub release with server binaries for each platform when a
+# semver tag (vX.Y.Z) is pushed. The container images for the same tag are
+# built by image.yml — pushing a tag publishes everything.
+#
+# The release binary needs the web UI next to it: the server serves
+# web/dist from SENTO_STATIC_DIR, so each archive carries both. The
+# extensions sidecar stays a container (ghcr.io/<owner>/sento-extensions);
+# there is no JVM binary to ship.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+    env:
+      VERSION: ${{ github.ref_name }}
+      COMMIT: ${{ github.sha }}
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # mise.toml pins go and node; the runner's toolchains are never used.
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          cache: true
+
+      # The web build is platform-independent: one build, shared by every
+      # Go artifact.
+      - name: Build the web UI
+        run: mise run web:build
+
+      - name: Build the server
+        run: |
+          CGO_ENABLED=0 go build -trimpath \
+            -ldflags "-s -w -X github.com/h-wb/sento/internal/version.Version=${VERSION#v} -X github.com/h-wb/sento/internal/version.Commit=${COMMIT}" \
+            -o "sento-${VERSION#v}-${GOOS}-${GOARCH}/sento" ./cmd/sento
+
+      - name: Package
+        run: |
+          cp -r web/dist "sento-${VERSION#v}-${GOOS}-${GOARCH}/web-dist"
+          tar -czf "sento-${VERSION#v}-${GOOS}-${GOARCH}.tar.gz" \
+            "sento-${VERSION#v}-${GOOS}-${GOARCH}"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sento-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: sento-*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum sento-*.tar.gz > checksums.txt
+
+      # --generate-notes fills in the commit history between tags; a tag
+      # message, if any, is prepended to it. The container images for the
+      # same tag are already on their way from image.yml.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          gh release create "$VERSION" \
+            --title "sento ${VERSION#v}" \
+            --generate-notes \
+            --verify-tag \
+            dist/*

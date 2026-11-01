@@ -1,0 +1,22 @@
+---
+name: Feature request
+description: Suggest an idea or a change that fits more workflows
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The user goal, not the solution — 'I want to …' beats 'add a setting for …'.
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: How do you work around it today?
+      description: What Sento makes you do now, and where it hurts.
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: If you have one. Links to how Sonarr/Radarr/Kapowarr or other tools solve it are welcome.
