@@ -40,7 +40,7 @@ jobs:
 
   image:
     needs: validate
-    if: always() && (needs.validate.result == 'success' || needs.validate.result == 'skipped')
+    if: ${{ !cancelled() && (needs.validate.result == 'success' || needs.validate.result == 'skipped') }}
     name: Build and publish ${{ matrix.name }}
     runs-on: ubuntu-latest
     # The sidecar compiles the vendored Suwayomi tree when its layers are
