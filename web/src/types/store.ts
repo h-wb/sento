@@ -2,6 +2,22 @@
 /* eslint-disable */
 
 //////////
+// source: bindings.go
+
+export interface Binding {
+  trustChapters: boolean;
+  editionId: number /* int64 */;
+  id: number /* int64 */;
+  seriesId: number /* int64 */;
+  sourceId: string;
+  sourceMangaKey: string; // opaque, minted by the extensions sidecar
+  sourceName: string;
+  mangaTitle: string;
+  state: string;
+  priority: number /* int */;
+}
+
+//////////
 // source: calendar.go
 
 /**
@@ -123,6 +139,109 @@ export interface Work {
  * JSON object of the edited values.
  */
 export type FieldList = string[];
+
+//////////
+// source: editions.go
+
+/**
+ * Edition is what is collected: MangaBaka's edition for one series,
+ * language and type, or a local one the catalog does not list. Publisher
+ * and Medium are those of its preferred collection, or as entered.
+ */
+export interface Edition {
+  numberingSource: string;
+  syncState: string;
+  id: number /* int64 */;
+  seriesId: number /* int64 */;
+  /**
+   * ProviderEditionID is MangaBaka's edition id, shared by every series
+   * that has that edition ("Standard Edition", "3-in-1 Edition").
+   */
+  providerEditionId?: string;
+  /**
+   * ProviderEditionName is MangaBaka's name for it, whatever EditionName
+   * was changed to.
+   */
+  providerEditionName?: string;
+  editionName: string;
+  language: string;
+  publisher: string;
+  medium: string;
+  type: string;
+  monitored: boolean;
+  countMain: number /* int */;
+  countExtra: number /* int */;
+  countOther: number /* int */;
+  startDate?: string;
+  endDate?: string;
+  custom: boolean;
+  /**
+   * Split: someone separated this edition from the one it was grouped with.
+   */
+  split: boolean;
+  profileId?: number /* int64 */; // 0 = inherit from series
+  cutoffNum: number /* int64 */; // chapter editions: skip through this number (exclusive cutoff)
+  /**
+   * Overrides names the fields edited by hand, which refreshes leave alone.
+   */
+  overrides: string[];
+  /**
+   * Collections are the catalog collections grouped under this edition,
+   * the preferred first; none for a local edition.
+   */
+  collections: Collection[];
+}
+export interface Book {
+  providerId?: string;
+  numberKnown: boolean;
+  revision?: string;
+  syncState: string;
+  id: number /* int64 */;
+  editionId: number /* int64 */;
+  sequenceNum: number /* int64 */; // hundredths
+  sequenceStr: string;
+  countType: string;
+  releaseDate?: string;
+  isbn?: string;
+  pages?: number /* int */;
+  /**
+   * Overrides names the fields edited by hand, which refreshes leave alone.
+   */
+  overrides: string[];
+  /**
+   * Copies counts the catalog works behind the book: one per medium it
+   * is listed in, none for a book added by hand.
+   */
+  copies: number /* int */;
+}
+
+//////////
+// source: files.go
+
+export interface File {
+  claims: AssetFacts;
+  presence: string;
+  presenceError: string;
+  checkedAt: string;
+  facts: AssetFacts;
+  needsReview: boolean;
+  hash?: string;
+  id: number /* int64 */;
+  seriesId: number /* int64 */;
+  path: string;
+  size: number /* int64 */;
+  provenance: string;
+  unrequested: boolean;
+  addedAt: string;
+}
+export interface BookLink {
+  VersionID: number /* int64 */;
+  BookID: number /* int64 */;
+  FileID: number /* int64 */;
+  Ledger: string;
+  EditionID: number /* int64 */;
+  Number: number /* int64 */;
+}
 
 //////////
 // source: history.go
@@ -321,34 +440,8 @@ export interface ReviewProposal {
 }
 
 //////////
-// source: sites.go
+// source: series.go
 
-/**
- * SiteOverride is a per-series override of one indexer entry; nil fields
- * inherit the entry's global setting. Rows live in series_site_settings
- * with provider='indexer' and site_id = the indexer id.
- */
-export interface SiteOverride {
-  seriesId: number /* int64 */;
-  indexerId: number /* int64 */;
-  enabled?: boolean;
-  useVolumes?: boolean;
-  useChapters?: boolean;
-}
-
-//////////
-// source: store.go
-/*
-Package store is the SQLite persistence layer: hand-written SQL, scany
-for row mapping (columns match snake-cased field names or `db` tags).
-*/
-
-/**
- * Store speaks the portable subset of SQL shared by SQLite and PostgreSQL;
- * queries are written with ? placeholders and rebound per dialect (q).
- */
-export interface Store {
-}
 export interface Series {
   id: number /* int64 */;
   mangabakaId: number /* int64 */;
@@ -374,113 +467,6 @@ export interface Series {
   refreshedAt?: string;
 }
 /**
- * Edition is what is collected: MangaBaka's edition for one series,
- * language and type, or a local one the catalog does not list. Publisher
- * and Medium are those of its preferred collection, or as entered.
- */
-export interface Edition {
-  numberingSource: string;
-  syncState: string;
-  id: number /* int64 */;
-  seriesId: number /* int64 */;
-  /**
-   * ProviderEditionID is MangaBaka's edition id, shared by every series
-   * that has that edition ("Standard Edition", "3-in-1 Edition").
-   */
-  providerEditionId?: string;
-  /**
-   * ProviderEditionName is MangaBaka's name for it, whatever EditionName
-   * was changed to.
-   */
-  providerEditionName?: string;
-  editionName: string;
-  language: string;
-  publisher: string;
-  medium: string;
-  type: string;
-  monitored: boolean;
-  countMain: number /* int */;
-  countExtra: number /* int */;
-  countOther: number /* int */;
-  startDate?: string;
-  endDate?: string;
-  custom: boolean;
-  /**
-   * Split: someone separated this edition from the one it was grouped with.
-   */
-  split: boolean;
-  profileId?: number /* int64 */; // 0 = inherit from series
-  cutoffNum: number /* int64 */; // chapter editions: skip through this number (exclusive cutoff)
-  /**
-   * Overrides names the fields edited by hand, which refreshes leave alone.
-   */
-  overrides: string[];
-  /**
-   * Collections are the catalog collections grouped under this edition,
-   * the preferred first; none for a local edition.
-   */
-  collections: Collection[];
-}
-export interface Book {
-  providerId?: string;
-  numberKnown: boolean;
-  revision?: string;
-  syncState: string;
-  id: number /* int64 */;
-  editionId: number /* int64 */;
-  sequenceNum: number /* int64 */; // hundredths
-  sequenceStr: string;
-  countType: string;
-  releaseDate?: string;
-  isbn?: string;
-  pages?: number /* int */;
-  /**
-   * Overrides names the fields edited by hand, which refreshes leave alone.
-   */
-  overrides: string[];
-  /**
-   * Copies counts the catalog works behind the book: one per medium it
-   * is listed in, none for a book added by hand.
-   */
-  copies: number /* int */;
-}
-export interface File {
-  claims: AssetFacts;
-  presence: string;
-  presenceError: string;
-  checkedAt: string;
-  facts: AssetFacts;
-  needsReview: boolean;
-  hash?: string;
-  id: number /* int64 */;
-  seriesId: number /* int64 */;
-  path: string;
-  size: number /* int64 */;
-  provenance: string;
-  unrequested: boolean;
-  addedAt: string;
-}
-export interface BookLink {
-  VersionID: number /* int64 */;
-  BookID: number /* int64 */;
-  FileID: number /* int64 */;
-  Ledger: string;
-  EditionID: number /* int64 */;
-  Number: number /* int64 */;
-}
-export interface Binding {
-  trustChapters: boolean;
-  editionId: number /* int64 */;
-  id: number /* int64 */;
-  seriesId: number /* int64 */;
-  sourceId: string;
-  sourceMangaKey: string; // opaque, minted by the extensions sidecar
-  sourceName: string;
-  mangaTitle: string;
-  state: string;
-  priority: number /* int */;
-}
-/**
  * AddSeriesParams carries everything needed to create a library entry from
  * fetched metadata in one transaction.
  */
@@ -494,6 +480,36 @@ export interface AddSeriesParams {
   ChapterLang: string;
   ChapterCutoff: number /* int64 */; // hundredths; default: total_chapters*100 (latest at add) when volumes are collected, else 0
   ProfileID: number /* int64 */; // 0 = instance default (stored NULL)
+}
+
+//////////
+// source: sites.go
+
+/**
+ * SiteOverride is a per-series override of one indexer entry; nil fields
+ * inherit the entry's global setting. Rows live in series_site_settings
+ * with provider='indexer' and site_id = the indexer id.
+ */
+export interface SiteOverride {
+  seriesId: number /* int64 */;
+  indexerId: number /* int64 */;
+  enabled?: boolean;
+  useVolumes?: boolean;
+  useChapters?: boolean;
+}
+
+//////////
+// source: store.go
+/*
+Package store is the persistence layer, SQLite or Postgres: hand-written SQL, scany
+for row mapping (columns match snake-cased field names or `db` tags).
+*/
+
+/**
+ * Store speaks the portable subset of SQL shared by SQLite and PostgreSQL;
+ * queries are written with ? placeholders and rebound per dialect (q).
+ */
+export interface Store {
 }
 
 //////////

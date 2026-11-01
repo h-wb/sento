@@ -340,9 +340,9 @@ type searchRun struct {
 	editions        []store.Edition
 	shelf           *shelf
 	blocked         map[string]bool // "protocol/externalKey" bans
-	// profiles judges for each card (CardProfiles.For); versionProfiles
+	// profiles judges for each card (cardProfiles.For); versionProfiles
 	// holds what it said for the cards the ledger evaluated.
-	profiles CardProfiles
+	profiles cardProfiles
 }
 
 // cardProfile is the profile that judges for one card of the run.
@@ -383,7 +383,7 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 	if run.blocked, err = s.store.BlockedKeys(ctx); err != nil {
 		return nil, err
 	}
-	if run.profiles, err = s.profiles.SeriesProfiles(ctx, seriesID); err != nil {
+	if run.profiles, err = s.profiles.seriesProfiles(ctx, seriesID); err != nil {
 		return nil, err
 	}
 	if version != nil && version.ReplaceQueueID > 0 {

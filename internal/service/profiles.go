@@ -187,34 +187,34 @@ func (s *ProfileService) SetDefaultProfile(ctx context.Context, id int64) error 
 	return s.store.PutSetting(ctx, defaultProfileKey, raw)
 }
 
-// CardProfiles says which release profile judges for each card of a
+// cardProfiles says which release profile judges for each card of a
 // series: the card's own, else the series', else the instance default.
 // With no profile configured everything is nil, and built-in rules apply.
-type CardProfiles struct {
+type cardProfiles struct {
 	Series  *profile.Profile
 	ByID    map[int64]*profile.Profile
 	Formats []profile.Format
 }
 
 // For is the profile that judges releases and files for one card.
-func (p CardProfiles) For(v store.CollectedVersion) *profile.Profile {
+func (p cardProfiles) For(v store.CollectedVersion) *profile.Profile {
 	if own := p.ByID[v.ProfileID]; own != nil {
 		return own
 	}
 	return p.Series
 }
 
-// SeriesProfiles loads what CardProfiles needs for one series.
-func (s *ProfileService) SeriesProfiles(ctx context.Context, seriesID int64) (CardProfiles, error) {
+// seriesProfiles loads what cardProfiles needs for one series.
+func (s *ProfileService) seriesProfiles(ctx context.Context, seriesID int64) (cardProfiles, error) {
 	series, err := s.store.GetSeries(ctx, seriesID)
 	if err != nil {
-		return CardProfiles{}, err
+		return cardProfiles{}, err
 	}
 	all, err := s.store.ListProfiles(ctx)
 	if err != nil || len(all) == 0 {
-		return CardProfiles{}, err
+		return cardProfiles{}, err
 	}
-	out := CardProfiles{ByID: map[int64]*profile.Profile{}}
+	out := cardProfiles{ByID: map[int64]*profile.Profile{}}
 	for i := range all {
 		out.ByID[all[i].ID] = &all[i]
 	}
@@ -222,7 +222,7 @@ func (s *ProfileService) SeriesProfiles(ctx context.Context, seriesID int64) (Ca
 	if out.Series == nil { // unset or stale assignment → instance default
 		did, err := s.DefaultProfileID(ctx)
 		if err != nil {
-			return CardProfiles{}, err
+			return cardProfiles{}, err
 		}
 		out.Series = out.ByID[did]
 	}

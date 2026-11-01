@@ -206,7 +206,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	if err != nil {
 		return nil, err
 	}
-	profiles, err := NewProfiles(st).SeriesProfiles(ctx, seriesID)
+	profiles, err := NewProfiles(st).seriesProfiles(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +264,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 // evaluating its cards.
 type ledgerIndex struct {
 	series      *store.Series
-	profiles    CardProfiles
+	profiles    cardProfiles
 	today       string
 	coverage    map[int64][]store.AssetCoverage // card → mappings
 	overrides   map[int64]map[int64]bool        // card → book → collected

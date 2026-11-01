@@ -114,7 +114,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		return err
 	}
 	review := false
-	profiles, err := NewProfiles(im.store).SeriesProfiles(ctx, item.SeriesID)
+	profiles, err := NewProfiles(im.store).seriesProfiles(ctx, item.SeriesID)
 	if err != nil {
 		return err
 	}
