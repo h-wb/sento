@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # mise.toml pins go and node; the runner's toolchains are never used.
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
         with:
           cache: true
 
@@ -58,7 +58,7 @@ jobs:
           tar -czf "sento-${VERSION#v}-${GOOS}-${GOARCH}.tar.gz" \
             "sento-${VERSION#v}-${GOOS}-${GOARCH}"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sento-${{ matrix.goos }}-${{ matrix.goarch }}
           path: sento-*.tar.gz
