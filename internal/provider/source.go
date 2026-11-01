@@ -44,6 +44,38 @@ type DownloadConfig struct {
 	PageRatePerSecond float64 // page requests/sec per source; 0 disables
 }
 
+// SweepStaging removes leftovers of crashed or failed downloads from the
+// staging dir: partial page/assembly temp files and staged archives too old
+// to belong to a live job (finished ones are imported then cleaned up).
+// Library hardlinks to a staged archive are unaffected by its removal.
+func SweepStaging(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		age := time.Since(info.ModTime())
+		name := e.Name()
+		switch {
+		case strings.HasPrefix(name, ".page-") || strings.HasPrefix(name, ".part-"):
+			if age > time.Hour {
+				_ = os.Remove(filepath.Join(dir, name))
+			}
+		case strings.HasSuffix(name, ".cbz"):
+			if age > 24*time.Hour {
+				_ = os.Remove(filepath.Join(dir, name))
+			}
+		}
+	}
+}
+
 // NewSource returns nil (interface) when no host is configured, so it can
 // feed NewRegistry directly.
 func NewSource(host extensions.Host, stagingDir string, dl DownloadConfig,
@@ -55,6 +87,7 @@ func NewSource(host extensions.Host, stagingDir string, dl DownloadConfig,
 	if dl.PageConcurrency <= 0 {
 		dl.PageConcurrency = 3
 	}
+	SweepStaging(stagingDir)
 	return &SourceProvider{
 		host:       host,
 		stagingDir: stagingDir,

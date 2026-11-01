@@ -7,6 +7,11 @@ import (
 	"golang.org/x/text/width"
 )
 
+// archiveExts is the *parser's* strip list: any extension that can wrap a
+// book's pages or text, so preClean removes it before matching names. It is
+// wider than mediafile.IsArchive on purpose — .7z/.cb7 cannot be rewritten
+// by Process, but a name ending in them is still a book file, and the parse
+// must see the bare title. mediafile keeps the narrower rewriteable set.
 var archiveExts = map[string]bool{
 	".cbz": true, ".cbr": true, ".cb7": true, ".zip": true, ".rar": true,
 	".7z": true, ".pdf": true, ".epub": true,

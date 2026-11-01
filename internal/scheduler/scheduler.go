@@ -130,7 +130,27 @@ func New(st *store.Store, lib *service.Library, search *service.SearchService,
 				interval: intervals.VolumeSweep, tick: s.tickVolumes,
 			})
 	}
+	s.tasks = append(s.tasks, &task{
+		slug: "housekeeping", name: "Prune Finished Queue & History",
+		interval: 24 * time.Hour, tick: s.tickHousekeeping,
+	})
 	return s
+}
+
+// tickHousekeeping keeps the database bounded: terminal queue jobs and old
+// history beyond what the UI shows are pruned.
+func (s *Scheduler) tickHousekeeping(ctx context.Context) error {
+	if n, err := s.store.PruneFinishedQueue(ctx, 200); err != nil {
+		return err
+	} else if n > 0 {
+		slog.Info("pruned finished queue items", "count", n)
+	}
+	if n, err := s.store.PruneDecisions(ctx, 1000); err != nil {
+		return err
+	} else if n > 0 {
+		slog.Info("pruned old decisions", "count", n)
+	}
+	return nil
 }
 
 // Register adds a loop owned by another component (the health checks).

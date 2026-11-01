@@ -43,6 +43,20 @@ func (s *Store) AddDecision(ctx context.Context, seriesID int64, body DecisionBo
 	return err
 }
 
+// PruneDecisions deletes history beyond the newest keep (per series and
+// overall), so the decisions table does not grow without bound.
+func (s *Store) PruneDecisions(ctx context.Context, keep int) (int64, error) {
+	res, err := s.db.ExecContext(ctx, s.q(`
+		DELETE FROM decisions WHERE id NOT IN (
+			SELECT id FROM decisions ORDER BY id DESC LIMIT ?
+		)`), keep)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // ListDecisions returns recent history, newest first (seriesID 0 = all).
 func (s *Store) ListDecisions(ctx context.Context, seriesID int64, limit int) ([]Decision, error) {
 	if limit <= 0 {

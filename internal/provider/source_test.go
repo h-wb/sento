@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -257,6 +259,51 @@ func TestSourceDownloadOrdering(t *testing.T) {
 		_ = rc.Close()
 		if want := fmt.Sprintf("PAGE-%d", i); !strings.HasSuffix(string(b), want) {
 			t.Fatalf("entry %d (%s) missing %q", i, zf.Name, want)
+		}
+	}
+}
+
+// SweepStaging drops crashed-download leftovers (temp parts, stale staged
+// archives) and keeps fresh ones a live job may still be writing.
+func TestSweepStaging(t *testing.T) {
+	dir := t.TempDir()
+	old := time.Now().Add(-48 * time.Hour)
+	fresh := time.Now()
+	files := map[string]time.Time{
+		".page-abc":      old,   // stale partial page
+		".part-xyz.cbz":  old,   // stale partial assembly
+		"deadbeef.cbz":   old,   // stale staged archive
+		".page-live":     fresh, // in-flight page
+		".part-live.cbz": fresh, // in-flight assembly
+		"livejob.cbz":    fresh, // recently staged, maybe not imported yet
+		"notes.txt":      old,   // not staging data: kept
+	}
+	for name, mt := range files {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	SweepStaging(dir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, e := range entries {
+		got[e.Name()] = true
+	}
+	for _, gone := range []string{".page-abc", ".part-xyz.cbz", "deadbeef.cbz"} {
+		if got[gone] {
+			t.Fatalf("%s should have been swept", gone)
+		}
+	}
+	for _, kept := range []string{".page-live", ".part-live.cbz", "livejob.cbz", "notes.txt"} {
+		if !got[kept] {
+			t.Fatalf("%s should have been kept", kept)
 		}
 	}
 }

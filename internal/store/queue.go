@@ -125,6 +125,23 @@ func (s *Store) ListQueueItems(ctx context.Context, activeOnly bool) ([]QueueIte
 	return append(items, finished...), err
 }
 
+// PruneFinishedQueue deletes terminal jobs (imported/cancelled/failed)
+// beyond the newest keep, so the table does not grow without bound; the
+// Activity page already shows only the newest 200 finished ones.
+func (s *Store) PruneFinishedQueue(ctx context.Context, keep int) (int64, error) {
+	res, err := s.db.ExecContext(ctx, s.q(`
+		DELETE FROM queue_items WHERE status IN ('imported','cancelled','failed')
+		AND id NOT IN (
+			SELECT id FROM queue_items WHERE status IN ('imported','cancelled','failed')
+			ORDER BY created_at DESC, id DESC LIMIT ?
+		)`), keep)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // DownloadShared reports whether a job of another series holds the same
 // download (one pack can serve two series).
 func (s *Store) DownloadShared(ctx context.Context, seriesID int64, protocol, externalID string) (bool, error) {

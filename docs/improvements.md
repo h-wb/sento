@@ -136,11 +136,13 @@ the commit messages.
       on the next search. Fix: store the candidate's feed key on the queue
       item (migration in both dialects) and blocklist under both
       (maintenance pass)
-- [ ] `queue_items` and `decisions` are never pruned; `ListQueueItems`
-      caps at 200 newest, so a very large backlog is processed newest
-      first. Add retention for finished items (maintenance pass)
-- [ ] Source staging dir keeps the CBZ of a failed/blocklisted item and
-      any `.page-*`/`.part-*` temp files from a crash; nothing sweeps it
+- [x] `queue_items` and `decisions` are pruned now: a daily
+      housekeeping task keeps the newest 200 finished jobs and 1000
+      decisions (`PruneFinishedQueue`/`PruneDecisions`, scheduler
+      `housekeeping`), matching what the UI shows (maintenance pass)
+- [x] Source staging dir is swept on provider (re)build: `.page-*`/
+      `.part-*` older than an hour and staged CBZs older than a day are
+      removed; in-flight files are kept (`provider.SweepStaging`)
       (maintenance pass)
 - [ ] `web/src/pages/SeriesPage.tsx` is ~1900 lines; the web app has e2e
       coverage of navigation and add-series but none of the series page's
@@ -165,10 +167,11 @@ the commit messages.
 - [ ] `cmd/harvest` (build-tagged manual tool) left in the tree — decide
       whether to keep it as a reusable corpus-harvester or drop it. Re-run
       with more queries/sources to keep mining (session 1, harvest)
-- [ ] `archiveExts` (internal/parse/preclean.go) vs `scanExts`
-      (internal/service/scan.go) — two extension lists with overlapping
-      but different members; check whether the difference is deliberate
-      and document it, or unify (session 1)
+- [x] `archiveExts` (internal/parse/preclean.go) vs mediafile's
+      `archiveExts`/`documentExts` — the difference is deliberate and now
+      documented at both definitions: the parser strips any book-file
+      extension (incl. .7z/.cb7/.pdf/.epub), mediafile only counts what
+      Process can rewrite as archives (session 1)
 - [ ] **Source channel assumes chapters for bare numbers** — two layers:
       (1) `resolveBare` prior #1 (ChannelSource → chapter) but only for
       *markerless* numbers; marked volumes (`Vol. 5`/`v05`) on source
@@ -188,8 +191,9 @@ the commit messages.
       live: Spanish/German *chapters* still parse on the source channel
       (bare number + channel prior rescues them), but *volume* markers
       like `Tomo 5` / `Band 5` on torrent fail — the number stays bare
-      and never routes to a volume. Decide: (a) accept as FR+EN bias and
-      document it in parser.md, or (b) add tomo/capítulo/band/kapitel/
-      tomo-PT etc. to the marker alternations. Add corpus cases either
-      way so the choice is explicit. Ties to D10 single-language design
-      (session 1)
+      and never routes to a volume. Markers now cover EN/FR/ES/PT/DE:
+      vol/volume, tome(s), tomo(s), band/bände, kapitel (added), v/t
+      initials, JP 巻; corpus cases in localized_acquisition.jsonl.
+      Remaining: other languages' markers (e.g. it. "volume" works,
+      nl. "deel") — add when a real release needs them. Ties to D10
+      single-language design (session 1)

@@ -37,7 +37,10 @@ type member struct {
 
 // The formats Sento handles, in one place for scan, import and organize.
 // Archives (zip/cbz, rar/cbr) can be read, fingerprinted and rewritten as
-// a tagged CBZ. Documents are recognised and kept as they are.
+// a tagged CBZ. Documents are recognised and kept as they are. This list is
+// deliberately narrower than parse's archiveExts: only formats Process can
+// rewrite count as archives here (.7z/.cb7 are parsed as books but never
+// rewritten).
 var (
 	archiveExts  = map[string]bool{".cbz": true, ".zip": true, ".cbr": true, ".rar": true}
 	documentExts = map[string]bool{".pdf": true, ".epub": true}
