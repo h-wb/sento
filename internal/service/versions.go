@@ -14,11 +14,11 @@ type BookState string
 // The states, in the order bookState weighs them: the first that holds
 // is the book's state.
 const (
+	// StatePending: a download or import already holds the book.
+	StatePending BookState = "pending"
 	// StateNeedsReview: a file holds the book but its mapping is not
 	// confirmed, and no confirmed file does.
 	StateNeedsReview BookState = "needs_review"
-	// StatePending: a download or import already holds the book.
-	StatePending BookState = "pending"
 	// StateOwned: a confirmed file the card's profile accepts holds it.
 	StateOwned BookState = "owned"
 	// StateUpgradeEligible: owned, and the profile wants a better file.
@@ -75,10 +75,13 @@ type bookFacts struct {
 // cases are checked in order; the first that holds decides.
 func bookState(f bookFacts) (state BookState, reason string, wanted bool) {
 	switch {
-	case f.Review && !f.Owned:
-		return StateNeedsReview, "Existing file mappings need review", false
+	// A download in flight says what is happening to the book; the file
+	// awaiting review still shows in Review, and a confirmed download
+	// makes the book owned either way.
 	case f.Reserved:
 		return StatePending, "A download or import already holds this book", false
+	case f.Review && !f.Owned:
+		return StateNeedsReview, "Existing file mappings need review", false
 	case f.Owned && f.StorageDown:
 		return StateOwned, "Library storage is unavailable or has not been checked", false
 	case f.Owned && !f.Collected:

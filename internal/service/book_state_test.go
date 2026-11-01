@@ -18,7 +18,8 @@ func TestBookStatePriority(t *testing.T) {
 		wanted bool
 	}{
 		{"nothing holds it", collected, StateMissing, true},
-		{"an unconfirmed file outranks a download in flight", with(func(f *bookFacts) { f.Review, f.Reserved = true, true }), StateNeedsReview, false},
+		{"a download in flight outranks an unconfirmed file", with(func(f *bookFacts) { f.Review, f.Reserved = true, true }), StatePending, false},
+		{"an unconfirmed file outranks wanting the book", with(func(f *bookFacts) { f.Review = true }), StateNeedsReview, false},
 		{"a confirmed file settles review", with(func(f *bookFacts) { f.Review, f.Owned = true, true }), StateOwned, false},
 		{"a download in flight outranks ownership", with(func(f *bookFacts) { f.Reserved, f.Owned = true, true }), StatePending, false},
 		{"a download in flight outranks storage", with(func(f *bookFacts) { f.Reserved, f.StorageDown = true, true }), StatePending, false},

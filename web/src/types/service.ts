@@ -722,14 +722,14 @@ export interface SeriesIndexerView extends IndexerView {
  */
 export type BookState = string;
 /**
+ * StatePending: a download or import already holds the book.
+ */
+export const StatePending: BookState = "pending";
+/**
  * StateNeedsReview: a file holds the book but its mapping is not
  * confirmed, and no confirmed file does.
  */
 export const StateNeedsReview: BookState = "needs_review";
-/**
- * StatePending: a download or import already holds the book.
- */
-export const StatePending: BookState = "pending";
 /**
  * StateOwned: a confirmed file the card's profile accepts holds it.
  */
