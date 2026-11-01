@@ -498,6 +498,9 @@ func (p *SourceProvider) State(ctx context.Context, externalID string) (Download
 		st := DownloadState{InFlight: true, Detail: "waiting for download slot"}
 		if job.active {
 			st.Detail, st.StallEligible = "downloading", true
+			if sourceID, _, err := parseSourceExternalID(externalID); err == nil && time.Now().Before(p.cooldowns[sourceID]) {
+				st.Detail, st.StallEligible = "waiting for source cooldown", false
+			}
 		}
 		if job.total > 0 {
 			st.Progress = float64(job.done) / float64(job.total)

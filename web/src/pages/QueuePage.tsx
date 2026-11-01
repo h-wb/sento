@@ -53,7 +53,13 @@ const statusLabel: Record<string, string> = {
 function downloadLabel(item: QueueItem) {
   if (item.status !== 'downloading') return statusLabel[item.status] ?? item.status
   if (item.stalled) return 'Stalled'
-  const states: Record<string, string> = { pausedDL: 'Paused in client', stoppedDL: 'Paused in client', queuedDL: 'Queued in client', checkingDL: 'Checking files', checkingResumeData: 'Checking files', moving: 'Moving files', missingFiles: 'Files missing', error: 'Client error' }
+  const states: Record<string, string> = {
+    pausedDL: 'Paused in client', stoppedDL: 'Paused in client', queuedDL: 'Queued in client',
+    checkingDL: 'Checking files', checkingResumeData: 'Checking files', moving: 'Moving files',
+    missingFiles: 'Files missing', error: 'Client error',
+    'waiting for source cooldown': 'Waiting for source',
+    'waiting for download slot': 'Waiting for download slot',
+  }
   return states[item.downloadState] ?? 'Downloading'
 }
 

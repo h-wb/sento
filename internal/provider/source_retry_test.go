@@ -188,3 +188,20 @@ func TestSourceRateLimiterDeadlineIsRetryable(t *testing.T) {
 		t.Fatalf("limiter timeout became permanent: %v", err)
 	}
 }
+
+func TestSourceCooldownDoesNotAppearStalled(t *testing.T) {
+	p := NewSource(&fakeHost{}, t.TempDir(), DownloadConfig{}, testEntries).(*SourceProvider)
+	id := "src|chapter"
+	p.jobs[id] = &sourceJob{running: true, active: true, total: 10, done: 3}
+	p.cooldowns["src"] = time.Now().Add(time.Hour)
+	state, err := p.State(context.Background(), id)
+	if err != nil || !state.InFlight || state.StallEligible || state.Detail != "waiting for source cooldown" || state.Progress != 0.3 {
+		t.Fatalf("deliberate cooldown appeared stalled: %+v, %v", state, err)
+	}
+	// Resume ordinary progress tracking after the cooldown.
+	delete(p.cooldowns, "src")
+	state, err = p.State(context.Background(), id)
+	if err != nil || !state.StallEligible || state.Detail != "downloading" {
+		t.Fatalf("cooldown did not expire: %+v, %v", state, err)
+	}
+}
