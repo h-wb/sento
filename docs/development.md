@@ -69,6 +69,12 @@ optional; the terminal workflow above needs no Paseo installation. Start
 `extensions`, then `api`, then `web` through Paseo's service controls. Restart
 web after restarting api because Paseo may assign a new API port.
 
+Paseo's setup hook copies ignored `mise.local.toml` and `fnox.toml` files from
+`PASEO_SOURCE_CHECKOUT_PATH` before installing tools. This supports host-managed
+private configuration without committing it. Existing destination files are
+preserved. Keep tool-specific credential grants in the local mise config;
+the base tasks do not request credentials.
+
 The `fixtures`, `sandboxapi` and `sandboxweb` services run the offline
 [exploratory harness](exploratory-testing.md), using a separate database and
 library under `data/exploratory/`.

@@ -28,5 +28,6 @@ mise.local.toml
 codex-session-*.md
 
 # Optional local service credentials
+/fnox.toml
 fnox.local.toml
 deploy/.env

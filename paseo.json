@@ -1,6 +1,6 @@
 {
   "worktree": {
-    "setup": "mise install && mise run web:install"
+    "setup": "bash scripts/worktree-setup.sh"
   },
   "scripts": {
     "extensions": {
