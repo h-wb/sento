@@ -22,6 +22,11 @@ export interface HTTPError {
   Message: string;
   Retryable: boolean;
   RetryAfter: any /* time.Duration */;
+  /**
+   * Unreadable: the source served something that cannot be read (a
+   * damaged archive); asking again gets the same bytes.
+   */
+  Unreadable: boolean;
 }
 
 //////////

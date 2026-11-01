@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -333,13 +334,16 @@ type searchRun struct {
 	ledger          string
 	scope           *SearchScope
 	titles          []string
-	sites           []siteState
-	allowed         map[string]map[string]bool
-	priorities      map[[2]string]int
-	searched        []string
-	editions        []store.Edition
-	shelf           *shelf
-	blocked         map[string]bool // "protocol/externalKey" bans
+	// queryTitles are what indexers are searched by (store.QueryTitles);
+	// titles, every alias, is what releases are matched against.
+	queryTitles []string
+	sites       []siteState
+	allowed     map[string]map[string]bool
+	priorities  map[[2]string]int
+	searched    []string
+	editions    []store.Edition
+	shelf       *shelf
+	blocked     map[string]bool // "protocol/externalKey" bans
 	// profiles judges for each card (cardProfiles.For); versionProfiles
 	// holds what it said for the cards the ledger evaluated.
 	profiles cardProfiles
@@ -404,6 +408,15 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 	if err = s.prepareVersions(ctx, run); err != nil {
 		return nil, err
 	}
+	var languages []string
+	for _, v := range run.versions {
+		if col := editionByID(run.editions, v.EditionID); col != nil && !slices.Contains(languages, baseLang(col.Language)) {
+			languages = append(languages, baseLang(col.Language))
+		}
+	}
+	if run.queryTitles, err = s.store.QueryTitles(ctx, seriesID, languages...); err != nil {
+		return nil, err
+	}
 	if version != nil {
 		for _, v := range run.versions {
 			if v.ID == version.VersionID {
@@ -426,10 +439,10 @@ func (s *SearchService) searchOnce(ctx context.Context, p provider.Provider, run
 ) SearchEvent {
 	ev := SearchEvent{Type: "batch", Provider: p.ID(), Sites: siteNames}
 	if p.Protocol() == provider.ProtocolTorrent {
-		ev.Queries = provider.TorrentQueries(provider.SearchRequest{Query: textQuery(run.titles[0]), Titles: run.titles})
+		ev.Queries = provider.TorrentQueries(provider.SearchRequest{Query: textQuery(run.titles[0]), Titles: run.queryTitles})
 	}
 	cands, err := p.Search(ctx, provider.SearchRequest{
-		SeriesID: run.seriesID, Query: textQuery(run.titles[0]), Titles: run.titles,
+		SeriesID: run.seriesID, Query: textQuery(run.titles[0]), Titles: run.queryTitles,
 		Allowed: allowed, Bindings: bindings,
 	})
 	if err != nil {
@@ -480,7 +493,7 @@ func (s *SearchService) streamProvider(ctx context.Context, p provider.Provider,
 				}
 				if listings, ok := p.(provider.MangaListings); ok {
 					var discoveryNotes []string
-					siteBindings, discoveryNotes = s.expandListings(ctx, listings, siteBindings)
+					siteBindings, discoveryNotes = s.expandListings(ctx, listings, siteBindings, run.titles)
 					notes = append(notes, discoveryNotes...)
 				}
 				for _, b := range siteBindings {
@@ -490,6 +503,7 @@ func (s *SearchService) streamProvider(ctx context.Context, p provider.Provider,
 					active = append(active, provider.Binding{
 						BindingID: b.ID, SourceID: b.SourceID,
 						SourceMangaKey: b.SourceMangaKey, SourceName: b.SourceName,
+						Listing: b.MangaTitle,
 					})
 				}
 			}

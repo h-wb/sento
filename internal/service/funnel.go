@@ -68,6 +68,12 @@ func readRelease(run *searchRun, cand provider.Candidate) (rc ReleaseCandidate, 
 		rc.URL = cand.Source.WebURL
 	}
 	rc.Parse = parse.ParseAnchored(cand.Title, channel, run.titles)
+	// A source release named by its number alone ("Vol. 001 (Digital)")
+	// is described by the listing it sits in: colour, the group, an
+	// edition.
+	if cand.Source != nil && cand.Source.Listing != "" {
+		rc.Parse.Inherit(parse.ParseAnchored(cand.Source.Listing, channel, run.titles))
+	}
 	// Chapter names rarely tag a language; the source's own language is
 	// the release language (drives the R2 gate and edition routing).
 	if cand.Source != nil && rc.Parse.Language == "" {
@@ -395,8 +401,14 @@ func (c *ReleaseCandidate) evalFormats(prof *profile.Profile, formats []profile.
 	if group == "" {
 		group = c.Scanlator
 	}
+	// A source release's listing is part of its name for formats: a
+	// folder named "upscaled" makes every file in it so.
+	title := c.Title
+	if c.cand.Source != nil && c.cand.Source.Listing != "" {
+		title = c.cand.Source.Listing + " " + title
+	}
 	in := profile.Input{
-		Title: c.Title, Group: group, Language: c.Parse.Language,
+		Title: title, Group: group, Language: c.Parse.Language,
 		Protocol: c.Protocol, Site: c.Site, Resolution: c.Parse.Quality.Resolution,
 		Flags: candidateFlags(*c),
 	}

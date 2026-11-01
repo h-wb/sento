@@ -160,7 +160,7 @@ func TestListingDiscoveryLimitsAndPartialFailure(t *testing.T) {
 	p := provider.NewSource(h, t.TempDir(), provider.DownloadConfig{}, func(context.Context) ([]provider.IndexerEntry, error) {
 		return []provider.IndexerEntry{{ID: 1, SourceID: "src1"}}, nil
 	}).(provider.MangaListings)
-	got, notes := svc.expandListings(ctx, p, []store.Binding{root})
+	got, notes := svc.expandListings(ctx, p, []store.Binding{root}, []string{"ONE PIECE"})
 	if len(got) != 1 || got[0].ID != root.ID || len(notes) != 1 {
 		t.Fatalf("failed discovery lost its root or error: %v %v", got, notes)
 	}
@@ -169,8 +169,86 @@ func TestListingDiscoveryLimitsAndPartialFailure(t *testing.T) {
 	for i := range 100 {
 		h.children["root"] = append(h.children["root"], extensions.Manga{Key: fmt.Sprint(i), Title: "One Piece"})
 	}
-	got, notes = svc.expandListings(ctx, p, []store.Binding{root})
+	got, notes = svc.expandListings(ctx, p, []store.Binding{root}, []string{"ONE PIECE"})
 	if len(got) != 32 || len(notes) != 1 {
 		t.Fatalf("discovery not bounded or limit unreported: %d entries, %v", len(got), notes)
+	}
+}
+
+// A nested listing is named by its path, and one named for another work
+// that carries the series' title is switched off; listings found before
+// they had names are renamed once, and a person's choice afterwards holds.
+func TestNestedListingsAreNamedAndJudged(t *testing.T) {
+	lib, st := setup(t)
+	ctx := context.Background()
+	sid, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := store.Binding{SeriesID: sid, SourceID: "1", SourceMangaKey: "root", MangaTitle: "ONE PIECE", State: "active"}
+	if root.ID, err = st.AddBinding(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	// Found by the old sidecar, under the parent's name.
+	stale, err := st.DiscoverBinding(ctx, store.Binding{SeriesID: sid, SourceID: "1", SourceMangaKey: "sanji", MangaTitle: "ONE PIECE"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewSearchService(st, provider.NewRegistry())
+	h := &listingHost{children: map[string][]extensions.Manga{"root": {
+		{Key: "color", Title: "!ONE PIECE - Digital Colored Comics"},
+		{Key: "sanji", Title: "!ONE PIECE - Shokugeki no Sanji"},
+		{Key: "digital", Title: "!Digital"},
+	}}}
+	p := provider.NewSource(h, t.TempDir(), provider.DownloadConfig{}, func(context.Context) ([]provider.IndexerEntry, error) {
+		return []provider.IndexerEntry{{ID: 1, SourceID: "src1"}}, nil
+	}).(provider.MangaListings)
+	svc.expandListings(ctx, p, []store.Binding{root, *stale}, []string{"ONE PIECE"})
+	want := map[string]struct {
+		name  string
+		state string
+	}{
+		"color":   {"ONE PIECE - Digital Colored Comics", "active"},
+		"sanji":   {"ONE PIECE - Shokugeki no Sanji", "disabled"},
+		"digital": {"ONE PIECE - Digital", "active"},
+	}
+	check := func() {
+		t.Helper()
+		bindings, _ := st.ListBindings(ctx, sid)
+		for _, b := range bindings {
+			if w, ok := want[b.SourceMangaKey]; ok && (b.MangaTitle != w.name || b.State != w.state) {
+				t.Errorf("%s: %q %s, want %q %s", b.SourceMangaKey, b.MangaTitle, b.State, w.name, w.state)
+			}
+		}
+	}
+	check()
+	// Switched back on by a person: the next discovery leaves it on.
+	bindings, _ := st.ListBindings(ctx, sid)
+	for _, b := range bindings {
+		if b.SourceMangaKey == "sanji" {
+			if err = st.SetBindingState(ctx, sid, b.ID, "active"); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	bindings, _ = st.ListBindings(ctx, sid)
+	svc.expandListings(ctx, p, bindings, []string{"ONE PIECE"})
+	want["sanji"] = struct {
+		name  string
+		state string
+	}{"ONE PIECE - Shokugeki no Sanji", "active"}
+	check()
+}
+
+// A release named by its number alone is read with the listing it sits
+// in: from a colorized listing it is colored, for formats and for edition
+// rules alike.
+func TestReleasesInheritTheirListing(t *testing.T) {
+	run := &searchRun{ledger: LedgerVolume, titles: []string{"One Piece"}}
+	cand := provider.Candidate{Title: "Vol. 001 (Digital)", Protocol: provider.ProtocolSource,
+		Source: &provider.SourceRef{ChapterKey: "v1", Listing: "One Piece - Digital Colored Comics", Lang: "en"}}
+	rc, _, keep := readRelease(run, cand)
+	if !keep || !rc.Parse.Edition.Colored || !candidateFlags(rc)["colored"] {
+		t.Fatalf("a colorized listing's volume is not colored: %+v", rc.Parse.Edition)
 	}
 }

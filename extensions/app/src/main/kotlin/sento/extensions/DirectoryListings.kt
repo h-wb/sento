@@ -24,16 +24,18 @@ internal suspend fun directoryListings(source: CatalogueSource, manga: SManga): 
     }
     return http.client.newCall(GET(root.toString(), http.headers)).await().use { response ->
         check(response.isSuccessful) { "Listing source folders: HTTP ${response.code}" }
-        childDirectories(response.body.string(), root).map { url ->
+        childDirectories(response.body.string(), root).map { (url, name) ->
             SManga.create().apply {
                 this.url = url.encodedPath
-                title = manga.title
+                // The folder's own name: what it holds ("!Digital Colored
+                // Comics", "!Shokugeki no Sanji") is Sento's to judge.
+                title = name
             }
         }
     }
 }
 
-internal fun childDirectories(html: String, root: HttpUrl): List<HttpUrl> {
+internal fun childDirectories(html: String, root: HttpUrl): List<Pair<HttpUrl, String>> {
     val parent = root.pathSegments.filter { it.isNotEmpty() }
     return Jsoup.parse(html, root.toString())
         .select("table#index-table tbody tr td:first-child a[href]")
@@ -49,6 +51,6 @@ internal fun childDirectories(html: String, root: HttpUrl): List<HttpUrl> {
                 path.size != parent.size + 1 || path.take(parent.size) != parent ||
                 path.last().contains('/') || path.last().contains('\\')
             ) return@mapNotNull null
-            url.newBuilder().encodedPath(url.encodedPath.trimEnd('/')).build()
-        }.distinct()
+            url.newBuilder().encodedPath(url.encodedPath.trimEnd('/')).build() to link.text().removeSuffix("/").trim()
+        }.distinctBy { it.first }
 }

@@ -110,7 +110,7 @@ func TestSourceFailureQueueRecovery(t *testing.T) {
 func TestGoneSourceListingIsBlocklisted(t *testing.T) {
 	ctx := context.Background()
 	_, st, sid, edition, books, version := modelFixture(t)
-	failure := &provider.DownloadError{Err: errors.New("listing pages: host: HTTP error 404"), Gone: true}
+	failure := &provider.DownloadError{Err: errors.New("listing pages: host: HTTP error 404"), Dead: true}
 	p := &recoveryProvider{stateErr: failure}
 	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, ProviderID: p.ID(), Protocol: p.Protocol(), ReleaseKey: "gone-release"}, []store.BookRef{modelRef(edition, books[0], version)})
 	if err != nil {

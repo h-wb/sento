@@ -75,5 +75,15 @@ class SourceErrorsTest {
         }
         assertTrue(sourceError(IOException("connection reset")).retryable)
         assertFalse(sourceError(IllegalArgumentException("invalid source key")).retryable)
+        assertFalse(sourceError(IllegalArgumentException("invalid source key")).unreadable)
+    }
+
+    @Test
+    fun `an archive the source cannot read is unreadable, not a network failure`() {
+        val damaged = IOException(IllegalArgumentException("Not a local file header"))
+        assertFalse(sourceError(damaged).retryable)
+        assertTrue(sourceError(damaged).unreadable)
+        assertTrue(sourceError(java.util.zip.ZipException("invalid entry size")).unreadable)
+        assertFalse(sourceError(IOException("connection reset")).unreadable)
     }
 }

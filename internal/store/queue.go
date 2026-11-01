@@ -156,63 +156,95 @@ func (s *Store) SetSeriesPath(ctx context.Context, seriesID int64, path string) 
 	return err
 }
 
-// SeriesTitles returns the primary title plus every alias from the cached
-// provider payload — anchoring and source binding match releases named in
-// any language (Japscan lists French titles, raws use kana, …).
-func (s *Store) SeriesTitles(ctx context.Context, seriesID int64, preferredLanguage ...string) ([]string, error) {
+// seriesNames is a series' primary title and the names MangaBaka gives it.
+type seriesNames struct {
+	NativeTitle    string `json:"native_title"`
+	RomanizedTitle string `json:"romanized_title"`
+	Titles         []struct {
+		Title string `json:"title"`
+	} `json:"titles"`
+	Secondary map[string][]struct {
+		Title string `json:"title"`
+	} `json:"secondary_titles"`
+}
+
+func (s *Store) seriesNames(ctx context.Context, seriesID int64) (string, seriesNames, error) {
 	row, err := get[struct {
 		Title   string
 		RawJSON string `db:"raw_json"`
 	}](ctx, s, `SELECT title, COALESCE(raw_json,'') AS raw_json FROM series WHERE id = ?`, seriesID)
 	if err != nil {
-		return nil, err
+		return "", seriesNames{}, err
 	}
-	titles := []string{row.Title}
-	add := func(t string) {
-		t = strings.TrimSpace(t)
-		if t == "" {
+	var raw seriesNames
+	_ = json.Unmarshal([]byte(row.RawJSON), &raw)
+	return row.Title, raw, nil
+}
+
+// titleList collects titles once each, in order, ignoring case.
+type titleList []string
+
+func (l *titleList) add(t string) {
+	t = strings.TrimSpace(t)
+	if t == "" {
+		return
+	}
+	for _, ex := range *l {
+		if strings.EqualFold(ex, t) {
 			return
 		}
-		for _, ex := range titles {
-			if strings.EqualFold(ex, t) {
-				return
-			}
-		}
-		titles = append(titles, t)
 	}
-	var raw struct {
-		NativeTitle    string `json:"native_title"`
-		RomanizedTitle string `json:"romanized_title"`
-		Titles         []struct {
-			Title string `json:"title"`
-		} `json:"titles"`
-		Secondary map[string][]struct {
-			Title string `json:"title"`
-		} `json:"secondary_titles"`
+	*l = append(*l, t)
+}
+
+// SeriesTitles returns the primary title plus every alias from the cached
+// provider payload — anchoring and source binding match releases named in
+// any language (Japscan lists French titles, raws use kana, …).
+func (s *Store) SeriesTitles(ctx context.Context, seriesID int64, preferredLanguage ...string) ([]string, error) {
+	title, raw, err := s.seriesNames(ctx, seriesID)
+	if err != nil {
+		return nil, err
 	}
-	if json.Unmarshal([]byte(row.RawJSON), &raw) == nil {
-		for _, lang := range preferredLanguage {
-			for _, t := range raw.Secondary[lang] {
-				add(t.Title)
-			}
-		}
-		add(raw.NativeTitle)
-		add(raw.RomanizedTitle)
-		for _, t := range raw.Titles {
-			add(t.Title)
-		}
-		languages := make([]string, 0, len(raw.Secondary))
-		for lang := range raw.Secondary {
-			languages = append(languages, lang)
-		}
-		sort.Strings(languages)
-		for _, lang := range languages {
-			list := raw.Secondary[lang]
-			for _, t := range list {
-				add(t.Title)
-			}
+	titles := titleList{title}
+	for _, lang := range preferredLanguage {
+		for _, t := range raw.Secondary[lang] {
+			titles.add(t.Title)
 		}
 	}
+	titles.add(raw.NativeTitle)
+	titles.add(raw.RomanizedTitle)
+	for _, t := range raw.Titles {
+		titles.add(t.Title)
+	}
+	languages := make([]string, 0, len(raw.Secondary))
+	for lang := range raw.Secondary {
+		languages = append(languages, lang)
+	}
+	sort.Strings(languages)
+	for _, lang := range languages {
+		for _, t := range raw.Secondary[lang] {
+			titles.add(t.Title)
+		}
+	}
+	return titles, nil
+}
+
+// QueryTitles are the names worth searching an indexer by for editions in
+// the given languages: the primary title, the titles in those languages,
+// and the romanized one. Other languages' aliases ("budak getah") only
+// find other languages' releases.
+func (s *Store) QueryTitles(ctx context.Context, seriesID int64, languages ...string) ([]string, error) {
+	title, raw, err := s.seriesNames(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	titles := titleList{title}
+	for _, lang := range languages {
+		for _, t := range raw.Secondary[lang] {
+			titles.add(t.Title)
+		}
+	}
+	titles.add(raw.RomanizedTitle)
 	return titles, nil
 }
 

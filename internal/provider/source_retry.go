@@ -17,19 +17,19 @@ type DownloadError struct {
 	Err        error
 	Retryable  bool
 	RetryAfter time.Duration
-	// Gone: the source no longer has what was asked for (404, 410). No
-	// retry brings it back.
-	Gone bool
+	// Dead: the source cannot give this release, now or later: it no
+	// longer has it (404, 410) or serves something that cannot be read.
+	Dead bool
 }
 
 func (e *DownloadError) Error() string { return e.Err.Error() }
 func (e *DownloadError) Unwrap() error { return e.Err }
 
-// sourceGone reports whether the source answered that the listing or a
-// page of it no longer exists.
-func sourceGone(err error) bool {
+// sourceDead reports whether the source answered that the listing or a
+// page of it no longer exists, or served one that cannot be read.
+func sourceDead(err error) bool {
 	var httpErr *extensions.HTTPError
-	return errors.As(err, &httpErr) && (httpErr.StatusCode == 404 || httpErr.StatusCode == 410)
+	return errors.As(err, &httpErr) && (httpErr.StatusCode == 404 || httpErr.StatusCode == 410 || httpErr.Unreadable)
 }
 
 func sourceRetry(err error) (bool, time.Duration) {

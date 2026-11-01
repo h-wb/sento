@@ -36,7 +36,8 @@ class DirectoryListingsTest {
         val manga = SManga.create().apply { url = "/Kingdom"; title = "Kingdom" }
         val listings = directoryListings(source("Madokami"), manga)
         assertEquals(listOf("/Kingdom/!Digital"), listings.map { it.url })
-        assertEquals(listOf("Kingdom"), listings.map { it.title })
+        // A folder keeps its own name: what it holds is for Sento to judge.
+        assertEquals(listOf("!Digital"), listings.map { it.title })
         assertEquals(emptyList(), directoryListings(source("Other Source"), manga))
         manga.url = "https://elsewhere.example/Kingdom"
         assertFailsWith<IllegalArgumentException> { directoryListings(source("Madokami"), manga) }
@@ -64,7 +65,10 @@ class DirectoryListingsTest {
             "<tr><td><a href='$href'>$name</a></td><td><a href='/unrelated'>Report</a></td></tr>"
         } + "</tbody></table><a href='/Manga/K/KI/KING/Kingdom/NotInListing'>Not a listing/</a>"
 
-        assertEquals(links.take(2).map { root.resolve(it.first) }, childDirectories(html, root))
+        assertEquals(
+            links.take(2).map { root.resolve(it.first) to it.second.removeSuffix("/") },
+            childDirectories(html, root),
+        )
         assertEquals(childDirectories(html, root), childDirectories(html, "$root/".toHttpUrl()))
     }
 
@@ -76,6 +80,6 @@ class DirectoryListingsTest {
             <tr><td><a href="/Manga/K/KI/KING/Kingdom/!Digital/!Fixed">!Fixed/</a></td></tr>
             <tr><td><a href="/Manga/K/KI/KING/Kingdom/!Other">!Other/</a></td></tr>
             </tbody></table>"""
-        assertEquals(listOf(root.resolve("/Manga/K/KI/KING/Kingdom/!Digital/!Fixed")), childDirectories(html, root))
+        assertEquals(listOf(root.resolve("/Manga/K/KI/KING/Kingdom/!Digital/!Fixed")), childDirectories(html, root).map { it.first })
     }
 }

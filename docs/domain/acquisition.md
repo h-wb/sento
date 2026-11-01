@@ -25,7 +25,9 @@ chapter attempt cleans up its temporary files and enters the persisted queue
 backoff (30 seconds, doubling up to 32 minutes, or longer for `Retry-After`).
 After five queue retries it moves to Review with its book reservations intact.
 Other permanent source errors go directly to Review. Neither outcome
-blocklists the release. A source that no longer has the listing or a page
-of it (404, 410) is different: no retry or review brings it back, so the
-job fails and the release is blocklisted, like a torrent that never
-completes, and the next sweep picks another. A chapter's 30-minute timeout starts when a download slot opens.
+blocklists the release. A source that cannot give the release is different:
+one that no longer has the listing or a page of it (404, 410), or serves
+an archive it cannot read ("Not a local file header": the sidecar marks
+it unreadable rather than a network failure). No retry or review brings
+it back, so the job fails and the release is blocklisted, like a torrent
+that never completes, and the next sweep picks another. A chapter's 30-minute timeout starts when a download slot opens.

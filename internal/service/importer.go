@@ -91,12 +91,12 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 		if err != nil {
 			slog.Warn("queue item failed", "id", item.ID, "title", item.Title, "error", err)
 			var sourceFailure *provider.DownloadError
-			gone := errors.As(err, &sourceFailure) && sourceFailure.Gone
+			dead := errors.As(err, &sourceFailure) && sourceFailure.Dead
 			event := "import_failed"
 			switch {
-			case gone:
-				// The source no longer has it (404, 410): no retry or
-				// review brings it back, so it fails like a dead torrent.
+			case dead:
+				// The source cannot give it (gone, or unreadable): no retry
+				// or review brings it back, so it fails like a dead torrent.
 				_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueFailed, err.Error())
 			case sourceFailure != nil:
 				// Source attempts finish with a classified error. Their age
@@ -124,7 +124,7 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 			default:
 				_ = im.store.DeferQueue(ctx, item, err.Error())
 			}
-			if errors.Is(err, errDownloadDead) || gone {
+			if errors.Is(err, errDownloadDead) || dead {
 				// Sonarr semantics: a download that never completes gets
 				// blocklisted so the next sweep picks another release.
 				// Import errors don't — they're usually local (paths,

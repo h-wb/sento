@@ -355,3 +355,29 @@ func TestImportFolderLinksIntoAnExistingSeries(t *testing.T) {
 		t.Errorf("the series' own folder changed: %q → %q", before.Path, after.Path)
 	}
 }
+
+// Indexers are searched by the names releases in the edition's language
+// use: the title, its titles in that language, the romanized one; other
+// languages' aliases only find other languages' releases.
+func TestQueryTitlesKeepToTheEditionsLanguage(t *testing.T) {
+	p := testProvider()
+	p.series.RawJSON = []byte(`{"id":377,"native_title":"ワンピース","romanized_title":"Wan Pīsu",
+		"secondary_titles":{"en":[{"title":"One Piece: Grand Line"}],"ko":[{"title":"원피스"}],"ms":[{"title":"Budak Getah"}]}}`)
+	conn, dialect := dbtest.Open(t)
+	st := store.New(conn, dialect)
+	ctx := context.Background()
+	id, err := NewLibrary(st, p).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.QueryTitles(ctx, id, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []string{"ONE PIECE", "One Piece: Grand Line", "Wan Pīsu"}) {
+		t.Fatalf("query titles = %q", got)
+	}
+	if all, _ := st.SeriesTitles(ctx, id, "en"); !slices.Contains(all, "Budak Getah") {
+		t.Fatalf("matching lost an alias: %q", all)
+	}
+}

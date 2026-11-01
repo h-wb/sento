@@ -64,6 +64,9 @@ type Binding struct {
 	SourceID       string
 	SourceMangaKey string
 	SourceName     string
+	// Listing names what the match lists ("One Piece - Digital Colored
+	// Comics"); its releases inherit what it says.
+	Listing string
 }
 
 // MangaListings exposes a source's nested listings without teaching the
@@ -119,6 +122,8 @@ type SourceRef struct {
 	BindingID     int64   `json:"bindingId,omitempty"`
 	WebURL        string  `json:"webUrl,omitempty"` // chapter page on the site
 	Lang          string  `json:"lang,omitempty"`   // the source's language
+	// Listing is the name of the listing the release sits in.
+	Listing string `json:"listing,omitempty"`
 }
 
 // Candidate is one release from any site, before the decision funnel.

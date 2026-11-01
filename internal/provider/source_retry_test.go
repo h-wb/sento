@@ -207,7 +207,7 @@ func TestSourceCooldownDoesNotAppearStalled(t *testing.T) {
 	}
 }
 
-func TestSourceGone(t *testing.T) {
+func TestSourceDead(t *testing.T) {
 	for _, tc := range []struct {
 		err  error
 		gone bool
@@ -215,10 +215,11 @@ func TestSourceGone(t *testing.T) {
 		{fmt.Errorf("listing pages: %w", &extensions.HTTPError{StatusCode: 404}), true},
 		{&extensions.HTTPError{StatusCode: 410}, true},
 		{&extensions.HTTPError{StatusCode: 503, Retryable: true}, false},
+		{&extensions.HTTPError{StatusCode: 500, Unreadable: true}, true},
 		{errors.New("connection reset"), false},
 	} {
-		if got := sourceGone(tc.err); got != tc.gone {
-			t.Errorf("%v: gone = %v", tc.err, got)
+		if got := sourceDead(tc.err); got != tc.gone {
+			t.Errorf("%v: dead = %v", tc.err, got)
 		}
 	}
 }

@@ -68,12 +68,21 @@ func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
 func (s *Store) DiscoverBinding(ctx context.Context, b Binding) (*Binding, error) {
 	return get[Binding](ctx, s, `
 		INSERT INTO source_bindings (series_id, source_id, source_manga_key, source_name, manga_title, state, priority)
-		VALUES (?,?,?,?,?,'active',?)
+		VALUES (?,?,?,?,?,?,?)
 		ON CONFLICT(series_id, source_id, source_manga_key) DO UPDATE SET
 			source_manga_key = excluded.source_manga_key
 		RETURNING id, series_id, source_id, source_manga_key,
 		          source_name, manga_title, state, priority, edition_id, trust_chapters`,
-		b.SeriesID, b.SourceID, b.SourceMangaKey, b.SourceName, b.MangaTitle, b.Priority)
+		b.SeriesID, b.SourceID, b.SourceMangaKey, b.SourceName, b.MangaTitle, orDefault(b.State, "active"), b.Priority)
+}
+
+// RenameListing gives a discovered listing the name its source now
+// reports. A name that says the listing is not the series' switches it
+// off; a person can switch it back on, and the next rename (only when
+// the name changes again) leaves that choice alone.
+func (s *Store) RenameListing(ctx context.Context, seriesID, bindingID int64, name string, belongs bool) error {
+	return s.touch(ctx, `UPDATE source_bindings SET manga_title=?, state=CASE WHEN ? THEN state ELSE 'disabled' END WHERE id=? AND series_id=?`,
+		name, belongs, bindingID, seriesID)
 }
 
 // SetBindingState toggles one binding ("active" / "disabled").

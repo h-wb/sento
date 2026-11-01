@@ -1,5 +1,7 @@
 package parse
 
+import "slices"
+
 // Channel biases interpretation of ambiguous names (parser.md §1).
 type Channel string
 
@@ -82,4 +84,36 @@ type Result struct {
 
 func (r *Result) step(rule, text string) {
 	r.Trace = append(r.Trace, Step{Rule: rule, Text: text})
+}
+
+// Inherit fills what a release's own name leaves unsaid from the name of
+// the listing it sits in ("Vol. 001 (Digital)" in "One Piece - Digital
+// Colored Comics"): the edition it claims, colour, a box, the group, the
+// language, the publisher and how it was made. What the release says of
+// itself always wins.
+func (r *Result) Inherit(listing Result) {
+	if !r.Claim.Named() && listing.Claim.Named() {
+		r.Claim.Regroup, r.Claim.Own, r.Claim.ColorEdition, r.Claim.Written =
+			listing.Claim.Regroup, listing.Claim.Own, listing.Claim.ColorEdition, listing.Claim.Written
+	}
+	r.Claim.Color = r.Claim.Color || listing.Claim.Color
+	r.Claim.Box = r.Claim.Box || listing.Claim.Box
+	e, l := &r.Edition, listing.Edition
+	e.Omnibus, e.Deluxe, e.BoxSet = e.Omnibus || l.Omnibus, e.Deluxe || l.Deluxe, e.BoxSet || l.BoxSet
+	e.Colored, e.Official, e.Raw = e.Colored || l.Colored, e.Official || l.Official, e.Raw || l.Raw
+	for _, n := range l.Names {
+		if !slices.Contains(e.Names, n) {
+			e.Names = append(e.Names, n)
+		}
+	}
+	q, lq := &r.Quality, listing.Quality
+	q.Digital, q.Scan, q.Web, q.Premium = q.Digital || lq.Digital, q.Scan || lq.Scan, q.Web || lq.Web, q.Premium || lq.Premium
+	q.Resolution = max(q.Resolution, lq.Resolution)
+	if r.Group == "" {
+		r.Group = listing.Group
+	}
+	if r.Language == "" {
+		r.Language, r.Languages = listing.Language, listing.Languages
+	}
+	r.step("listing.inherited", "")
 }

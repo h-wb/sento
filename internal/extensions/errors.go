@@ -16,6 +16,9 @@ type HTTPError struct {
 	Message    string
 	Retryable  bool
 	RetryAfter time.Duration
+	// Unreadable: the source served something that cannot be read (a
+	// damaged archive); asking again gets the same bytes.
+	Unreadable bool
 }
 
 func (e *HTTPError) Error() string {
@@ -32,6 +35,7 @@ func responseError(resp *http.Response) error {
 		Retryable      *bool  `json:"retryable"`
 		UpstreamStatus int    `json:"upstreamStatus"`
 		RetryAfter     string `json:"retryAfter"`
+		Unreadable     bool   `json:"unreadable"`
 	}
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
 	_ = json.Unmarshal(raw, &wire)
@@ -47,8 +51,8 @@ func responseError(resp *http.Response) error {
 	if wire.RetryAfter != "" {
 		retryAfter = wire.RetryAfter
 	}
-	return &HTTPError{StatusCode: status, Message: wire.Error, Retryable: retryable,
-		RetryAfter: parseRetryAfter(retryAfter, time.Now())}
+	return &HTTPError{StatusCode: status, Message: wire.Error, Retryable: retryable && !wire.Unreadable,
+		RetryAfter: parseRetryAfter(retryAfter, time.Now()), Unreadable: wire.Unreadable}
 }
 
 func parseRetryAfter(value string, now time.Time) time.Duration {

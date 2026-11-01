@@ -193,6 +193,7 @@ func (p *SourceProvider) Search(ctx context.Context, req SearchRequest) ([]Candi
 						BindingID:     b.BindingID,
 						WebURL:        c.WebURL,
 						Lang:          langs[e.SourceID],
+						Listing:       b.Listing,
 					},
 				})
 			}
@@ -520,7 +521,7 @@ func (p *SourceProvider) State(ctx context.Context, externalID string) (Download
 		// only this failed attempt; never reset other jobs through Recover.
 		delete(p.jobs, externalID)
 		p.mu.Unlock()
-		return DownloadState{Detail: err.Error()}, &DownloadError{Err: err, Retryable: retryable, RetryAfter: retryAfter, Gone: sourceGone(err)}
+		return DownloadState{Detail: err.Error()}, &DownloadError{Err: err, Retryable: retryable, RetryAfter: retryAfter, Dead: sourceDead(err)}
 	}
 	p.mu.Unlock()
 	p.startJob(externalID)
