@@ -125,6 +125,27 @@ func (s *shelf) judge(p parse.Result, e store.Edition, evidence int64) (fitVerdi
 	return verdict, why
 }
 
+// inside reports whether a file found in a release grabbed for e belongs
+// to e. The grab decided the edition; the file's numbers place it. Its own
+// edition words ("Omnibus Edition", where that is simply the English
+// edition's name) only move it when another edition of the series answers
+// to them. A contradiction (another language, numbers e cannot hold)
+// still refuses it.
+func (s *shelf) inside(p parse.Result, e store.Edition) bool {
+	switch v, _ := s.judge(p, e, 0); v {
+	case fitYes:
+		return true
+	case fitNo:
+		return false
+	}
+	for _, x := range s.siblings(e) {
+		if s.fits(p, x) {
+			return false
+		}
+	}
+	return true
+}
+
 // fits reports whether a release known only by its name is surely a book
 // of e.
 func (s *shelf) fits(p parse.Result, e store.Edition) bool {

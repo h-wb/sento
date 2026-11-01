@@ -430,3 +430,52 @@ func TestMultiBookFileIsNamedForItsRange(t *testing.T) {
 		t.Errorf("pack info = %+v", info)
 	}
 }
+
+// The files inside a release grabbed for an edition are placed by their
+// numbers: a name with no title is the release's series, and an edition
+// word the series has no edition for does not send the file to review.
+// One that another edition answers to still does.
+func TestFilesInsideAGrabTrustItsEdition(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name   string
+		files  []string
+		review bool
+	}{
+		{"numbers alone", []string{"Volume 1.cbz", "Volume 2.cbz"}, false},
+		{"an edition word nothing answers to", []string{"ONE PIECE v01 (Collector's Edition).cbz", "ONE PIECE v02 (Collector's Edition).cbz"}, false},
+		{"an edition the series has", []string{"ONE PIECE v01 (Omnibus Edition).cbz", "ONE PIECE v02 (Omnibus Edition).cbz"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lib, st := setup(t)
+			seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+			if err != nil {
+				t.Fatal(err)
+			}
+			cols, _ := st.ListEditions(ctx, seriesID)
+			var standard int64
+			for _, c := range cols {
+				if c.EditionName == "Standard Edition" && c.Type == "volume" && c.Language == "en" {
+					standard = c.ID
+				}
+			}
+			downloads := t.TempDir()
+			for _, name := range tc.files {
+				writeCBZ(t, filepath.Join(downloads, name), name)
+			}
+			im := NewImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: tc.files}), t.TempDir(), nil)
+			queueVolumes(t, st, seriesID, standard, "abc123", 100, 200)
+			_, _ = im.ProcessQueue(ctx)
+			files, _ := st.ListFiles(ctx, seriesID)
+			reviewed := 0
+			for _, f := range files {
+				if f.NeedsReview {
+					reviewed++
+				}
+			}
+			if len(files) != 2 || (reviewed > 0) != tc.review {
+				t.Fatalf("%d files, %d for review; want review=%v", len(files), reviewed, tc.review)
+			}
+		})
+	}
+}

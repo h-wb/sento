@@ -30,7 +30,7 @@ func (im *Importer) fileBooks(ctx context.Context, res parse.Result, expected []
 			}
 			sh = newShelf(eds)
 		}
-		if !sh.fits(res, *col) {
+		if !sh.inside(res, *col) {
 			continue
 		}
 		books, e := im.store.ListBooks(ctx, sl.EditionID)

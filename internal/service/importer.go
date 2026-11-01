@@ -328,6 +328,11 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	if err != nil {
 		return err
 	}
+	// A file named by numbers alone ("Volume 1.cbz") is named by its
+	// release: a source download is always the series', a torrent when its
+	// name says so.
+	release := parse.ParseAnchored(item.Title, parse.ChannelTorrent, titles)
+	releaseNamed := item.Protocol == provider.ProtocolSource || (release.Anchored && release.TitleLeftover == "")
 	linked, preservedHashes, err := im.alreadyImported(ctx, item, expected)
 	if err != nil {
 		return err
@@ -345,7 +350,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 				continue
 			}
 		}
-		covered, e := im.importArchive(ctx, item, ms, series, seriesDir, titles, expected, archive)
+		covered, e := im.importArchive(ctx, item, ms, series, seriesDir, titles, expected, archive, releaseNamed)
 		if e != nil {
 			return e
 		}
@@ -401,11 +406,13 @@ func (im *Importer) alreadyImported(ctx context.Context, item store.QueueItem, e
 
 // importArchive installs one archive of a download: into the library for
 // the expected books its name covers, or into review when it is not
-// recognisably this series' or covers none. It returns the books covered.
-func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, ms MediaSettings, series *store.Series, seriesDir string, titles []string, expected []store.BookRef, archive payloadArchive) ([]store.BookRef, error) {
+// recognisably this series' or covers none. A name with no title at all
+// is the series' when releaseNamed. It returns the books covered.
+func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, ms MediaSettings, series *store.Series, seriesDir string, titles []string, expected []store.BookRef, archive payloadArchive, releaseNamed bool) ([]store.BookRef, error) {
 	rel, src := archive.name, archive.path
 	res := parse.ParseAnchored(filepath.Base(rel), parse.ChannelFile, titles)
-	if archive.review || !res.Anchored || res.TitleLeftover != "" || res.ContentType != parse.ContentManga {
+	named := (res.Anchored && res.TitleLeftover == "") || (res.Title == "" && releaseNamed)
+	if archive.review || !named || res.ContentType != parse.ContentManga {
 		return nil, im.importReviewFile(ctx, item, seriesDir, src, res, ms.AlwaysCopy)
 	}
 	contents, covered, err := im.fileBooks(ctx, res, expected)
