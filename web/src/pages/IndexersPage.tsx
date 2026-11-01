@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import {
+  Accordion,
   ActionIcon,
   Alert,
   Badge,
@@ -18,11 +19,20 @@ import {
   TextInput,
   Tooltip,
 } from '@mantine/core'
-import { IconCopy, IconPencil, IconPlugConnected, IconTrash } from '@tabler/icons-react'
+import {
+  IconCopy,
+  IconPackage,
+  IconPackages,
+  IconPencil,
+  IconPlugConnected,
+  IconRefresh,
+  IconTrash,
+} from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   api,
+  type ExtensionView,
   type IndexerBody,
   type IndexerView,
   type ProwlarrIndexer,
@@ -43,10 +53,18 @@ export default function IndexersPage() {
   const { confirm, confirmation } = useConfirmAction()
   const queryClient = useQueryClient()
   const { data: indexers, error, isPending, refetch } = useQuery({ queryKey: ['indexers'], queryFn: api.indexers })
+  // The sidecar's extension catalog: drives the version/update line on
+  // extension-source rows and the Manage extensions dialog. Undefined
+  // (query failed) when no sidecar is configured — then neither shows.
+  const extensions = useQuery({ queryKey: ['extensions'], queryFn: api.extensions })
+  const extByPkg = new Map((extensions.data ?? []).map((e) => [e.pkgName, e]))
   const [editing, setEditing] = useState<IndexerView | 'new' | null>(null)
   const [duplicating, setDuplicating] = useState<IndexerView | null>(null)
+  const [managing, setManaging] = useState(false)
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['health'] })
+    // Saving an entry may have installed its extension on the host.
+    queryClient.invalidateQueries({ queryKey: ['extensions'] })
     return queryClient.invalidateQueries({ queryKey: ['indexers'] })
   }
 
@@ -74,9 +92,21 @@ export default function IndexersPage() {
         title="Indexers"
         description="Where Sento finds releases. Choose which indexers search volumes and chapters."
         action={
-          <Button size="xs" onClick={() => setEditing('new')}>
-            Add indexer
-          </Button>
+          <Group gap="xs" wrap="nowrap">
+            {extensions.data && (
+              <Button
+                size="xs"
+                variant="default"
+                leftSection={<IconPackages size={14} />}
+                onClick={() => setManaging(true)}
+              >
+                Manage extensions
+              </Button>
+            )}
+            <Button size="xs" onClick={() => setEditing('new')}>
+              Add indexer
+            </Button>
+          </Group>
         }
       />
       <QueryFeedback pending={isPending} error={error} onRetry={() => void refetch()} />
@@ -105,6 +135,20 @@ export default function IndexersPage() {
                   {ix.summary}
                   {!ix.reachable && ' — unreachable'}
                 </Text>
+                {(() => {
+                  const pkg =
+                    ix.protocol === 'source'
+                      ? (ix.settings as { pkgName?: string } | undefined)?.pkgName
+                      : undefined
+                  const ext = pkg ? extByPkg.get(pkg) : undefined
+                  if (!ext) return null
+                  return (
+                    <Text size="xs" c={ext.hasUpdate ? 'orange' : 'dimmed'}>
+                      {ext.name} v{ext.installedVersion ?? '?'}
+                      {ext.hasUpdate && ext.availableVersion ? ` — v${ext.availableVersion} available` : ''}
+                    </Text>
+                  )
+                })()}
               </Table.Td>
               <Table.Td>
                 <Badge size="xs" variant="outline" color={ix.protocol === 'torznab' ? 'blue' : 'teal'}>
@@ -217,7 +261,174 @@ export default function IndexersPage() {
           }}
         />
       )}
+      {managing && <ManageExtensionsModal onClose={() => setManaging(false)} />}
     </>
+  )
+}
+
+// ManageExtensionsModal is the shared extension manager: what the sidecar
+// has installed, what the repos offer, and explicit Update actions. Repos
+// themselves stay on the Connections page.
+function ManageExtensionsModal({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const extensions = useQuery({
+    queryKey: ['extensions'],
+    queryFn: api.extensions,
+    refetchOnMount: 'always',
+  })
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['extensions'] })
+    queryClient.invalidateQueries({ queryKey: ['indexers'] })
+    queryClient.invalidateQueries({ queryKey: ['health'] })
+  }
+  const update = useMutation({
+    mutationFn: (pkg: string) => api.installExtension(pkg),
+    onError: notify.err,
+    onSettled: refresh,
+  })
+  const updateAll = useMutation({
+    mutationFn: async () => {
+      for (const e of extensions.data ?? []) {
+        if (e.installedVersion && e.hasUpdate) await api.installExtension(e.pkgName)
+      }
+    },
+    onSuccess: () => notify.ok('Extensions updated'),
+    onError: notify.err,
+    onSettled: refresh,
+  })
+  const list = extensions.data ?? []
+  const updatable = list.filter((e) => e.installedVersion && e.hasUpdate)
+  const [open, setOpen] = useState<string | null>(null)
+
+  return (
+    <Modal opened onClose={onClose} title="Manage extensions" size="lg">
+      <Stack gap="sm">
+        <Group justify="space-between" wrap="nowrap">
+          <Text size="xs" c="dimmed">
+            Installed and available versions on the extensions sidecar. Updates are explicit — a
+            failed update leaves the installed version working. Repos are managed on{' '}
+            <Link to="/connections" onClick={onClose}>
+              Connections
+            </Link>
+            .
+          </Text>
+          {updatable.length > 0 && (
+            <Button
+              size="xs"
+              variant="default"
+              leftSection={<IconRefresh size={14} />}
+              loading={updateAll.isPending}
+              onClick={() => updateAll.mutate()}
+            >
+              Update all ({updatable.length})
+            </Button>
+          )}
+        </Group>
+        <QueryFeedback
+          pending={extensions.isPending}
+          error={extensions.error}
+          onRetry={() => void extensions.refetch()}
+        />
+        {!!list.length && (
+          <Accordion value={open} onChange={setOpen} variant="separated">
+            {list.map((e) => (
+              <Accordion.Item key={e.pkgName} value={e.pkgName}>
+                <Accordion.Control
+                  icon={<IconPackage size={16} />}
+                  aria-label={`Details for ${e.name}`}
+                >
+                  <Group gap="xs" wrap="nowrap">
+                    <Text size="sm" fw={500} truncate>
+                      {e.name}
+                    </Text>
+                    <Badge size="xs" variant="outline" color="gray">
+                      {e.lang}
+                    </Badge>
+                    {e.nsfw && (
+                      <Badge size="xs" variant="outline" color="red">
+                        nsfw
+                      </Badge>
+                    )}
+                    {e.desired && (
+                      <Badge size="xs" variant="outline" color="teal">
+                        in use
+                      </Badge>
+                    )}
+                    <Text size="xs" c="dimmed" ml="auto" style={{ flexShrink: 0 }}>
+                      {e.installedVersion ? `v${e.installedVersion}` : 'not installed'}
+                      {e.hasUpdate && e.availableVersion ? ` → v${e.availableVersion}` : ''}
+                    </Text>
+                    {e.installedVersion && e.hasUpdate && (
+                      <Button
+                        size="compact-xs"
+                        variant="default"
+                        leftSection={<IconRefresh size={12} />}
+                        loading={update.isPending && update.variables === e.pkgName}
+                        onClick={(ev) => {
+                          ev.stopPropagation()
+                          update.mutate(e.pkgName)
+                        }}
+                      >
+                        Update
+                      </Button>
+                    )}
+                  </Group>
+                </Accordion.Control>
+                <Accordion.Panel>
+                  <Stack gap={4}>
+                    <Text size="xs" c="dimmed">
+                      Package: <code>{e.pkgName}</code>
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {e.installedVersion
+                        ? e.hasUpdate
+                          ? `Update available: v${e.installedVersion} → v${e.availableVersion}`
+                          : 'Up to date with the configured repos.'
+                        : `Available: v${e.availableVersion ?? '?'}`}
+                    </Text>
+                    <ExtensionSources ext={e} />
+                  </Stack>
+                </Accordion.Panel>
+              </Accordion.Item>
+            ))}
+          </Accordion>
+        )}
+        {extensions.data && list.length === 0 && (
+          <Text size="sm" c="dimmed">
+            No extensions — add a repository on the Connections page to load a catalog.
+          </Text>
+        )}
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>
+            Close
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  )
+}
+
+// ExtensionSources lists what one extension provides: as its repo index
+// declares, or — when the index is silent — by asking the installed one.
+function ExtensionSources({ ext }: { ext: ExtensionView }) {
+  const declared = ext.sources ?? []
+  const live = useQuery({
+    queryKey: ['extension-sources', ext.pkgName],
+    queryFn: () => api.extensionSources(ext.pkgName),
+    enabled: declared.length === 0 && !!ext.installedVersion,
+  })
+  const srcs = declared.length > 0 ? declared : (live.data ?? [])
+  if (srcs.length === 0) {
+    return (
+      <Text size="xs" c="dimmed">
+        Sources: unknown until installed.
+      </Text>
+    )
+  }
+  return (
+    <Text size="xs" c="dimmed">
+      Sources: {srcs.map((s) => `${s.name} (${s.lang})`).join(', ')}
+    </Text>
   )
 }
 

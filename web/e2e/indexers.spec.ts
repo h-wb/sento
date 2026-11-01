@@ -71,6 +71,45 @@ test('a source is picked before its extension is installed', async ({ page, requ
   expect(await installed()).toBe(false)
 })
 
+// The Manage extensions dialog shows installed vs available versions and
+// runs explicit updates; the indexer row carries its extension's version.
+test('manage extensions updates an installed extension', async ({ page, request }) => {
+  // Add the Stub Source indexer through the UI so its extension is
+  // installed (and desired — reconcile must not uninstall it).
+  await page.goto('/indexers')
+  await page.getByRole('button', { name: 'Add indexer' }).click()
+  const modal = page.getByRole('dialog')
+  await modal.getByText('Extension source').click()
+  await modal.getByPlaceholder('Search extensions…').fill('Stub')
+  await page.getByRole('option', { name: /Stub Source \(en\)/ }).click()
+  await modal.getByRole('button', { name: 'Add', exact: true }).click()
+  await modal.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(modal).toBeHidden()
+
+  // The row shows the extension's installed version and the update.
+  const row = page.getByRole('row').filter({ hasText: 'Stub Source (en)' })
+  await expect(row.getByText(/v1\.4\.0 — v1\.5\.0 available/)).toBeVisible()
+
+  // Manage extensions: the update is listed, run it.
+  await page.getByRole('button', { name: 'Manage extensions' }).click()
+  const dlg = page.getByRole('dialog')
+  await expect(dlg.getByText('v1.4.0 → v1.5.0', { exact: true })).toBeVisible()
+  await dlg.getByRole('button', { name: 'Update all (1)' }).click()
+  // Updated in place: no more update offered, the new version shows.
+  await expect(dlg.getByRole('button', { name: 'Update all (1)' })).toBeHidden()
+  await expect(dlg.getByText('v1.5.0', { exact: true })).toBeVisible()
+  await dlg.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(row.getByText(/v1\.5\.0/)).toBeVisible()
+  await expect(row.getByText(/available/)).toBeHidden()
+
+  // Leave the shared instance as it was: deleting the last entry of an
+  // extension uninstalls it.
+  const indexers: { id: number; name: string }[] = await (await request.get('/api/v1/indexers')).json()
+  const created = indexers.find((i) => i.name === 'Stub Source (en)')
+  expect(created).toBeTruthy()
+  expect((await request.delete(`/api/v1/indexers/${created!.id}`)).status()).toBe(204)
+})
+
 test('cancelling the add dialog installs nothing', async ({ page, request }) => {
   await page.goto('/indexers')
   await page.getByRole('button', { name: 'Add indexer' }).click()

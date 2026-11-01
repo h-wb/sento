@@ -277,7 +277,10 @@ var hostState = struct {
 	sync.Mutex
 	repos     []string
 	installed map[string]bool
-}{installed: map[string]bool{}}
+	// updated marks packages whose install has been run again — the stub
+	// models an update by then reporting the available version as installed.
+	updated map[string]bool
+}{installed: map[string]bool{}, updated: map[string]bool{}}
 
 // repoWorks reports whether a pushed repo URL yields a catalogue; any URL
 // containing "broken" stands for a repo that fails to load.
@@ -403,13 +406,19 @@ func mountExtensions(mux *http.ServeMux) {
 		const pkg = "eu.kanade.tachiyomi.extension.en.stubsource"
 		ext := map[string]any{
 			"pkgName": pkg, "name": "Stub Source", "lang": "en", "nsfw": false,
-			"availableVersion": "1.4.0",
+			"availableVersion": "1.5.0",
 			"sources": []map[string]any{
 				{"id": "stub-en-1", "name": "Stub Source", "lang": "en", "nsfw": false},
 			},
 		}
 		if hostState.installed[pkg] {
-			ext["installedVersion"] = "1.4.0"
+			// Installed at the older version until an update runs.
+			if hostState.updated[pkg] {
+				ext["installedVersion"] = "1.5.0"
+			} else {
+				ext["installedVersion"] = "1.4.0"
+				ext["hasUpdate"] = true
+			}
 		}
 		// A second, never-installed extension with two sources: the Add
 		// Indexer flow must offer them without installing anything.
@@ -461,7 +470,13 @@ func mountExtensions(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("POST /host/api/v1/extensions/{pkg}", func(w http.ResponseWriter, r *http.Request) {
 		hostState.Lock()
-		hostState.installed[r.PathValue("pkg")] = true
+		pkg := r.PathValue("pkg")
+		// Re-installing an installed package is an update: the stub then
+		// reports the available version as installed.
+		if hostState.installed[pkg] && pkg == "eu.kanade.tachiyomi.extension.en.stubsource" {
+			hostState.updated[pkg] = true
+		}
+		hostState.installed[pkg] = true
 		hostState.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	})

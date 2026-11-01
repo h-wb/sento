@@ -312,27 +312,31 @@ object ExtensionManager {
     @Suppress("ktlint")
     suspend fun install(ext: ExtensionInfo): InstalledExtension {
         logger.info { "installing ${ext.pkgName} ${ext.versionName}" }
-        installed[ext.pkgName]?.let { uninstall(it.pkgName) }
+        val previous = installed[ext.pkgName]
 
         File(applicationDirs.extensionsRoot).mkdirs()
         // Indexes state the APK URL outright; the file name is only
-        // used to key the jar on disk.
+        // used to key the jar on disk. The replacement is staged under
+        // *.staging.* names and validated before the installed extension
+        // is touched: a failed update must leave the working version in
+        // place.
         val apkName = apkNameOf(ext)
-        val apkPath = "${applicationDirs.extensionsRoot}/$apkName"
-        downloadFile(ext.apkUrl, apkPath)
-
+        val stagingApk = "${applicationDirs.extensionsRoot}/${apkName.removeSuffix(".apk")}.staging.apk"
         val jarFilePath = jarPath(apkName)
-        val packageInfo = getPackageInfo(Path(apkPath))
+        val stagingJar = "${jarFilePath.removeSuffix(".jar")}.staging.jar"
         try {
+            downloadFile(ext.apkUrl, stagingApk)
+
+            val packageInfo = getPackageInfo(Path(stagingApk))
             check(packageInfo.reqFeatures.orEmpty().any { it.name == EXTENSION_FEATURE }) {
-                "$apkPath is not a Tachiyomi extension"
+                "$stagingApk is not a Tachiyomi extension"
             }
             val libVersion = packageInfo.versionName.substringBeforeLast('.').toDouble()
             check(libVersion in LIB_VERSION_MIN..LIB_VERSION_MAX) {
                 "lib version $libVersion outside supported range $LIB_VERSION_MIN..$LIB_VERSION_MAX"
             }
             val className = sourceClassNames(packageInfo).joinToString(";")
-            check(className.isNotEmpty()) { "$apkPath declares no $METADATA_SOURCE_CLASS" }
+            check(className.isNotEmpty()) { "$stagingApk declares no $METADATA_SOURCE_CLASS" }
             val isNsfw = packageInfo.applicationInfo.metaData.getString(METADATA_NSFW) == "1"
 
             // Some repos publish the converted jar next to the APK. Prefer it:
@@ -342,13 +346,14 @@ object ExtensionManager {
             // The APK is still needed for its manifest metadata.
             val jarUrl = ext.jarUrl
             if (jarUrl != null) {
-                downloadFile(jarUrl, jarFilePath)
+                downloadFile(jarUrl, stagingJar)
             } else {
-                dex2jar(Path(apkPath), Path(jarFilePath))
+                dex2jar(Path(stagingApk), Path(stagingJar))
             }
-            extractAssetsFromApk(apkPath, jarFilePath)
+            extractAssetsFromApk(stagingApk, stagingJar)
 
-            registerSources(jarFilePath, className)
+            // The staged jar must load before the old one is removed.
+            sourcesOf(stagingJar, className)
 
             val record =
                 InstalledExtension(
@@ -362,14 +367,37 @@ object ExtensionManager {
                     isNsfw = isNsfw,
                     repo = ext.storeIndexUrl,
                 )
-            persist(installed + (record.pkgName to record))
+
+            // Commit: swap the files, then the registrations and the index.
+            // The old jar is only moved aside, so a failure here rolls back
+            // to the previously installed extension.
+            val backupJar = "$jarFilePath.previous"
+            if (previous != null) {
+                PackageTools.jarLoaderMap.remove(loaderKey(jarFilePath))?.close()
+                runCatching { sourcesOf(jarFilePath, previous.className).forEach { GetSource.unregisterSource(it.id) } }
+                runCatching { File(jarFilePath).renameTo(File(backupJar)) }
+            }
+            try {
+                check(File(stagingJar).renameTo(File(jarFilePath))) { "could not move $stagingJar into place" }
+                PackageTools.jarLoaderMap.remove(loaderKey(stagingJar))?.close()
+                registerSources(jarFilePath, className)
+                persist(installed + (record.pkgName to record))
+            } catch (e: Throwable) {
+                File(jarFilePath).delete()
+                if (previous != null && File(backupJar).exists()) {
+                    File(backupJar).renameTo(File(jarFilePath))
+                    runCatching { registerSources(jarFilePath, previous.className) }
+                }
+                throw e
+            }
+            File(backupJar).delete()
             return record
         } catch (e: Throwable) {
-            PackageTools.jarLoaderMap.remove(loaderKey(jarFilePath))?.close()
-            File(jarFilePath).delete()
+            PackageTools.jarLoaderMap.remove(loaderKey(stagingJar))?.close()
+            File(stagingJar).delete()
             throw e
         } finally {
-            File(apkPath).delete()
+            File(stagingApk).delete()
         }
     }
 
