@@ -159,6 +159,20 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
         )
     }
 
+    get("/api/v1/sources/{sid}/listings") { ctx ->
+        val source = ctx.sourceOrNull() ?: return@get ctx.notFound("unknown source")
+        val keyRaw = ctx.queryParam("manga") ?: return@get ctx.badRequest("missing query parameter manga")
+        val key = json.decodeFromString<MangaKey>(keyRaw)
+        val manga = SManga.create().apply {
+            url = key.url
+            title = key.title
+        }
+        val listings = runBlocking { directoryListings(source, manga) }
+        ctx.respond(listings.map {
+            MangaDto(key = json.encodeToString(MangaKey(it.url, it.title)), title = it.title)
+        })
+    }
+
     get("/api/v1/sources/{sid}/pages") { ctx ->
         val source = ctx.sourceOrNull() ?: return@get ctx.notFound("unknown source")
         val keyRaw = ctx.queryParam("chapter") ?: return@get ctx.badRequest("missing query parameter chapter")

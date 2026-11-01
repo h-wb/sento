@@ -113,10 +113,10 @@ type Series struct {
 // language and type, or a local one the catalog does not list. Publisher
 // and Medium are those of its preferred collection, or as entered.
 type Edition struct {
-	NumberingSource  string `json:"numberingSource"`
-	SyncState        string `json:"syncState"`
-	ID               int64  `json:"id"`
-	SeriesID         int64  `json:"seriesId"`
+	NumberingSource string `json:"numberingSource"`
+	SyncState       string `json:"syncState"`
+	ID              int64  `json:"id"`
+	SeriesID        int64  `json:"seriesId"`
 	// ProviderEditionID is MangaBaka's edition id, shared by every series
 	// that has that edition ("Standard Edition", "3-in-1 Edition").
 	ProviderEditionID string `json:"providerEditionId,omitempty"`
@@ -827,6 +827,20 @@ func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
 			b.SeriesID, b.SourceID)
 	}
 	return id, nil
+}
+
+// DiscoverBinding adds a newly found listing without overwriting an
+// existing match's state, edition, trust, or priority, even if another
+// search or a person's edit saved it after the discovery began.
+func (s *Store) DiscoverBinding(ctx context.Context, b Binding) (*Binding, error) {
+	return get[Binding](ctx, s, `
+		INSERT INTO source_bindings (series_id, source_id, source_manga_key, source_name, manga_title, state, priority)
+		VALUES (?,?,?,?,?,'active',?)
+		ON CONFLICT(series_id, source_id, source_manga_key) DO UPDATE SET
+			source_manga_key = excluded.source_manga_key
+		RETURNING id, series_id, source_id, source_manga_key,
+		          source_name, manga_title, state, priority, edition_id, trust_chapters`,
+		b.SeriesID, b.SourceID, b.SourceMangaKey, b.SourceName, b.MangaTitle, b.Priority)
 }
 
 // SetBindingState toggles one binding ("active" / "disabled").

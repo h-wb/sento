@@ -219,6 +219,18 @@ func (p *SourceProvider) ResolveManga(ctx context.Context, siteID, query string)
 	return p.host.Search(ctx, e.SourceID, query)
 }
 
+func (p *SourceProvider) Listings(ctx context.Context, siteID, mangaKey string) ([]extensions.Manga, error) {
+	host, ok := p.host.(extensions.ListingSource)
+	if !ok {
+		return nil, nil
+	}
+	e, err := p.entry(ctx, siteID)
+	if err != nil {
+		return nil, err
+	}
+	return host.Listings(ctx, e.SourceID, mangaKey)
+}
+
 // --- download lifecycle (Sento is the download client for sources) ---
 
 // sourceJob tracks one chapter download. Fields are guarded by the

@@ -482,6 +482,11 @@ func (s *SearchService) streamProvider(ctx context.Context, p provider.Provider,
 					notes = append(notes, note)
 					siteBindings = bound
 				}
+				if listings, ok := p.(provider.MangaListings); ok {
+					var discoveryNotes []string
+					siteBindings, discoveryNotes = s.expandListings(ctx, listings, siteBindings)
+					notes = append(notes, discoveryNotes...)
+				}
 				for _, b := range siteBindings {
 					if b.State != "active" {
 						continue

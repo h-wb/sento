@@ -233,7 +233,13 @@ run = "vendir sync"
 description = "Build the sento-extensions sidecar (JVM)"
 dir = "extensions"
 depends = ["extensions:vendor"]
-run = "gradle :app:installDist"
+run = "gradle :app:test :app:installDist"
+
+[tasks."extensions:test"]
+description = "Test the source adapters against directory fixtures"
+dir = "extensions"
+depends = ["extensions:vendor"]
+run = "gradle :app:test"
 
 [tasks."extensions:run"]
 description = "Run the sento-extensions sidecar"

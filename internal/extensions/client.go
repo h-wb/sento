@@ -85,6 +85,13 @@ func (c *Client) Chapters(ctx context.Context, sourceID, mangaKey string) ([]Cha
 	return out, err
 }
 
+func (c *Client) Listings(ctx context.Context, sourceID, mangaKey string) ([]Manga, error) {
+	var out []Manga
+	err := c.get(ctx, "/api/v1/sources/"+url.PathEscape(sourceID)+"/listings",
+		url.Values{"manga": {mangaKey}}, &out)
+	return out, err
+}
+
 func (c *Client) Pages(ctx context.Context, sourceID, chapterKey string) ([]string, error) {
 	var out []string
 	err := c.get(ctx, "/api/v1/sources/"+url.PathEscape(sourceID)+"/pages",

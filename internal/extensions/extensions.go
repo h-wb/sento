@@ -29,6 +29,13 @@ type Manga struct {
 	Title string `json:"title"`
 }
 
+// ListingSource is an optional host capability for sources whose manga
+// entries contain additional listings (for example, release directories).
+// Listings returns direct children only; every key remains host-owned.
+type ListingSource interface {
+	Listings(ctx context.Context, sourceID, mangaKey string) ([]Manga, error)
+}
+
 // Chapter is one release entry of a bound manga. Number is the source's
 // own recognition, used to corroborate terse names ("1184").
 type Chapter struct {

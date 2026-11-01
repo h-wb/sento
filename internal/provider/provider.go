@@ -66,6 +66,12 @@ type Binding struct {
 	SourceName     string
 }
 
+// MangaListings exposes a source's nested listings without teaching the
+// matching service about that source's directory or identifier format.
+type MangaListings interface {
+	Listings(ctx context.Context, siteID, mangaKey string) ([]extensions.Manga, error)
+}
+
 type SearchRequest struct {
 	SeriesID int64
 	Query    string   // primary title, for text-search providers

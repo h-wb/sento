@@ -23,7 +23,10 @@ dependencies {
 
     // HTTP API
     implementation(libs.javalin.core)
+    testImplementation(kotlin("test-junit"))
 }
+
+tasks.test { useJUnit() }
 
 application {
     mainClass.set("sento.extensions.MainKt")

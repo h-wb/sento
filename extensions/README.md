@@ -86,6 +86,7 @@ GET/PUT /api/v1/repos
 GET    /api/v1/repos/status
 GET    /api/v1/sources
 GET    /api/v1/sources/{sid}/search?q=
+GET    /api/v1/sources/{sid}/listings?manga={key}
 GET    /api/v1/sources/{sid}/chapters?manga={key}
 GET    /api/v1/sources/{sid}/pages?chapter={key}
 GET    /api/v1/sources/{sid}/page?ref={ref}
@@ -96,6 +97,14 @@ DELETE /api/v1/extensions/{pkg}
 
 Keys and page refs are opaque JSON envelopes minted by the sidecar; Sento
 stores and round-trips them without interpreting.
+
+`listings` exposes direct child listings for directory sources. Madokami's
+extension returns only the files in a folder as chapters, so the adapter
+reads child directories from its index using the extension's authenticated
+HTTP client. Parent, sibling, external, and archive links are excluded.
+Sources without directory listings return an empty list. Sento discovers
+these children as separate matches during searches; it retains the root
+match and existing per-match choices.
 
 ## Credits and licensing
 

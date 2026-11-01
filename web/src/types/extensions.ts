@@ -42,6 +42,12 @@ export interface Manga {
   title: string;
 }
 /**
+ * ListingSource is an optional host capability for sources whose manga
+ * entries contain additional listings (for example, release directories).
+ * Listings returns direct children only; every key remains host-owned.
+ */
+export type ListingSource = any;
+/**
  * Chapter is one release entry of a bound manga. Number is the source's
  * own recognition, used to corroborate terse names ("1184").
  */

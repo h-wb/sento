@@ -23,7 +23,7 @@ RUN vendir sync --locked
 COPY settings.gradle.kts build.gradle.kts ./
 COPY app/ app/
 RUN --mount=type=cache,target=/home/gradle/.gradle/caches \
-    gradle --no-daemon :app:installDist
+    gradle --no-daemon :app:test :app:installDist
 
 # --- runtime ---
 FROM eclipse-temurin:21-jre
