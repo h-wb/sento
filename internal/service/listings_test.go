@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/h-wb/sento/internal/extensions"
@@ -15,6 +16,7 @@ import (
 
 type listingHost struct {
 	fakeExtHost
+	mu       sync.Mutex
 	children map[string][]extensions.Manga
 	fail     map[string]bool
 	listed   []string
@@ -30,6 +32,8 @@ func (h *listingHost) Search(context.Context, string, string) ([]extensions.Mang
 }
 
 func (h *listingHost) Listings(_ context.Context, _, key string) ([]extensions.Manga, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.listed = append(h.listed, key)
 	if h.fail[key] {
 		return nil, errors.New("folder unavailable")
@@ -38,7 +42,9 @@ func (h *listingHost) Listings(_ context.Context, _, key string) ([]extensions.M
 }
 
 func (h *listingHost) Chapters(_ context.Context, _, key string) ([]extensions.Chapter, error) {
+	h.mu.Lock()
 	h.searched = append(h.searched, key)
+	h.mu.Unlock()
 	name := "Vol. 1"
 	if key != "root" {
 		name += " (Digital)"
