@@ -827,3 +827,29 @@ func booksOf(t *testing.T, lib *Library, st *store.Store, sid, cid int64) []Book
 	t.Fatalf("edition %d has no default version", cid)
 	return nil
 }
+
+// A person confirming a bare-numbered file as an explicit Full Color
+// edition supplies color evidence that its filename cannot carry.
+func TestConfirmedColorEditionSatisfiesColoredProfile(t *testing.T) {
+	formats := []profile.Format{{ID: 1, Name: "Colored", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "colored"}}}}
+	prof := &profile.Profile{Name: "Colored", Required: []int64{1}}
+	for _, tc := range []struct {
+		name, evidence string
+		accepted       bool
+	}{
+		{"Full Color Edition", "manual", true},
+		{"Full Color Edition", "filename", false},
+		{"Standard Edition", "manual", false},
+	} {
+		t.Run(tc.name+"/"+tc.evidence, func(t *testing.T) {
+			file := store.File{Facts: store.AssetFacts{Title: "Volume 1.cbz", Flags: map[string]bool{"colored": false}}}
+			result := judgeCardFiles(store.Edition{EditionName: tc.name}, prof, formats, []store.AssetCoverage{{FileID: 1, BookID: 1, Evidence: tc.evidence, Verified: true}}, map[int64]store.File{1: file}, map[int64]bool{1: true})
+			if got := len(result.accepted[1]) == 1; got != tc.accepted {
+				t.Fatalf("accepted=%v, want %v: %v", got, tc.accepted, result.refused)
+			}
+			if file.Facts.Flags["colored"] {
+				t.Fatal("a card's confirmation changed the shared file facts")
+			}
+		})
+	}
+}

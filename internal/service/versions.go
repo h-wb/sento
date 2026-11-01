@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"github.com/h-wb/sento/internal/apperr"
+	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
+	"maps"
 	"time"
 )
 
@@ -150,6 +152,15 @@ func judgeCardFiles(col store.Edition, prof *profile.Profile, formats []profile.
 		}
 		if a.Evidence == "manual" {
 			facts.Language = col.Language
+			// Confirming a file as this explicit color edition also confirms color,
+			// even when its bare filename ("Volume 1.cbz") cannot state it.
+			if parse.ReadEdition(col.EditionName).Color {
+				facts.Flags = maps.Clone(facts.Flags)
+				if facts.Flags == nil {
+					facts.Flags = map[string]bool{}
+				}
+				facts.Flags["colored"] = true
+			}
 		}
 		judgement := assetJudgement(facts, prof, formats)
 		if judgement.Broken != "" {
