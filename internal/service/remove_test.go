@@ -101,3 +101,39 @@ func TestRemoveSeriesKeepsFilesAndTorrentsByDefault(t *testing.T) {
 		t.Fatalf("a plain removal touched disk or the client: %v %v", err, client.removed)
 	}
 }
+
+// Deleting a file a card pinned is refused; otherwise the file goes from
+// disk, with the folder it leaves empty.
+func TestDeleteFileRespectsPins(t *testing.T) {
+	_, st, sid, c, ws, version := modelFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	dir := filepath.Join(root, "ONE PIECE")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "v01.cbz")
+	if err := os.WriteFile(path, []byte("pages"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Size: 5}, nil, []store.BookLink{{Ledger: c.Type, EditionID: c.ID, Number: ws[0].SequenceNum, VersionID: version.ID, BookID: ws[0].ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	im := NewImporter(st, provider.NewRegistry(), root, nil)
+	if err = st.PinCoverage(ctx, sid, store.AssetCoverage{FileID: fid, VersionID: version.ID, BookID: ws[0].ID, Pinned: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err = im.DeleteFile(ctx, fid); err == nil {
+		t.Fatal("a pinned file was deleted")
+	}
+	if err = st.PinCoverage(ctx, sid, store.AssetCoverage{FileID: fid, VersionID: version.ID, BookID: ws[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err = im.DeleteFile(ctx, fid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("file or its folder left behind: %v", err)
+	}
+}

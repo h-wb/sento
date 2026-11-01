@@ -158,7 +158,7 @@ func (s *ProfileService) DeleteProfile(ctx context.Context, id int64) error {
 		return err
 	}
 	if n > 0 {
-		return apperr.Conflictf("profile is used by %d series/editions", n)
+		return apperr.Conflictf("this profile judges %d series or cards; give them another first", n)
 	}
 	return s.store.DeleteProfile(ctx, id)
 }

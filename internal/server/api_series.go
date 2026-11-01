@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/h-wb/sento/internal/service"
@@ -278,14 +277,8 @@ func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	path, err := s.store.DeleteFile(r.Context(), fid)
-	if err != nil {
+	if err := s.importer.DeleteFile(r.Context(), fid); err != nil {
 		writeErr(w, err)
-		return
-	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		// Row is gone but the file persists: surface it, a rescan re-adopts.
-		writeError(w, http.StatusInternalServerError, "unlinked, but disk delete failed: "+err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

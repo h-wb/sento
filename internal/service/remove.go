@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -114,4 +115,19 @@ func (im *Importer) pruneEmptyDirs(dir string) {
 			return
 		}
 	}
+}
+
+// DeleteFile forgets a file and deletes it from disk; a file a card has
+// pinned is refused. When the record goes but the disk refuses, the error
+// says so: a rescan adopts the file again.
+func (im *Importer) DeleteFile(ctx context.Context, id int64) error {
+	path, err := im.store.DeleteFile(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("unlinked, but deleting it from disk failed: %w", err)
+	}
+	im.pruneEmptyDirs(filepath.Dir(path))
+	return nil
 }

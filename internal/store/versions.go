@@ -203,14 +203,6 @@ func (s *Store) PinCoverage(ctx context.Context, seriesID int64, a AssetCoverage
  ON CONFLICT(file_id,version_id,book_id) DO UPDATE SET pinned=excluded.pinned`), a.Pinned, a.FileID, a.VersionID, a.BookID, seriesID)
 	return err
 }
-func (s *Store) FileFacts(ctx context.Context, id int64) (AssetFacts, error) {
-	var f AssetFacts
-	raw, err := get[string](ctx, s, `SELECT facts_json FROM files WHERE id=?`, id)
-	if err == nil {
-		err = json.Unmarshal([]byte(*raw), &f)
-	}
-	return f, err
-}
 func (s *Store) SetAssetFacts(ctx context.Context, id int64, f AssetFacts, hash string) error {
 	raw, err := json.Marshal(f)
 	if err != nil {
@@ -331,21 +323,6 @@ func (s *Store) SetBookMonitored(ctx context.Context, seriesID, versionID, bookI
 	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO book_overrides(version_id,book_id,monitored) VALUES(?,?,?) ON CONFLICT(version_id,book_id) DO UPDATE SET monitored=excluded.monitored`), versionID, bookID, monitored)
 	return err
 }
-func (s *Store) BookOverrides(ctx context.Context, versionID int64) (map[int64]bool, error) {
-	rows, err := list[struct {
-		BookID    int64
-		Monitored bool
-	}](ctx, s, `SELECT book_id,monitored FROM book_overrides WHERE version_id=?`, versionID)
-	if err != nil {
-		return nil, err
-	}
-	out := map[int64]bool{}
-	for _, r := range rows {
-		out[r.BookID] = r.Monitored
-	}
-	return out, nil
-}
-
 func (f *AssetFacts) Scan(src any) error {
 	switch v := src.(type) {
 	case string:

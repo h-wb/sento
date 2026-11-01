@@ -39,9 +39,6 @@ func NewSearchService(st *store.Store, registry *provider.Registry) *SearchServi
 }
 
 func (s *SearchService) HasProviders() bool { return !s.registry.Empty() }
-func (s *SearchService) HasSourceProvider() bool {
-	return s.registry.ForProtocol(provider.ProtocolSource) != nil
-}
 
 // SearchScope scopes an interactive search to one collected version: one
 // of its books (BookID), or every wanted book of it (All).

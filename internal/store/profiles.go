@@ -166,7 +166,8 @@ func (s *Store) DeleteProfile(ctx context.Context, id int64) error {
 	return s.touch(ctx, `DELETE FROM profiles WHERE id = ?`, id)
 }
 
-// CountProfileUses guards profile deletion (series + collection refs).
+// CountProfileUses guards profile deletion: the series and cards that
+// name it (editions' own column is legacy, cleared by migration 24).
 func (s *Store) CountProfileUses(ctx context.Context, id int64) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, s.q(`

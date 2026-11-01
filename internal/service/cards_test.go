@@ -60,3 +60,30 @@ func TestCardProfilesFor(t *testing.T) {
 		}
 	}
 }
+
+// A profile that judges a card cannot be deleted from under it.
+func TestProfileInUseByACardIsKept(t *testing.T) {
+	lib, st, sid, standard, _, _ := modelFixture(t)
+	ctx := context.Background()
+	svc := NewProfiles(st)
+	if err := svc.EnsureDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+	colored, err := svc.CreateProfile(ctx, profile.Profile{Name: "Colored", MinFormatScore: profile.MinScoreOff})
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := lib.SaveVersion(ctx, sid, store.CollectedVersion{EditionID: standard.ID, Name: "x", Monitored: true, ProfileID: colored.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.DeleteProfile(ctx, colored.ID); err == nil {
+		t.Fatal("a profile judging a card was deleted")
+	}
+	if err = st.DeleteVersion(ctx, sid, card); err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.DeleteProfile(ctx, colored.ID); err != nil {
+		t.Fatalf("an unused profile could not be deleted: %v", err)
+	}
+}
