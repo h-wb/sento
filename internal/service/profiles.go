@@ -388,6 +388,11 @@ func (s *ProfileService) EnsureDefaults(ctx context.Context) error {
 	return s.SetDefaultProfile(ctx, p.ID)
 }
 
+// knownDigitalGroups are groups established for English digital rips:
+// one of them in a release's groups ("1r0n, Bingbong"), or the Empire
+// family ("danke-Empire").
+const knownDigitalGroups = `(?i)(^|[ ,&+])(1r0n|LuCaZ|Oak|Stick|Ushi|Rillant)($|[ ,&+])|-Empire\b`
+
 // defaultFormats are the shipped scored terms (decision-engine.md §4) plus
 // the manga equivalents of the TRaSH-guide unwanted formats.
 var defaultFormats = []FormatDoc{
@@ -395,12 +400,15 @@ var defaultFormats = []FormatDoc{
 	{Name: "Premium", Score: 50, Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "premium"}}},
 	{Name: "Official", Score: 50, Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "official"}}},
 	{Name: "High Resolution", Score: 25, Conditions: []profile.Condition{{Type: profile.CondResolution, Value: "1600"}}},
-	{Name: "Colored", Score: 0, Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "colored"}}},
+	// A colorized release loses to any black-and-white one; on a color
+	// edition every release is colored, so the penalty cancels out.
+	{Name: "Colored", Score: -500, Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "colored"}}},
+	{Name: "Known digital groups", Score: 150, Conditions: []profile.Condition{{Type: profile.CondGroup, Value: knownDigitalGroups}}},
 	{Name: "Low Quality", Score: -100, Conditions: []profile.Condition{{Type: profile.CondTitle, Value: `\b(lq|low[ ._-]?quality)\b`}}},
 	{Name: "Compressed", Score: -50, Conditions: []profile.Condition{{Type: profile.CondTitle, Value: `\b(re)?compress(ed)?\b`}}},
 	{Name: "Watermarked", Score: -50, Conditions: []profile.Condition{{Type: profile.CondTitle, Value: `watermark`}}},
 	{Name: "PDF", Score: -50, Conditions: []profile.Condition{{Type: profile.CondTitle, Value: `\bpdfs?\b`}}},
 	{Name: "EPUB", Score: -25, Conditions: []profile.Condition{{Type: profile.CondTitle, Value: `\bepubs?\b`}}},
-	{Name: "Upscaled", Score: -25, Conditions: []profile.Condition{{Type: profile.CondTitle, Value: `\bupscaled?\b`}}},
+	{Name: "Upscaled", Score: -100, Conditions: []profile.Condition{{Type: profile.CondTitle, Value: `\bupscaled?\b`}}},
 	{Name: "Raw (untranslated)", Score: -1000, Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "raw"}}},
 }

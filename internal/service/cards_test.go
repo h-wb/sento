@@ -87,3 +87,15 @@ func TestProfileInUseByACardIsKept(t *testing.T) {
 		t.Fatalf("an unused profile could not be deleted: %v", err)
 	}
 }
+
+func TestKnownDigitalGroups(t *testing.T) {
+	f := profile.Format{ID: 1, Conditions: []profile.Condition{{Type: profile.CondGroup, Value: knownDigitalGroups}}}
+	for group, want := range map[string]bool{
+		"1r0n": true, "1r0n, Bingbong": true, "LuCaZ": true, "danke-Empire": true, "LostNerevarine-Empire": true,
+		"Oaky": false, "Asura": false, "Bingbong": false, "": false,
+	} {
+		if got := f.Matches(profile.Input{Group: group}); got != want {
+			t.Errorf("%q: known = %v", group, got)
+		}
+	}
+}
