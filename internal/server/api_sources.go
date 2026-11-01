@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -517,16 +516,9 @@ func (s *Server) handleQueueAnother(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(service.Scheduled(context.Background()), 15*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
-		for _, t := range targets {
-			result, err := s.search.FindCandidates(ctx, t.SeriesID, t.Ledger, nil)
-			if err != nil {
-				slog.Warn("search after giving up a release failed", "series", t.SeriesID, "error", err)
-				continue
-			}
-			s.search.GrabBest(ctx, t.SeriesID, t.Ledger, result.Candidates)
-		}
+		s.search.SearchAgain(ctx, targets)
 	}()
 	w.WriteHeader(http.StatusNoContent)
 }

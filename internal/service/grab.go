@@ -200,3 +200,21 @@ func grabbedBy(ctx context.Context) string {
 	}
 	return "you"
 }
+
+// SearchAgain searches each target and grabs what Sento chooses, after a
+// release failed or was given up: a replacement is under way within
+// minutes, not at the next sweep.
+func (s *SearchService) SearchAgain(ctx context.Context, targets []SearchTarget) {
+	ctx = Scheduled(ctx)
+	for _, t := range targets {
+		if ctx.Err() != nil {
+			return
+		}
+		result, err := s.FindCandidates(ctx, t.SeriesID, t.Ledger, nil)
+		if err != nil {
+			slog.Warn("searching again failed", "series", t.SeriesID, "ledger", t.Ledger, "error", err)
+			continue
+		}
+		s.GrabBest(ctx, t.SeriesID, t.Ledger, result.Candidates)
+	}
+}

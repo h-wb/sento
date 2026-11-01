@@ -30,4 +30,4 @@ one that no longer has the listing or a page of it (404, 410), or serves
 an archive it cannot read ("Not a local file header": the sidecar marks
 it unreadable rather than a network failure). No retry or review brings
 it back, so the job fails and the release is blocklisted, like a torrent
-that never completes, and the next sweep picks another. A chapter's 30-minute timeout starts when a download slot opens.
+that never completes, and the series is searched again within the minute for another (the same happens when you ask to try another release). Activity keeps a failed attempt under Needs attention until another download covers its books: what stays there is what no source could replace. A chapter's 30-minute timeout starts when a download slot opens.

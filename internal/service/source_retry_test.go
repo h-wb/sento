@@ -121,8 +121,16 @@ func TestGoneSourceListingIsBlocklisted(t *testing.T) {
 	if err = st.SetQueueExternalID(ctx, qid, "remote"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = NewImporter(st, provider.NewRegistry(p), t.TempDir(), nil).ProcessQueue(ctx); err != nil {
+	im := NewImporter(st, provider.NewRegistry(p), t.TempDir(), nil)
+	if _, err = im.ProcessQueue(ctx); err != nil {
 		t.Fatal(err)
+	}
+	// Another release is looked for now, once.
+	if got := im.TakeSearches(); len(got) != 1 || got[0] != (SearchTarget{SeriesID: sid, Ledger: edition.Type}) {
+		t.Fatalf("searches after the failure: %+v", got)
+	}
+	if again := im.TakeSearches(); len(again) != 0 {
+		t.Fatalf("searches handed over twice: %+v", again)
 	}
 	q, err := st.GetQueueItem(ctx, qid)
 	if err != nil || q.Status != store.QueueFailed {

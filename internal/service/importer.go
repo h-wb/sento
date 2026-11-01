@@ -35,6 +35,45 @@ type Importer struct {
 	// button and POST /queue/process can overlap, and two passes over the
 	// same finished item would import it twice.
 	mu sync.Mutex
+
+	// again holds the series whose download failed since the last
+	// TakeSearches: they are searched again within minutes, not at the
+	// next sweep.
+	againMu sync.Mutex
+	again   []SearchTarget
+}
+
+// searchAgain asks for the job's series to be searched again soon.
+func (im *Importer) searchAgain(item store.QueueItem) {
+	im.againMu.Lock()
+	defer im.againMu.Unlock()
+	for _, t := range jobTargets(item) {
+		if !slices.Contains(im.again, t) {
+			im.again = append(im.again, t)
+		}
+	}
+}
+
+// TakeSearches hands over the series to search again, once each.
+func (im *Importer) TakeSearches() []SearchTarget {
+	im.againMu.Lock()
+	defer im.againMu.Unlock()
+	out := im.again
+	im.again = nil
+	return out
+}
+
+// jobTargets are the series' ledgers a job's books belong to.
+func jobTargets(item store.QueueItem) []SearchTarget {
+	var books []store.BookRef
+	_ = json.Unmarshal(item.Books, &books)
+	var out []SearchTarget
+	for _, book := range books {
+		if t := (SearchTarget{SeriesID: item.SeriesID, Ledger: book.Ledger}); !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func NewImporter(st *store.Store, registry *provider.Registry, libraryRoot string, pathMappings []string) *Importer {
@@ -147,6 +186,10 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 			})
 			if dead {
 				im.listingFailed(ctx, item)
+			}
+			if dead || errors.Is(err, errDownloadDead) {
+				// The release is blocklisted: another is looked for now.
+				im.searchAgain(item)
 			}
 			continue
 		}
@@ -832,12 +875,9 @@ func (im *Importer) TryAnother(ctx context.Context, ids []int64) ([]SearchTarget
 		_ = im.store.AddDecision(ctx, item.SeriesID, store.DecisionBody{
 			Event: "blocklisted", Title: item.Title, Key: item.ExternalID, Note: "Another release was asked for.",
 		})
-		var books []store.BookRef
-		_ = json.Unmarshal(item.Books, &books)
-		for _, book := range books {
-			target := SearchTarget{SeriesID: item.SeriesID, Ledger: book.Ledger}
-			if !slices.Contains(targets, target) {
-				targets = append(targets, target)
+		for _, t := range jobTargets(item) {
+			if !slices.Contains(targets, t) {
+				targets = append(targets, t)
 			}
 		}
 	}

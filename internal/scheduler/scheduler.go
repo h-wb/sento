@@ -350,8 +350,13 @@ func (s *Scheduler) Run(slug string) error {
 	return fmt.Errorf("unknown task %q", slug)
 }
 
+// tickQueue advances the queue, then searches again the series whose
+// download failed in it, so a replacement does not wait for the sweep.
 func (s *Scheduler) tickQueue(ctx context.Context) error {
 	_, err := s.importer.ProcessQueue(ctx)
+	if targets := s.importer.TakeSearches(); len(targets) > 0 && s.search.HasProviders() {
+		s.search.SearchAgain(ctx, targets)
+	}
 	return err
 }
 
