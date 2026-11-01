@@ -198,6 +198,36 @@ description = "Run Go tests under the race detector"
 run = "go test -race ./..."
 env = { CGO_ENABLED = "1" }
 
+[tasks."test:harness"]
+description = "Test exploratory upstream scenarios against real protocol clients"
+run = "go test -tags e2e ./cmd/e2estub"
+
+[tasks."explore:fixtures"]
+description = "Run controllable offline upstreams (use the Paseo fixtures service)"
+run = "go run -tags e2e ./cmd/e2estub -control"
+
+[tasks."explore:api"]
+description = "Run a separate exploratory backend against the fixture service"
+run = '''
+#!/usr/bin/env bash
+set -eu
+: "${SENTO_FIXTURES_URL:?Start the fixtures service and provide its URL}"
+mkdir -p data/exploratory
+export SENTO_DB_PATH=data/exploratory/sento.db
+export SENTO_LIBRARY_PATH=data/exploratory/library
+export SENTO_DOWNLOADS_DIR=data/exploratory/downloads
+export SENTO_PATH_MAPPINGS=
+export SENTO_MANGABAKA_BASE_URL="$SENTO_FIXTURES_URL/mangabaka/v1"
+export SENTO_EXTENSIONS_URL="$SENTO_FIXTURES_URL/host"
+export SENTO_PROWLARR_URL="$SENTO_FIXTURES_URL/prowlarr"
+export SENTO_PROWLARR_API_KEY=stub-key
+export SENTO_QBITTORRENT_URL="$SENTO_FIXTURES_URL/qbit"
+export SENTO_QBITTORRENT_USERNAME=stub
+export SENTO_QBITTORRENT_PASSWORD=stub
+export SENTO_QBITTORRENT_CATEGORY=sento-test
+exec go run ./cmd/sento -config data/exploratory/absent.yml
+'''
+
 [tasks.vuln]
 description = "Report known vulnerabilities reachable from the code (Go) and in web dependencies"
 run = [
@@ -262,6 +292,7 @@ run = [
   "mise run lint:ci",
   "mise run lint:web",
   "mise run gen:check",
+  "mise run test:harness",
   "mise run test:race",
   "mise run e2e",
 ]

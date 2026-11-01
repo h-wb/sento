@@ -9,11 +9,23 @@
     },
     "api": {
       "type": "service",
-      "command": "SENTO_QBITTORRENT_URL=http://qbittorrent.downloads.svc.cluster.local SENTO_QBITTORRENT_CATEGORY=sento-test SENTO_PROWLARR_URL=http://prowlarr.downloads.svc.cluster.local SENTO_PORT=$PASEO_PORT SENTO_EXTENSIONS_URL=http://127.0.0.1:$PASEO_SERVICE_EXTENSIONS_PORT mise run run:agent"
+      "command": "SENTO_QBITTORRENT_URL=http://qbittorrent-vpn.downloads.svc.cluster.local:8080 SENTO_QBITTORRENT_CATEGORY=sento-test SENTO_PROWLARR_URL=http://prowlarr.downloads.svc.cluster.local SENTO_PORT=$PASEO_PORT SENTO_EXTENSIONS_URL=http://127.0.0.1:$PASEO_SERVICE_EXTENSIONS_PORT mise run run:agent"
     },
     "web": {
       "type": "service",
       "command": "SENTO_API_URL=http://127.0.0.1:$PASEO_SERVICE_API_PORT mise run web:dev -- --host $HOST --port $PASEO_PORT --strictPort"
+    },
+    "fixtures": {
+      "type": "service",
+      "command": "mise run explore:fixtures -- -addr :$PASEO_PORT"
+    },
+    "sandboxapi": {
+      "type": "service",
+      "command": "SENTO_PORT=$PASEO_PORT SENTO_FIXTURES_URL=http://127.0.0.1:$PASEO_SERVICE_FIXTURES_PORT mise run explore:api"
+    },
+    "sandboxweb": {
+      "type": "service",
+      "command": "SENTO_API_URL=http://127.0.0.1:$PASEO_SERVICE_SANDBOXAPI_PORT mise run web:dev -- --host $HOST --port $PASEO_PORT --strictPort"
     }
   }
 }

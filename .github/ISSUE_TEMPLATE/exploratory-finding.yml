@@ -1,6 +1,6 @@
 ---
 name: Exploratory finding
-about: Usability finding from an exploratory testing session (agents use this)
+description: Correctness or usability finding from an exploratory testing session
 title: ''
 labels: ['usability']
 body:
@@ -11,6 +11,13 @@ body:
         [docs/exploratory-testing.md](../../docs/exploratory-testing.md)).
         If this sharpens an existing dogfooding entry, link it below instead
         of restating it.
+  - type: input
+    id: mission
+    attributes:
+      label: Mission, scenario and commit
+      description: 'e.g. M2 / page-503 / abc123; offline or real-upstream mode'
+    validations:
+      required: true
   - type: textarea
     id: repro
     attributes:
@@ -38,6 +45,9 @@ body:
     attributes:
       label: Severity class
       options:
+        - Data loss or incorrect ownership
+        - Wrong match, client, coverage or policy
+        - Duplicate work or failed recovery
         - Dead end — no offered action can resolve it
         - Wrong label — control doesn't do what it says
         - Hidden narrative — state is knowable but shown in fragments
@@ -54,5 +64,5 @@ body:
     id: evidence
     attributes:
       label: Evidence
-      description: UI path or route, API payloads, queue snapshot fragments — what proves it.
+      description: Redacted UI/API evidence, request journal, file checks, and reload/restart result. Never include credentials.
       placeholder: web/src/components/… · GET /api/v1/… → …

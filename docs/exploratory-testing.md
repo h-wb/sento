@@ -1,169 +1,195 @@
 # Exploratory testing
 
-The agent-facing harness for self-usability testing: how a Paseo session
-runs Sento against real upstreams, explores it like a user, and turns
-findings into GitHub issues. Human notes live in
-[dogfooding.md](dogfooding.md); this document is the machine's brief.
+This is the agent's mission brief for testing Sento's correctness and usability.
+Use the app as a long-time Sonarr/Radarr user discovering Sento for the first
+time. Follow [the missions](testing/exploratory-missions.md), investigate
+unexpected combinations, and deliver an evidence-backed report. Human
+observations live in [dogfooding.md](dogfooding.md); current product rules are
+in [domain/editions.md](domain/editions.md) and
+[domain/acquisition.md](domain/acquisition.md).
 
-## Kickoff
+## Kickoff and target
 
-A pass is one disposable worktree session. From the pod:
+A pass gets a disposable worktree. The default is **offline**: the real Sento
+backend and UI, with controllable MangaBaka, extension, Torznab and qBittorrent
+upstreams. No credentials or real downloads are needed.
 
 ```sh
 paseo run --provider mistral-vibe --new-workspace worktree \
   --title "Sento exploratory pass" \
-  "Run the exploratory-test pass: load the exploratory-test skill (or read docs/exploratory-testing.md) and execute it as your mission brief."
+  "Run the exploratory-test pass using docs/exploratory-testing.md. Start in offline mode, execute the missions, explore unexpected combinations, and leave a report with evidence."
 ```
 
-In a Vibe session the `exploratory-test` skill (`.vibe/skills/`) routes to
-this document; other providers get the path directly.
+Boot only through the supervised services. Each service gets this worktree's
+ports and proxy URLs; no hand-backgrounded processes:
 
-## The target
+```sh
+paseo script start fixtures
+paseo script start sandboxapi
+paseo script start sandboxweb
+paseo script ls
+```
 
-Each exploratory run gets a disposable Paseo worktree. Boot the stack
-**only** through the services — `paseo script start extensions api web`,
-never a bare `mise run` in a terminal: the services are what assign the
-ports and publish the proxy URLs (`paseo script ls` prints both). Report
-the web and api proxy URLs in your first message so the human can open the
-same instance in their browser and watch. The stack runs from the
-worktree's own code — Go changes rebuild in seconds, the web HMRs — so
-what you test is the code, not a built image.
+Post the **sandboxweb**, **sandboxapi**, and **fixtures** proxy URLs in your
+first progress update after startup. Browse sandboxweb; its `/api` points to
+sandboxapi. Fixtures is a test control surface, not the application under test.
+Also record its internal URL `http://127.0.0.1:<fixtures-port>` from the service
+listing. Use that internal URL for Connections/indexers: backend requests must
+not depend on a browser-authenticated proxy.
+These services use `mise run explore:fixtures` and `mise run explore:api`.
+The separate database, library and staging files live in `data/exploratory/`.
+A backend restart preserves that database and the separately running upstreams.
+Use a fresh worktree for a fresh pass. Never wipe evidence to make a failure pass.
 
-Everything is real. The api service (`paseo.json`) starts the backend with
-the upstream env on its command line — cluster-local qBittorrent and
-Prowlarr URLs, the `sento-test` category — with credentials fetched from
-Proton Pass by fnox for the `run:agent` task only (`fnox.toml`; the
-worktree setup runs `mise run pass:login`, idempotent). Seeds apply on a
-worktree's first run only: once its DB has settings, env changes are
-ignored — wipe `data/` to reseed. You configure nothing by hand except
-the Nyaa indexer and the Weeb Central source (below).
+Preflight before exercising downloads:
 
-Limits — these are hard rules, not preferences:
+- Confirm the UI's Connections point to this run's internal fixture URL prefixes:
+  `/host`, `/prowlarr`, `/qbit`, and (when added) `/qbit-vpn`.
+- Confirm `GET <fixtures>/_control` identifies itself as `sento-e2estub`.
+- Record commit, browser/tool, viewport, URLs and mode in the report. Check
+  browser availability rather than assuming a particular tool or OS package
+  exists. Use the connected browser tool (Paseo browser or Chromium/CDP).
+  If no usable browser exists, mark UI missions blocked; API checks do not
+  establish usability.
+- Read dogfooding entries as historical observations. Reproduce them against
+  the current app and classify fixed, still reproducible, or not retested.
+  An old checkbox is not evidence that a bug remains.
 
-- **Indexers: Nyaa only.** Add exactly one indexer, Nyaa, in the UI.
-  Never enable the rest of Prowlarr's catalog.
-- **Extension sources: Weeb Central only.** The sidecar ships with no
-  sources: add the repo
-  `https://github.com/keiyoushi/extensions/raw/repo/index.pb` in
-  Connections, install `WeebCentral` from the Indexers page, and use it
-  for the chapter-source flows — search, grab, CBZ assembly — staging in
-  the worktree's own downloads dir. Never add another source.
-- **qBittorrent category: `sento-test`.** Seeded via
-  `SENTO_QBITTORRENT_CATEGORY`. Grabs must land under
-  `/data/Downloads/qbittorrent/complete/sento-test`. Never the live
-  instance's `sento` category.
-- **Library: worktree-local.** Leave `SENTO_LIBRARY_PATH` at its default
-  (the worktree's `data/`). Imports from `/data` copy instead of
-  hardlinking — accepted tradeoff: no worktree can touch another worktree's
-  files, or the real library at `/data/Literature/Manga/Sento`.
+The Playwright suite (`mise run e2e`) is the repeatable regression layer. It
+can run where browser dependencies are installed; report an environment blocker
+if they are missing. It does not replace the exploratory session.
 
-## Guardrails
+## Controlling the upstreams
 
-- The live instance (`sento.example.invalid`, the `sento` category,
-  `/data/Literature/Manga/Sento`) is off-limits: read nothing, cancel
-  nothing, grab nothing.
-- Cancel stuck grabs from the test instance's queue UI; do not manage
-  qBittorrent directly beyond the `sento-test` category.
-- The worktree is disposable: exploratory runs report, they don't rework.
-  Findings are the deliverable. A small, obvious fix may ride along as a
-  pull request — a branch in your worktree, never a direct push to main,
-  opened through the scoped token (below).
-- A queue item that fails is a finding to reproduce, not a bug to hide:
-  leave the state inspectable and describe it.
+The simulator's controls exist only in the `e2e` build and with `-control`.
+They change upstream responses, never Sento's database or API responses.
+[Scenario reference](testing/exploratory-scenarios.md) describes the controls.
+For example, substitute the published fixture URL:
 
-## The user you are
+```sh
+curl -fsS -X POST <fixtures>/_control/scenario \
+  -H 'Content-Type: application/json' -d '{"name":"page-503"}'
+curl -fsS <fixtures>/_control
+```
 
-Explore as someone who has run Sonarr or Radarr for years but has never
-seen Sento. The *arr instincts are the quality bar: every place Sento
-deviates is either a finding or a delight worth reporting. This user
-expects to:
+Use the UI to configure **Scenario Source** (add any fixture repo URL first;
+`https://repo.example/index.pb` is handled offline). Choose a non-healthy
+scenario to make the extension appear in the picker. The source offers
+**Directory Kingdom** (catalog id 105) and **Recovery Chapters** (106).
+The normal Stub Blade and Deterministic Diaries fixtures remain available.
+Do not add the real Keiyoushi repo to the offline stack.
 
-- **Add a series the way they added a TV show**: search a title, tell the
-  right entry from lookalikes (cover, year, type, status), monitor it,
-  done — without reading any docs.
-- **See "what am I missing" at a glance**: Wanted and the series page
-  must answer it the way Sonarr's episode table does, including the
-  difference between *missing* and *not out yet*.
-- **Trust automatic grabs, and audit them**: manual search must show
-  *why* a release was rejected, as plainly as Sonarr's rejection reasons.
-- **Read the queue like a user, not a log**: every state means an action
-  they can take; every failure says what to do next.
-- **Never lose a file**: the review flow explains a mismatch and always
-  offers a way out, like Sonarr's interactive import.
-- **Get a library Kavita can serve**: predictable paths, sane naming,
-  ComicInfo intact — files that a manga server indexes without handholding.
-- **Configure once**: connections self-test, settings persist, and errors
-  name the field that's wrong.
+Use the internal fixture Torznab URL `<fixtures-internal>/torznab/api`, language English,
+for a fake Nyaa indexer. Two independent clients live at `<fixtures-internal>/qbit`
+and `<fixtures-internal>/qbit-vpn`; both use `stub` credentials and category `sento-test`.
+They keep separate torrents and journal adds/deletes. They transfer no data.
+Source fixtures provide real tiny images so Sento can assemble and import CBZs.
 
-## The corpus
-
-Add these (real MangaBaka entries; the worktree DB is disposable). Each
-stresses a different shape — that's the point of the list:
-
-- **Nausicaä of the Valley of the Wind** — the boxset quirk: the catalog
-  models the deluxe box as unit 0, torrents carry 0/1/2. The known case
-  (see dogfooding.md); sharpen it, don't rediscover it.
-- **One Piece** — 100+ volumes, chapter-centric, ongoing: latest-first
-  expectations, very long lists, cutoffs.
-- **Berserk** (+ note the **Berserk of Gluttony** collision) — long
-  series with multiple physical editions: edition disambiguation and
-  near-duplicate search results.
-- **Hunter×Hunter** — on hiatus: nothing new for months; Wanted and the
-  calendar must handle "quiet" without looking broken.
-- **Dragon Ball** — completed classic: complete-pack torrents, cutoff
-  behavior, and the "nothing left to do" states.
-- **A one-volume one-shot** — the smallest edge: one book, complete,
-  nothing to monitor.
-- **Something you can only get via Weeb Central** — the chapter-source
-  path end to end: search, grab, CBZ assembly, import.
-- **Whatever search hands you that looks wrong** — the corpus is also
-  bait: odd catalog entries are findings about the search experience,
-  not detours from it.
+Selecting another scenario preserves attempts and events: this models an
+upstream recovering while the app restarts. Resetting is different. Before
+`POST /_control/reset`, stop sandboxapi and save the report/evidence. Reset
+clears fault counters, events and fake torrents; it does not erase Sento's DB
+or installed extension configuration. Restart sandboxapi afterwards. Do not
+reset during an observed retry, or claim the reset repaired an app defect.
 
 ## How to explore
 
-Use the web UI like a user would — through the pod's headless Chromium
-(chrome-devtools-mcp against the sidecar at `127.0.0.1:9222`, which is
-the browser that works in the pod). The Playwright suite in `web/e2e`
-**cannot run in the pod**: the image lacks the browser's shared
-libraries (`libglib` and friends) and the pod user has no root for
-`playwright install --with-deps`. It runs on a workstation or CI — use
-it from there when a flow needs determinism (`mise run e2e` against
-`cmd/e2estub`). Work the corpus above and judge every screen against the
-expectations above. For every hesitation, ask: what did I expect (the
-charter), what actually happened, what would a first-time *arr user do
-here? Report delights too — surprising things that work are worth as much
-as friction.
+Start with matching, recovery and routing (M1–M3), then complete M4–M6.
+For each mission: state the user's goal and expected outcome, take the actions
+through the UI, inspect the result, reload, and verify the relevant persisted
+state. Read-only API, request-journal and file checks strengthen the evidence.
+API setup is allowed for repeatable fixtures, but disclose it: an API-seeded
+workflow does not prove the equivalent UI setup works.
 
-Judge by these classes, in order of severity:
+Do not intercept Sento's API to demonstrate integration correctness. Faults
+belong at the upstream boundary. Do not edit SQLite, clear reservations, or
+call hidden repair endpoints to make a mission succeed. Normal user actions
+such as retry, cancel, rescan and run-now are part of the test.
 
-1. **Dead ends** — an action leaves state that no offered action can
-   resolve (a review item nothing fixes, a stuck queue item).
-2. **Wrong labels** — a control that doesn't do what it says (see
-   "Keep an additional version", dogfooding.md).
-3. **Hidden narratives** — the app knows the full story but shows
-   fragments (queue snapshot says one thing, error another, no summary).
-4. **Friction** — more steps, retries, or re-reading than the task
-   deserves.
-5. **Raw internals** — paths, Go errors, or SQL states shown to a user.
+Follow promising surprises. Try at least two combinations beyond the scripted
+missions: change a profile with a job pending; search in two tabs; cancel while
+a request completes; toggle a source match and reload; switch mobile/desktop
+mid-dialog; undo a selection; revisit after restart. Record what you tried,
+not a claim of exhaustive coverage. Reproduce failures on a fresh fixture when
+possible while keeping the original state inspectable.
 
-## Filing issues (and PRs)
+The *arr expectations still apply: identify the right series; explain missing
+versus upcoming; explain acceptance/rejection; make the queue actionable; close
+Review when the work is resolved; preserve files; keep editions separate in
+paths and metadata; and retain settings after restart. Inspect at desktop and
+390px mobile widths, including keyboard use, dirty dialogs and long errors.
+Validate the files Sento produces; connecting to a reader is out of scope.
 
-One issue per finding, with the
-[exploratory finding](.github/ISSUE_TEMPLATE/exploratory-finding.md)
-template, labeled `usability`. Every GitHub write goes through the scoped PAT — `GH_TOKEN` from Proton
-Pass (fnox.toml), contents + pull requests + issues read/write on this
-repo only — not the pod's broader token; gh reads `GH_TOKEN` first, and
-the granted value shadows the pod env for granted commands:
+## Real-upstream smoke mode
+
+Use this mode when the run requests real-upstream coverage, after the offline
+missions. Start `extensions`, `api`, then `web` through Paseo and post their
+URLs separately. They use the worktree's normal `data/` DB and library, not
+`data/exploratory/`. Do not connect the sandbox services to real providers.
+The api service seeds Prowlarr and the VPN qBittorrent endpoint, credentials
+from fnox, and category `sento-test`. Saved settings win over seed env values:
+verify Connections and Nyaa's selected client in the UI before grabbing.
+
+Limits:
+
+- **Production Sento is off-limits**: no reads, changes, cancellations or
+  downloads at `sento.example.invalid` or its cluster API. Never use the real library
+  `/data/Literature/Manga/Sento` or another worktree's files.
+- **Nyaa only** for a real torrent indexer. Select the test VPN client explicitly
+  and verify category `sento-test`; never rely on a client name or default.
+  Operate only on this run's recorded test hashes, even if the shared test
+  category contains other runs' torrents. Do not change global client settings.
+- **Weeb Central** for a small real chapter download. **Madokami** for metadata
+  search and nested-listing smoke checks, using credentials configured for the
+  test instance. If unavailable, mark that smoke check blocked; do not read or
+  copy production settings. Do not force live 429s or repeatedly hammer sources.
+- Keep the library and staging directories worktree-local. Before importing a
+  remote torrent, establish that its files are mounted and readable here and
+  its path belongs to the test category. An unavailable mount is an environment
+  blocker, not proof the importer is broken.
+- Record hashes, paths and ownership before cleanup. Queue cancellation only
+  stops tracking; it does not remove a torrent from its client. Distinguish
+  cancellation, removing a torrent, and deleting data. Preserve originals
+  unless a mission explicitly tests deletion of files this run created.
+
+Real corpus: Kingdom (nested Digital editions); Kagurabachi (chapter identity);
+Berserk and Berserk of Gluttony (edition/title collision); One Piece (long lists);
+Nausicaä (boxset 0 versus volumes 1/2); Dragon Ball (complete packs);
+Hunter×Hunter (hiatus); and a one-volume one-shot. Test current catalog/source
+behavior rather than hardcoding mutable publication totals.
+
+## Findings and deliverable
+
+Classify findings in this order: data loss or incorrect ownership; wrong match,
+client, coverage or policy; duplicate/abandoned work and recovery dead ends;
+wrong labels; hidden narratives; friction; raw internals. Distinguish an
+upstream outage, environment limitation, product defect, and usability problem.
+A failure that recovers is still worth judging: did the user understand it?
+
+Leave `data/exploratory/report.md` using
+[the report template](testing/exploratory-report.md). Every mission must be
+**passed**, **failed**, **blocked**, or **untested**, with evidence. A pass
+requires the outcome and persistence checks, not merely clicking Save. Name
+unexecuted subcases. Preserve screenshots, relevant redacted API responses,
+request-journal excerpts, file paths/metadata and before/after states. Never
+include credentials. End the user-facing summary with the report link,
+findings, remaining coverage gaps, and the state/resources left behind.
+
+Report, don't rework: findings are the deliverable. A small obvious fix may
+ride along in a PR from the worktree; exploratory sessions never push main.
+Search existing GitHub issues and dogfooding notes before filing. Add evidence
+to an existing issue instead of opening a duplicate. Known-fixed observations
+are regression checks, not fresh issues. Filing is authorized as part of this
+explicitly invoked harness. Use the [finding form](../.github/ISSUE_TEMPLATE/exploratory-finding.yml)
+and the scoped repo token for every GitHub write:
 
 ```sh
 mise x --secrets GH_TOKEN -- gh issue create --label usability \
-  --title "<one-line finding>" --body-file <filled template>
-mise x --secrets GH_TOKEN -- gh pr create ...
+  --title '<one finding>' --body-file <filled finding.md>
+mise x --secrets GH_TOKEN -- gh pr create --body-file <description.md>
 ```
 
-Before filing, read [dogfooding.md](dogfooding.md): if the finding is
-already known, do not file a duplicate — file an issue only when you can
-add a repro, a screenshot, or a case the entry lacks, and reference the
-entry in the issue body. A finding that matches no entry gets a fresh
-issue; when triaged, it graduates into the dogfooding log.
+A finding needs mission/scenario, commit, exact repro, expected/actual state,
+impact, evidence, related issue and recovery attempted. Do not claim a run is
+clean when missions are blocked or untested. Turning confirmed bugs into
+regression tests happens during the subsequent fix.

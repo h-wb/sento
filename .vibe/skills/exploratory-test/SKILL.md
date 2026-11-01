@@ -1,42 +1,33 @@
 ---
 name: exploratory-test
-description: Load when asked to run Sento's exploratory usability testing pass — a session (typically in a Paseo worktree) that boots the stack, uses the app like a long-time Sonarr user, and files findings as GitHub issues. Not for normal development or code fixes beyond a small ride-along PR.
+description: Run Sento's exploratory correctness and usability pass in an isolated worktree, exercising controlled upstream failures and real UI workflows, recording evidence and filing findings. Not for ordinary development or broad product fixes.
 ---
 
-# Sento exploratory testing pass
+# Sento exploratory pass
 
-Your mission brief is `docs/exploratory-testing.md` in the repo root — read it
-first and follow it exactly. It carries the user persona and expectations
-charter, the manga corpus, the hard limits (Nyaa only, `sento-test`
-category, Weeb Central only, worktree-local library), and the issue-filing
-rules.
+Read `docs/exploratory-testing.md` as the mission brief, then
+`docs/testing/exploratory-missions.md` and `docs/dogfooding.md`.
 
-**Before doing anything else — post the URLs.** Boot the stack through the
-services and report the proxy URLs as your very first message, before any
-exploration, configuration, or filing:
-
-```sh
-paseo script start extensions api web   # first api start includes a Go
-                                       # build — give it a few minutes
-paseo script ls                        # ports + proxy URLs
-```
-
-Then immediately send the web and api proxy URLs to the human — they open
-the same instance in their browser and watch the pass. Do not proceed to
-anything else until they are posted. The **web** URL is the one to use
-yourself too; `GET /` on the backend is a 404 by design.
-
-Operational entry points:
-
-- **The stack**: boot it only through the services — never a bare
-  `mise run` in a terminal; the services are what assign ports and
-  publish the URLs above.
-- **Read `docs/dogfooding.md` first**: sharpen its entries with repro and
-  evidence instead of filing duplicates; a finding that matches no entry
-  gets a fresh issue.
-- **Report, don't rework**: findings are the deliverable. A small, obvious
-  fix may ride along as a pull request from a branch — never a direct push
-  to main.
-- **Every GitHub write goes through the scoped token**:
-  `mise x --secrets GH_TOKEN -- gh issue create --label usability …`
-  (the repo-scoped PAT from Proton Pass — not the pod's broader token).
+- Default to the offline stack: `paseo script start fixtures`, then
+  `sandboxapi`, then `sandboxweb`. Use `paseo script ls` and post all three
+  proxy URLs in your first progress update after startup. Browse sandboxweb.
+  Never hand-background servers or assume a particular browser tool exists.
+- Verify isolation, select controlled faults through the fixture service,
+  and execute M1–M6. Start with matching, recovery and routing. Use the UI
+  for the behavior under review; disclose API setup, and use read-only API,
+  request-journal and filesystem checks to verify durable outcomes.
+- Try at least two unexpected combinations beyond the missions. Follow
+  failures through recovery/reload/restart instead of stopping at a click.
+  Do not repair SQLite, intercept Sento's API, or reset upstream counters
+  during a measured recovery to manufacture a pass.
+- Real-upstream smoke mode has separate services and explicit limits in
+  the brief: Nyaa through the test VPN client, Weeb Central downloads,
+  optional Madokami metadata with test credentials. Production Sento and
+  the real library remain off-limits.
+- Leave `data/exploratory/report.md` using the report template. Mark each
+  mission passed, failed, blocked or untested; identify skipped subcases.
+  Link redacted evidence and record resources left behind. Do not call a
+  blocked pass clean or treat stale dogfooding notes as current defects.
+- Report rather than rework. A small fix may ride along in a worktree PR;
+  never push main during an exploratory pass. Deduplicate GitHub findings;
+  use `mise x --secrets GH_TOKEN -- gh ...` for every GitHub write.

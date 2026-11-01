@@ -19,6 +19,8 @@ const APP_PORT = 8585
 const STUB_PORT = 8899
 const stub = `http://127.0.0.1:${STUB_PORT}`
 
+export const fixtureURL = stub
+
 export const appURL = `http://127.0.0.1:${APP_PORT}`
 
 // Prebuilt by `mise run e2e` — running the binaries rather than `go run`
@@ -45,7 +47,7 @@ export default defineConfig({
 
   webServer: [
     {
-      command: `${bin('e2estub')} -addr 127.0.0.1:${STUB_PORT}`,
+      command: `${bin('e2estub')} -addr 127.0.0.1:${STUB_PORT} -control`,
       cwd: repoRoot,
       url: `${stub}/health`,
       reuseExistingServer: !process.env.CI,

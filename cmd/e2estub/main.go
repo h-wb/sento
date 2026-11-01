@@ -26,7 +26,9 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":8899", "listen address")
+	control := flag.Bool("control", false, "enable exploratory scenarios and request journal")
 	flag.Parse()
+	scenarios.enabled = *control
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
@@ -36,6 +38,8 @@ func main() {
 	mountExtensions(mux)
 	mountProwlarr(mux)
 	mountQBittorrent(mux)
+	mountTorznab(mux)
+	mountScenarios(mux)
 
 	log.Printf("e2estub listening on %s", *addr)
 	srv := &http.Server{Addr: *addr, Handler: logging(mux)}
@@ -148,6 +152,8 @@ var mbFixtures = map[int64]stubSeries{
 	103: newStubSeries(103, "Deterministic Diaries", 2004, 7),
 	// Not in mbOrder: reachable by id, never a search result.
 	104: unlistedSeries(104, "Unlisted Volumes", 2015, 6),
+	105: newStubSeries(105, "Directory Kingdom", 2006, 2),
+	106: newStubSeries(106, "Recovery Chapters", 2024, 1),
 }
 
 // mbOrder fixes search-result ordering; map iteration would not.
@@ -157,7 +163,11 @@ func mountMangaBaka(mux *http.ServeMux) {
 	mux.HandleFunc("GET /mangabaka/v1/series/search", func(w http.ResponseWriter, r *http.Request) {
 		q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 		rows := []stubSeries{}
-		for _, id := range mbOrder {
+		order := mbOrder
+		if scenarios.enabled {
+			order = append(append([]int64{}, mbOrder...), 105, 106)
+		}
+		for _, id := range order {
 			s := mbFixtures[id]
 			if q == "" || strings.Contains(strings.ToLower(s.Title), q) {
 				rows = append(rows, s)
@@ -282,6 +292,9 @@ func mountExtensions(mux *http.ServeMux) {
 		sources := []map[string]any{
 			{"id": "stub-en-1", "name": "Stub Source", "lang": "en", "nsfw": false},
 		}
+		if scenarios.enabled {
+			sources = append(sources, fixtureSource())
+		}
 		hostState.Lock()
 		if hostState.installed["eu.kanade.tachiyomi.extension.all.lazysource"] {
 			sources = append(sources,
@@ -292,18 +305,27 @@ func mountExtensions(mux *http.ServeMux) {
 		writeJSON(w, sources)
 	})
 
-	mux.HandleFunc("GET /host/api/v1/sources/{sid}/search", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /host/api/v1/sources/{sid}/search", func(w http.ResponseWriter, r *http.Request) {
+		if scenarioSourceResponse(w, r, "search") {
+			return
+		}
 		writeJSON(w, []map[string]any{
 			{"key": "manga-101", "title": "Stub Blade"},
 			{"key": "manga-103", "title": "Deterministic Diaries"},
 		})
 	})
 
-	mux.HandleFunc("GET /host/api/v1/sources/{sid}/listings", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /host/api/v1/sources/{sid}/listings", func(w http.ResponseWriter, r *http.Request) {
+		if scenarioSourceResponse(w, r, "listings") {
+			return
+		}
 		writeJSON(w, []map[string]any{}) // the stub sources have no nested listings
 	})
 
-	mux.HandleFunc("GET /host/api/v1/sources/{sid}/chapters", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /host/api/v1/sources/{sid}/chapters", func(w http.ResponseWriter, r *http.Request) {
+		if scenarioSourceResponse(w, r, "chapters") {
+			return
+		}
 		chs := []map[string]any{}
 		for i := 1; i <= 10; i++ {
 			chs = append(chs, map[string]any{
@@ -315,12 +337,18 @@ func mountExtensions(mux *http.ServeMux) {
 		writeJSON(w, chs)
 	})
 
-	mux.HandleFunc("GET /host/api/v1/sources/{sid}/pages", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /host/api/v1/sources/{sid}/pages", func(w http.ResponseWriter, r *http.Request) {
+		if scenarioSourceResponse(w, r, "pages") {
+			return
+		}
 		writeJSON(w, []string{"page-1", "page-2", "page-3"})
 	})
 
 	// A 1x1 GIF stands in for page bytes: enough for CBZ assembly to run.
-	mux.HandleFunc("GET /host/api/v1/sources/{sid}/page", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /host/api/v1/sources/{sid}/page", func(w http.ResponseWriter, r *http.Request) {
+		if scenarioSourceResponse(w, r, "page") {
+			return
+		}
 		w.Header().Set("Content-Type", "image/gif")
 		_, _ = w.Write([]byte("GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"))
 	})
@@ -402,14 +430,31 @@ func mountExtensions(mux *http.ServeMux) {
 		// offer.
 		offered := slices.ContainsFunc(hostState.repos, repoWorks)
 		out := []map[string]any{}
-		for _, e := range []map[string]any{ext, other} {
+		entries := []map[string]any{ext, other}
+		if scenarios.enabled {
+			scenarios.Lock()
+			active := scenarios.name != "healthy" || hostState.installed[scenarioPackage]
+			scenarios.Unlock()
+			if active {
+				fixture := map[string]any{"pkgName": scenarioPackage, "name": "Scenario Source", "lang": "en", "nsfw": false, "availableVersion": "1.0.0", "sources": []map[string]any{fixtureSource()}}
+				if hostState.installed[scenarioPackage] {
+					fixture["installedVersion"] = "1.0.0"
+				}
+				entries = append(entries, fixture)
+			}
+		}
+		for _, e := range entries {
 			if offered || e["installedVersion"] != nil {
 				out = append(out, e)
 			}
 		}
 		writeJSON(w, out)
 	})
-	mux.HandleFunc("GET /host/api/v1/extensions/{pkg}/sources", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /host/api/v1/extensions/{pkg}/sources", func(w http.ResponseWriter, r *http.Request) {
+		if scenarios.enabled && r.PathValue("pkg") == scenarioPackage {
+			writeJSON(w, []map[string]any{fixtureSource()})
+			return
+		}
 		writeJSON(w, []map[string]any{
 			{"id": "stub-en-1", "name": "Stub Source", "lang": "en", "nsfw": false},
 		})
@@ -475,20 +520,6 @@ func firstWords(q string) string {
 // --- qBittorrent (SENTO_QBITTORRENT_URL=<stub>/qbit) ---
 
 func mountQBittorrent(mux *http.ServeMux) {
-	mux.HandleFunc("POST /qbit/api/v2/auth/login", func(w http.ResponseWriter, _ *http.Request) {
-		http.SetCookie(w, &http.Cookie{Name: "SID", Value: "stub-session"})
-		_, _ = w.Write([]byte("Ok."))
-	})
-	mux.HandleFunc("GET /qbit/api/v2/app/version", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("v4.6.0"))
-	})
-	mux.HandleFunc("POST /qbit/api/v2/torrents/add", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("Ok."))
-	})
-	mux.HandleFunc("GET /qbit/api/v2/torrents/info", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, []any{})
-	})
-	mux.HandleFunc("GET /qbit/api/v2/torrents/files", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, []any{})
-	})
+	mountTorrentClient(mux, "/qbit", "regular")
+	mountTorrentClient(mux, "/qbit-vpn", "vpn")
 }
