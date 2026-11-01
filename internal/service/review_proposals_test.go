@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/h-wb/sento/internal/parse"
+	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -208,4 +209,87 @@ func TestUnmatchedSourceIsAReviewQuestion(t *testing.T) {
 	if asked() {
 		t.Fatal("a source with a match is still asked about")
 	}
+}
+
+// Adding a Colored collection must not make review propose its colored files
+// for a black-and-white card. Overlapping policies need a choice, not a
+// silent fallback to the default card.
+func TestReviewProposesOnlyProfileCompatibleVersion(t *testing.T) {
+	lib, st, sid, edition, _, version := modelFixture(t)
+	ctx := context.Background()
+	fidFormat, err := st.AddFormat(ctx, profile.Format{Name: "Colored", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "colored"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	standard := profile.Profile{Name: "Standard", Refused: []int64{fidFormat}, MinFormatScore: profile.MinScoreOff}
+	standard.ID, err = st.AddProfile(ctx, standard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version.ProfileID = standard.ID
+	if _, err = lib.SaveVersion(ctx, sid, version); err != nil {
+		t.Fatal(err)
+	}
+	colored := profile.Profile{Name: "Colored", Required: []int64{fidFormat}, MinFormatScore: profile.MinScoreOff}
+	colored.ID, err = st.AddProfile(ctx, colored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	colorID, err := lib.SaveVersion(ctx, sid, store.CollectedVersion{EditionID: edition.ID, Name: "Colored", ProfileID: colored.ID, Monitored: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(name string, isColor bool) int64 {
+		t.Helper()
+		id, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/" + name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, FactsKnown: true, Flags: map[string]bool{"colored": isColor}}}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	colorFile := add("ONE PIECE v01 (Colored).cbz", true)
+	plainFile := add("ONE PIECE v02.cbz", false)
+	check := func(fileID, wantVersion int64, wantLabel string) {
+		t.Helper()
+		items, err := lib.ReviewItems(ctx, sid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range items {
+			if item.ItemID != fileID || item.Kind != "file" {
+				continue
+			}
+			if wantVersion == 0 {
+				if item.Proposal != nil {
+					t.Fatalf("ambiguous file proposed: %+v", item.Proposal)
+				}
+				return
+			}
+			if item.Proposal == nil || len(item.Proposal.Books) != 1 || item.Proposal.Books[0].VersionID != wantVersion || item.Proposal.Edition != wantLabel {
+				t.Fatalf("wrong proposal: %+v", item.Proposal)
+			}
+			return
+		}
+		t.Fatal("file missing from review")
+	}
+	check(colorFile, colorID, "Standard Edition · Colored · en")
+	check(plainFile, version.ID, "Standard Edition · Standard · en")
+	standard.Refused = nil
+	if err = st.UpdateProfile(ctx, standard); err != nil {
+		t.Fatal(err)
+	}
+	check(colorFile, 0, "") // Both profiles accept it; ask instead of picking default.
+	standard.Refused = []int64{fidFormat}
+	if err = st.UpdateProfile(ctx, standard); err != nil {
+		t.Fatal(err)
+	}
+	colorVersion, err := st.GetVersion(ctx, colorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	colorVersion.Monitored = false
+	if _, err = lib.SaveVersion(ctx, sid, *colorVersion); err != nil {
+		t.Fatal(err)
+	}
+	check(colorFile, 0, "") // Never propose a file that the only collected card refuses.
 }

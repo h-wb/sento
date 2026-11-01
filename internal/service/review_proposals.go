@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/h-wb/sento/internal/parse"
+	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -41,14 +42,15 @@ type proposer struct {
 	titles   []string
 	editions []store.Edition
 	shelf    *shelf
-	defaults map[int64]int64 // edition → default version
+	versions map[int64][]store.CollectedVersion
+	profiles cardProfiles
 	books    map[int64][]store.Book
 	files    map[int64]store.File
 	jobs     map[string]store.QueueItem // by release key
 }
 
 func (l *Library) newProposer(ctx context.Context, seriesID int64) (*proposer, error) {
-	p := &proposer{defaults: map[int64]int64{}, books: map[int64][]store.Book{}, files: map[int64]store.File{}, jobs: map[string]store.QueueItem{}}
+	p := &proposer{versions: map[int64][]store.CollectedVersion{}, books: map[int64][]store.Book{}, files: map[int64]store.File{}, jobs: map[string]store.QueueItem{}}
 	var err error
 	if p.titles, err = l.store.SeriesTitles(ctx, seriesID); err != nil {
 		return nil, err
@@ -62,9 +64,10 @@ func (l *Library) newProposer(ctx context.Context, seriesID int64) (*proposer, e
 		return nil, err
 	}
 	for _, v := range versions {
-		if v.IsDefault {
-			p.defaults[v.EditionID] = v.ID
-		}
+		p.versions[v.EditionID] = append(p.versions[v.EditionID], v)
+	}
+	if p.profiles, err = NewProfiles(l.store).seriesProfiles(ctx, seriesID); err != nil {
+		return nil, err
 	}
 	for _, e := range p.editions {
 		if p.books[e.ID], err = l.store.ListBooks(ctx, e.ID); err != nil {
@@ -138,7 +141,7 @@ func (p *proposer) propose(fileID int64) *store.ReviewProposal {
 	var found []match
 	for _, e := range p.shelf.prefer(parsed, fits) {
 		books, ambiguous := resolveBooks(p.books[e.ID], ranges, parsed.Extra)
-		if !ambiguous && len(books) > 0 && p.defaults[e.ID] != 0 {
+		if !ambiguous && len(books) > 0 && len(p.versions[e.ID]) > 0 {
 			found = append(found, match{e, books})
 		}
 	}
@@ -156,11 +159,59 @@ func (p *proposer) propose(fileID int64) *store.ReviewProposal {
 		return nil
 	}
 	m := found[0]
-	prop := &store.ReviewProposal{Edition: m.edition.EditionName + " · " + m.edition.Language, Evidence: evidence, Label: bookLabel(ledger, m.books)}
+	version := p.proposedVersion(m.edition, f.Facts)
+	if version == nil {
+		return nil
+	}
+	name = m.edition.EditionName
+	if len(p.versions[m.edition.ID]) > 1 {
+		if prof := p.profiles.For(*version); prof != nil {
+			name += " · " + prof.Name
+		} else if !version.IsDefault {
+			name += " · " + version.Name
+		}
+	}
+	prop := &store.ReviewProposal{Edition: name + " · " + m.edition.Language, Evidence: evidence, Label: bookLabel(ledger, m.books)}
 	for _, b := range m.books {
-		prop.Books = append(prop.Books, store.BookRef{VersionID: p.defaults[m.edition.ID], BookID: b.ID, EditionID: m.edition.ID, Ledger: ledger, Number: b.SequenceNum})
+		prop.Books = append(prop.Books, store.BookRef{VersionID: version.ID, BookID: b.ID, EditionID: m.edition.ID, Ledger: ledger, Number: b.SequenceNum})
 	}
 	return prop
+}
+
+// proposedVersion picks a collected card only when its profile accepts the
+// file and it is the sole eligible card. Overlapping profiles are a choice
+// for the person reviewing, never a reason to silently use the default.
+func (p *proposer) proposedVersion(edition store.Edition, facts store.AssetFacts) *store.CollectedVersion {
+	versions := p.versions[edition.ID]
+	var collected []store.CollectedVersion
+	for _, v := range versions {
+		if v.Monitored {
+			collected = append(collected, v)
+		}
+	}
+	if len(collected) == 0 {
+		for _, v := range versions {
+			if v.IsDefault {
+				collected = append(collected, v)
+			}
+		}
+	}
+	var eligible []store.CollectedVersion
+	for _, v := range collected {
+		prof := p.profiles.For(v)
+		judgement := assetJudgement(facts, prof, p.profiles.Formats)
+		if judgement.Broken != "" {
+			continue
+		}
+		if prof != nil && facts.FactsKnown && prof.MinFormatScore > profile.MinScoreOff && judgement.Score < prof.MinFormatScore {
+			continue
+		}
+		eligible = append(eligible, v)
+	}
+	if len(eligible) != 1 {
+		return nil
+	}
+	return &eligible[0]
 }
 
 // bareLedger reads a number with no volume or chapter marker ("067") as
