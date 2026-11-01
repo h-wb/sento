@@ -624,3 +624,44 @@ func TestRuledOutReleaseNamesItsEdition(t *testing.T) {
 		}
 	}
 }
+
+// An edition's book count says what it is when its name does not: a
+// completed series' English edition in 7 books for 13 regroups it, so a
+// release calling itself the omnibus fits; an ongoing series' edition is
+// only behind, and named siblings keep a bare "Omnibus" a question.
+func TestAnEditionsShapeNamesItsNumbering(t *testing.T) {
+	std := func(id, books int64) store.Edition {
+		return store.Edition{ID: id, Type: "volume", Language: "en", EditionName: "Standard Edition", ProviderEditionName: "Standard Edition", LastNumber: books * 100}
+	}
+	named := func(id, books int64, name string) store.Edition {
+		e := std(id, books)
+		e.EditionName, e.ProviderEditionName = name, name
+		return e
+	}
+	parsed := func(name, title string) parse.Result {
+		return parse.ParseAnchored(name, parse.ChannelFile, []string{title})
+	}
+	punpun := std(1, 7)
+	kingdom := std(2, 15)
+	db, db3 := std(3, 26), named(4, 14, "3-in-1 Edition")
+	for _, tc := range []struct {
+		name    string
+		shelf   *shelf
+		release parse.Result
+		edition store.Edition
+		want    fitVerdict
+	}{
+		{"Punpun's English edition is the omnibus", seriesShelf([]store.Edition{punpun}, &store.Series{Status: "completed", FinalVolume: 13}),
+			parsed("Goodnight Punpun v01 (2016) (Omnibus Edition) (Digital) (1r0n).cbz", "Goodnight Punpun"), punpun, fitYes},
+		{"an ongoing series' edition is only behind", seriesShelf([]store.Edition{kingdom}, &store.Series{Status: "releasing", FinalVolume: 75}),
+			parsed("Kingdom v01 (Omnibus Edition).cbz", "Kingdom"), kingdom, fitUnsure},
+		{"named siblings keep a bare omnibus a question", seriesShelf([]store.Edition{db, db3}, &store.Series{Status: "completed", FinalVolume: 42}),
+			parsed("Dragon Ball v01 (Omnibus).cbz", "Dragon Ball"), db, fitUnsure},
+		{"a sibling's own name still wins", seriesShelf([]store.Edition{db, db3}, &store.Series{Status: "completed", FinalVolume: 42}),
+			parsed("Dragon Ball 3-in-1 v01.cbz", "Dragon Ball"), db, fitNo},
+	} {
+		if got, why := tc.shelf.judge(tc.release, tc.edition, 0); got != tc.want {
+			t.Errorf("%s: %v (%s), want %v", tc.name, got, why, tc.want)
+		}
+	}
+}

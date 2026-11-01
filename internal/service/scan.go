@@ -90,7 +90,7 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 	if err != nil {
 		return nil, err
 	}
-	sh := newShelf(collections)
+	sh := seriesShelf(collections, series)
 	// Edition evidence determines file contents even when edition is paused.
 	// Ambiguous archives remain available for explicit review.
 	var monitored, chapterCols []store.Edition

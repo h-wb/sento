@@ -28,7 +28,11 @@ func (im *Importer) fileBooks(ctx context.Context, res parse.Result, expected []
 			if e != nil {
 				return nil, nil, e
 			}
-			sh = newShelf(eds)
+			series, e := im.store.GetSeries(ctx, col.SeriesID)
+			if e != nil {
+				return nil, nil, e
+			}
+			sh = seriesShelf(eds, series)
 		}
 		if !sh.inside(res, *col) {
 			continue

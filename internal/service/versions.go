@@ -125,6 +125,7 @@ func availability(releaseDate, today string) string {
 
 // ledgerView is loaded once per series and shared by search and UI evaluation.
 type ledgerView struct {
+	Series   *store.Series
 	Versions []store.CollectedVersion
 	Editions []store.Edition
 	Books    map[int64][]store.Book
@@ -259,7 +260,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	for _, c := range contents {
 		idx.contents[c.BookID] = append(idx.contents[c.BookID], c)
 	}
-	view := &ledgerView{Versions: versions, Editions: cols, Books: map[int64][]store.Book{}, Status: map[int64][]BookStatus{}, Profiles: map[int64]*profile.Profile{}}
+	view := &ledgerView{Series: series, Versions: versions, Editions: cols, Books: map[int64][]store.Book{}, Status: map[int64][]BookStatus{}, Profiles: map[int64]*profile.Profile{}}
 	for _, w := range works {
 		view.Books[w.EditionID] = append(view.Books[w.EditionID], w)
 	}
@@ -370,7 +371,7 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 		return err
 	}
 	run.editions = view.Editions
-	run.shelf = newShelf(view.Editions)
+	run.shelf = seriesShelf(view.Editions, view.Series)
 	run.versions = view.Versions
 	run.books = view.Books
 	run.versionProfiles = view.Profiles

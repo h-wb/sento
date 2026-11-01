@@ -59,7 +59,11 @@ func (l *Library) newProposer(ctx context.Context, seriesID int64) (*proposer, e
 	if p.editions, err = l.store.ListEditions(ctx, seriesID); err != nil {
 		return nil, err
 	}
-	p.shelf = newShelf(p.editions)
+	series, err := l.store.GetSeries(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	p.shelf = seriesShelf(p.editions, series)
 	versions, err := l.store.ListVersions(ctx, seriesID)
 	if err != nil {
 		return nil, err

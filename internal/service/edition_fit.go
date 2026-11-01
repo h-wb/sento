@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/store"
@@ -18,12 +19,35 @@ import (
 type shelf struct {
 	editions []store.Edition
 	claims   map[int64]parse.EditionClaim
+	// regrouped are editions whose shape says they regroup the story,
+	// whatever they are called (seriesShelf).
+	regrouped map[int64]bool
 }
 
 func newShelf(eds []store.Edition) *shelf {
-	s := &shelf{editions: eds, claims: map[int64]parse.EditionClaim{}}
+	s := &shelf{editions: eds, claims: map[int64]parse.EditionClaim{}, regrouped: map[int64]bool{}}
 	for _, e := range eds {
 		s.claims[e.ID] = readEditionClaim(e)
+	}
+	return s
+}
+
+// seriesShelf is the shelf of a series it knows. An edition's numbering
+// shows in its shape as well as its name: a completed series' volume
+// edition holding the story in at most two thirds of the original's
+// volumes regroups it, whatever its catalog calls it (VIZ's English
+// Goodnight Punpun: 7 books for 13, listed as "Standard Edition"). An
+// ongoing series' edition with fewer books is only behind.
+func seriesShelf(eds []store.Edition, series *store.Series) *shelf {
+	s := newShelf(eds)
+	if series == nil || series.Status != "completed" || series.FinalVolume <= 0 {
+		return s
+	}
+	original := int64(series.FinalVolume) * 100
+	for _, e := range eds {
+		if e.Type == LedgerVolume && e.LastNumber > 0 && e.LastNumber*3 <= original*2 && !s.claims[e.ID].Named() {
+			s.regrouped[e.ID] = true
+		}
 	}
 	return s
 }
@@ -110,6 +134,13 @@ func (s *shelf) judge(p parse.Result, e store.Edition, evidence int64) (fitVerdi
 		}
 		if ec.Box && !ec.Named() {
 			return fitNo, fmt.Sprintf("The release is the %s; %s boxes the original volumes.", r.Written, e.EditionName)
+		}
+		// e's shape says it regroups the story, and no sibling names a
+		// numbering of its own to offer instead: the names differ, the
+		// numbering does not. With named siblings (a 3-in-1, a VIZBIG) a
+		// bare "Omnibus" stays a question.
+		if len(r.Regroup) > 0 && s != nil && s.regrouped[e.ID] && !slices.ContainsFunc(siblings, func(o store.Edition) bool { return s.claim(o).Named() }) {
+			return fitYes, ""
 		}
 	}
 	verdict, why := fitYes, ""
