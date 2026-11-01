@@ -328,46 +328,16 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	if err != nil {
 		return err
 	}
-	linked := map[string]bool{}
-	preservedHashes := map[string]bool{}
-	if item.ReleaseKey != "" {
-		view, e := loadLedger(ctx, im.store, item.SeriesID)
-		if e != nil {
-			return e
-		}
-		known, e := im.store.ListFiles(ctx, item.SeriesID)
-		if e != nil {
-			return e
-		}
-		belongs := map[int64]bool{}
-		for _, f := range known {
-			if f.Facts.ReleaseKey == item.ReleaseKey && f.Presence == "present" && !f.NeedsReview && !f.Unrequested {
-				belongs[f.ID] = true
-				if f.Hash != "" {
-					preservedHashes[f.Hash] = true
-				}
-			}
-		}
-		for _, sl := range expected {
-			for _, book := range view.Status[sl.VersionID] {
-				if book.Book.ID == sl.BookID {
-					for _, fid := range book.FileIDs {
-						if belongs[fid] {
-							linked[store.BookKey(sl.VersionID, sl.BookID)] = true
-						}
-					}
-				}
-			}
-		}
+	linked, preservedHashes, err := im.alreadyImported(ctx, item, expected)
+	if err != nil {
+		return err
 	}
 	for _, archive := range archives {
-		rel, src := archive.name, archive.path
-		ext := strings.ToLower(filepath.Ext(rel))
-		if !mediafile.IsArchive(rel) {
+		if !mediafile.IsArchive(archive.name) {
 			continue
 		}
 		if len(preservedHashes) > 0 {
-			hash, e := fileHash(src)
+			hash, e := fileHash(archive.path)
 			if e != nil {
 				return e
 			}
@@ -375,57 +345,8 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 				continue
 			}
 		}
-		res := parse.ParseAnchored(filepath.Base(rel), parse.ChannelFile, titles)
-		if archive.review || !res.Anchored || res.TitleLeftover != "" || res.ContentType != parse.ContentManga {
-			if err := im.importReviewFile(ctx, item, seriesDir, src, res, ms.AlwaysCopy); err != nil {
-				return err
-			}
-			continue
-		}
-		contents, covered, e := im.fileBooks(ctx, res, expected)
+		covered, e := im.importArchive(ctx, item, ms, series, seriesDir, titles, expected, archive)
 		if e != nil {
-			return e
-		}
-		if len(covered) == 0 {
-			if err := im.importReviewFile(ctx, item, seriesDir, src, res, ms.AlwaysCopy); err != nil {
-				return err
-			}
-			continue
-		}
-		hash, e := fileHash(src)
-		if e != nil {
-			return e
-		}
-		// A pack stays one asset with several verified coverage links.
-		name := filepath.Base(rel)
-		if ms.RenameImports {
-			name = im.bookFileName(ctx, ms, series, contents, res.Group, ext)
-		}
-		// Identical bytes can serve several confirmed versions. Keep one
-		// archive with all coverage links; different releases get different
-		// hashes and can never replace this pathname.
-		// With metadata embedding on, the library gets its own tagged CBZ
-		// and the payload stays untouched for seeding; off, the payload is
-		// hardlinked as it is.
-		if ms.WriteComicInfo {
-			name = strings.TrimSuffix(name, filepath.Ext(name)) + ".cbz"
-		}
-		dest, e := placeAsset(im.bookDir(ctx, ms, seriesDir, series, covered[0]), name, hash, ms.HashInName)
-		if e != nil {
-			return e
-		}
-		if ms.WriteComicInfo {
-			came := releaseSource(item)
-			came.Group = res.Group
-			info := im.fileInfo(ctx, series, contents, came)
-			e = installProcessed(src, dest, hash, info)
-		} else {
-			e = installAsset(src, dest, hash, ms.AlwaysCopy)
-		}
-		if e != nil {
-			return e
-		}
-		if e = im.recordAsset(ctx, item, dest, covered, res, contents); e != nil {
 			return e
 		}
 		for _, sl := range covered {
@@ -436,6 +357,97 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 		return fmt.Errorf("partial import: verified %d of %d expected books; unmatched files need review", len(linked), len(expected))
 	}
 	return nil
+}
+
+// alreadyImported is what an earlier attempt at this download brought in:
+// the expected books a file of this release already holds, and the
+// hashes of those files, so a retry neither redoes nor duplicates them.
+func (im *Importer) alreadyImported(ctx context.Context, item store.QueueItem, expected []store.BookRef) (linked, hashes map[string]bool, err error) {
+	linked, hashes = map[string]bool{}, map[string]bool{}
+	if item.ReleaseKey == "" {
+		return linked, hashes, nil
+	}
+	view, err := loadLedger(ctx, im.store, item.SeriesID)
+	if err != nil {
+		return nil, nil, err
+	}
+	known, err := im.store.ListFiles(ctx, item.SeriesID)
+	if err != nil {
+		return nil, nil, err
+	}
+	belongs := map[int64]bool{}
+	for _, f := range known {
+		if f.Facts.ReleaseKey == item.ReleaseKey && f.Presence == "present" && !f.NeedsReview && !f.Unrequested {
+			belongs[f.ID] = true
+			if f.Hash != "" {
+				hashes[f.Hash] = true
+			}
+		}
+	}
+	for _, sl := range expected {
+		for _, book := range view.Status[sl.VersionID] {
+			if book.Book.ID != sl.BookID {
+				continue
+			}
+			for _, fid := range book.FileIDs {
+				if belongs[fid] {
+					linked[store.BookKey(sl.VersionID, sl.BookID)] = true
+				}
+			}
+		}
+	}
+	return linked, hashes, nil
+}
+
+// importArchive installs one archive of a download: into the library for
+// the expected books its name covers, or into review when it is not
+// recognisably this series' or covers none. It returns the books covered.
+func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, ms MediaSettings, series *store.Series, seriesDir string, titles []string, expected []store.BookRef, archive payloadArchive) ([]store.BookRef, error) {
+	rel, src := archive.name, archive.path
+	res := parse.ParseAnchored(filepath.Base(rel), parse.ChannelFile, titles)
+	if archive.review || !res.Anchored || res.TitleLeftover != "" || res.ContentType != parse.ContentManga {
+		return nil, im.importReviewFile(ctx, item, seriesDir, src, res, ms.AlwaysCopy)
+	}
+	contents, covered, err := im.fileBooks(ctx, res, expected)
+	if err != nil {
+		return nil, err
+	}
+	if len(covered) == 0 {
+		return nil, im.importReviewFile(ctx, item, seriesDir, src, res, ms.AlwaysCopy)
+	}
+	hash, err := fileHash(src)
+	if err != nil {
+		return nil, err
+	}
+	// A pack stays one asset with several verified coverage links.
+	name := filepath.Base(rel)
+	if ms.RenameImports {
+		name = im.bookFileName(ctx, ms, series, contents, res.Group, strings.ToLower(filepath.Ext(rel)))
+	}
+	// Identical bytes can serve several confirmed versions. Keep one
+	// archive with all coverage links; different releases get different
+	// hashes and can never replace this pathname.
+	// With metadata embedding on, the library gets its own tagged CBZ
+	// and the payload stays untouched for seeding; off, the payload is
+	// hardlinked as it is.
+	if ms.WriteComicInfo {
+		name = strings.TrimSuffix(name, filepath.Ext(name)) + ".cbz"
+	}
+	dest, err := placeAsset(im.bookDir(ctx, ms, seriesDir, series, covered[0]), name, hash, ms.HashInName)
+	if err != nil {
+		return nil, err
+	}
+	if ms.WriteComicInfo {
+		came := releaseSource(item)
+		came.Group = res.Group
+		err = installProcessed(src, dest, hash, im.fileInfo(ctx, series, contents, came))
+	} else {
+		err = installAsset(src, dest, hash, ms.AlwaysCopy)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return covered, im.recordAsset(ctx, item, dest, covered, res, contents)
 }
 
 // seriesDir returns the folder for a series' books of the given type
