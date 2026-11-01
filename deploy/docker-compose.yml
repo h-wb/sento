@@ -10,7 +10,7 @@ name: sento
 
 services:
   sento:
-    image: ghcr.io/h-wb/sento:latest
+    image: ghcr.io/h-wb/sento:${SENTO_VERSION:-edge}
     # To run your working tree instead of the published image:
     # build:
     #   context: ..
@@ -42,7 +42,7 @@ services:
   # extensions and no repos: add a repo URL in Sento (Connections page),
   # then add sources on the Indexers page — Sento installs what they need.
   sento-extensions:
-    image: ghcr.io/h-wb/sento-extensions:latest
+    image: ghcr.io/h-wb/sento-extensions:${SENTO_VERSION:-edge}
     # build:
     #   context: ../extensions
     environment:

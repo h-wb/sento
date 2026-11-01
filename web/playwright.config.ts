@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { createHash } from 'node:crypto'
 import { mkdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,8 +16,9 @@ mkdirSync(runDir, { recursive: true })
 
 // Off the dev ports (8484 sento / 8901 host) so a running dev stack and a
 // test run never fight over a socket.
-const APP_PORT = 8585
-const STUB_PORT = 8899
+const portOffset = createHash('sha256').update(repoRoot).digest().readUInt16BE(0) % 10000
+const APP_PORT = Number(process.env.SENTO_E2E_PORT ?? 20000 + portOffset * 2)
+const STUB_PORT = Number(process.env.SENTO_E2E_STUB_PORT ?? APP_PORT + 1)
 const stub = `http://127.0.0.1:${STUB_PORT}`
 
 export const fixtureURL = stub
@@ -50,7 +52,7 @@ export default defineConfig({
       command: `${bin('e2estub')} -addr 127.0.0.1:${STUB_PORT} -control`,
       cwd: repoRoot,
       url: `${stub}/health`,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       stdout: 'pipe',
       stderr: 'pipe',
       timeout: 60_000,
@@ -67,6 +69,12 @@ export default defineConfig({
       stderr: 'pipe',
       timeout: 60_000,
       env: {
+        // Clear inherited developer overrides that could bypass test storage
+        // or reconcile real extension repositories onto the fixture server.
+        SENTO_DB_URL: '',
+        SENTO_PATH_MAPPINGS: '',
+        SENTO_EXTENSIONS_REPOS: '',
+        SENTO_QBITTORRENT_CATEGORY: 'sento-test',
         SENTO_HOST: '127.0.0.1',
         SENTO_PORT: String(APP_PORT),
         SENTO_DB_PATH: path.join(runDir, 'sento.db'),

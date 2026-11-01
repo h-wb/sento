@@ -32,7 +32,9 @@ COPY --from=build /src/app/build/install/app /opt/sento-extensions
 # and where its source lives travel with the binary.
 COPY --from=build /src/vendor/suwayomi/LICENSE /opt/sento-extensions/licenses/Suwayomi-Server-MPL-2.0.txt
 COPY NOTICE.md /opt/sento-extensions/NOTICE.md
-LABEL org.opencontainers.image.title="sento-extensions" \
+COPY LICENSES/GPL-3.0.txt /opt/sento-extensions/licenses/Sento-GPL-3.0.txt
+LABEL org.opencontainers.image.licenses="GPL-3.0-only AND MPL-2.0" \
+      org.opencontainers.image.title="sento-extensions" \
       org.opencontainers.image.description="Runs Tachiyomi/Mihon extensions for Sento. Built on Suwayomi-Server (MPL-2.0); see /opt/sento-extensions/NOTICE.md." \
       org.opencontainers.image.source="https://github.com/h-wb/sento"
 # Stateless by design: Sento re-installs extensions and replays source

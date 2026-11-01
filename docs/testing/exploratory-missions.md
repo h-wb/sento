@@ -127,7 +127,7 @@ Distinguish file Review, download Review, chapter proposals and catalog-link
 suggestions. Every item must explain its goal and offer a usable next action.
 Try accept-one, accept-all where offered, dismiss, retry and cancel. Verify the
 remaining count and reload. A problem that requires API/SQL repair is a finding,
-not a successful UI recovery. Recheck relevant dogfooding entries with evidence.
+not a successful UI recovery. Recheck related issue reports with evidence.
 
 ## Open exploration
 

@@ -1,70 +1,42 @@
 # Exploratory testing
 
-This is the agent's mission brief for testing Sento's correctness and usability.
-Use the app as a long-time Sonarr/Radarr user discovering Sento for the first
-time. Follow [the missions](testing/exploratory-missions.md), investigate
-unexpected combinations, and deliver an evidence-backed report. Human
-observations live in [dogfooding.md](dogfooding.md); current product rules are
-in [domain/editions.md](domain/editions.md) and
-[domain/acquisition.md](domain/acquisition.md).
+Use the app with a concrete reader's goal: add a series, choose an edition,
+find a release, recover from a failed download, or resolve a review item.
+[The missions](testing/exploratory-missions.md) give repeatable starting points;
+try unexpected combinations as well. Current rules live in
+[editions](domain/editions.md) and [acquisition](domain/acquisition.md).
 
-## Kickoff and target
+## Start an offline session
 
-A pass gets a disposable worktree. The default is **offline**: the real Sento
-backend and UI, with controllable MangaBaka, extension, Torznab and qBittorrent
-upstreams. No credentials or real downloads are needed.
+The default is the real backend and UI against controllable, local MangaBaka,
+extension, Torznab and qBittorrent upstreams. No credentials or real downloads
+are needed. In a fresh worktree after normal developer setup:
 
 ```sh
-paseo run --provider mistral-vibe --new-workspace worktree \
-  --title "Sento exploratory pass" \
-  "Run the exploratory-test pass using docs/exploratory-testing.md. Start in offline mode, execute the missions, explore unexpected combinations, and leave a report with evidence."
+mise run explore
+mise daemons urls
 ```
 
-Boot only through the supervised services. Each service gets this worktree's
-ports and proxy URLs; no hand-backgrounded processes:
+Open **sandboxweb**. Its `/api` requests go to **sandboxapi**. The **fixtures**
+service is a test control surface, not the app. Stop the stack with
+`mise run explore:stop`; Ctrl-C only leaves the log view. Paseo users can start
+`fixtures`, `sandboxapi` and `sandboxweb` through its service controls instead.
 
-```sh
-paseo script start fixtures
-paseo script start sandboxapi
-paseo script start sandboxweb
-paseo script ls
-```
+The database, library and staging directories are under `data/exploratory/`,
+separate from the normal dev stack. Restarting the backend preserves them.
+Use a fresh worktree for a new pass; preserve state that demonstrates a bug.
 
-Post the **sandboxweb**, **sandboxapi**, and **fixtures** proxy URLs in your
-first progress update after startup. Browse sandboxweb; its `/api` points to
-sandboxapi. Fixtures is a test control surface, not the application under test.
-Also record its internal URL `http://127.0.0.1:<fixtures-port>` from the service
-listing. Use that internal URL for Connections/indexers: backend requests must
-not depend on a browser-authenticated proxy.
-These services use `mise run explore:fixtures` and `mise run explore:api`.
-The separate database, library and staging files live in `data/exploratory/`.
-A backend restart preserves that database and the separately running upstreams.
-Use a fresh worktree for a fresh pass. Never wipe evidence to make a failure pass.
+Record the commit, browser, viewport and all three service URLs. Use the
+**internal** fixture URL (`http://127.0.0.1:<port>`) in Connections and indexers,
+so backend requests do not depend on a browser-authenticated proxy. Confirm
+`GET <fixtures>/_control` identifies itself as `sento-e2estub`. If no browser
+is available, mark UI missions blocked; API tests do not establish usability.
 
-Preflight before exercising downloads:
+## Control the upstreams
 
-- Confirm the UI's Connections point to this run's internal fixture URL prefixes:
-  `/host`, `/prowlarr`, `/qbit`, and (when added) `/qbit-vpn`.
-- Confirm `GET <fixtures>/_control` identifies itself as `sento-e2estub`.
-- Record commit, browser/tool, viewport, URLs and mode in the report. Check
-  browser availability rather than assuming a particular tool or OS package
-  exists. Use the connected browser tool (Paseo browser or Chromium/CDP).
-  If no usable browser exists, mark UI missions blocked; API checks do not
-  establish usability.
-- Read dogfooding entries as historical observations. Reproduce them against
-  the current app and classify fixed, still reproducible, or not retested.
-  An old checkbox is not evidence that a bug remains.
-
-The Playwright suite (`mise run e2e`) is the repeatable regression layer. It
-can run where browser dependencies are installed; report an environment blocker
-if they are missing. It does not replace the exploratory session.
-
-## Controlling the upstreams
-
-The simulator's controls exist only in the `e2e` build and with `-control`.
-They change upstream responses, never Sento's database or API responses.
-[Scenario reference](testing/exploratory-scenarios.md) describes the controls.
-For example, substitute the published fixture URL:
+Faults belong at the upstream boundary, not in mocked Sento responses.
+The simulator exposes controls only in its `e2e` build with `-control`.
+[The scenario reference](testing/exploratory-scenarios.md) lists the controls:
 
 ```sh
 curl -fsS -X POST <fixtures>/_control/scenario \
@@ -72,124 +44,71 @@ curl -fsS -X POST <fixtures>/_control/scenario \
 curl -fsS <fixtures>/_control
 ```
 
-Use the UI to configure **Scenario Source** (add any fixture repo URL first;
-`https://repo.example/index.pb` is handled offline). Choose a non-healthy
-scenario to make the extension appear in the picker. The source offers
-**Directory Kingdom** (catalog id 105) and **Recovery Chapters** (106).
-The normal Stub Blade and Deterministic Diaries fixtures remain available.
-Do not add the real Keiyoushi repo to the offline stack.
+In the UI, add a fixture repo such as `https://repo.example/index.pb` (handled
+offline). A non-healthy scenario exposes **Scenario Source** in the picker.
+It offers **Directory Kingdom** (105) and **Recovery Chapters** (106); the
+normal Stub Blade and Deterministic Diaries fixtures remain available.
+Do not add real extension repositories to this offline stack.
 
-Use the internal fixture Torznab URL `<fixtures-internal>/torznab/api`, language English,
-for a fake Nyaa indexer. Two independent clients live at `<fixtures-internal>/qbit`
-and `<fixtures-internal>/qbit-vpn`; both use `stub` credentials and category `sento-test`.
-They keep separate torrents and journal adds/deletes. They transfer no data.
-Source fixtures provide real tiny images so Sento can assemble and import CBZs.
+Use `<fixtures-internal>/torznab/api` with English language for a fake torrent
+indexer. Independent clients at `/qbit` and `/qbit-vpn` use `stub` credentials
+and category `sento-test`; they journal adds/deletes but transfer no data.
+Source fixtures serve tiny images so CBZ assembly and import are exercised.
 
-Selecting another scenario preserves attempts and events: this models an
-upstream recovering while the app restarts. Resetting is different. Before
-`POST /_control/reset`, stop sandboxapi and save the report/evidence. Reset
-clears fault counters, events and fake torrents; it does not erase Sento's DB
-or installed extension configuration. Restart sandboxapi afterwards. Do not
-reset during an observed retry, or claim the reset repaired an app defect.
+Changing a scenario preserves attempts and events, modeling a recovering
+upstream. `POST /_control/reset` clears them and fake torrents, but leaves
+Sento's database and installed extension configuration intact. Save evidence
+and stop sandboxapi before resetting. Do not reset during an observed retry
+or describe a reset as an application repair.
 
-## How to explore
+## Exercise the workflow
 
 Start with matching, recovery and routing (M1–M3), then complete M4–M6.
-For each mission: state the user's goal and expected outcome, take the actions
-through the UI, inspect the result, reload, and verify the relevant persisted
-state. Read-only API, request-journal and file checks strengthen the evidence.
-API setup is allowed for repeatable fixtures, but disclose it: an API-seeded
-workflow does not prove the equivalent UI setup works.
+For each mission, state the goal and expected result, act through the UI,
+reload, and check persisted state. Read-only API, request-journal and file
+checks support the evidence. Disclose API-seeded setup; it does not prove
+that equivalent UI setup works.
 
-Do not intercept Sento's API to demonstrate integration correctness. Faults
-belong at the upstream boundary. Do not edit SQLite, clear reservations, or
-call hidden repair endpoints to make a mission succeed. Normal user actions
-such as retry, cancel, rescan and run-now are part of the test.
+Try at least two combinations beyond the missions: change a profile with a
+job pending, search in two tabs, cancel while a request completes, toggle a
+source and reload, or switch between desktop and a 390px viewport mid-dialog.
+Include keyboard use, dirty forms and long errors. Inspect generated files;
+connecting a reader is outside this pass.
 
-Follow promising surprises. Try at least two combinations beyond the scripted
-missions: change a profile with a job pending; search in two tabs; cancel while
-a request completes; toggle a source match and reload; switch mobile/desktop
-mid-dialog; undo a selection; revisit after restart. Record what you tried,
-not a claim of exhaustive coverage. Reproduce failures on a fresh fixture when
-possible while keeping the original state inspectable.
+Do not edit the database or clear reservations to force success. Retry,
+cancel, rescan and run-now are normal user actions. A failure that recovers
+still deserves a usability check: could the user understand what happened?
 
-The *arr expectations still apply: identify the right series; explain missing
-versus upcoming; explain acceptance/rejection; make the queue actionable; close
-Review when the work is resolved; preserve files; keep editions separate in
-paths and metadata; and retain settings after restart. Inspect at desktop and
-390px mobile widths, including keyboard use, dirty dialogs and long errors.
-Validate the files Sento produces; connecting to a reader is out of scope.
+## Optional real-upstream smoke checks
 
-## Real-upstream smoke mode
+Only use real upstreams when the run explicitly requests them, after the
+offline checks. Use your own separate dev instance and test credentials,
+with a worktree-local database, library and staging area. Verify the selected
+client, test category and readable torrent mounts before grabbing anything.
+Never copy production settings or point the offline stack at real providers.
 
-Use this mode when the run requests real-upstream coverage, after the offline
-missions. Start `extensions`, `api`, then `web` through Paseo and post their
-URLs separately. They use the worktree's normal `data/` DB and library, not
-`data/exploratory/`. Do not connect the sandbox services to real providers.
-The api service seeds Prowlarr and the VPN qBittorrent endpoint, credentials
-from fnox, and category `sento-test`. Saved settings win over seed env values:
-verify Connections and Nyaa's selected client in the UI before grabbing.
+Keep downloads small; do not force rate limits or repeatedly hammer a source.
+Operate only on torrents and files created by this run. Record hashes and
+paths before cleanup. Canceling queue tracking and deleting a torrent or
+its data are separate actions; preserve originals unless a test explicitly
+requires deleting its own files. Missing credentials or mounts are environment
+blockers, not importer defects.
 
-Limits:
+## Record findings
 
-- **Production Sento is off-limits**: no reads, changes, cancellations or
-  downloads at the live instance or its cluster API. Never use the real
-  library or another worktree's files.
-- **Nyaa only** for a real torrent indexer. Select the test VPN client explicitly
-  and verify category `sento-test`; never rely on a client name or default.
-  Operate only on this run's recorded test hashes, even if the shared test
-  category contains other runs' torrents. Do not change global client settings.
-- **Weeb Central** for a small real chapter download. **Madokami** for metadata
-  search and nested-listing smoke checks, using credentials configured for the
-  test instance. If unavailable, mark that smoke check blocked; do not read or
-  copy production settings. Do not force live 429s or repeatedly hammer sources.
-- Keep the library and staging directories worktree-local. Before importing a
-  remote torrent, establish that its files are mounted and readable here and
-  its path belongs to the test category. An unavailable mount is an environment
-  blocker, not proof the importer is broken.
-- Record hashes, paths and ownership before cleanup. Queue cancellation only
-  stops tracking; it does not remove a torrent from its client. Distinguish
-  cancellation, removing a torrent, and deleting data. Preserve originals
-  unless a mission explicitly tests deletion of files this run created.
+Use [the report template](testing/exploratory-report.md) at
+`data/exploratory/report.md`. Mark each mission **passed**, **failed**,
+**blocked** or **untested**. A pass needs outcome and persistence checks.
+Preserve screenshots, redacted API responses, request-journal excerpts and
+file metadata. Do not include credentials.
 
-Real corpus: Kingdom (nested Digital editions); Kagurabachi (chapter identity);
-Berserk and Berserk of Gluttony (edition/title collision); One Piece (long lists);
-Nausicaä (boxset 0 versus volumes 1/2); Dragon Ball (complete packs);
-Hunter×Hunter (hiatus); and a one-volume one-shot. Test current catalog/source
-behavior rather than hardcoding mutable publication totals.
+Prioritize data loss or incorrect ownership, wrong matches or routing,
+recovery dead ends, misleading labels, then friction. Distinguish upstream
+outages, environment limits and product defects. The final report should
+link the evidence and list coverage gaps and resources left running.
 
-## Findings and deliverable
-
-Classify findings in this order: data loss or incorrect ownership; wrong match,
-client, coverage or policy; duplicate/abandoned work and recovery dead ends;
-wrong labels; hidden narratives; friction; raw internals. Distinguish an
-upstream outage, environment limitation, product defect, and usability problem.
-A failure that recovers is still worth judging: did the user understand it?
-
-Leave `data/exploratory/report.md` using
-[the report template](testing/exploratory-report.md). Every mission must be
-**passed**, **failed**, **blocked**, or **untested**, with evidence. A pass
-requires the outcome and persistence checks, not merely clicking Save. Name
-unexecuted subcases. Preserve screenshots, relevant redacted API responses,
-request-journal excerpts, file paths/metadata and before/after states. Never
-include credentials. End the user-facing summary with the report link,
-findings, remaining coverage gaps, and the state/resources left behind.
-
-Report, don't rework: findings are the deliverable. A small obvious fix may
-ride along in a PR from the worktree; exploratory sessions never push main.
-Search existing GitHub issues and dogfooding notes before filing. Add evidence
-to an existing issue instead of opening a duplicate. Known-fixed observations
-are regression checks, not fresh issues. Filing is authorized as part of this
-explicitly invoked harness. Use the [finding form](../.github/ISSUE_TEMPLATE/exploratory-finding.yml)
-and the scoped repo token for every GitHub write:
-
-```sh
-mise x --secrets GH_TOKEN -- gh issue create --label usability \
-  --title '<one finding>' --body-file <filled finding.md>
-mise x --secrets GH_TOKEN -- gh pr create --body-file <description.md>
-```
-
-A finding needs mission/scenario, commit, exact repro, expected/actual state,
-impact, evidence, related issue and recovery attempted. Do not claim a run is
-clean when missions are blocked or untested. Turning confirmed bugs into
-regression tests happens during the subsequent fix.
+Search existing issues before filing a confirmed finding with
+[the finding form](../.github/ISSUE_TEMPLATE/exploratory-finding.yml). Reproduce
+older reports against the current version before treating them as open bugs.
+File issues when requested; do not automatically open issues or change live
+services during a test pass. Add regression tests during the subsequent fix.

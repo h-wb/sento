@@ -32,7 +32,7 @@ clean library for readers like Komga/Kavita.
 | D13 | MangaBaka volatility | MangaBaka (esp. collections/works) is WIP and may change: Sento isolates it behind a `MetadataProvider` anti-corruption layer, owns its identity model, caches raw payloads, and degrades gracefully (§5.1) |
 | D14 | Existing-library import | First-class, Sonarr-style: scan root folders, match series, link files to slots **in place** — non-destructive by default, renaming/organizing only as an explicit separate action (§11.4) |
 | D15 | Metadata/download separation | Verified source observations enter review or an explicitly trusted binding; never expand numbering from source maxima. |
-| D16 | Review proposes | Review items carry a proposed resolution read from evidence (a file's name, the download it came in), accepted one by one or together; nothing is recorded until accepted, and automatic acquisition stays as strict as before ([propose-dont-ask.md](../reviews/propose-dont-ask.md)). |
+| D16 | Review proposes | Review items carry a proposed resolution read from evidence (a file's name, the download it came in), accepted one by one or together; nothing is recorded until accepted, and automatic acquisition stays as strict as before. |
 | D17 | Files describe themselves | Each archive carries the facts that make it what it is (edition, books, published or fan-made, group, release, flags) in standard ComicInfo fields and Sento's `Notes` line, never preferences (profile, card); a rescan adopts a file back from that line before guessing from its name ([metadata.md](../domain/metadata.md)). |
 
 ## 2. Goals / non-goals
@@ -147,8 +147,10 @@ semi-stable and everything edition-related as **unstable surface**:
 
 ## 6. SourceProvider interface (Suwayomi adapter)
 
-The only part of Sento that knows Suwayomi exists. **Full component spec,
-live-validated against a real instance: [`suwayomi-adapter.md`](suwayomi-adapter.md).**
+This section records the original Suwayomi adapter design. Current source
+downloads use the bundled Kotlin sidecar through `internal/extensions`; see
+[acquisition](../domain/acquisition.md) for implemented behavior and
+[the sidecar notices](../../extensions/NOTICE.md) for its upstream components.
 
 > Implementation note: this generalized into `internal/provider` — a
 > `Provider` interface (Sites/Search/Grab/State/Fetch/Cleanup) + registry,

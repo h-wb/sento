@@ -1,37 +1,62 @@
 # Contributing
 
-Thanks for wanting to help — Sento grew out of one person's workflow (built
-with AI, see the [README](README.md)), so adapting it to fit more people's
-needs is exactly the kind of contribution it needs.
+Bug reports, documentation fixes and pull requests are welcome. For a larger
+change, open an issue first so we can agree on the behavior before you build it.
 
-## Issues
+## Report a problem
 
-- **Bugs and friction**: [open an issue](https://github.com/h-wb/sento/issues/new/choose).
-  Describe what you did, what you expected, and what happened; screenshots
-  and the Activity page's error details help a lot.
-- Before filing, skim [docs/dogfooding.md](docs/dogfooding.md) — known
-  friction points are collected there, and your report may sharpen an
-  existing entry rather than open a new one.
+Search [existing issues](https://github.com/h-wb/sento/issues) first, then use
+one of the [issue forms](https://github.com/h-wb/sento/issues/new/choose).
+Include the Sento version, what you expected, what happened, and steps that
+someone else can follow. A release name, edition, error from Activity or a
+screenshot often helps. Remove passwords, tokens and private tracker URLs.
 
-## Pull requests
+Issues track current bugs and planned work.
 
-- Keep the change focused: one concern per PR is easier to review and land.
-- Match the existing style; there is no separate style guide — the code is
-  the guide.
-- CI runs lint, tests, e2e and type generation; run them locally first:
+## Work on the code
 
-  ```sh
-  mise run ci
-  ```
+Follow [the development guide](docs/development.md). Tools are pinned in
+`mise.toml`; use the tasks there rather than a system Go or Node installation.
+You do not need the maintainer's services, credentials or agent tools.
 
-- If the change touches product behavior, say why in the PR description;
-  behavior decisions are logged in [docs/spec/spec.md](docs/spec/spec.md)
-  (§1, the decision log), and a maintainer can help log a new one.
+Keep a pull request focused on one problem. Describe the resulting behavior
+and how you checked it. Add a regression test for a bug when practical, and
+update the relevant docs when changing behavior. New architecture should fit
+the [domain model](docs/domain/editions.md); explain any change to that model.
 
-## Development setup
+Before submitting:
 
-See the [Development](README.md#development) section of the README and
-[AGENTS.md](AGENTS.md) for the day-to-day conventions (pinned tooling via
-mise, the dev stack, the checks). The guided code tour in
-[docs/tour.md](docs/tour.md) is a good way in if you want to understand a
-whole subsystem.
+```sh
+mise run ci
+```
+
+Database changes also need `mise run test:pg`. Sidecar changes need
+`mise run extensions:contract`. The [testing guide](docs/testing/README.md)
+explains these checks, including which ones use the network. If an environment
+prevents a check, say which check and why in the PR.
+
+Contributions to original Sento code use the project's [GPL-3.0-only license](LICENSE).
+Preserve upstream notices when modifying third-party code.
+
+AI-assisted contributions are welcome. The contributor is responsible for
+understanding the change, checking its behavior and reviewing its diff.
+
+## Commit messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
+for PR titles. We squash merge, so the PR title becomes the release-relevant
+commit; your intermediate commits do not need to follow this format.
+
+```text
+fix(import): preserve the original file when a hardlink fails
+feat(profiles): add a color edition profile
+docs: explain remote download paths
+chore(deps): update the web dependencies
+```
+
+Accepted types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`,
+`ci`, `chore`, and `revert`. The scope is optional. Add `!` for a breaking
+change, for example `feat(api)!: replace the queue response format`, and
+explain the migration in the PR body. Before 1.0, features and breaking changes bump the
+minor version; fixes bump the patch version. See
+[the release guide](docs/releases.md) for the policy and maintainer setup.
