@@ -214,3 +214,66 @@ func TestTextQuery(t *testing.T) {
 		}
 	}
 }
+
+// A blocklisted release must be rejected under every name it goes by: a
+// ban recorded from a hash-less listing (guid-keyed job) still catches the
+// same release when the feed serves it with an infohash, and vice versa.
+func TestBlocklistMatchesReleaseUnderAnyKey(t *testing.T) {
+	lib, st := setup(t)
+	ctx := context.Background()
+	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	releases := []fakeRelease{
+		{"g1", "ONE PIECE v01 (Digital) (LuCaZ)", "magnet:?dn=onepiece-v01", "", 100 << 20, 30},
+	}
+	fake := fakeTorznab(t, releases)
+	addTorznabEntry(t, st, "nyaa", fake.URL)
+	svc := NewSearchService(st, torrentRegistry(st))
+
+	res, err := svc.FindCandidates(ctx, seriesID, LedgerVolume, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cand ReleaseCandidate
+	for _, c := range res.Candidates {
+		if c.GUID == "g1" {
+			cand = c
+		}
+	}
+	if cand.GUID == "" {
+		t.Fatal("g1 missing from funnel")
+	}
+
+	// The job was grabbed hash-less: both its keys are the guid.
+	im := NewImporter(st, torrentRegistry(st), t.TempDir(), nil)
+	snapshot, _ := json.Marshal(cand)
+	item := store.QueueItem{SeriesID: seriesID, Protocol: "torrent", ExternalID: "g1", ReleaseKey: "g1", Snapshot: snapshot}
+	if err := im.blockRelease(ctx, item, "never completes"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Same release, now served with an infohash: the funnel must still
+	// reject it via the guid.
+	releases2 := []fakeRelease{
+		{"g1", "ONE PIECE v01 (Digital) (LuCaZ)", "magnet:?dn=onepiece-v01", "AAA111", 100 << 20, 30},
+		{"g2", "ONE PIECE v02 (Digital) (LuCaZ)", "magnet:?dn=onepiece-v02", "", 100 << 20, 30},
+	}
+	fake2 := fakeTorznab(t, releases2)
+	addTorznabEntry(t, st, "nyaa2", fake2.URL)
+	res2, err := svc.FindCandidates(ctx, seriesID, LedgerVolume, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byGUID := map[string]ReleaseCandidate{}
+	for _, c := range res2.Candidates {
+		byGUID[c.GUID] = c
+	}
+	if c := byGUID["g1"]; len(c.Rejections) == 0 || c.Rejections[0] != "rejected.blocklisted" {
+		t.Errorf("hashed re-listing of blocklisted release not rejected: %v", c.Rejections)
+	}
+	if c := byGUID["g2"]; len(c.Rejections) != 0 {
+		t.Errorf("unrelated release rejected: %v", c.Rejections)
+	}
+}

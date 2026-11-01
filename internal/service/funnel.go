@@ -123,7 +123,11 @@ func readRelease(run *searchRun, cand provider.Candidate) (rc ReleaseCandidate, 
 		}
 		return rc, ranges, true
 	}
-	if run.blocked[cand.Protocol+"/"+cand.ExternalKey()] {
+	// The same listing can surface with or without its infohash: match the
+	// blocklist under the download key and under the feed guid alike.
+	guid := cand.GUID()
+	if run.blocked[cand.Protocol+"/"+cand.ExternalKey()] ||
+		(guid != "" && guid != cand.ExternalKey() && run.blocked[cand.Protocol+"/"+guid]) {
 		rc.Rejections = append(rc.Rejections, "rejected.blocklisted") // hard
 	}
 	return rc, ranges, true

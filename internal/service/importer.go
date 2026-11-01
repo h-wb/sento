@@ -539,6 +539,14 @@ func (im *Importer) blockRelease(ctx context.Context, item store.QueueItem, reas
 	if item.ReleaseKey != "" && item.ReleaseKey != item.ExternalID {
 		keys = append(keys, item.ReleaseKey)
 	}
+	// The feed guid the candidate was listed under: a later search may
+	// surface the same release without an infohash, keyed by guid alone.
+	var snap struct {
+		GUID string `json:"guid"`
+	}
+	if _ = json.Unmarshal(item.Snapshot, &snap); snap.GUID != "" && !slices.Contains(keys, snap.GUID) {
+		keys = append(keys, snap.GUID)
+	}
 	blocked := false
 	for _, key := range keys {
 		if key == "" {
