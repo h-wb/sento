@@ -48,7 +48,7 @@ func bookArchive(path string) bool { return mediafile.IsArchive(path) }
 
 // organizePlans works out, for every file of a series, where the current
 // settings would put it and what metadata it should carry.
-func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePlan, *store.Series, MediaSettings, error) {
+func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) ([]filePlan, *store.Series, MediaSettings, error) {
 	ms := LoadMediaSettings(ctx, im.store)
 	series, err := im.store.GetSeries(ctx, seriesID)
 	if err != nil {
@@ -84,6 +84,9 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePl
 	}
 	var plans []filePlan
 	for _, f := range files {
+		if fileID != 0 && f.ID != fileID {
+			continue
+		}
 		p := filePlan{file: f, FileChange: FileChange{FileID: f.ID, From: rel(f.Path), To: rel(f.Path)}}
 		// The books this file holds, once each, filed under the edition's
 		// default version unless only an additional version claims it.
@@ -173,7 +176,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID int64) ([]filePl
 // PlanOrganize previews what Organize would change, without touching
 // anything.
 func (im *Importer) PlanOrganize(ctx context.Context, seriesID int64) ([]FileChange, error) {
-	plans, _, _, err := im.organizePlans(ctx, seriesID)
+	plans, _, _, err := im.organizePlans(ctx, seriesID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +193,24 @@ func (im *Importer) PlanOrganize(ctx context.Context, seriesID int64) ([]FileCha
 // rename moves them to their templated path, retag rewrites their embedded
 // metadata. One file failing does not stop the others.
 func (im *Importer) Organize(ctx context.Context, seriesID int64, rename, retag bool) (*OrganizeResult, error) {
-	plans, series, ms, err := im.organizePlans(ctx, seriesID)
+	return im.organize(ctx, seriesID, 0, rename, retag)
+}
+
+// OrganizeReviewedFile finishes the import of the file just confirmed. Its
+// naming and metadata follow the import settings; other files are untouched.
+func (im *Importer) OrganizeReviewedFile(ctx context.Context, seriesID, fileID int64) error {
+	res, err := im.organize(ctx, seriesID, fileID, true, true)
+	if err != nil {
+		return err
+	}
+	if len(res.Errors) > 0 {
+		return fmt.Errorf("%s", strings.Join(res.Errors, "; "))
+	}
+	return nil
+}
+
+func (im *Importer) organize(ctx context.Context, seriesID, fileID int64, rename, retag bool) (*OrganizeResult, error) {
+	plans, series, ms, err := im.organizePlans(ctx, seriesID, fileID)
 	if err != nil {
 		return nil, err
 	}

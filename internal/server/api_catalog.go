@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"github.com/h-wb/sento/internal/store"
 	"log/slog"
 	"net/http"
@@ -281,9 +282,14 @@ func (s *Server) handleRemapFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	organizeErr := s.importer.OrganizeReviewedFile(r.Context(), id, fid)
 	// The mapping is saved either way; a job it completes is closed now.
 	if err := s.importer.SettleReviewedJobs(r.Context(), id); err != nil {
 		slog.Warn("settling reviewed jobs failed", "series", id, "error", err)
+	}
+	if organizeErr != nil {
+		writeErr(w, fmt.Errorf("mapping saved, but organizing the file failed: %w", organizeErr))
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
