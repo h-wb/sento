@@ -127,44 +127,52 @@ func classifySegment(text string) segmentHints {
 	// Compound segment ("FULL COLOR Digital Colored Comics"): the shared
 	// vocabulary scanner, same one the free-text pass uses.
 	h = scanTags(lower)
-	if lang := detectLanguages(lower, languageTags); lang != "" {
-		h.language = lang
-		h.languages = languageCodes(lower, languageTags)
+	languages := scanLanguages(lower, languageTags)
+	if languages.language != "" {
+		h.language = languages.language
+		h.languages = languages.languages
 	}
-	if h.language != "" {
-		h.recognized = true
-	}
+	h.recognized = h.recognized || languages.recognized
 	return h
 }
 
-// Resolve every explicit language deterministically. Conflicting tags mean a
-// multilingual claim, never whichever map entry happened to iterate first.
-func languageCodes(text string, vocab map[string]string) []string {
+// keptFromSource are what a translation keeps of its original: "Japanese
+// Names", "JP Honorifics", "Korean SFX" say how the book reads, not what
+// language it is in.
+var keptFromSource = map[string]bool{
+	"name": true, "names": true, "honorific": true, "honorifics": true, "sfx": true,
+}
+
+// scanLanguages distinguishes claims about the book's language from notes
+// about retained source style. Both are metadata, so neither becomes a group.
+// Every occurrence is checked: "Japanese Names, Japanese" still claims ja.
+func scanLanguages(text string, vocab map[string]string) segmentHints {
+	var h segmentHints
 	langs := map[string]bool{}
 	for word, lang := range vocab {
-		if indexWord(text, word) >= 0 {
-			langs[lang] = true
+		for _, at := range wordIndexes(text, word) {
+			h.recognized = true
+			next := strings.FieldsFunc(text[at+len(word):], func(r rune) bool {
+				return r < 0x80 && !isAlnum(byte(r))
+			})
+			if len(next) == 0 || !keptFromSource[strings.ToLower(next[0])] {
+				langs[lang] = true
+			}
 		}
 	}
 	if langs["pt-BR"] {
 		delete(langs, "pt")
 	}
-	values := []string{}
 	for lang := range langs {
-		values = append(values, lang)
+		h.languages = append(h.languages, lang)
 	}
-	sort.Strings(values)
-	return values
-}
-func detectLanguages(text string, vocab map[string]string) string {
-	values := languageCodes(text, vocab)
-	if len(values) > 1 {
-		return "multi"
+	sort.Strings(h.languages)
+	if len(h.languages) > 1 {
+		h.language = "multi"
+	} else if len(h.languages) == 1 {
+		h.language = h.languages[0]
 	}
-	if len(values) == 1 {
-		return values[0]
-	}
-	return ""
+	return h
 }
 
 // scanTags detects edition / quality / completeness / content vocabulary in

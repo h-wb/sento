@@ -204,6 +204,9 @@ are out of scope v1 (spec.md §2).
 `[ENG]` `(English)` `(Fr)` `(VF)` `[JP]` `(RAW)` (raw implies ja unless
 stated). Untagged ≠ English — untagged is "unknown" and the resolver applies
 the indexer/source language default.
+A language word qualifying retained source style (`Japanese Names`, `JP
+Honorifics`, `Korean SFX`) is metadata, not a language claim or a group.
+Other language tags in the same release still apply.
 
 ### 5.8 Group position & delimiters
 Trailing parens/brackets (`(LuCaZ)`, `[Stick]`, `(danke-Empire)`,

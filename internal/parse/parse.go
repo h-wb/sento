@@ -105,12 +105,8 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 	// Edition phrases also occur in free text ("Deluxe Edition",
 	// "Digital Colored Comics") — hint-scan without cutting the title.
 	lowerFree := strings.ToLower(freeText)
-	if lang := detectLanguages(lowerFree, freeTextLangWords); lang != "" {
-		res.fold(segmentHints{language: lang, languages: languageCodes(lowerFree, freeTextLangWords), recognized: true}, freeText)
-	}
-	if lang := detectLanguages(freeText, sceneLangCodes); lang != "" {
-		res.fold(segmentHints{language: lang, languages: languageCodes(freeText, sceneLangCodes), recognized: true}, freeText)
-	}
+	res.fold(scanLanguages(lowerFree, freeTextLangWords), freeText)
+	res.fold(scanLanguages(freeText, sceneLangCodes), freeText)
 	// Edition/quality tags also live in free text ("Deluxe Edition",
 	// "Digital Colored Comics", scene-style "...RAW") — fold them through the
 	// same vocabulary scanner as bracketed segments. Hint-only: it never cuts

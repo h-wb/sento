@@ -10,3 +10,15 @@
 {"in":"Blue Orchard: Side Story Tome 1 [FR]","ch":"torrent","titles":["Blue Orchard"],"want":{"volumes":[[1,1]],"titleLeftover":"side story"}}
 {"in":"Band 7 v03 [English]","ch":"torrent","titles":["Band 7"],"want":{"anchored":true,"volumes":[[3,3]],"titleLeftover":""}}
 {"in":"Blue Orchard Deluxe Full Color v02 [English]","ch":"torrent","titles":["Blue Orchard"],"want":{"edition":{"deluxe":true,"colored":true},"volumes":[[2,2]]}}
+{"in":"Kingdom v01-12 (2025-2026) (Digital) (1r0n, Bingbong) (ED-Japanese Names)","ch":"torrent","titles":["Kingdom"],"want":{"volumes":[[1,12]],"language":null,"group":"1r0n, Bingbong"}}
+{"in":"Solo Leveling v01 (Digital) (Korean Names) (LuCaZ)","ch":"torrent","titles":["Solo Leveling"],"want":{"volumes":[[1,1]],"language":null,"group":"LuCaZ"}}
+{"in":"Berserk v01 (JP Honorifics) (Digital)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[1,1]],"language":null,"group":null}}
+{"in":"Berserk v01 (Japanese) (Digital)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[1,1]],"language":"ja"}}
+{"in":"Berserk v01 (Japanese, English Names)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[1,1]],"language":"ja"}}
+{"in":"Berserk v01 (Japanese Names, Japanese) (Digital)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[1,1]],"language":"ja"}}
+{"in":"Berserk v01 (Japanese Names, English) (Digital)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[1,1]],"language":"en"}}
+{"in":"Berserk v01 (English) (Japanese) (Digital)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[1,1]],"language":"multi"}}
+{"in":"Berserk v01 (Korean SFX) (LuCaZ)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[1,1]],"language":null,"group":"LuCaZ"}}
+{"in":"Berserk v01 Japanese Names (LuCaZ)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[1,1]],"language":null,"group":"LuCaZ"}}
+{"in":"Berserk v01 JP HONORIFICS (LuCaZ)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[1,1]],"language":null,"group":"LuCaZ"}}
+{"in":"Berserk v01 (ED-Japanese-Names) (LuCaZ)","ch":"file","titles":["Berserk"],"want":{"volumes":[[1,1]],"language":null,"group":"LuCaZ"}}
