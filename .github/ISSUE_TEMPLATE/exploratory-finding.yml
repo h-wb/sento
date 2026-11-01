@@ -9,8 +9,7 @@ body:
       value: |
         Filed from an exploratory testing run (see
         [docs/exploratory-testing.md](../../docs/exploratory-testing.md)).
-        If this sharpens an existing dogfooding entry, link it below instead
-        of restating it.
+        Link any related issue below so findings can be tracked together.
   - type: input
     id: mission
     attributes:
@@ -56,10 +55,10 @@ body:
     validations:
       required: true
   - type: input
-    id: dogfooding
+    id: related-issue
     attributes:
-      label: Related dogfooding entry (if any)
-      description: 'e.g. docs/dogfooding.md — "Keep an additional version…"'
+      label: Related issue (if any)
+      description: Link an existing issue that this finding reproduces or expands.
   - type: textarea
     id: evidence
     attributes:

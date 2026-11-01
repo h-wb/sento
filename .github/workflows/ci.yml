@@ -7,6 +7,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   workflow_dispatch:
 
 concurrency:
@@ -37,6 +38,12 @@ jobs:
       - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
         with:
           cache: true
+
+      - name: Check PR title
+        if: github.event_name == 'pull_request'
+        run: mise run lint:pr-title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
 
       - name: Cache Go build and module caches
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

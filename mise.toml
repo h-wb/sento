@@ -1,8 +1,7 @@
-min_version = "2026.10.4" # older mise rejects `secrets` on a task
+min_version = "2026.10.4"
 
 [settings]
-# [daemons] and the tasks that require them are experimental in mise;
-# so are [secrets.fnox] task grants (fnox.toml).
+# [daemons] and the tasks that require them are experimental in mise.
 experimental = true
 
 # Everything a check depends on is pinned, so a run is reproducible and a
@@ -23,8 +22,6 @@ golangci-lint = "2.15.0"
 actionlint = "1.7.12"
 shellcheck = "0.11.0" # actionlint runs it over every `run:` script
 pitchfork = "2.33.0" # supervises the [daemons] dev stack
-"github:jdx/fnox" = "1.46.0" # fetches fnox.toml secrets for granted tasks
-"github:protonpass/pass-cli" = "2.5.1" # Proton Pass CLI (fnox backend)
 "go:golang.org/x/tools/gopls" = "latest"
 
 [env]
@@ -37,16 +34,6 @@ SENTO_LIBRARY_PATH = "data/library"
 # Read from the caller first: mise [env] otherwise overrides it, and the Paseo
 # `api` service (paseo.json) points the backend at its worktree's sidecar.
 SENTO_EXTENSIONS_URL = "{{ get_env(name='SENTO_EXTENSIONS_URL', default='http://localhost:8901') }}"
-# fnox/pass-cli use an agent session scoped to this repo; its token is the
-# macOS Keychain item pass-cli-sento on a workstation, PROTON_PASS_TOKEN in
-# the paseo pod. Log it in with `mise run pass:login` — see fnox.toml.
-PROTON_PASS_SESSION_DIR = "{{env.HOME}}/.local/state/pass-cli/sento"
-PROTON_PASS_AGENT_REASON = "sento fnox"
-
-# fnox fetches the fnox.toml secrets; a task lists the keys it needs in
-# `secrets = [...]` and nothing reaches the activated shell or `mise env`.
-[secrets.fnox]
-
 # --- dev stack (long-running processes; pitchfork supervises them) ---
 #
 #   mise run dev            sidecar + backend + web UI, built first, waited
@@ -105,6 +92,25 @@ port = { auto = true, base = 8951 }
 proxy = false
 ready_cmd = { run = "curl -fsS http://127.0.0.1:$EXTENSIONS_CONTRACT_PORT/health", timeout = "15m" }
 
+# Offline exploratory stack; independent from the normal dev database.
+[daemons.fixtures]
+run = "mise run explore:fixtures -- -addr 127.0.0.1:$FIXTURES_PORT"
+port = { auto = true, base = 18999 }
+ready_cmd = { run = "curl -fsS http://127.0.0.1:$FIXTURES_PORT/health", timeout = "5m" }
+
+[daemons.sandboxapi]
+run = "SENTO_PORT=$SANDBOXAPI_PORT SENTO_FIXTURES_URL=http://127.0.0.1:$FIXTURES_PORT mise run explore:api"
+port = { auto = true, base = 18484 }
+depends = ["fixtures"]
+ready_cmd = { run = "curl -fsS http://127.0.0.1:$SANDBOXAPI_PORT/api/v1/system/health", timeout = "5m" }
+
+[daemons.sandboxweb]
+init = "mise run web:install"
+run = "SENTO_API_URL=http://127.0.0.1:$SANDBOXAPI_PORT mise run web:dev -- --host 127.0.0.1 --port $SANDBOXWEB_PORT --strictPort"
+port = { auto = true, base = 15173 }
+depends = ["sandboxapi"]
+ready_cmd = { run = "curl -fsS http://127.0.0.1:$SANDBOXWEB_PORT/", timeout = "5m" }
+
 # PostgreSQL for `mise run test:pg`. The preset installs the server, keeps
 # its data outside the checkout and exports DATABASE_URL.
 [daemons.postgres]
@@ -142,24 +148,13 @@ go build -trimpath \
 description = "Run sento (dev)"
 run = "go run ./cmd/sento"
 
-[tasks."run:agent"]
-description = "Run sento with the agent-stack upstream seeds (fnox secrets; the paseo api service)"
-# The secrets are handed to this task only (see fnox.toml); the plain `run`
-# task stays secret-free so terminal and daemon starts never need a Proton
-# Pass session. paseo.json's api service runs this with the non-secret
-# upstream env (URLs, sento-test category) on its command line. The command
-# is `go run` directly, not `mise run run`: granted secrets reach this
-# task's own process only — a nested mise task drops them (probed on the
-# paseo pod: direct grant SET, nested run empty).
-# For the same reason it watches for itself, like the api daemon's `watch`:
-# a Go change rebuilds and restarts the server on the same port (so the web
-# service's proxy keeps working); a failed build logs BUILD FAILED and keeps
-# serving the previous binary.
-secrets = ["SENTO_QBITTORRENT_USERNAME", "SENTO_QBITTORRENT_PASSWORD", "SENTO_PROWLARR_API_KEY"]
+[tasks."run:watch"]
+description = "Rebuild and restart the backend on Go changes (for supervised services)"
+# A failed rebuild keeps serving the previous binary on the same port.
 run = '''
 #!/usr/bin/env bash
 set -u
-bin=bin/sento-agent mark=bin/.sento-agent-built pid=
+bin=bin/sento-watch mark=bin/.sento-watch-built pid=
 stop() { if [ -n "$pid" ]; then kill "$pid" 2>/dev/null; wait "$pid"; fi; }
 trap 'stop; exit 0' INT TERM
 mkdir -p bin && touch "$mark"
@@ -170,30 +165,13 @@ while sleep 2; do
   changed=$(find cmd internal go.mod go.sum -newer "$mark" \( -name '*.go' -o -name 'go.mod' -o -name 'go.sum' \) -print -quit)
   [ -n "$changed" ] || continue
   touch "$mark"
-  echo "run:agent: $changed changed, rebuilding" >&2
+  echo "run:watch: $changed changed, rebuilding" >&2
   if go build -o "$bin.new" ./cmd/sento; then
     stop; mv "$bin.new" "$bin"; "$bin" & pid=$!
   else
-    echo "BUILD FAILED: still serving the previous bin/sento-agent" >&2
+    echo "BUILD FAILED: still serving the previous bin/sento-watch" >&2
   fi
 done
-'''
-
-[tasks."pass:login"]
-description = "Log the repo's scoped Proton Pass agent session in (macOS Keychain, or PROTON_PASS_TOKEN on the paseo pod)"
-quiet = true
-run = '''
-mkdir -p "$PROTON_PASS_SESSION_DIR" && chmod 700 "$PROTON_PASS_SESSION_DIR"
-pass-cli info >/dev/null 2>&1 && { echo "already logged in"; exit 0; }
-if command -v security >/dev/null 2>&1; then
-    token="$(security find-generic-password -s pass-cli-sento -a "$USER" -w)"
-elif [ -n "${PROTON_PASS_TOKEN:-}" ]; then
-    token="$PROTON_PASS_TOKEN"
-else
-    echo "pass:login: no macOS Keychain (security) and no PROTON_PASS_TOKEN; skipping" >&2
-    exit 0
-fi
-PROTON_PASS_PERSONAL_ACCESS_TOKEN="$token" pass-cli login
 '''
 
 [tasks.test]
@@ -221,6 +199,8 @@ run = '''
 set -eu
 : "${SENTO_FIXTURES_URL:?Start the fixtures service and provide its URL}"
 mkdir -p data/exploratory
+export SENTO_DB_URL=
+export SENTO_EXTENSIONS_REPOS=
 export SENTO_DB_PATH=data/exploratory/sento.db
 export SENTO_LIBRARY_PATH=data/exploratory/library
 export SENTO_DOWNLOADS_DIR=data/exploratory/downloads
@@ -292,15 +272,17 @@ run = "go tool tygo generate"
 # --- checks (CI runs these tasks; GitHub Actions is only the runner) ---
 
 [tasks.ci]
-description = "Everything CI runs on a pull request"
+description = "Standard checks (PostgreSQL and JVM contracts run separately)"
 # Sequential on purpose: `depends` would run these in parallel, and the
 # npm install has to land before anything touches web/.
 run = [
   "mise run web:install",
   "mise run lint",
   "mise run lint:ci",
+  "mise run lint:docs",
   "mise run lint:web",
   "mise run gen:check",
+  "mise run test:tooling",
   "mise run test:harness",
   "mise run test:race",
   "mise run e2e",
@@ -312,8 +294,8 @@ dir = "web"
 run = "npm ci"
 
 [tasks."lint:ci"]
-description = "Lint the GitHub Actions workflows"
-run = "actionlint"
+description = "Lint GitHub Actions workflows and repository shell scripts"
+run = ["actionlint", "shellcheck scripts/*.sh"]
 
 [tasks."lint:web"]
 description = "Lint the web UI"
@@ -404,3 +386,24 @@ docker run --rm -p 8484:8484 \
   -v "$PWD/data/downloads:/downloads" \
   sento:dev
 """
+
+[tasks."lint:docs"]
+description = "Check local links in maintained Markdown documentation"
+run = "node scripts/check-doc-links.mjs"
+
+[tasks."lint:pr-title"]
+description = "Validate a Conventional Commit title from PR_TITLE"
+run = "node scripts/check-pr-title.mjs"
+
+[tasks."test:tooling"]
+description = "Test repository workflow helpers"
+run = "node --test scripts/*.test.mjs"
+
+[tasks.explore]
+description = "Start the offline exploratory stack and follow its logs"
+daemons = ["fixtures", "sandboxapi", "sandboxweb"]
+run = ["mise daemons urls", "mise daemons logs -t fixtures sandboxapi sandboxweb"]
+
+[tasks."explore:stop"]
+description = "Stop the offline exploratory stack"
+run = "mise daemons stop sandboxweb sandboxapi fixtures"

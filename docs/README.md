@@ -1,30 +1,23 @@
 # Documentation
 
-| Where | What it answers |
-|---|---|
-| [architecture.md](architecture.md) | **Where** — package map, dependency graph, invariants |
-| [dogfooding.md](dogfooding.md) | **Usability** — friction and usage notes from actually using Sento |
-| [exploratory-testing.md](exploratory-testing.md) | **Agent harness** — how testing sessions explore Sento and file issues |
-| [domain/](domain/) | **How** — the domain model as it works today (editions, acquisition, profiles) |
-| [releases.md](releases.md) | **Releasing** — semver rules and the tag process |
-| [spec/](spec/) | **What & why** — product behavior and the decision log |
-| [archive/](archive/) | Superseded documents, kept for the "why was this abandoned" trail |
+Start with the guide for what you want to do:
 
-The spec:
+| Guide | Contents |
+| --- | --- |
+| [Installation](installation.md) | Containers, binaries, configuration, storage and upgrades |
+| [Development](development.md) | Local setup, dev services and common tasks |
+| [Testing](testing/README.md) | Go, PostgreSQL, browser and sidecar checks |
+| [Releases](releases.md) | Conventional Commits, version policy and publishing |
+| [Architecture](architecture.md) | Package map and dependency boundaries |
+| [Domain](domain) | Editions, acquisition, parsing and library behavior |
+| [Specifications](spec) | Product decisions, release parser and decision engine |
+| [Exploratory testing](exploratory-testing.md) | Testing missions and controllable upstreams |
 
-- [spec/spec.md](spec/spec.md) — goals, domain model, and the **decision log** (§1)
-- [spec/parser.md](spec/parser.md) — release-name parser & matcher (regression corpus in `internal/parse`)
-- [spec/decision-engine.md](spec/decision-engine.md) — grab decisions & release profiles
+`domain/` describes implemented behavior. `spec/` records intent and decisions.
+If a spec disagrees with current code, verify the behavior and document the
+correction. Code comments cite spec filenames, section numbers and decision
+IDs; preserve those identifiers when editing. Append new decisions and mark
+superseded ones with a link to their replacement.
 
-## Rules
-
-- **Filenames, § numbers and D numbers are permanent identifiers.** Code
-  comments cite them (`spec.md §11.4`, `D13`). Never rename or renumber;
-  only append.
-- **New decisions get logged**: add D16, D17, … to spec.md §1. Supersede
-  by striking through and pointing forward (see D7 → D15), never by
-  rewriting history.
-- **When code and spec disagree, code wins** — fix the spec with a
-  correction note.
-- `spec/` documents intent, `flows/` documents the implementation; they
-  cite each other, they don't duplicate each other.
+Track bugs and proposals in GitHub issues. Keep setup instructions in the
+guides above and behavior rules next to their domain documentation.

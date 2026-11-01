@@ -36,6 +36,8 @@ FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=build /sento /usr/local/bin/sento
 COPY --from=web /src/web/dist /app/web/dist
+COPY LICENSE /usr/share/licenses/sento/COPYING
+LABEL org.opencontainers.image.licenses="GPL-3.0-only"
 WORKDIR /app
 # Every path the server writes to points at a declared volume. Without the
 # library and downloads lines the defaults are relative to /app: imports

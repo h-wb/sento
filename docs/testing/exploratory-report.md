@@ -28,7 +28,7 @@
   file paths/metadata/hashes, reservation/ownership before and after:
 - Reload / restart / rescan result:
 - Classification: product / usability / upstream / environment:
-- Existing issue or dogfooding entry; new issue link if filed:
+- Related issue; new issue link if filed:
 
 ## Unexpected combinations explored
 

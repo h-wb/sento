@@ -1,7 +1,6 @@
 # Exploratory upstream scenarios
 
-Run the supervised `fixtures` service (`mise run explore:fixtures` with a
-Paseo-assigned port). The normal binary omits this code; the fixture binary
+Start `mise run explore` or the Paseo `fixtures` service. The normal binary omits this code; the fixture binary
 requires `-control` to expose `/_control`. Commands here target **fixtures**,
 not sandboxapi. They never alter Sento's stored state.
 

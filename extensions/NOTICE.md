@@ -1,4 +1,8 @@
-# Third-party notices
+# Licensing and third-party notices
+
+Sento's original code is licensed under GPL-3.0-only; the license text is in
+`LICENSES/GPL-3.0.txt`. Files with an upstream license header retain that
+license. In particular, the adapted Suwayomi files listed below remain MPL-2.0.
 
 sento-extensions exists because of other people's work. It does not
 reimplement an extension runtime: it runs the one built by the Suwayomi
