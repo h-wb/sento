@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/h-wb/sento/internal/mediafile"
-	"github.com/h-wb/sento/internal/parse"
-	"github.com/h-wb/sento/internal/store"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/h-wb/sento/internal/mediafile"
+	"github.com/h-wb/sento/internal/parse"
+	"github.com/h-wb/sento/internal/store"
 )
 
 // fileHash identifies a book by its pages (mediafile.Fingerprint), so a
@@ -131,7 +133,18 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 	for _, refs := range contents {
 		contentBooks = append(contentBooks, refs...)
 	}
-	_, err = im.store.AddFile(ctx, store.File{ContentBooks: contentBooks, SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol, Facts: facts, Claims: claims, Hash: hash, NeedsReview: review}, parsed, links)
+	fid, err := im.store.AddFile(ctx, store.File{ContentBooks: contentBooks, SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol, Facts: facts, Claims: claims, Hash: hash, NeedsReview: review}, parsed, links)
+	if err == nil {
+		// The import claims its books; if a better file already holds one,
+		// this one yields (automatic upgrades only — review can force).
+		var refs []store.BookRef
+		for _, l := range links {
+			refs = append(refs, store.BookRef{Ledger: l.Ledger, EditionID: l.EditionID, Number: l.Number, VersionID: l.VersionID, BookID: l.BookID})
+		}
+		if _, uerr := DisplaceOwners(ctx, im.store, item.SeriesID, fid, refs, false); uerr != nil {
+			slog.Warn("applying upgrade path after import failed", "series", item.SeriesID, "file", fid, "error", uerr)
+		}
+	}
 	if err == nil && review {
 		return fmt.Errorf("file's observed facts do not meet the requested release profile; confirm its facts in review")
 	}

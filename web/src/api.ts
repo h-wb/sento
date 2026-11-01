@@ -10,7 +10,7 @@ import type {
   BookObservation,
   Work,
 } from './types/store'
-import type { BookStatus } from './types/service'
+import type { BookStatus, FileMappingResult } from './types/service'
 // Typed client for the Sento API. All payload types are generated from the
 // Go structs (mise run gen) into ./types/ — the backend is the schema.
 
@@ -66,6 +66,7 @@ export type {
   ConnectionSettings,
   ConnectionTest,
   ExtensionView,
+  FileMappingResult,
   IndexerBody,
   IndexerPatch,
   IndexerView,
@@ -228,10 +229,10 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(coverage),
     }),
-  mapFile: (id: number, fid: number, books: BookRef[]) =>
-    request<void>(`/series/${id}/files/${fid}/mapping`, {
+  mapFile: (id: number, fid: number, books: BookRef[], replace = false) =>
+    request<FileMappingResult>(`/series/${id}/files/${fid}/mapping`, {
       method: 'PUT',
-      body: JSON.stringify({ books }),
+      body: JSON.stringify({ books, ...(replace ? { replace: true } : {}) }),
     }),
   observations: (id: number) => request<BookObservation[]>(`/series/${id}/observations`),
   reviewObservation: (id: number, oid: number, accept: boolean) =>

@@ -1,9 +1,9 @@
 import { cardLabel, fileName } from './editionText'
 import { useState } from 'react'
-import { Alert, Button, Group, MultiSelect, Select, Stack, Text, TextInput } from '@mantine/core'
+import { Alert, Button, Group, MultiSelect, Select, Stack, Switch, Text, TextInput } from '@mantine/core'
 import { api } from '../api'
 import type { Edition, CollectedVersion, File as SeriesFile, FileHint } from '../types/store'
-import type { BookStatus } from '../types/service'
+import type { BookStatus, FileMappingResult } from '../types/service'
 import { EditorModal } from './EditorModal'
 import { useEditor } from './useEditor'
 
@@ -15,6 +15,7 @@ export function MappingEditor({
   proposal,
   hint,
   books,
+  files,
   editions,
   save,
   close,
@@ -26,8 +27,10 @@ export function MappingEditor({
   proposal?: import('../types/store').ReviewProposal
   hint?: FileHint
   books: BookStatus[]
+  // All the series' files, to name the current owners a save may displace.
+  files: SeriesFile[]
   editions: Edition[]
-  save: (books: import('../types/store').BookRef[]) => Promise<void>
+  save: (books: import('../types/store').BookRef[], replace?: boolean) => Promise<FileMappingResult | void>
   close: () => void
 }) {
   const mapped = existing.map((a) => ({
@@ -72,6 +75,18 @@ export function MappingEditor({
   const [pending, setPending] = useState<string[]>(hint?.numbers ?? [])
   const t = versions.find((t) => String(t.id) === version)
   const chosen = draft.filter((s) => s.versionId === t?.id).map((s) => String(s.bookId))
+  // Books already held by other verified files: saving may displace them
+  // (upgrade path) — automatically when this file scores better, or always
+  // when forced below.
+  const [forceReplace, setForceReplace] = useState(false)
+  const rivals = draft
+    .map((s) => books.find((b) => b.versionId === s.versionId && b.book.id === s.bookId)?.fileIds ?? [])
+    .flat()
+    .filter((fid) => fid !== value.id)
+  const rivalNames = [...new Set(rivals)]
+    .map((fid) => files.find((f) => f.id === fid))
+    .filter((f): f is SeriesFile => !!f)
+    .map((f) => f.facts?.title || fileName(f.path))
   const pickBooks = (versionId: number, numbers: string[]) => {
     const tv = versions.find((x) => x.id === versionId)
     if (!tv) return
@@ -126,6 +141,21 @@ export function MappingEditor({
               Proposed: <b>{proposal.label}</b> of {proposal.edition} ({proposal.evidence}).
               Save to accept, or change it below.
             </Text>
+          </Alert>
+        )}
+        {rivalNames.length > 0 && (
+          <Alert variant="light" color="orange" p="xs">
+            <Text size="sm">
+              Already held by {rivalNames.map((n) => `“${n}”`).join(', ')}. Saving replaces them
+              when this file scores better; force it below to replace regardless.
+            </Text>
+            <Switch
+              size="xs"
+              mt={6}
+              label="Replace the current file(s) even if this one does not score better"
+              checked={forceReplace}
+              onChange={(e) => setForceReplace(e.currentTarget.checked)}
+            />
           </Alert>
         )}
         {value.facts && (
@@ -235,7 +265,7 @@ export function MappingEditor({
                   group !== (value.facts?.group ?? '')
                 )
                   await api.correctFileFacts(seriesID, value.id, { language, group })
-                await save(draft)
+                await save(draft, forceReplace)
               })
             }
           >

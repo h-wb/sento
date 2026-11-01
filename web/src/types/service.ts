@@ -752,6 +752,27 @@ export interface SeriesIndexerView extends IndexerView {
 }
 
 //////////
+// source: upgrade.go
+
+/**
+ * Replacement is one book whose owning file was displaced by a better one.
+ */
+export interface Replacement {
+  path: string;
+  fileId: number /* int64 */;
+  bookId: number /* int64 */;
+  fromScore: number /* int */;
+  toScore: number /* int */;
+}
+/**
+ * FileMappingResult reports what a mapping save did beyond recording the
+ * file's own claims: which existing owners it displaced.
+ */
+export interface FileMappingResult {
+  replaced?: Replacement[];
+}
+
+//////////
 // source: versions.go
 
 /**

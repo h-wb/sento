@@ -2,10 +2,12 @@ package server
 
 import (
 	"fmt"
-	"github.com/h-wb/sento/internal/store"
 	"log/slog"
 	"net/http"
 	"strconv"
+
+	"github.com/h-wb/sento/internal/service"
+	"github.com/h-wb/sento/internal/store"
 )
 
 func (s *Server) handleListVersions(w http.ResponseWriter, r *http.Request) {
@@ -278,7 +280,10 @@ func (s *Server) handleRemapFile(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if err := s.store.MapFile(r.Context(), id, fid, body.Books); err != nil {
+	// Mapping the file may displace bettered owners (upgrade path); the
+	// response says which, so the UI can report the replacement.
+	mapping, err := service.ApplyUpgrades(r.Context(), s.store, id, fid, body.Books, body.Replace)
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -291,11 +296,14 @@ func (s *Server) handleRemapFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("mapping saved, but organizing the file failed: %w", organizeErr))
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, mapping)
 }
 
 type FileMappingBody struct {
 	Books []store.BookRef `json:"books"`
+	// Replace forces the upgrade path: this file takes the books even when
+	// it does not outscore the current owner.
+	Replace bool `json:"replace,omitempty"`
 }
 
 func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {

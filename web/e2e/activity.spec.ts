@@ -121,7 +121,15 @@ test('global activity reviews files in place and confirms an uncertain download 
     if (attempts === 1)
       return route.fulfill({ status: 503, json: { error: 'Storage temporarily unavailable' } })
     mapped = true
-    return route.fulfill({ status: 204 })
+    // The save displaced an older, worse file for the same book.
+    return route.fulfill({
+      status: 200,
+      json: {
+        replaced: [
+          { fileId: 299, path: '/library/Parasyte/Volume 1 [old].cbz', bookId: 20, fromScore: 0, toScore: 100 },
+        ],
+      },
+    })
   })
   await page.route('**/api/v1/queue/60/retry', (route) => {
     clientID = route.request().postDataJSON().remoteId
@@ -143,6 +151,8 @@ test('global activity reviews files in place and confirms an uncertain download 
   await dialog.getByRole('button', { name: 'Save coverage' }).click()
   await expect(dialog).toBeHidden()
   expect(saved).toEqual({ books: [ref] })
+  // The displaced older file is reported.
+  await expect(page.getByText(/Replaced .*Volume 1 \[old\]/)).toBeVisible()
   // Saving recorded the prefilled claims as the file's confirmed facts.
   expect(factsPatch).toEqual({ language: 'en', group: '1r0n' })
   await expect(page.getByRole('button', { name: 'Review 1 file', exact: true })).toHaveCount(0)

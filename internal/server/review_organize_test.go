@@ -96,7 +96,7 @@ func TestReviewMappingOrganizesOnlyConfirmedFile(t *testing.T) {
 		rec := do(t, h, http.MethodPut, fmt.Sprintf("/api/v1/series/%d/files/%d/mapping", sid, fileID), mapping(book))
 		return rec.Code, rec.Body.String()
 	}
-	if code, body := save(fid, books[0]); code != http.StatusNoContent {
+	if code, body := save(fid, books[0]); code != http.StatusOK {
 		t.Fatalf("save: %d %s", code, body)
 	}
 	files, err := srv.store.ListFiles(ctx, sid)
@@ -122,7 +122,7 @@ func TestReviewMappingOrganizesOnlyConfirmedFile(t *testing.T) {
 			}
 		}
 	}
-	if code, body := save(fid, books[0]); code != http.StatusNoContent {
+	if code, body := save(fid, books[0]); code != http.StatusOK {
 		t.Fatalf("repeat save: %d %s", code, body)
 	}
 	// A file move failure must be visible while preserving the saved mapping.

@@ -16,6 +16,11 @@ export interface CatalogLinkBody {
 }
 export interface FileMappingBody {
   books: any /* store.BookRef */[];
+  /**
+   * Replace forces the upgrade path: this file takes the books even when
+   * it does not outscore the current owner.
+   */
+  replace?: boolean;
 }
 export interface ObservationReviewBody {
   accept: boolean;

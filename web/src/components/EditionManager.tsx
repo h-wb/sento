@@ -25,6 +25,7 @@ import {
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, fmtSize } from '../api'
+import { notify } from '../ui'
 import type {
   Edition,
   CollectedVersion,
@@ -621,9 +622,12 @@ export default function EditionManager({
           versions={allVersions}
           existing={coverage.data?.filter((a) => a.fileId === file.id) ?? []}
           books={allBooks}
+          files={files}
           editions={editions}
-          save={async (books) => {
-            await api.mapFile(seriesID, file.id, books)
+          save={async (books, replace) => {
+            const result = await api.mapFile(seriesID, file.id, books, replace)
+            if (result?.replaced?.length)
+              notify.ok(`Replaced ${result.replaced.map((r) => `“${r.path.split('/').pop()}”`).join(', ')}`)
             await changed()
             setFile(null)
           }}

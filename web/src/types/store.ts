@@ -581,6 +581,20 @@ export interface AssetCoverage {
   verified: boolean;
   pinned: boolean;
 }
+/**
+ * BookOwner is one file currently holding a book: who owns it, whether the
+ * hold is verified and pinned, and the file's parsed facts for scoring.
+ */
+export interface BookOwner {
+  evidence: string;
+  path: string;
+  facts: AssetFacts;
+  fileId: number /* int64 */;
+  bookId: number /* int64 */;
+  verified: boolean;
+  pinned: boolean;
+  present: boolean;
+}
 export interface AssetFactPatch {
   language?: string;
   group?: string;
