@@ -424,7 +424,7 @@ export interface AcquisitionPlan {
 export interface PlanBook {
   book: BookRef;
   label: string;
-  ownership: string;
+  ownership: BookState;
   availability: string;
 }
 export interface PlanPick {
@@ -713,6 +713,52 @@ export interface SeriesIndexerView extends IndexerView {
 //////////
 // source: versions.go
 
+/**
+ * BookState is where one book stands for one card.
+ */
+export type BookState = string;
+/**
+ * StateNeedsReview: a file holds the book but its mapping is not
+ * confirmed, and no confirmed file does.
+ */
+export const StateNeedsReview: BookState = "needs_review";
+/**
+ * StatePending: a download or import already holds the book.
+ */
+export const StatePending: BookState = "pending";
+/**
+ * StateOwned: a confirmed file the card's profile accepts holds it.
+ */
+export const StateOwned: BookState = "owned";
+/**
+ * StateUpgradeEligible: owned, and the profile wants a better file.
+ */
+export const StateUpgradeEligible: BookState = "upgrade_eligible";
+/**
+ * StateStorageUnavailable: the library folder cannot be checked.
+ */
+export const StateStorageUnavailable: BookState = "storage_unavailable";
+/**
+ * StateUnmonitored: the card does not collect this book.
+ */
+export const StateUnmonitored: BookState = "unmonitored";
+/**
+ * StateNotReleased: published in the future.
+ */
+export const StateNotReleased: BookState = "not_released";
+/**
+ * StateUnknown: no publication date, and undated books are not searched.
+ */
+export const StateUnknown: BookState = "unknown";
+/**
+ * StateUnsatisfactory: a file on disk holds it, but not one this card
+ * accepts; wanted.
+ */
+export const StateUnsatisfactory: BookState = "unsatisfactory";
+/**
+ * StateMissing: wanted, nothing holds it.
+ */
+export const StateMissing: BookState = "missing";
 export interface BookStatus {
   onDiskFileIds: number /* int64 */[];
   reason: string;
@@ -721,7 +767,7 @@ export interface BookStatus {
   versionId: number /* int64 */;
   monitored: boolean;
   availability: string;
-  state: string;
+  state: BookState;
   fileIds: number /* int64 */[];
   wanted: boolean;
 }
@@ -747,5 +793,5 @@ export interface WantedRow {
   book: Book;
   reason: string;
   availability: string;
-  state: string;
+  state: BookState;
 }

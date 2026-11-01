@@ -23,7 +23,7 @@ type WantedRow struct {
 	Book         store.Book `json:"book"`
 	Reason       string     `json:"reason"`
 	Availability string     `json:"availability"`
-	State        string     `json:"state"`
+	State        BookState  `json:"state"`
 }
 
 // Wanted walks every monitored series and lists the wanted slots of its

@@ -8,6 +8,36 @@ import (
 	"time"
 )
 
+// BookState is where one book stands for one card.
+type BookState string
+
+// The states, in the order bookState weighs them: the first that holds
+// is the book's state.
+const (
+	// StateNeedsReview: a file holds the book but its mapping is not
+	// confirmed, and no confirmed file does.
+	StateNeedsReview BookState = "needs_review"
+	// StatePending: a download or import already holds the book.
+	StatePending BookState = "pending"
+	// StateOwned: a confirmed file the card's profile accepts holds it.
+	StateOwned BookState = "owned"
+	// StateUpgradeEligible: owned, and the profile wants a better file.
+	StateUpgradeEligible BookState = "upgrade_eligible"
+	// StateStorageUnavailable: the library folder cannot be checked.
+	StateStorageUnavailable BookState = "storage_unavailable"
+	// StateUnmonitored: the card does not collect this book.
+	StateUnmonitored BookState = "unmonitored"
+	// StateNotReleased: published in the future.
+	StateNotReleased BookState = "not_released"
+	// StateUnknown: no publication date, and undated books are not searched.
+	StateUnknown BookState = "unknown"
+	// StateUnsatisfactory: a file on disk holds it, but not one this card
+	// accepts; wanted.
+	StateUnsatisfactory BookState = "unsatisfactory"
+	// StateMissing: wanted, nothing holds it.
+	StateMissing BookState = "missing"
+)
+
 type BookStatus struct {
 	OnDiskFileIDs []int64 `json:"onDiskFileIds"`
 	Reason        string  `json:"reason"`
@@ -17,57 +47,75 @@ type BookStatus struct {
 	VersionID    int64      `json:"versionId"`
 	Monitored    bool       `json:"monitored"`
 	Availability string     `json:"availability"`
-	State        string     `json:"state"`
+	State        BookState  `json:"state"`
 	FileIDs      []int64    `json:"fileIds"`
 	Wanted       bool       `json:"wanted"`
 }
 
-func versionBooks(t store.CollectedVersion, works []store.Book, coverage []store.AssetCoverage, pending map[string]bool, files map[int64]bool, now time.Time, overrides map[int64]bool, chapter bool) []BookStatus {
-	out := make([]BookStatus, 0, len(works))
-	today := now.Format("2006-01-02")
-	byBook := map[int64][]store.AssetCoverage{}
-	for _, a := range coverage {
-		if a.VersionID == t.ID {
-			byBook[a.BookID] = append(byBook[a.BookID], a)
+// bookFacts is everything bookState weighs for one book of one card.
+type bookFacts struct {
+	// Collected: the card collects the book. Why says why not.
+	Collected bool
+	Why       string
+	Owned     bool // a confirmed, accepted file holds it
+	OnDisk    bool // some present file holds it
+	Review    bool // a file's mapping to it awaits confirmation
+	Reserved  bool // a download or import holds it
+	// Availability is released, upcoming or unknown.
+	Availability   string
+	AcquireUnknown bool
+	StorageDown    bool
+	// Upgrade: the profile wants a better file than the owned one.
+	Upgrade bool
+	// Refused says why the file on disk does not count, when it does not.
+	Refused string
+}
+
+// bookState is where a book stands, why, and whether it is wanted. The
+// cases are checked in order; the first that holds decides.
+func bookState(f bookFacts) (state BookState, reason string, wanted bool) {
+	switch {
+	case f.Review && !f.Owned:
+		return StateNeedsReview, "Existing file mappings need review", false
+	case f.Reserved:
+		return StatePending, "A download or import already holds this book", false
+	case f.Owned && f.StorageDown:
+		return StateOwned, "Library storage is unavailable or has not been checked", false
+	case f.Owned && !f.Collected:
+		return StateOwned, f.Why, false
+	case f.Owned && f.Upgrade:
+		return StateUpgradeEligible, "The file on disk is below the upgrade cutoff", true
+	case f.Owned:
+		return StateOwned, "", false
+	case f.StorageDown:
+		return StateStorageUnavailable, "Library storage is unavailable or has not been checked", false
+	case !f.Collected:
+		return StateUnmonitored, f.Why, false
+	case f.Availability == "upcoming":
+		return StateNotReleased, "Publication date is in the future", false
+	case f.Availability == "unknown" && !f.AcquireUnknown:
+		return StateUnknown, "Publication date is unknown and searching undated books is disabled", false
+	case f.OnDisk:
+		reason := f.Refused
+		if reason == "" {
+			reason = "The file on disk is not mapped to this edition"
 		}
+		return StateUnsatisfactory, reason, true
+	default:
+		return StateMissing, "", true
 	}
-	for _, w := range works {
-		state := "missing"
-		availability := "unknown"
-		if w.ReleaseDate != "" {
-			availability = "released"
-			if w.ReleaseDate > today {
-				availability = "upcoming"
-			}
-		}
-		slot := BookStatus{Book: w, VersionID: t.ID, Monitored: t.Monitored && (w.CountType == "main" || t.IncludeExtras) && (!chapter || !w.NumberKnown || w.SequenceNum > t.CutoffNum), Availability: availability, FileIDs: []int64{}, OnDiskFileIDs: []int64{}}
-		if v, ok := overrides[w.ID]; ok {
-			slot.Monitored = t.Monitored && v
-		}
-		for _, a := range byBook[w.ID] {
-			if a.VersionID == t.ID && a.BookID == w.ID && a.Verified && files[a.FileID] {
-				slot.FileIDs = append(slot.FileIDs, a.FileID)
-			}
-		}
-		if w.SyncState == "stale" || w.SyncState == "retired" {
-			slot.Monitored = false
-		}
-		if pending[store.BookKey(t.ID, w.ID)] {
-			state = "pending"
-		} else if len(slot.FileIDs) > 0 {
-			state = "owned"
-		} else if availability == "upcoming" {
-			state = "not_released"
-		} else if !slot.Monitored {
-			state = "unmonitored"
-		} else if availability == "unknown" && !t.AcquireUnknown {
-			state = "unknown"
-		}
-		slot.State = state
-		slot.Wanted = state == "missing"
-		out = append(out, slot)
+}
+
+// availability is released, upcoming or unknown, as of today.
+func availability(releaseDate, today string) string {
+	switch {
+	case releaseDate == "":
+		return "unknown"
+	case releaseDate > today:
+		return "upcoming"
+	default:
+		return "released"
 	}
-	return out
 }
 
 // ledgerView is loaded once per series and shared by search and UI evaluation.
@@ -77,6 +125,48 @@ type ledgerView struct {
 	Books    map[int64][]store.Book
 	Status   map[int64][]BookStatus
 	Profiles map[int64]*profile.Profile
+}
+
+// cardFiles is what a card's profile makes of the files mapped to it:
+// the mappings it accepts, each file's score, and per book why a file was
+// refused.
+type cardFiles struct {
+	accepted map[int64][]int64 // book → accepted file ids
+	pinned   map[int64]bool    // book → an accepted mapping is pinned
+	scores   map[int64]int     // file → score
+	refused  map[int64]string  // book → why its file does not count
+}
+
+func judgeCardFiles(col store.Edition, prof *profile.Profile, formats []profile.Format, coverage []store.AssetCoverage, byFile map[int64]store.File, present map[int64]bool) cardFiles {
+	out := cardFiles{accepted: map[int64][]int64{}, pinned: map[int64]bool{}, scores: map[int64]int{}, refused: map[int64]string{}}
+	for _, a := range coverage {
+		facts := byFile[a.FileID].Facts
+		reason := ""
+		if a.Evidence != "manual" && facts.Language != "" && facts.Language != "multi" && baseLang(facts.Language) != baseLang(col.Language) {
+			reason = "The file on disk is in another language"
+		}
+		if a.Evidence == "manual" {
+			facts.Language = col.Language
+		}
+		judgement := assetJudgement(facts, prof, formats)
+		if judgement.Broken != "" {
+			reason = "The file on disk " + judgement.Broken
+		}
+		out.scores[a.FileID] = judgement.Score
+		if prof != nil && prof.MinFormatScore > profile.MinScoreOff && facts.FactsKnown && judgement.Score < prof.MinFormatScore {
+			reason = "The file on disk is below the profile’s minimum score"
+		}
+		if reason != "" {
+			out.refused[a.BookID] = reason
+			continue
+		}
+		// A pin holds whether or not the pinned file is confirmed yet.
+		out.pinned[a.BookID] = out.pinned[a.BookID] || a.Pinned
+		if a.Verified && present[a.FileID] {
+			out.accepted[a.BookID] = append(out.accepted[a.BookID], a.FileID)
+		}
+	}
+	return out
 }
 
 func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerView, error) {
@@ -171,125 +261,68 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	for _, c := range contents {
 		byContent[c.BookID] = append(byContent[c.BookID], c)
 	}
+	today := time.Now().Format("2006-01-02")
 	for _, version := range versions {
 		col := byCol[version.EditionID]
 		prof := profiles[col.ID]
-		storageUnavailable := unavailable[col.Type]
 		if version.ProfileID > 0 {
 			prof = byProfile[version.ProfileID]
 		}
 		view.Profiles[version.ID] = prof
-		accepted := []store.AssetCoverage{}
-		scores := map[int64]int{}
-		reasons := map[int64]string{}
-		for _, a := range coverageByVersion[version.ID] {
-			f := byFile[a.FileID]
-			facts := f.Facts
-			reason := ""
-			if a.Evidence != "manual" && facts.Language != "" && facts.Language != "multi" && baseLang(facts.Language) != baseLang(col.Language) {
-				reason = "The file on disk is in another language"
+		judged := judgeCardFiles(col, prof, formats, coverageByVersion[version.ID], byFile, present)
+		chapter := col.Type == LedgerChapter
+		books := view.Books[col.ID]
+		slots := make([]BookStatus, 0, len(books))
+		for _, w := range books {
+			sl := BookStatus{Book: w, VersionID: version.ID, Availability: availability(w.ReleaseDate, today), FileIDs: judged.accepted[w.ID], OnDiskFileIDs: []int64{}}
+			if sl.FileIDs == nil {
+				sl.FileIDs = []int64{}
 			}
-			if a.Evidence == "manual" {
-				facts.Language = col.Language
-			}
-			judgement := assetJudgement(facts, prof, formats)
-			score := judgement.Score
-			if judgement.Broken != "" {
-				reason = "The file on disk " + judgement.Broken
-			}
-			scores[a.FileID] = score
-			if prof != nil && prof.MinFormatScore > profile.MinScoreOff && facts.FactsKnown && score < prof.MinFormatScore {
-				reason = "The file on disk is below the profile’s minimum score"
-			}
-			if reason != "" {
-				reasons[a.BookID] = reason
-				continue
-			}
-			accepted = append(accepted, a)
-		}
-		pinnedBooks := map[int64]bool{}
-		for _, a := range accepted {
-			if a.Pinned {
-				pinnedBooks[a.BookID] = true
-			}
-		}
-		slots := versionBooks(version, view.Books[col.ID], accepted, pending, present, time.Now(), byOverride[version.ID], col.Type == "chapter")
-		for i := range slots {
-			sl := &slots[i]
-			hasReview := false
-			for _, c := range byContent[sl.Book.ID] {
+			review := false
+			for _, c := range byContent[w.ID] {
 				f := byFile[c.FileID]
 				if f.Presence == "present" {
 					sl.OnDiskFileIDs = append(sl.OnDiskFileIDs, f.ID)
 				}
-				if !c.Verified || f.NeedsReview {
-					hasReview = true
-				}
+				review = review || !c.Verified || f.NeedsReview
 			}
+			// Whether the card collects the book, and if not, why: the
+			// first refusal from the series down to the book itself.
+			inScope := (w.CountType == "main" || version.IncludeExtras) && (!chapter || !w.NumberKnown || w.SequenceNum > version.CutoffNum)
+			if v, ok := byOverride[version.ID][w.ID]; ok {
+				inScope = v
+			}
+			why := ""
 			switch {
 			case !series.Monitored:
-				sl.Monitored = false
-				sl.Reason = "Automatic downloads are paused for this series"
+				why = "Automatic downloads are paused for this series"
 			case col.SyncState == "stale":
-				sl.Monitored = false
-				sl.Reason = "Edition is unavailable in the catalog; review it before collecting"
-			case sl.Book.SyncState == "stale" || sl.Book.SyncState == "retired":
-				sl.Reason = "This book is retired or unavailable in the catalog"
+				why = "Edition is unavailable in the catalog; review it before collecting"
+			case w.SyncState == "stale" || w.SyncState == "retired":
+				why = "This book is retired or unavailable in the catalog"
 			case !version.Monitored:
-				sl.Reason = "Collecting is paused for this edition"
-			case !sl.Monitored:
-				sl.Reason = "This book is outside what you collect of this edition"
+				why = "Collecting is paused for this edition"
+			case !inScope:
+				why = "This book is outside what you collect of this edition"
 			}
-			if !sl.Monitored {
-				sl.Wanted = false
-				if len(sl.FileIDs) == 0 && sl.State != "pending" {
-					sl.State = "unmonitored"
+			sl.Monitored = why == ""
+			best, known := 0, true
+			for i, fid := range sl.FileIDs {
+				if i == 0 || judged.scores[fid] > best {
+					best = judged.scores[fid]
 				}
-			}
-			if storageUnavailable {
-				sl.Wanted = false
-				sl.Reason = "Library storage is unavailable or has not been checked"
-				if len(sl.FileIDs) == 0 && sl.State != "pending" {
-					sl.State = "storage_unavailable"
-				}
-			}
-			if sl.State == "missing" && len(sl.OnDiskFileIDs) > 0 {
-				sl.State = "unsatisfactory"
-				sl.Reason = reasons[sl.Book.ID]
-				if sl.Reason == "" {
-					sl.Reason = "The file on disk is not mapped to this edition"
-				}
-			}
-			if hasReview && len(sl.FileIDs) == 0 {
-				sl.State = "needs_review"
-				sl.Wanted = false
-				sl.Reason = "Existing file mappings need review"
-			}
-			if sl.State == "pending" {
-				sl.Reason = "A download or import already holds this book"
-			}
-			if sl.State == "not_released" {
-				sl.Reason = "Publication date is in the future"
-			}
-			if sl.State == "unknown" {
-				sl.Reason = "Publication date is unknown and searching undated books is disabled"
-			}
-			best := -int(^uint(0) >> 1)
-			known := true
-			pinned := false
-			for _, fid := range sl.FileIDs {
-				best = max(best, scores[fid])
 				known = known && byFile[fid].Facts.FactsKnown
 			}
-			if len(sl.FileIDs) > 0 {
-				sl.CurrentScore = best
-			}
-			pinned = pinnedBooks[sl.Book.ID]
-			if sl.State == "owned" && sl.Monitored && !storageUnavailable && prof != nil && prof.UpgradesEnabled && known && !pinned && (prof.UpgradeUntilScore == 0 || best < prof.UpgradeUntilScore) {
-				sl.State = "upgrade_eligible"
-				sl.Wanted = true
-				sl.Reason = "The file on disk is below the upgrade cutoff"
-			}
+			sl.CurrentScore = best
+			upgrade := prof != nil && prof.UpgradesEnabled && known && !judged.pinned[w.ID] && (prof.UpgradeUntilScore == 0 || best < prof.UpgradeUntilScore)
+			sl.State, sl.Reason, sl.Wanted = bookState(bookFacts{
+				Collected: sl.Monitored, Why: why,
+				Owned: len(sl.FileIDs) > 0, OnDisk: len(sl.OnDiskFileIDs) > 0, Review: review,
+				Reserved:     pending[store.BookKey(version.ID, w.ID)],
+				Availability: sl.Availability, AcquireUnknown: version.AcquireUnknown,
+				StorageDown: unavailable[col.Type], Upgrade: upgrade, Refused: judged.refused[w.ID],
+			})
+			slots = append(slots, sl)
 		}
 		view.Status[version.ID] = slots
 	}

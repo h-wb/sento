@@ -128,7 +128,7 @@ func TestProfileRulesRoundTripAndFileEvaluation(t *testing.T) {
 	for _, tc := range []struct {
 		group string
 		raw   bool
-		state string
+		state BookState
 	}{{"A", false, "owned"}, {"B", false, "unsatisfactory"}, {"A", true, "unsatisfactory"}} {
 		if err = st.SetAssetFacts(ctx, fid, store.AssetFacts{Group: tc.group, Language: "en", FactsKnown: true, Flags: map[string]bool{"raw": tc.raw}}, ""); err != nil {
 			t.Fatal(err)

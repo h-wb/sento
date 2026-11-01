@@ -24,7 +24,7 @@ type AcquisitionPlan struct {
 type PlanBook struct {
 	Book         store.BookRef `json:"book"`
 	Label        string        `json:"label"`
-	Ownership    string        `json:"ownership"`
+	Ownership    BookState     `json:"ownership"`
 	Availability string        `json:"availability"`
 }
 
