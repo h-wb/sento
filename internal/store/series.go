@@ -55,6 +55,10 @@ func (s *Store) DeleteSeries(ctx context.Context, id int64) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// Its history goes with it; the schema would only detach it.
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM decisions WHERE series_id=?`), id); err != nil {
+		return err
+	}
 	res, err := tx.ExecContext(ctx, s.q(`DELETE FROM series WHERE id=?`), id)
 	if err != nil {
 		return err

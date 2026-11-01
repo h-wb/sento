@@ -137,3 +137,18 @@ func TestDeleteFileRespectsPins(t *testing.T) {
 		t.Fatalf("file or its folder left behind: %v", err)
 	}
 }
+
+// A removed series takes its history with it.
+func TestRemoveSeriesForgetsItsHistory(t *testing.T) {
+	_, st, sid, _, _, _ := modelFixture(t)
+	ctx := context.Background()
+	if err := st.AddDecision(ctx, sid, store.DecisionBody{Event: "grabbed", Title: "ONE PIECE v01"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil).RemoveSeries(ctx, sid, RemoveOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if left, _ := st.ListDecisions(ctx, 0, 10); len(left) != 0 {
+		t.Fatalf("history outlived its series: %+v", left)
+	}
+}
