@@ -73,6 +73,25 @@ func TestQueueWorkerSeesOldJobsBehindReviewJobs(t *testing.T) {
 	if len(items) != 1 || items[0].ID != old {
 		t.Fatalf("worker list = %d jobs, want only the runnable one", len(items))
 	}
+	// Activity must not hide the oldest job behind 200 review items either.
+	active, err := st.ListQueueItems(ctx, true)
+	if err != nil || len(active) != 206 {
+		t.Fatalf("activity = %d jobs, %v", len(active), err)
+	}
+	for _, job := range active {
+		if job.SeriesTitle == "" {
+			t.Fatal("activity is missing its series title")
+		}
+	}
+	for range 205 {
+		if _, err := st.AddQueueItem(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", Status: store.QueueImported, Books: []byte(`[]`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := st.ListQueueItems(ctx, false)
+	if err != nil || len(all) != 406 {
+		t.Fatalf("all activity = %d jobs, %v", len(all), err)
+	}
 	if got, err := st.GetQueueItem(ctx, old); err != nil || got.ExternalID != "runnable" {
 		t.Fatalf("job by id: %+v, %v", got, err)
 	}

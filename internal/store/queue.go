@@ -38,15 +38,19 @@ func (j JSONText) MarshalJSON() ([]byte, error) {
 }
 
 type QueueItem struct {
+	// CanTryAnother excludes jobs that already delivered files for review.
+	CanTryAnother    bool    `json:"canTryAnother" db:"-"`
 	DownloadProgress float64 `json:"downloadProgress"`
 	ProgressAt       string  `json:"progressAt"`
 	ObservedAt       string  `json:"observedAt"`
-	DownloadState    string  `json:"downloadState"`
-	Stalled          bool    `json:"stalled"`
-	RetryCount       int     `json:"retryCount"`
-	RetryAt          string  `json:"retryAt"`
-	ProviderID       string  `json:"providerId,omitempty"`
-	ReleaseKey       string  `json:"releaseKey,omitempty"`
+	// SeriesTitle is filled by the Activity listing only.
+	SeriesTitle   string `json:"seriesTitle,omitempty" db:"series_title"`
+	DownloadState string `json:"downloadState"`
+	Stalled       bool   `json:"stalled"`
+	RetryCount    int    `json:"retryCount"`
+	RetryAt       string `json:"retryAt"`
+	ProviderID    string `json:"providerId,omitempty"`
+	ReleaseKey    string `json:"releaseKey,omitempty"`
 	// DownloadClient is the id of the client the download was sent to,
 	// when the provider has several ("" = unrecorded or not applicable).
 	DownloadClient string   `json:"downloadClient,omitempty" db:"download_client"`
@@ -107,15 +111,18 @@ const queueColumns = `id, series_id, protocol, external_id, title, status, books
 	             COALESCE(updated_at,'') AS updated_at,retry_count,retry_at,download_client,
 	             download_progress,progress_at,observed_at,download_state,stalled`
 
-// ListQueueItems is the Activity listing: the most recent jobs, newest
-// first. It is a page for people, not a work list (see ListRunnableQueue).
+// ListQueueItems is the Activity listing, newest first, with each job's
+// series title: every job still in progress or waiting on a person, and
+// unless activeOnly the 200 most recent finished ones. It is a page for
+// people, not a work list (see ListRunnableQueue).
 func (s *Store) ListQueueItems(ctx context.Context, activeOnly bool) ([]QueueItem, error) {
-	q := `SELECT ` + queueColumns + ` FROM queue_items`
-	if activeOnly {
-		q += ` WHERE status IN ('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`
+	const columns = `SELECT ` + queueColumns + `, COALESCE((SELECT title FROM series WHERE series.id=queue_items.series_id),'') AS series_title FROM queue_items`
+	items, err := list[QueueItem](ctx, s, columns+` WHERE status IN ('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown') ORDER BY created_at DESC, id DESC`)
+	if err != nil || activeOnly {
+		return items, err
 	}
-	q += ` ORDER BY created_at DESC LIMIT 200`
-	return list[QueueItem](ctx, s, q)
+	finished, err := list[QueueItem](ctx, s, columns+` WHERE status NOT IN ('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown') ORDER BY created_at DESC, id DESC LIMIT 200`)
+	return append(items, finished...), err
 }
 
 // DownloadShared reports whether a job of another series holds the same

@@ -261,3 +261,38 @@ test('media settings preview the folder layout, including a split by type', asyn
   await expect(page.getByText(/^ONE PIECE \[mangabaka-377\]\/Chapters\/Standard Edition \[en\]\/ONE PIECE c1102\.5/)).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('media-layout.png'), fullPage: true })
 })
+
+for (const width of [390, 1280]) {
+  test(`activity groups downloads and recovers a series at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 })
+    const jobs = Array.from({ length: 8 }, (_, i) => ({
+      id: 1000 + i, seriesId: 901, seriesTitle: 'One Piece', protocol: 'source',
+      title: `Broken volume ${i + 1}`, status: i < 6 ? 'needs_review' : 'downloading',
+      canTryAnother: i < 6, error: i < 6 ? 'HTTP error 404' : '', createdAt: '2026-10-05T12:00:00Z',
+    }))
+    const review = { id: 2000, seriesId: 902, seriesTitle: 'Death Note', protocol: 'torrent', title: 'Pack with files to review', status: 'needs_review', canTryAnother: false, createdAt: '2026-10-05T12:00:00Z' }
+    let recovered: number[] = []
+    await page.route('**/api/v1/queue?all=1', (route) => route.fulfill({ json: [...jobs, review] }))
+    await page.route('**/api/v1/queue/another', (route) => {
+      recovered = route.request().postDataJSON().ids
+      return route.fulfill({ status: 204 })
+    })
+    await page.goto('/queue')
+    const group = page.getByTestId('queue-series').filter({ hasText: 'One Piece' })
+    await expect(page.getByTestId('queue-series')).toHaveCount(2)
+    await expect(group.getByText('6 needs review · 2 downloading')).toBeVisible()
+    await expect(group.getByText('Broken volume 1', { exact: true })).toHaveCount(0)
+    await group.getByRole('button', { name: 'Show 8 downloads' }).click()
+    await expect(group.getByText('Broken volume 1', { exact: true })).toBeVisible()
+    await expect(group.getByRole('button', { name: 'Try another release', exact: true })).toHaveCount(6)
+    const protectedGroup = page.getByTestId('queue-series').filter({ hasText: 'Death Note' })
+    await expect(protectedGroup.getByRole('button', { name: 'Review files' })).toBeVisible()
+    await expect(protectedGroup.getByRole('button', { name: /Try another/ })).toHaveCount(0)
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await group.getByRole('button', { name: 'Try another for 6 downloads' }).click()
+    await expect.poll(() => recovered).toEqual([1000, 1001, 1002, 1003, 1004, 1005])
+    // A row recovers only that release, even when its series has many failures.
+    await group.getByRole('button', { name: 'Try another release', exact: true }).first().click()
+    await expect.poll(() => recovered).toEqual([1000])
+  })
+}

@@ -91,6 +91,10 @@ The ledger is computed from books, monitoring intent, eligible coverage, file pr
 
 ## Downloads and imports
 
+Activity groups downloads by series, with expandable jobs and status counts. Every active job is listed; finished history is limited to the latest 200. **Try another release** is available for failed downloads, scheduled retries and download reviews that have delivered no files. It blocklists and retires the selected releases, frees their books and immediately searches the series again. Jobs already importing or holding files for review keep their reservations. Running downloads retain the separate replacement search, which keeps them until a replacement is chosen.
+
+Three consecutive dead downloads (gone or unreadable) from one source listing switch that listing off and retire its remaining queued downloads. A successful import resets the failure count; manually enabling the listing gives it a fresh attempt. Temporary network errors and rate limits do not count. The series history records when a listing is switched off.
+
 Several torrent download clients can be configured (Connections), the default one first. Each torrent indexer may name the client its releases go to — a private tracker that must download through the VPN client, say; indexers that name none use the default. An indexer whose client no longer exists refuses to grab instead of falling back, and is reported on System → Health. The queue stores only the torrent's hash, so status and import look the download up in every client.
 
 Acquisition reserves version/book pairs transactionally before contacting the provider. A second evaluation of the same active provider offer within a series attaches its coverage to the existing job instead of starting another transfer. Other offers cannot reserve the same pending book. Only terminal failure, completion, or cancellation releases reservations. Nonterminal `needs_review`, `retry_wait`, and `dispatch_unknown` retain them. The importer freezes and rereads the combined plan before importing.

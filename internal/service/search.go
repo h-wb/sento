@@ -98,13 +98,15 @@ type ReleaseCandidate struct {
 	Size            int64           `json:"size,omitempty"`
 	Seeders         int             `json:"seeders,omitempty"`
 	Scanlator       string          `json:"scanlator,omitempty"`
-	EditionID       int64           `json:"editionId,omitempty"`
-	Score           int             `json:"score"`
-	Formats         []FormatHit     `json:"formats,omitempty"`     // matched custom formats
-	FormatScore     int             `json:"formatScore,omitempty"` // their summed score
-	Rejections      []string        `json:"rejections,omitempty"`
-	Parse           parse.Result    `json:"parse"`
-	cand            provider.Candidate
+	// BindingID is the source listing a source release came from.
+	BindingID   int64        `json:"bindingId,omitempty"`
+	EditionID   int64        `json:"editionId,omitempty"`
+	Score       int          `json:"score"`
+	Formats     []FormatHit  `json:"formats,omitempty"`     // matched custom formats
+	FormatScore int          `json:"formatScore,omitempty"` // their summed score
+	Rejections  []string     `json:"rejections,omitempty"`
+	Parse       parse.Result `json:"parse"`
+	cand        provider.Candidate
 }
 
 // FormatHit is one custom format the candidate matched, with the score

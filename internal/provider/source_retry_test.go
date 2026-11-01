@@ -223,3 +223,60 @@ func TestSourceDead(t *testing.T) {
 		}
 	}
 }
+
+type stoppingHost struct {
+	fakeHost
+	started chan struct{}
+}
+
+func (h *stoppingHost) Pages(ctx context.Context, _, _ string) ([]string, error) {
+	close(h.started)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestSourceStopInterruptsRunningAndQueuedJobs(t *testing.T) {
+	for _, queued := range []bool{false, true} {
+		t.Run(fmt.Sprintf("queued=%v", queued), func(t *testing.T) {
+			host := &stoppingHost{started: make(chan struct{})}
+			p := NewSource(host, t.TempDir(), DownloadConfig{}, testEntries).(*SourceProvider)
+			if queued {
+				for range cap(p.sem) {
+					p.sem <- struct{}{}
+				}
+				defer func() {
+					for range cap(p.sem) {
+						<-p.sem
+					}
+				}()
+			}
+			id := "src|stop-me"
+			p.startJob(id)
+			if !queued {
+				select {
+				case <-host.started:
+				case <-time.After(time.Second):
+					t.Fatal("download did not start")
+				}
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := p.Stop(ctx, id); err != nil {
+				t.Fatal(err)
+			}
+			p.mu.Lock()
+			remaining := len(p.jobs)
+			p.mu.Unlock()
+			if remaining != 0 {
+				t.Fatal("stopped download is still tracked")
+			}
+			if queued {
+				select {
+				case <-host.started:
+					t.Fatal("cancelled queued job called upstream")
+				default:
+				}
+			}
+		})
+	}
+}

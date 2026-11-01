@@ -202,6 +202,12 @@ type Provider interface {
 	Cleanup(ctx context.Context, externalID string) error
 }
 
+// DownloadStopper stops a source download, including one waiting for a slot.
+// Torrent providers keep their downloads and seeding data in the client.
+type DownloadStopper interface {
+	Stop(ctx context.Context, externalID string) error
+}
+
 // Recoverer is an optional capability: kick a stuck download queue.
 type Recoverer interface {
 	Recover(ctx context.Context) error

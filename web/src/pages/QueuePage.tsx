@@ -1,12 +1,13 @@
 import ReviewInbox from '../components/ReviewInbox'
 import BookDialog, { type BookSelection } from '../components/BookDialog'
 import type { QueueItem } from '../types/store'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Anchor,
   Badge,
   Button,
   Card,
+  Collapse,
   Group,
   Progress,
   Stack,
@@ -25,7 +26,6 @@ import { fmtWhen, notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { EmptyState } from '../components/EmptyState'
-import { useConfirmAction } from '../components/ConfirmAction'
 
 const statusColor: Record<string, string> = {
   queued: 'gray',
@@ -63,13 +63,47 @@ function downloadLabel(item: QueueItem) {
   return states[item.downloadState] ?? 'Downloading'
 }
 
+function QueueSeriesGroup({ items, renderJobs, onAnother, pending }: {
+  items: QueueItem[]
+  renderJobs: (items: QueueItem[]) => ReactNode
+  onAnother: (ids: number[]) => void
+  pending: boolean
+}) {
+  const [opened, setOpened] = useState(items.length <= 5)
+  const first = items[0]
+  const counts = new Map<string, number>()
+  for (const item of items) {
+    const label = downloadLabel(item).toLowerCase()
+    counts.set(label, (counts.get(label) ?? 0) + 1)
+  }
+  const retry = items.filter((i) => i.canTryAnother)
+  const title = first.seriesTitle || `Series ${first.seriesId}`
+  const panelID = `queue-series-${first.seriesId}`
+  return (
+    <Card padding="md" data-testid="queue-series">
+      <Group justify="space-between" align="flex-start" gap="sm">
+        <Stack gap={4} style={{ minWidth: 0, flex: 1 }}>
+          <Anchor component={Link} to={`/series/${first.seriesId}`} fw={600} c="inherit" style={{ overflowWrap: 'anywhere' }}>{title}</Anchor>
+          <Text size="sm" c="dimmed">{[...counts].map(([label, count]) => `${count} ${label}`).join(' · ')}</Text>
+        </Stack>
+        {retry.length > 0 && <Button size="compact-xs" variant="default" loading={pending} onClick={() => onAnother(retry.map((i) => i.id))}>
+          Try another for {retry.length} {retry.length === 1 ? 'download' : 'downloads'}
+        </Button>}
+      </Group>
+      <Button mt="sm" size="compact-xs" variant="subtle" style={{ alignSelf: 'flex-start' }} aria-expanded={opened} aria-controls={panelID} onClick={() => setOpened(!opened)}>
+        {opened ? 'Hide' : 'Show'} {items.length} {items.length === 1 ? 'download' : 'downloads'}
+      </Button>
+      <Collapse expanded={opened} id={panelID}>{opened && <div style={{ marginTop: 12 }}>{renderJobs(items)}</div>}</Collapse>
+    </Card>
+  )
+}
+
 export default function QueuePage() {
   usePageTitle('Activity')
   const small = useMediaQuery('(max-width: 48em)')
   const [tab, setTab] = useState<string | null>('queue')
   const [recovery, setRecovery] = useState<{ seriesID: number; sel: BookSelection } | null>(null)
   const queryClient = useQueryClient()
-  const { confirm, confirmation } = useConfirmAction()
   const queue = useQuery({
     queryKey: ['queue', true],
     queryFn: () => api.queue(true),
@@ -98,12 +132,14 @@ export default function QueuePage() {
       void queryClient.invalidateQueries({ queryKey: ['series'] })
     },
   })
-  const block = useMutation({
-    mutationFn: (qid: number) => api.blocklistQueueItem(qid),
-    onSuccess: () => notify.ok('Release blocked'),
+  const another = useMutation({
+    mutationFn: async (ids: number[]) => {
+      for (let i = 0; i < ids.length; i += 500) await api.tryAnotherRelease(ids.slice(i, i + 500))
+    },
+    onSuccess: () => notify.ok('Looking for other releases'),
+    onError: notify.err,
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: ['queue'] })
-      void queryClient.invalidateQueries({ queryKey: ['blocklist'] })
+      for (const key of ['queue', 'blocklist', 'series', 'review']) void queryClient.invalidateQueries({ queryKey: [key] })
     },
   })
   const unblock = useMutation({
@@ -123,12 +159,147 @@ export default function QueuePage() {
       editionLabel: 'Replacement', replaceQueueId: item.id, replaceTitle: item.title,
     } })
   }
-  const recoveryAction = (item: QueueItem) => item.stalled && item.status === 'downloading' ? (
+  const recoveryAction = (item: QueueItem) => (
     <Stack gap={4} mt="xs">
-      <Text size="xs" c="orange">No progress for at least 20 minutes.</Text>
-      <Button variant="default" size="compact-xs" style={{ alignSelf: 'flex-start' }} onClick={() => recover(item)}>Find another release</Button>
+      {item.stalled && item.status === 'downloading' && <>
+        <Text size="xs" c="orange">No progress for at least 20 minutes.</Text>
+        <Button variant="default" size="compact-xs" style={{ alignSelf: 'flex-start' }} onClick={() => recover(item)}>Find another release</Button>
+      </>}
+      {item.canTryAnother && <Button variant="default" size="compact-xs" style={{ alignSelf: 'flex-start' }} loading={another.isPending} onClick={() => another.mutate([item.id])}>Try another release</Button>}
+      {item.status === 'needs_review' && !item.canTryAnother && <Button variant="subtle" size="compact-xs" style={{ alignSelf: 'flex-start' }} onClick={() => setTab('review')}>Review files</Button>}
     </Stack>
-  ) : null
+  )
+  const groups = new Map<number, QueueItem[]>()
+  for (const item of active) {
+    const jobs = groups.get(item.seriesId) ?? []
+    jobs.push(item)
+    groups.set(item.seriesId, jobs)
+  }
+  const renderJobs = (jobs: QueueItem[]) => (
+    small ? (
+      <Stack gap="sm">
+        {jobs.map((i) => (
+          <Card key={i.id} padding="md">
+            <Group justify="space-between" mb="xs">
+              <Badge size="sm" variant="dot" color={statusColor[i.status] ?? 'gray'}>
+                {downloadLabel(i)}
+              </Badge>
+              <Text size="xs" c="dimmed">
+                {via(i)} ·{' '}
+                {fmtWhen(i.createdAt)}
+              </Text>
+            </Group>
+            <Anchor
+              component={Link}
+              to={`/series/${i.seriesId}`}
+              size="sm"
+              fw={500}
+              c="inherit"
+              underline="hover"
+              lineClamp={3}
+              title={i.title}
+              style={{ overflowWrap: 'anywhere' }}
+            >
+              {i.title}
+            </Anchor>
+            {i.status === 'downloading' && i.progress != null && (
+              <Group gap="sm" wrap="nowrap" mt="md">
+                <Progress
+                  value={Math.max(0, Math.min(100, i.progress * 100))}
+                  size={4}
+                  style={{ flex: 1 }}
+                  aria-label={`Download progress for ${i.title}`}
+                />
+                <Text size="xs" c="dimmed">
+                  {Math.round(Math.max(0, Math.min(1, i.progress)) * 100)}%
+                </Text>
+              </Group>
+            )}
+            {i.error && (
+              <div style={{ marginTop: 12 }}>
+                <ErrorDetails error={i.error} title="Download error" />
+              </div>
+            )}
+            {recoveryAction(i)}
+          </Card>
+        ))}
+      </Stack>
+    ) : (
+      <Table
+        highlightOnHover
+        verticalSpacing="md"
+        className="dataTable"
+        style={{ tableLayout: 'fixed' }}
+      >
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th w="50%">Release</Table.Th>
+            <Table.Th w="12%">Type</Table.Th>
+            <Table.Th w="25%">Status</Table.Th>
+            <Table.Th w="13%">Added</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {jobs.map((i) => (
+            <Table.Tr key={i.id}>
+              <Table.Td>
+                <Stack gap={5} style={{ minWidth: 0 }}>
+                  <Anchor
+                    component={Link}
+                    to={`/series/${i.seriesId}`}
+                    size="sm"
+                    c="inherit"
+                    underline="hover"
+                    lineClamp={2}
+                    title={i.title}
+                    style={{ overflowWrap: 'anywhere' }}
+                  >
+                    {i.title}
+                  </Anchor>
+                  {i.error && <ErrorDetails error={i.error} title="Download error" />}
+                </Stack>
+              </Table.Td>
+              <Table.Td>
+                <Text size="xs" c="dimmed">
+                  {via(i)}
+                </Text>
+              </Table.Td>
+              <Table.Td>
+                <Stack gap={8}>
+                  <Badge
+                    size="sm"
+                    variant="dot"
+                    color={statusColor[i.status] ?? 'gray'}
+                  >
+                    {downloadLabel(i)}
+                  </Badge>
+                  {recoveryAction(i)}
+                  {i.status === 'downloading' && i.progress != null && (
+                    <Group gap={8} wrap="nowrap" maw={160}>
+                      <Progress
+                        value={Math.max(0, Math.min(100, i.progress * 100))}
+                        size={4}
+                        style={{ flex: 1 }}
+                        aria-label={`Download progress for ${i.title}`}
+                      />
+                      <Text size="xs" c="dimmed" className="tabnums">
+                        {Math.round(Math.max(0, Math.min(1, i.progress)) * 100)}%
+                      </Text>
+                    </Group>
+                  )}
+                </Stack>
+              </Table.Td>
+              <Table.Td>
+                <Text size="xs" c="dimmed" title={i.createdAt}>
+                  {fmtWhen(i.createdAt)}
+                </Text>
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    )
+  )
   return (
     <>
       <PageHeader
@@ -165,7 +336,7 @@ export default function QueuePage() {
           {failed > 0 && (
             <Text size="sm" c="red" mb="md">
               {failed} {failed === 1 ? 'download needs' : 'downloads need'} attention. Review the
-              error below or block the release.
+              error or try another release.
             </Text>
           )}
         </Tabs.Panel>
@@ -196,167 +367,12 @@ export default function QueuePage() {
             )}
             {shown.length > 0 && (
               <>
-                {small ? (
-                  <Stack gap="sm">
-                    {shown.map((i) => (
-                      <Card key={i.id} padding="md">
-                        <Group justify="space-between" mb="xs">
-                          <Badge size="sm" variant="dot" color={statusColor[i.status] ?? 'gray'}>
-                            {downloadLabel(i)}
-                          </Badge>
-                          <Text size="xs" c="dimmed">
-                            {via(i)} ·{' '}
-                            {fmtWhen(i.createdAt)}
-                          </Text>
-                        </Group>
-                        <Anchor
-                          component={Link}
-                          to={`/series/${i.seriesId}`}
-                          size="sm"
-                          fw={500}
-                          c="inherit"
-                          underline="hover"
-                          lineClamp={3}
-                          title={i.title}
-                          style={{ overflowWrap: 'anywhere' }}
-                        >
-                          {i.title}
-                        </Anchor>
-                        {i.status === 'downloading' && i.progress != null && (
-                          <Group gap="sm" wrap="nowrap" mt="md">
-                            <Progress
-                              value={Math.max(0, Math.min(100, i.progress * 100))}
-                              size={4}
-                              style={{ flex: 1 }}
-                              aria-label={`Download progress for ${i.title}`}
-                            />
-                            <Text size="xs" c="dimmed">
-                              {Math.round(Math.max(0, Math.min(1, i.progress)) * 100)}%
-                            </Text>
-                          </Group>
-                        )}
-                        {i.error && (
-                          <div style={{ marginTop: 12 }}>
-                            <ErrorDetails error={i.error} title="Download error" />
-                          </div>
-                        )}
-                        {recoveryAction(i)}
-                        {i.status === 'failed' && (
-                          <Button
-                            size="xs"
-                            variant="default"
-                            mt="sm"
-                            onClick={() =>
-                              confirm({
-                                title: 'Block this release?',
-                                message: `“${i.title}” will be excluded from future downloads. You can unblock it later.`,
-                                label: 'Block release',
-                                onConfirm: () => block.mutateAsync(i.id),
-                              })
-                            }
-                          >
-                            Block release
-                          </Button>
-                        )}
-                      </Card>
-                    ))}
-                  </Stack>
-                ) : (
-                  <Table
-                    highlightOnHover
-                    verticalSpacing="md"
-                    className="dataTable"
-                    style={{ tableLayout: 'fixed' }}
-                  >
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th w="50%">Release</Table.Th>
-                        <Table.Th w="12%">Type</Table.Th>
-                        <Table.Th w="25%">Status</Table.Th>
-                        <Table.Th w="13%">Added</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {shown.map((i) => (
-                        <Table.Tr key={i.id}>
-                          <Table.Td>
-                            <Stack gap={5} style={{ minWidth: 0 }}>
-                              <Anchor
-                                component={Link}
-                                to={`/series/${i.seriesId}`}
-                                size="sm"
-                                c="inherit"
-                                underline="hover"
-                                lineClamp={2}
-                                title={i.title}
-                                style={{ overflowWrap: 'anywhere' }}
-                              >
-                                {i.title}
-                              </Anchor>
-                              {i.error && <ErrorDetails error={i.error} title="Download error" />}
-                              {i.status === 'failed' && (
-                                <Button
-                                  size="compact-xs"
-                                  variant="subtle"
-                                  color="red"
-                                  style={{ alignSelf: 'flex-start' }}
-                                  onClick={() =>
-                                    confirm({
-                                      title: 'Block this release?',
-                                      message: `“${i.title}” will be excluded from future downloads. You can unblock it later.`,
-                                      label: 'Block release',
-                                      onConfirm: () => block.mutateAsync(i.id),
-                                    })
-                                  }
-                                >
-                                  Block release
-                                </Button>
-                              )}
-                            </Stack>
-                          </Table.Td>
-                          <Table.Td>
-                            <Text size="xs" c="dimmed">
-                              {via(i)}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td>
-                            <Stack gap={8}>
-                              <Badge
-                                size="sm"
-                                variant="dot"
-                                color={statusColor[i.status] ?? 'gray'}
-                              >
-                                {downloadLabel(i)}
-                              </Badge>
-                              {recoveryAction(i)}
-                              {i.status === 'downloading' && i.progress != null && (
-                                <Group gap={8} wrap="nowrap" maw={160}>
-                                  <Progress
-                                    value={Math.max(0, Math.min(100, i.progress * 100))}
-                                    size={4}
-                                    style={{ flex: 1 }}
-                                    aria-label={`Download progress for ${i.title}`}
-                                  />
-                                  <Text size="xs" c="dimmed" className="tabnums">
-                                    {Math.round(Math.max(0, Math.min(1, i.progress)) * 100)}%
-                                  </Text>
-                                </Group>
-                              )}
-                            </Stack>
-                          </Table.Td>
-                          <Table.Td>
-                            <Text size="xs" c="dimmed" title={i.createdAt}>
-                              {fmtWhen(i.createdAt)}
-                            </Text>
-                          </Table.Td>
-                        </Table.Tr>
-                      ))}
-                    </Table.Tbody>
-                  </Table>
-                )}
+                {tab === 'queue' ? <Stack gap="md">{[...groups].map(([seriesID, jobs]) => (
+                  <QueueSeriesGroup key={seriesID} items={jobs} renderJobs={renderJobs} onAnother={(ids) => another.mutate(ids)} pending={another.isPending} />
+                ))}</Stack> : renderJobs(shown)}
                 {tab === 'history' && (
                   <Text size="xs" c="dimmed" mt="sm">
-                    Recent imports from the latest 200 queue items.
+                    The 200 most recent finished downloads.
                   </Text>
                 )}
               </>
@@ -411,7 +427,6 @@ export default function QueuePage() {
           )}
         </Tabs.Panel>
       </Tabs>
-      {confirmation}
       {recovery && <BookDialog seriesID={recovery.seriesID} sel={recovery.sel} files={[]} onClose={() => setRecovery(null)} onChanged={() => { void queryClient.invalidateQueries({ queryKey: ['queue'] }); void queryClient.invalidateQueries({ queryKey: ['series'] }) }} />}
     </>
   )

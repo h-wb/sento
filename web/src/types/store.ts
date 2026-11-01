@@ -260,7 +260,7 @@ export interface Decision {
  * DecisionBody is the JSON payload of one history event.
  */
 export interface DecisionBody {
-  event: string; // grabbed | imported | imported_after_review | import_failed | download_failed | download_retry | download_needs_review | blocklisted | editions_grouped
+  event: string; // grabbed | imported | imported_after_review | import_failed | download_failed | download_retry | download_needs_review | blocklisted | editions_grouped | listing_switched_off
   ledger?: string;
   title?: string; // release title
   provider?: string;
@@ -351,9 +351,17 @@ export interface BookOverride {
  */
 export type JSONText = string /* []byte */;
 export interface QueueItem {
+  /**
+   * CanTryAnother excludes jobs that already delivered files for review.
+   */
+  canTryAnother: boolean;
   downloadProgress: number /* float64 */;
   progressAt: string;
   observedAt: string;
+  /**
+   * SeriesTitle is filled by the Activity listing only.
+   */
+  seriesTitle?: string;
   downloadState: string;
   stalled: boolean;
   retryCount: number /* int */;

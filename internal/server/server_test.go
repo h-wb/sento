@@ -169,3 +169,15 @@ func TestHealthChecksEndpoint(t *testing.T) {
 		t.Fatalf("re-run = %+v", got)
 	}
 }
+
+func TestQueueAnotherRequiresSelectedDownloads(t *testing.T) {
+	h, _ := testServer(t)
+	for _, body := range []string{`{}`, `{"ids":[]}`} {
+		if r := do(t, h, http.MethodPost, "/api/v1/queue/another", body); r.Code != http.StatusBadRequest {
+			t.Fatalf("empty selection: %d %s", r.Code, r.Body.String())
+		}
+	}
+	if r := do(t, h, http.MethodPost, "/api/v1/queue/another", `{"ids":[999]}`); r.Code != http.StatusNotFound {
+		t.Fatalf("missing job: %d %s", r.Code, r.Body.String())
+	}
+}

@@ -218,6 +218,13 @@ export interface HealthService {
  */
 export interface Importer {
 }
+/**
+ * SearchTarget is a series' ledger to search again.
+ */
+export interface SearchTarget {
+  SeriesID: number /* int64 */;
+  Ledger: string;
+}
 
 //////////
 // source: indexers.go
@@ -640,6 +647,10 @@ export interface ReleaseCandidate {
   size?: number /* int64 */;
   seeders?: number /* int */;
   scanlator?: string;
+  /**
+   * BindingID is the source listing a source release came from.
+   */
+  bindingId?: number /* int64 */;
   editionId?: number /* int64 */;
   score: number /* int */;
   formats?: FormatHit[]; // matched custom formats

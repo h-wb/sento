@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -34,6 +36,7 @@ func (s *Server) mountSourceAPI(r chi.Router) {
 	r.Post("/queue/{qid}/retry", s.handleQueueRetry)
 	r.Post("/queue/{qid}/cancel", s.handleQueueCancel)
 	r.Post("/queue/{qid}/blocklist", s.handleQueueBlocklist)
+	r.Post("/queue/another", s.handleQueueAnother)
 
 	r.Get("/history", s.handleHistory)
 	r.Get("/series/{id}/history", s.handleHistory)
@@ -433,6 +436,21 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		respondList(w, items, err)
 		return
 	}
+	files := map[int64][]store.File{}
+	for i := range items {
+		item := &items[i]
+		if item.Status != store.QueueFailed && item.Status != store.QueueNeedsReview && item.Status != store.QueueRetryWait {
+			continue
+		}
+		if _, ok := files[item.SeriesID]; !ok {
+			files[item.SeriesID], err = s.store.ListFiles(r.Context(), item.SeriesID)
+			if err != nil {
+				writeErr(w, err)
+				return
+			}
+		}
+		item.CanTryAnother = service.CanTryAnother(*item, files[item.SeriesID])
+	}
 	// Enrich in-flight items with live progress. Progress() is an in-memory
 	// read with no side effects, so it's safe per request (unlike State).
 	for i := range items {
@@ -491,5 +509,40 @@ func (s *Server) handleQueueCancel(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleQueueAnother is "Try another release" for one job or several:
+// their releases are blocklisted and their books freed, then each series
+// is searched again right away, Sento choosing, instead of at the next
+// sweep. It answers once the jobs are given up; the searches run on.
+func (s *Server) handleQueueAnother(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IDs []int64 `json:"ids"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if len(body.IDs) == 0 || len(body.IDs) > 500 {
+		writeError(w, http.StatusBadRequest, "choose between 1 and 500 downloads")
+		return
+	}
+	targets, err := s.importer.TryAnother(r.Context(), body.IDs)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(service.Scheduled(context.Background()), 15*time.Minute)
+		defer cancel()
+		for _, t := range targets {
+			result, err := s.search.FindCandidates(ctx, t.SeriesID, t.Ledger, nil)
+			if err != nil {
+				slog.Warn("search after giving up a release failed", "series", t.SeriesID, "error", err)
+				continue
+			}
+			s.search.GrabBest(ctx, t.SeriesID, t.Ledger, result.Candidates)
+		}
+	}()
 	w.WriteHeader(http.StatusNoContent)
 }

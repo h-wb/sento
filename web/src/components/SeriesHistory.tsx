@@ -15,6 +15,7 @@ const eventColor: Record<string, string> = {
   download_needs_review: 'orange',
   blocklisted: 'orange',
   editions_grouped: 'blue',
+  listing_switched_off: 'orange',
 }
 
 // The series' history: what was grabbed, imported or refused, newest first.

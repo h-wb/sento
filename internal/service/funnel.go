@@ -65,6 +65,7 @@ func readRelease(run *searchRun, cand provider.Candidate) (rc ReleaseCandidate, 
 	}
 	if cand.Source != nil {
 		rc.Scanlator = cand.Source.Scanlator
+		rc.BindingID = cand.Source.BindingID
 		rc.URL = cand.Source.WebURL
 	}
 	rc.Parse = parse.ParseAnchored(cand.Title, channel, run.titles)

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -87,6 +88,14 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 		if prov == nil {
 			continue // provider currently unconfigured: leave the item queued
 		}
+		// A circuit breaker may have retired later jobs in this same pass.
+		current, err := im.store.GetQueueItem(ctx, item.ID)
+		if err != nil {
+			return imported, err
+		}
+		if current.Status == store.QueueCancelled {
+			continue
+		}
 		done, err := im.processItem(ctx, prov, item)
 		if err != nil {
 			slog.Warn("queue item failed", "id", item.ID, "title", item.Title, "error", err)
@@ -136,10 +145,16 @@ func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 				Event: event, Title: item.Title, Provider: prov.ID(),
 				Key: item.ExternalID, Error: err.Error(),
 			})
+			if dead {
+				im.listingFailed(ctx, item)
+			}
 			continue
 		}
 		if done {
 			imported++
+			if listing := jobListing(item); listing > 0 {
+				_ = im.store.ListingWorked(ctx, listing)
+			}
 			_ = im.store.AddDecision(ctx, item.SeriesID, store.DecisionBody{
 				Event: "imported", Title: item.Title, Provider: prov.ID(),
 				Key: item.ExternalID,
@@ -638,6 +653,9 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 		if err != nil || !settled {
 			return err
 		}
+		if listing := jobListing(job); listing > 0 {
+			_ = im.store.ListingWorked(ctx, listing)
+		}
 		note := fmt.Sprintf("%d %s confirmed in review.", len(delivered), plural(len(delivered), "file"))
 		if len(missing) > 0 {
 			note += " Not in this download, wanted again: " + strings.Join(missing, ", ") + "."
@@ -667,4 +685,134 @@ func plural(n int, word string) string {
 		return word
 	}
 	return word + "s"
+}
+
+// jobListing is the source listing a job's release came from, 0 for none.
+func jobListing(item store.QueueItem) int64 {
+	if item.Protocol != provider.ProtocolSource {
+		return 0
+	}
+	var snap ReleaseCandidate
+	_ = json.Unmarshal(item.Snapshot, &snap)
+	return snap.BindingID
+}
+
+// listingFailed counts a release its listing could not give, and records
+// it when that switches the listing off: three in a row mean its other
+// releases would fail the same way, so the next search uses other
+// listings and releases. Sources lists it, switched off, to switch back on.
+func (im *Importer) listingFailed(ctx context.Context, item store.QueueItem) {
+	listing := jobListing(item)
+	if listing == 0 {
+		return
+	}
+	if off, err := im.store.ListingFailed(ctx, listing); err == nil && off {
+		jobs, err := im.store.SeriesQueueItems(ctx, item.SeriesID)
+		if err != nil {
+			slog.Warn("list jobs from disabled listing", "error", err)
+			return
+		}
+		for _, job := range jobs {
+			if jobListing(job) != listing || job.Protocol != provider.ProtocolSource {
+				continue
+			}
+			switch job.Status {
+			case store.QueueQueued, store.QueueDownloading, store.QueueRetryWait:
+			default:
+				continue
+			}
+			_ = im.store.UpdateQueueItem(ctx, job.ID, job.Status, "Source listing switched off after three dead downloads")
+			if err := im.store.CancelQueue(ctx, job.ID); err != nil {
+				slog.Warn("cancel disabled listing job", "id", job.ID, "error", err)
+				continue
+			}
+			prov := im.registry.Get(job.ProviderID)
+			if stopper, ok := prov.(provider.DownloadStopper); ok {
+				if err := stopper.Stop(ctx, job.ExternalID); err != nil {
+					slog.Warn("stop disabled listing download", "id", job.ID, "error", err)
+				}
+			}
+		}
+		_ = im.store.AddDecision(ctx, item.SeriesID, store.DecisionBody{
+			Event: "listing_switched_off", Title: item.Title,
+			Note: "Three releases in a row from this listing could not be downloaded; its other releases are skipped. Switch it back on in Sources.",
+		})
+	}
+}
+
+// SearchTarget is a series' ledger to search again.
+type SearchTarget struct {
+	SeriesID int64
+	Ledger   string
+}
+
+// CanTryAnother excludes jobs that delivered files: their import review must
+// be resolved before giving up their reservations. Running downloads retain
+// their separate, non-destructive replacement search.
+func CanTryAnother(item store.QueueItem, files []store.File) bool {
+	switch item.Status {
+	case store.QueueFailed, store.QueueNeedsReview, store.QueueRetryWait:
+	default:
+		return false
+	}
+	if item.ReleaseKey == "" && (item.ExternalID == "" || item.Status == store.QueueNeedsReview) {
+		return false
+	}
+	for _, f := range files {
+		if f.Facts.ReleaseKey != "" && (f.Facts.ReleaseKey == item.ReleaseKey || f.Facts.ReleaseKey == item.ExternalID) {
+			return false
+		}
+	}
+	return true
+}
+
+// TryAnother retires failed downloads and returns the distinct ledgers to
+// search. Serializing with the worker prevents an import racing recovery.
+func (im *Importer) TryAnother(ctx context.Context, ids []int64) ([]SearchTarget, error) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	var jobs []store.QueueItem
+	files := map[int64][]store.File{}
+	for _, id := range slices.Compact(slices.Sorted(slices.Values(ids))) {
+		item, err := im.store.GetQueueItem(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := files[item.SeriesID]; !ok {
+			files[item.SeriesID], err = im.store.ListFiles(ctx, item.SeriesID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if CanTryAnother(*item, files[item.SeriesID]) {
+			jobs = append(jobs, *item)
+		}
+	}
+	var targets []SearchTarget
+	for _, item := range jobs {
+		const reason = "another release was asked for"
+		if err := im.blockRelease(ctx, item, reason); err != nil {
+			return targets, err
+		}
+		if err := im.store.CancelQueue(ctx, item.ID); err != nil {
+			return targets, err
+		}
+		if stopper, ok := im.registry.Get(item.ProviderID).(provider.DownloadStopper); ok {
+			if err := stopper.Stop(ctx, item.ExternalID); err != nil {
+				slog.Warn("stop abandoned download", "id", item.ID, "error", err)
+			}
+		}
+		_ = im.store.AddDecision(ctx, item.SeriesID, store.DecisionBody{
+			Event: "blocklisted", Title: item.Title, Key: item.ExternalID, Note: "Another release was asked for.",
+		})
+		var books []store.BookRef
+		_ = json.Unmarshal(item.Books, &books)
+		for _, book := range books {
+			target := SearchTarget{SeriesID: item.SeriesID, Ledger: book.Ledger}
+			if !slices.Contains(targets, target) {
+				targets = append(targets, target)
+			}
+		}
+	}
+	return targets, nil
 }

@@ -239,6 +239,8 @@ func (p *SourceProvider) Listings(ctx context.Context, siteID, mangaKey string) 
 // sourceJob tracks one chapter download. Fields are guarded by the
 // provider mutex; the fetch loop snapshots under lock.
 type sourceJob struct {
+	cancel      context.CancelFunc
+	finished    chan struct{}
 	total, done int
 	err         error
 	running     bool
@@ -272,21 +274,28 @@ func (p *SourceProvider) startJob(externalID string) {
 	if _, err := os.Stat(p.stagedPath(externalID)); err == nil {
 		return // already staged
 	}
-	job := &sourceJob{running: true}
+	ctx, cancel := context.WithCancel(context.Background())
+	job := &sourceJob{running: true, cancel: cancel, finished: make(chan struct{})}
 	p.jobs[externalID] = job
-	go p.download(externalID, job)
+	go p.download(ctx, externalID, job)
 }
 
 // download fetches all pages of one chapter and assembles the CBZ. Runs
 // detached from the request context: a grab outlives its HTTP call.
-func (p *SourceProvider) download(externalID string, job *sourceJob) {
-	p.sem <- struct{}{}
+func (p *SourceProvider) download(ctx context.Context, externalID string, job *sourceJob) {
+	defer close(job.finished)
+	defer job.cancel()
+	select {
+	case p.sem <- struct{}{}:
+	case <-ctx.Done():
+		return
+	}
 	defer func() { <-p.sem }()
 	p.mu.Lock()
 	job.active = true
 	p.mu.Unlock()
 	// Queuing for a slot is not part of the chapter's download budget.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 
 	err := p.fetchChapter(ctx, externalID, job)
@@ -361,6 +370,9 @@ func (p *SourceProvider) fetchChapter(ctx context.Context, externalID string, jo
 		return err
 	}
 	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return os.Rename(tmp.Name(), dest)
@@ -559,6 +571,25 @@ func (p *SourceProvider) Cleanup(ctx context.Context, externalID string) error {
 		return nil
 	}
 	return err
+}
+
+// Stop cancels work and waits for its temporary files to be released before
+// removing staging data. It also interrupts downloads waiting for a slot.
+func (p *SourceProvider) Stop(ctx context.Context, externalID string) error {
+	p.mu.Lock()
+	job := p.jobs[externalID]
+	if job != nil && job.cancel != nil {
+		job.cancel()
+	}
+	p.mu.Unlock()
+	if job != nil && job.finished != nil {
+		select {
+		case <-job.finished:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return p.Cleanup(ctx, externalID)
 }
 
 // Recover clears failed jobs so the next State poll retries them (the

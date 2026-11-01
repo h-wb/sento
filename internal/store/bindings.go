@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 )
 
 type Binding struct {
@@ -87,10 +88,36 @@ func (s *Store) RenameListing(ctx context.Context, seriesID, bindingID int64, na
 
 // SetBindingState toggles one binding ("active" / "disabled").
 func (s *Store) SetBindingState(ctx context.Context, seriesID, bindingID int64, state string) error {
-	return s.touch(ctx, `UPDATE source_bindings SET state = ? WHERE id = ? AND series_id = ?`,
+	return s.touch(ctx, `UPDATE source_bindings SET state = ?, dead_streak = 0 WHERE id = ? AND series_id = ?`,
 		state, bindingID, seriesID)
 }
 
 func (s *Store) DeleteBinding(ctx context.Context, seriesID, bindingID int64) error {
 	return s.touch(ctx, `DELETE FROM source_bindings WHERE id = ? AND series_id = ?`, bindingID, seriesID)
+}
+
+// deadStreakLimit is how many releases in a row a listing may fail to
+// give before it is switched off.
+const deadStreakLimit = 3
+
+// ListingFailed counts a release a listing could not give (gone,
+// unreadable). At deadStreakLimit in a row the listing is switched off,
+// and switchedOff says so: its other releases would fail the same way.
+func (s *Store) ListingFailed(ctx context.Context, bindingID int64) (switchedOff bool, err error) {
+	streak, err := get[int](ctx, s, `UPDATE source_bindings SET dead_streak=dead_streak+1,
+		state=CASE WHEN dead_streak+1>=? THEN 'disabled' ELSE state END
+		WHERE id=? AND state='active' RETURNING dead_streak`, deadStreakLimit, bindingID)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil // gone, or already off
+	}
+	if err != nil {
+		return false, err
+	}
+	return *streak == deadStreakLimit, nil
+}
+
+// ListingWorked resets a listing's streak: a release from it imported.
+func (s *Store) ListingWorked(ctx context.Context, bindingID int64) error {
+	_, err := s.db.ExecContext(ctx, s.q(`UPDATE source_bindings SET dead_streak=0 WHERE id=? AND dead_streak>0`), bindingID)
+	return err
 }
