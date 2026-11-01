@@ -43,6 +43,7 @@ export function FileReviewDialog({ item, close }: { item: ReviewItem; close: () 
       existing={coverage.filter((c) => c.fileId === file.id)}
       books={Object.values(books).flat()}
       proposal={item.proposal}
+      hint={item.hint}
       save={async (refs) => {
         await api.mapFile(item.seriesId, file.id, refs)
         await Promise.all(

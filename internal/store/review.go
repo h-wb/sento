@@ -26,6 +26,16 @@ type ReviewItem struct {
 	// Proposal is what the evidence says a file holds; nothing is recorded
 	// until it is accepted.
 	Proposal *ReviewProposal `json:"proposal,omitempty" db:"-"`
+	// Hint is what a file's own name says it holds when no edition claims
+	// it yet, so review can prefill the ledger and numbers.
+	Hint *FileHint `json:"hint,omitempty" db:"-"`
+}
+
+// FileHint is a file name's parsed ledger and numbers ("volume", ["1"]),
+// offered to the reviewer when no edition fit decided them.
+type FileHint struct {
+	Ledger  string   `json:"ledger,omitempty"`
+	Numbers []string `json:"numbers,omitempty"`
 }
 
 // ReviewProposal is a file's proposed mapping and why: the books, the

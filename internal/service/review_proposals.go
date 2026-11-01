@@ -33,6 +33,7 @@ func (l *Library) ReviewItems(ctx context.Context, seriesID int64) ([]store.Revi
 			proposers[items[i].SeriesID] = p
 		}
 		items[i].Proposal = p.propose(items[i].ItemID)
+		items[i].Hint = p.hint(items[i].ItemID)
 	}
 	return items, nil
 }
@@ -93,31 +94,33 @@ func (l *Library) newProposer(ctx context.Context, seriesID int64) (*proposer, e
 	return p, nil
 }
 
-func (p *proposer) propose(fileID int64) *store.ReviewProposal {
-	f, ok := p.files[fileID]
-	if !ok || !f.NeedsReview || !f.Unrequested || f.Presence == "unavailable" {
-		return nil
+// parseFile reads a file's own name against the series: what it claims
+// to hold (ledger, ranges), or why it cannot be read at all.
+func (p *proposer) parseFile(fileID int64) (parsed parse.Result, ledger, evidence string, job store.QueueItem, fromJob, ok bool) {
+	f, exists := p.files[fileID]
+	if !exists || !f.NeedsReview || !f.Unrequested || f.Presence == "unavailable" {
+		return parse.Result{}, "", "", store.QueueItem{}, false, false
 	}
 	name := f.Facts.Title
 	if name == "" {
 		name = filepath.Base(f.Path)
 	}
-	parsed := parse.ParseAnchored(name, parse.ChannelFile, p.titles)
+	parsed = parse.ParseAnchored(name, parse.ChannelFile, p.titles)
 	if parsed.ContentType != parse.ContentManga || parsed.TitleLeftover != "" {
-		return nil
+		return parse.Result{}, "", "", store.QueueItem{}, false, false
 	}
-	job, fromJob := p.jobs[f.Facts.ReleaseKey]
+	job, fromJob = p.jobs[f.Facts.ReleaseKey]
 	fromJob = fromJob && f.Facts.ReleaseKey != ""
 	// A name without the series title ("Volume_01.cbz") is only this
 	// series' because the download it came in was.
 	if !parsed.Anchored && !fromJob {
-		return nil
+		return parse.Result{}, "", "", store.QueueItem{}, false, false
 	}
-	ledger, evidence := ledgerOf(parsed), "from the file name"
+	ledger, evidence = ledgerOf(parsed), "from the file name"
 	if ledger == "" {
 		ledger, evidence = bareLedger(parsed, job, fromJob)
 		if ledger == "" {
-			return nil
+			return parse.Result{}, "", "", store.QueueItem{}, false, false
 		}
 		if ledger == LedgerVolume {
 			parsed.Volumes = parsed.Bare
@@ -127,6 +130,37 @@ func (p *proposer) propose(fileID int64) *store.ReviewProposal {
 	} else if !parsed.Anchored {
 		evidence = "from the file name, inside a download of this series"
 	}
+	return parsed, ledger, evidence, job, fromJob, true
+}
+
+// hint is what the file's own name says it holds even when no edition
+// claims it yet, so review can prefill the numbers.
+func (p *proposer) hint(fileID int64) *store.FileHint {
+	parsed, ledger, _, _, _, ok := p.parseFile(fileID)
+	if !ok || ledger == "" {
+		return nil
+	}
+	ranges := bookRanges(parsed, ledger)
+	if len(ranges) == 0 {
+		return nil
+	}
+	h := &store.FileHint{Ledger: ledger}
+	for _, r := range ranges {
+		s := hundredths(r.From)
+		if r.To != r.From {
+			s += "–" + hundredths(r.To)
+		}
+		h.Numbers = append(h.Numbers, s)
+	}
+	return h
+}
+
+func (p *proposer) propose(fileID int64) *store.ReviewProposal {
+	parsed, ledger, evidence, _, _, ok := p.parseFile(fileID)
+	if !ok {
+		return nil
+	}
+	f := p.files[fileID]
 	ranges := bookRanges(parsed, ledger)
 	var fits []store.Edition
 	for _, e := range p.editions {
@@ -163,7 +197,7 @@ func (p *proposer) propose(fileID int64) *store.ReviewProposal {
 	if version == nil {
 		return nil
 	}
-	name = m.edition.EditionName
+	name := m.edition.EditionName
 	if len(p.versions[m.edition.ID]) > 1 {
 		if prof := p.profiles.For(*version); prof != nil {
 			name += " · " + prof.Name

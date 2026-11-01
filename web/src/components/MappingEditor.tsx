@@ -2,7 +2,7 @@ import { cardLabel, fileName } from './editionText'
 import { useState } from 'react'
 import { Alert, Button, Group, MultiSelect, Select, Stack, Text, TextInput } from '@mantine/core'
 import { api } from '../api'
-import type { Edition, CollectedVersion, File as SeriesFile } from '../types/store'
+import type { Edition, CollectedVersion, File as SeriesFile, FileHint } from '../types/store'
 import type { BookStatus } from '../types/service'
 import { EditorModal } from './EditorModal'
 import { useEditor } from './useEditor'
@@ -13,6 +13,7 @@ export function MappingEditor({
   versions,
   existing,
   proposal,
+  hint,
   books,
   editions,
   save,
@@ -23,6 +24,7 @@ export function MappingEditor({
   versions: CollectedVersion[]
   existing: import('../types/store').AssetCoverage[]
   proposal?: import('../types/store').ReviewProposal
+  hint?: FileHint
   books: BookStatus[]
   editions: Edition[]
   save: (books: import('../types/store').BookRef[]) => Promise<void>
@@ -57,16 +59,43 @@ export function MappingEditor({
         : null,
   )
   const edit = useEditor()
-  const [language, setLanguage] = useState(value.facts?.language ?? '')
-  const [group, setGroup] = useState(value.facts?.group ?? '')
+  // The release the file came from advertises language and group even
+  // when the file's own name does not say them: prefill from the claims
+  // so review only has to confirm. Saving records the confirmed values.
+  const initialLanguage = value.facts?.language || value.claims?.language || ''
+  const initialGroup = value.facts?.group || value.claims?.group || ''
+  const [language, setLanguage] = useState(initialLanguage)
+  const [group, setGroup] = useState(initialGroup)
+  // Numbers the file's own name carries. Shown greyed until an edition is
+  // picked; picking one maps them onto that edition's books, so the number
+  // never has to be retyped.
+  const [pending, setPending] = useState<string[]>(hint?.numbers ?? [])
   const t = versions.find((t) => String(t.id) === version)
   const chosen = draft.filter((s) => s.versionId === t?.id).map((s) => String(s.bookId))
+  const pickBooks = (versionId: number, numbers: string[]) => {
+    const tv = versions.find((x) => x.id === versionId)
+    if (!tv) return
+    const matching = books.filter(
+      (s) => s.versionId === tv.id && numbers.includes(s.book.sequenceStr),
+    )
+    if (matching.length === 0) return
+    setDraft((d) => [
+      ...d.filter((s) => s.versionId !== tv.id),
+      ...matching.map((s) => ({
+        versionId: tv.id,
+        bookId: s.book.id,
+        editionId: tv.editionId,
+        number: s.book.sequenceNum,
+        ledger: editions.find((c) => c.id === tv.editionId)?.type ?? 'volume',
+      })),
+    ])
+  }
   return (
     <EditorModal
       dirty={
         JSON.stringify(draft) !== JSON.stringify(initial) ||
-        language !== (value.facts?.language ?? '') ||
-        group !== (value.facts?.group ?? '')
+        language !== initialLanguage ||
+        group !== initialGroup
       }
       busy={edit.busy}
       onClose={close}
@@ -134,18 +163,34 @@ export function MappingEditor({
             label: cardLabel(editions.find((c) => c.id === t.editionId)!, t, versions),
           }))}
           value={version}
-          onChange={setVersion}
+          onChange={(v) => {
+            setVersion(v)
+            if (!v) return
+            // Without a previous edition the numbers come from the file's
+            // own name; otherwise carry the current selection over.
+            const nums = t
+              ? chosen.map((id) => books.find((s) => s.book.id === Number(id))?.book.sequenceStr ?? '')
+              : pending
+            pickBooks(Number(v), nums)
+          }}
         />
         <MultiSelect
           label="Books in this file"
           searchable
           disabled={!t}
-          data={books
-            .filter((s) => s.versionId === t?.id)
-            .map((s) => ({ value: String(s.book.id), label: s.book.sequenceStr }))}
-          value={chosen}
+          data={
+            t
+              ? books
+                  .filter((s) => s.versionId === t.id)
+                  .map((s) => ({ value: String(s.book.id), label: s.book.sequenceStr }))
+              : pending.map((n) => ({ value: n, label: n }))
+          }
+          value={t ? chosen : pending}
           onChange={(ids) => {
-            if (!t) return
+            if (!t) {
+              setPending(ids)
+              return
+            }
             setDraft([
               ...draft.filter((s) => s.versionId !== t.id),
               ...ids.map((id) => ({

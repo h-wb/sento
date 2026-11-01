@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/h-wb/sento/internal/parse"
@@ -292,4 +293,51 @@ func TestReviewProposesOnlyProfileCompatibleVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(colorFile, 0, "") // Never propose a file that the only collected card refuses.
+}
+
+// A file whose name parses but fits no edition gets no proposal — yet
+// the hint still carries the ledger and numbers, so review can prefill
+// them and map them once an edition is chosen.
+func TestReviewHintSurvivesWithoutProposal(t *testing.T) {
+	lib, st, sid, _, _, _ := modelFixture(t)
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name, ledger string
+		numbers      []string
+	}{
+		{"ONE PIECE v02 (Digital).cbz", "volume", []string{"2"}},  // also proposed
+		{"ONE PIECE v99 (Digital).cbz", "volume", []string{"99"}}, // no such book: no proposal
+		{"ONE PIECE v03-04 (Digital).cbz", "volume", []string{"3–4"}},
+		{"ONE PIECE c07 (Digital).cbz", "chapter", []string{"7"}},
+	} {
+		fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/" + tc.name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: tc.name}}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		items, err := lib.ReviewItems(ctx, sid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var hint *store.FileHint
+		var proposed bool
+		for _, i := range items {
+			if i.Kind == "file" && i.ItemID == fid {
+				hint = i.Hint
+				proposed = i.Proposal != nil
+			}
+		}
+		if hint == nil {
+			t.Errorf("%s: no hint, want ledger %q numbers %v", tc.name, tc.ledger, tc.numbers)
+			continue
+		}
+		if hint.Ledger != tc.ledger || strings.Join(hint.Numbers, ",") != strings.Join(tc.numbers, ",") {
+			t.Errorf("%s: hint %+v, want ledger %q numbers %v", tc.name, *hint, tc.ledger, tc.numbers)
+		}
+		if tc.name == "ONE PIECE v99 (Digital).cbz" && proposed {
+			t.Errorf("%s: proposed despite no matching book", tc.name)
+		}
+		if tc.name == "ONE PIECE v02 (Digital).cbz" && !proposed {
+			t.Errorf("%s: no proposal although the book exists", tc.name)
+		}
+	}
 }

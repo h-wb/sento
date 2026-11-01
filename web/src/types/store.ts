@@ -440,6 +440,19 @@ export interface ReviewItem {
    * until it is accepted.
    */
   proposal?: ReviewProposal;
+  /**
+   * Hint is what a file's own name says it holds when no edition claims
+   * it yet, so review can prefill the ledger and numbers.
+   */
+  hint?: FileHint;
+}
+/**
+ * FileHint is a file name's parsed ledger and numbers ("volume", ["1"]),
+ * offered to the reviewer when no edition fit decided them.
+ */
+export interface FileHint {
+  ledger?: string;
+  numbers?: string[];
 }
 /**
  * ReviewProposal is a file's proposed mapping and why: the books, the

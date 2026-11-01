@@ -79,6 +79,11 @@ test('global activity reviews files in place and confirms an uncertain download 
       ],
     }),
   )
+  let factsPatch: unknown = null
+  await page.route('**/api/v1/series/901/files/301/facts', (route) => {
+    factsPatch = route.request().postDataJSON()
+    return route.fulfill({ status: 204 })
+  })
   await page.route('**/api/v1/series/901/files', (route) =>
     route.fulfill({
       json: [
@@ -87,8 +92,10 @@ test('global activity reviews files in place and confirms an uncertain download 
           seriesId: 901,
           path: '/library/review/Volume 1.cbz',
           needsReview: true,
-          facts: { title: 'Volume 1.cbz', language: 'en' },
-          claims: {},
+          // The file's own name says nothing about language; the release
+          // it came from advertised en, so review prefills that.
+          facts: { title: 'Volume 1.cbz' },
+          claims: { language: 'en', group: '1r0n' },
         },
       ],
     }),
@@ -128,11 +135,16 @@ test('global activity reviews files in place and confirms an uncertain download 
   await page.getByRole('button', { name: 'Review file', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Match imported file' })
   await expect(dialog.getByRole('combobox', { name: 'Edition', exact: true })).toHaveValue(/Standard Edition/)
+  // Language and group are prefilled from what the release advertised.
+  await expect(dialog.getByRole('textbox', { name: 'Confirmed language' })).toHaveValue('en')
+  await expect(dialog.getByRole('textbox', { name: 'Confirmed release group' })).toHaveValue('1r0n')
   await dialog.getByRole('button', { name: 'Save coverage' }).click()
   await expect(dialog.getByText(/Storage temporarily unavailable/)).toBeVisible()
   await dialog.getByRole('button', { name: 'Save coverage' }).click()
   await expect(dialog).toBeHidden()
   expect(saved).toEqual({ books: [ref] })
+  // Saving recorded the prefilled claims as the file's confirmed facts.
+  expect(factsPatch).toEqual({ language: 'en', group: '1r0n' })
   await expect(page.getByRole('button', { name: 'Review 1 file', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Confirm download', exact: true }).click()
   const confirmation = page.getByRole('dialog', { name: 'Confirm existing download' })
