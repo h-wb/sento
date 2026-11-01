@@ -26,8 +26,9 @@ Pre-release tags are not supported by the publication workflows yet.
 
 1. Enable squash merges in the repository settings and use the PR title as
    the squash commit title. Protect main with PR review and required CI checks.
-2. Create `RELEASE_PLEASE_TOKEN` as an Actions secret. Use a bot's fine-grained
-   repository token with Contents and Pull requests read/write permissions.
+2. Create `RELEASE_PLEASE_TOKEN` as an Actions secret. Use a fine-grained token
+   from your account or a bot account, scoped to this repository, with Contents,
+   Issues and Pull requests read/write permissions.
    The bot also needs permission to create releases and tags under any rulesets.
 3. Set the Actions variable `RELEASE_AUTOMATION_ENABLED` to `true`. The Release PR
    workflow is disabled until then, including on forks. Never expose its token
