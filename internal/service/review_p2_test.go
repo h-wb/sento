@@ -62,7 +62,11 @@ func TestQueueWorkerSeesOldJobsBehindReviewJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range 205 {
-		if _, err := st.AddQueueItem(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ExternalID: fmt.Sprint(i), Status: store.QueueNeedsReview, Books: []byte(`[]`)}); err != nil {
+		status := store.QueueNeedsReview
+		if i%2 == 0 {
+			status = store.QueueFailed
+		}
+		if _, err := st.AddQueueItem(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ExternalID: fmt.Sprint(i), Status: status, Books: []byte(`[]`)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -73,7 +77,7 @@ func TestQueueWorkerSeesOldJobsBehindReviewJobs(t *testing.T) {
 	if len(items) != 1 || items[0].ID != old {
 		t.Fatalf("worker list = %d jobs, want only the runnable one", len(items))
 	}
-	// Activity must not hide the oldest job behind 200 review items either.
+	// Activity must keep failed and review jobs visible beyond 200 items.
 	active, err := st.ListQueueItems(ctx, true)
 	if err != nil || len(active) != 206 {
 		t.Fatalf("activity = %d jobs, %v", len(active), err)

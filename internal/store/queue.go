@@ -117,11 +117,11 @@ const queueColumns = `id, series_id, protocol, external_id, title, status, books
 // people, not a work list (see ListRunnableQueue).
 func (s *Store) ListQueueItems(ctx context.Context, activeOnly bool) ([]QueueItem, error) {
 	const columns = `SELECT ` + queueColumns + `, COALESCE((SELECT title FROM series WHERE series.id=queue_items.series_id),'') AS series_title FROM queue_items`
-	items, err := list[QueueItem](ctx, s, columns+` WHERE status IN ('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown') ORDER BY created_at DESC, id DESC`)
+	items, err := list[QueueItem](ctx, s, columns+` WHERE status NOT IN ('imported','cancelled') ORDER BY created_at DESC, id DESC`)
 	if err != nil || activeOnly {
 		return items, err
 	}
-	finished, err := list[QueueItem](ctx, s, columns+` WHERE status NOT IN ('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown') ORDER BY created_at DESC, id DESC LIMIT 200`)
+	finished, err := list[QueueItem](ctx, s, columns+` WHERE status IN ('imported','cancelled') ORDER BY created_at DESC, id DESC LIMIT 200`)
 	return append(items, finished...), err
 }
 
