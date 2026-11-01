@@ -62,6 +62,11 @@ export function SeriesHistory({ seriesID }: { seriesID: number }) {
                   {d.body.event.replaceAll('_', ' ')}
                   {d.body.force ? ' (forced)' : ''}
                 </Badge>
+                {d.body.by && (
+                  <Text size="xs" c="dimmed" mt={2}>
+                    {d.body.by === 'you' ? 'by you' : 'automatically'}
+                  </Text>
+                )}
               </Table.Td>
               <Table.Td>
                 <Text size="sm" lineClamp={1} title={d.body.title}>

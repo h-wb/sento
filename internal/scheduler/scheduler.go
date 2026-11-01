@@ -438,7 +438,7 @@ func (s *Scheduler) sweep(ctx context.Context, searchLedger string, include func
 			slog.Warn("sweep failed", "ledger", searchLedger, "series", sr.ID, "error", err)
 			continue
 		}
-		if queued := s.search.GrabBest(ctx, sr.ID, searchLedger, result.Candidates); len(queued) > 0 {
+		if queued := s.search.GrabBest(service.Scheduled(ctx), sr.ID, searchLedger, result.Candidates); len(queued) > 0 {
 			slog.Info("releases grabbed", "ledger", searchLedger, "series", sr.Title, "count", len(queued))
 		}
 	}

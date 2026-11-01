@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/h-wb/sento/internal/provider"
@@ -134,6 +135,12 @@ func TestPlanSubmissionRechecksOwnershipAndUsesClaims(t *testing.T) {
 	_ = json.Unmarshal(job.Snapshot, &snap)
 	if len(saved) != 1 || saved[0].BookID != books[1].ID || len(snap.Contents) != 3 || len(snap.Coverage) != 3 {
 		t.Fatalf("claims or snapshot lost: %s %s", job.Books, job.Snapshot)
+	}
+	if events, _ := st.ListDecisions(ctx, id, 10); len(events) == 0 || !strings.Contains(string(events[0].Body), `"by":"you"`) {
+		t.Fatalf("a picked release is not recorded as yours: %+v", events)
+	}
+	if grabbedBy(Scheduled(ctx)) != "schedule" {
+		t.Fatal("a scheduled grab is not recorded as the schedule's")
 	}
 	again := svc.SubmitPlan(ctx, id, "volume", scope, candidates, []PlanPick{{Key: candidates[0].Key, Books: claims}})
 	if again[0].Status == "queued" {

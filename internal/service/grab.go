@@ -149,7 +149,7 @@ func (s *SearchService) grabClaims(ctx context.Context, seriesID int64, searchLe
 		_ = s.store.AddDecision(ctx, seriesID, store.DecisionBody{
 			Event: "grabbed", Ledger: searchLedger, Title: c.Title,
 			Provider: c.Provider, Site: c.Site, Key: externalID,
-			Books: slots, Force: force,
+			Books: slots, Force: force, By: grabbedBy(ctx),
 		})
 	}
 	return qid, err
@@ -184,4 +184,19 @@ func queueBooks(q *store.QueueItem) []store.BookRef {
 	var refs []store.BookRef
 	_ = json.Unmarshal(q.Books, &refs)
 	return refs
+}
+
+type scheduledKey struct{}
+
+// Scheduled marks what is grabbed under ctx as chosen by Sento's own
+// schedule; anything else was picked by a person.
+func Scheduled(ctx context.Context) context.Context {
+	return context.WithValue(ctx, scheduledKey{}, true)
+}
+
+func grabbedBy(ctx context.Context) string {
+	if scheduled, _ := ctx.Value(scheduledKey{}).(bool); scheduled {
+		return "schedule"
+	}
+	return "you"
 }

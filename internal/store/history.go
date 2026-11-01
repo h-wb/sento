@@ -28,6 +28,9 @@ type DecisionBody struct {
 	// Note says what happened when it is not an error.
 	Note  string `json:"note,omitempty"`
 	Force bool   `json:"force,omitempty"`
+	// By says who chose a grabbed release: "schedule" for Sento's own
+	// searches, "you" for a pick in the search dialog.
+	By string `json:"by,omitempty" tstype:"'schedule' | 'you'"`
 }
 
 func (s *Store) AddDecision(ctx context.Context, seriesID int64, body DecisionBody) error {

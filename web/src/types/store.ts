@@ -276,6 +276,11 @@ export interface DecisionBody {
    */
   note?: string;
   force?: boolean;
+  /**
+   * By says who chose a grabbed release: "schedule" for Sento's own
+   * searches, "you" for a pick in the search dialog.
+   */
+  by?: 'schedule' | 'you';
 }
 /**
  * BlocklistEntry bans one release (by protocol + external key) from ever
