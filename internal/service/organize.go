@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/h-wb/sento/internal/mediafile"
+	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -76,6 +77,63 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		}
 	}
 
+	// One file per book in the final folders: the pinned holder, else the
+	// best-scoring one. Other verified holders of the same book are planned
+	// into review/ instead of next to the placed copy.
+	profiles, err := NewProfiles(im.store).seriesProfiles(ctx, seriesID)
+	if err != nil {
+		return nil, nil, ms, err
+	}
+	byFile := map[int64]store.File{}
+	for _, f := range files {
+		byFile[f.ID] = f
+	}
+	placed := map[int64]int64{}      // book → the file placed for it
+	placedPinned := map[int64]bool{} // whether that file's hold is pinned
+	placedScore := map[int64]int{}   // its score
+	anyCov := map[int64]bool{}       // file → holds any verified book
+	for _, c := range coverage {
+		if !c.Verified || c.FileID == 0 {
+			continue
+		}
+		anyCov[c.FileID] = true
+		w, err := im.store.GetBook(ctx, c.BookID)
+		if err != nil {
+			continue
+		}
+		col, err := im.store.GetEdition(ctx, w.EditionID)
+		if err != nil {
+			continue
+		}
+		var prof *profile.Profile
+		if t, err := im.store.GetVersion(ctx, c.VersionID); err == nil {
+			prof = profiles.For(*t)
+		}
+		score := scoredFacts(byFile[c.FileID].Facts, c.Evidence, *col, prof, profiles.Formats)
+		cur, seen := placed[c.BookID]
+		better := !seen ||
+			(c.Pinned && !placedPinned[c.BookID]) ||
+			(c.Pinned == placedPinned[c.BookID] && (score > placedScore[c.BookID] || score == placedScore[c.BookID] && c.FileID < cur))
+		if better {
+			placed[c.BookID] = c.FileID
+			placedPinned[c.BookID] = c.Pinned
+			placedScore[c.BookID] = score
+		}
+	}
+	reviewDirs := []string{filepath.Join(volumesDir, "review"), filepath.Join(chaptersDir, "review")}
+	inReview := func(p string) bool {
+		for _, r := range reviewDirs {
+			if strings.HasPrefix(p, r+string(filepath.Separator)) {
+				return true
+			}
+		}
+		return false
+	}
+	insideTree := func(p string) bool {
+		return strings.HasPrefix(p, volumesDir+string(filepath.Separator)) ||
+			strings.HasPrefix(p, chaptersDir+string(filepath.Separator))
+	}
+
 	rel := func(p string) string {
 		if r, err := filepath.Rel(im.libraryRoot, p); err == nil && !strings.HasPrefix(r, "..") {
 			return r
@@ -94,6 +152,11 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		home := map[int64]int64{} // book → the version it is filed under
 		for _, c := range coverage {
 			if c.FileID != f.ID || !c.Verified {
+				continue
+			}
+			// A book already placed through another file does not place this
+			// one next to it.
+			if p, ok := placed[c.BookID]; ok && p != f.ID {
 				continue
 			}
 			w, err := im.store.GetBook(ctx, c.BookID)
@@ -123,13 +186,35 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 			slots[i].VersionID = home[slots[i].BookID]
 		}
 		sort.Slice(slots, func(i, j int) bool { return slots[i].Number < slots[j].Number })
+		exile := false
 		switch {
 		case f.Presence == "missing" || f.Presence == "unavailable":
 			p.Skip = "The file is not on disk."
-		case f.NeedsReview || f.Unrequested || len(slots) == 0:
+		case f.NeedsReview || f.Unrequested:
+			p.Skip = "Not matched to a book yet."
+		case len(slots) == 0 && anyCov[f.ID]:
+			// Holds books whose placed copy is another file: out of the book
+			// folder, into review/ — never two copies of one book there.
+			if insideTree(f.Path) && !inReview(f.Path) {
+				exile = true
+			} else {
+				p.Skip = "Another file is placed for these books."
+			}
+		case len(slots) == 0:
 			p.Skip = "Not matched to a book yet."
 		}
 		if p.Skip != "" {
+			plans = append(plans, p)
+			continue
+		}
+		if exile {
+			p.dir = reviewDirs[0]
+			if strings.HasPrefix(f.Path, chaptersDir+string(filepath.Separator)) {
+				p.dir = reviewDirs[1]
+			}
+			p.name = filepath.Base(f.Path)
+			p.Rename = true
+			p.To = rel(assetPath(p.dir, p.name, ""))
 			plans = append(plans, p)
 			continue
 		}
@@ -264,6 +349,20 @@ func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettin
 		if dest = assetPath(dir, name, ""); dest != src {
 			if dest, err = placeAsset(dir, name, hash, ms.HashInName); err != nil {
 				return err
+			}
+			// files.path is unique across the table: never land on a path
+			// another row already records, even if the disk slot looks free.
+			base := dest
+			for i := 2; ; i++ {
+				var taken bool
+				if taken, err = im.store.PathTaken(ctx, dest, p.file.ID); err != nil {
+					return err
+				}
+				if !taken {
+					break
+				}
+				ext := filepath.Ext(base)
+				dest = fmt.Sprintf("%s (%d)%s", strings.TrimSuffix(base, ext), i, ext)
 			}
 		}
 	}

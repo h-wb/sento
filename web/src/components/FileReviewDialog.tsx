@@ -52,6 +52,12 @@ export function FileReviewDialog({ item, close }: { item: ReviewItem; close: () 
           notify.ok(
             `Replaced ${result.replaced.map((r) => `“${r.path.split('/').pop()}”`).join(', ')}`,
           )
+        if (result?.kept?.length)
+          notify.ok(
+            `Kept by the current holder: ${result.kept
+              .map((k) => `“${k.holderPath.split('/').pop()}” (score ${k.holderScore} > ${k.score})`)
+              .join(', ')}`,
+          )
         await Promise.all(
           ['activity', 'review', 'queue', 'series'].map((key) =>
             qc.invalidateQueries({ queryKey: [key] }),

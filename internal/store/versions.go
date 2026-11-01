@@ -317,6 +317,16 @@ type BookOwner struct {
 	Present  bool       `json:"present" db:"present"`
 }
 
+// PathTaken reports whether another file row already records path — the
+// unique index on files.path makes a blind move into it fail late.
+func (s *Store) PathTaken(ctx context.Context, path string, exceptFileID int64) (bool, error) {
+	n, err := get[int](ctx, s, `SELECT COUNT(*) FROM files WHERE path=? AND id<>?`, path, exceptFileID)
+	if err != nil {
+		return false, err
+	}
+	return *n > 0, nil
+}
+
 // BookOwners lists the files holding one book, pinned flag from coverage.
 func (s *Store) BookOwners(ctx context.Context, bookID int64) ([]BookOwner, error) {
 	return list[BookOwner](ctx, s, `
@@ -329,29 +339,30 @@ func (s *Store) BookOwners(ctx context.Context, bookID int64) ([]BookOwner, erro
 }
 
 // ReleaseBook drops one file's hold on one book (contents and coverage). The
-// file itself stays on disk; with no holds left it is an extra again.
-func (s *Store) ReleaseBook(ctx context.Context, fileID, bookID int64) error {
+// file itself stays on disk; with no holds left it is an extra again, and
+// holdless reports whether that happened.
+func (s *Store) ReleaseBook(ctx context.Context, fileID, bookID int64) (holdless bool, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_contents WHERE file_id=? AND book_id=?`), fileID, bookID); err != nil {
-		return err
+		return false, err
 	}
 	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_coverage WHERE file_id=? AND book_id=?`), fileID, bookID); err != nil {
-		return err
+		return false, err
 	}
 	var remaining int
 	if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM asset_contents WHERE file_id=?`), fileID).Scan(&remaining); err != nil {
-		return err
+		return false, err
 	}
 	if remaining == 0 {
 		if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET unrequested=TRUE WHERE id=?`), fileID); err != nil {
-			return err
+			return false, err
 		}
 	}
-	return tx.Commit()
+	return remaining == 0, tx.Commit()
 }
 
 func (s *Store) SetBookMonitored(ctx context.Context, seriesID, versionID, bookID int64, monitored bool) error {

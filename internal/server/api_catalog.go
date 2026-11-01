@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -282,7 +281,7 @@ func (s *Server) handleRemapFile(w http.ResponseWriter, r *http.Request) {
 	}
 	// Mapping the file may displace bettered owners (upgrade path); the
 	// response says which, so the UI can report the replacement.
-	mapping, err := service.ApplyUpgrades(r.Context(), s.store, id, fid, body.Books, body.Replace)
+	mapping, err := s.importer.ApplyUpgrades(r.Context(), id, fid, body.Books, body.Replace)
 	if err != nil {
 		writeErr(w, err)
 		return

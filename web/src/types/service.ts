@@ -765,11 +765,24 @@ export interface Replacement {
   toScore: number /* int */;
 }
 /**
+ * KeptClaim is one book the mapped file did not take because a current
+ * holder outranks it (or is pinned): the file stays an extra instead.
+ */
+export interface KeptClaim {
+  bookId: number /* int64 */;
+  holderFileId: number /* int64 */;
+  holderPath: string;
+  holderScore: number /* int */;
+  score: number /* int */;
+}
+/**
  * FileMappingResult reports what a mapping save did beyond recording the
- * file's own claims: which existing owners it displaced.
+ * file's own claims: which existing owners it displaced, and which books
+ * it left to their current holder.
  */
 export interface FileMappingResult {
   replaced?: Replacement[];
+  kept?: KeptClaim[];
 }
 
 //////////

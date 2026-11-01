@@ -141,7 +141,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		for _, l := range links {
 			refs = append(refs, store.BookRef{Ledger: l.Ledger, EditionID: l.EditionID, Number: l.Number, VersionID: l.VersionID, BookID: l.BookID})
 		}
-		if _, uerr := DisplaceOwners(ctx, im.store, item.SeriesID, fid, refs, false); uerr != nil {
+		if _, uerr := im.DisplaceOwners(ctx, item.SeriesID, fid, refs, false); uerr != nil {
 			slog.Warn("applying upgrade path after import failed", "series", item.SeriesID, "file", fid, "error", uerr)
 		}
 	}

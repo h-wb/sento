@@ -628,6 +628,12 @@ export default function EditionManager({
             const result = await api.mapFile(seriesID, file.id, books, replace)
             if (result?.replaced?.length)
               notify.ok(`Replaced ${result.replaced.map((r) => `“${r.path.split('/').pop()}”`).join(', ')}`)
+            if (result?.kept?.length)
+              notify.ok(
+                `Kept by the current holder: ${result.kept
+                  .map((k) => `“${k.holderPath.split('/').pop()}”`)
+                  .join(', ')}`,
+              )
             await changed()
             setFile(null)
           }}
