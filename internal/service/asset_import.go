@@ -114,7 +114,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		return err
 	}
 	review := false
-	profiles, formats, err := NewProfiles(im.store).EffectiveProfiles(ctx, item.SeriesID)
+	profiles, err := NewProfiles(im.store).SeriesProfiles(ctx, item.SeriesID)
 	if err != nil {
 		return err
 	}
@@ -123,14 +123,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		if e != nil {
 			return e
 		}
-		prof := profiles[version.EditionID]
-		if version.ProfileID > 0 {
-			prof, e = im.store.GetProfile(ctx, version.ProfileID)
-			if e != nil {
-				return e
-			}
-		}
-		if assetJudgement(facts, prof, formats).Broken != "" {
+		if assetJudgement(facts, profiles.For(*version), profiles.Formats).Broken != "" {
 			review = true
 		}
 	}

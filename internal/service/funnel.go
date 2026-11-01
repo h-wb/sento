@@ -134,7 +134,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 					cp.EditionSnapshot = col
 					cp.PolicySnapshot = run.versionProfiles[t.ID]
 					cp.VersionSnapshot = &t
-					cp.FormatSnapshot = run.formats
+					cp.FormatSnapshot = run.profiles.Formats
 					cp.Rejections = nil
 					cp.Coverage = nil
 					cp.Contents = nil
@@ -233,11 +233,10 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 		}
 	}
 	c.EditionID = colID
-	// The routed edition's profile decides scoring and health rules
-	// (edition override > series > instance default).
-	prof := run.profileFor(colID)
-	if p, ok := run.versionProfiles[c.VersionID]; ok {
-		prof = p
+	// The card's profile decides scoring and health rules.
+	prof, ok := run.versionProfiles[c.VersionID]
+	if !ok {
+		prof = run.profiles.Series
 	}
 	if prof != nil {
 		c.ProfileID = prof.ID
@@ -291,7 +290,7 @@ func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []par
 
 	// Custom formats: matched on every routable candidate (rejected ones
 	// keep their chips), floor-gated softly so force-grab can override.
-	c.evalFormats(prof, run.formats)
+	c.evalFormats(prof, run.profiles.Formats)
 	if prof != nil && prof.UpgradesEnabled && c.VersionID > 0 && (run.scope == nil || run.scope.BookID == 0) {
 		filtered := c.Coverage[:0]
 		for _, sl := range c.Coverage {

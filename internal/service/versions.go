@@ -206,17 +206,9 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	if err != nil {
 		return nil, err
 	}
-	profiles, formats, err := NewProfiles(st).EffectiveProfiles(ctx, seriesID)
+	profiles, err := NewProfiles(st).SeriesProfiles(ctx, seriesID)
 	if err != nil {
 		return nil, err
-	}
-	allProfiles, err := st.ListProfiles(ctx)
-	if err != nil {
-		return nil, err
-	}
-	byProfile := map[int64]*profile.Profile{}
-	for i := range allProfiles {
-		byProfile[allProfiles[i].ID] = &allProfiles[i]
 	}
 	coverageByVersion := map[int64][]store.AssetCoverage{}
 	for _, a := range coverage {
@@ -264,12 +256,9 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	today := time.Now().Format("2006-01-02")
 	for _, version := range versions {
 		col := byCol[version.EditionID]
-		prof := profiles[col.ID]
-		if version.ProfileID > 0 {
-			prof = byProfile[version.ProfileID]
-		}
+		prof := profiles.For(version)
 		view.Profiles[version.ID] = prof
-		judged := judgeCardFiles(col, prof, formats, coverageByVersion[version.ID], byFile, present)
+		judged := judgeCardFiles(col, prof, profiles.Formats, coverageByVersion[version.ID], byFile, present)
 		chapter := col.Type == LedgerChapter
 		books := view.Books[col.ID]
 		slots := make([]BookStatus, 0, len(books))

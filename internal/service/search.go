@@ -343,18 +343,9 @@ type searchRun struct {
 	editions        []store.Edition
 	shelf           *shelf
 	blocked         map[string]bool // "protocol/externalKey" bans
-	// profiles is the effective release profile per edition id, with
-	// the series-level profile under key 0 (nil map = built-ins).
-	profiles map[int64]*profile.Profile
-	formats  []profile.Format
-}
-
-// profileFor resolves the effective profile of a routed candidate.
-func (run *searchRun) profileFor(editionID int64) *profile.Profile {
-	if p, ok := run.profiles[editionID]; ok {
-		return p
-	}
-	return run.profiles[0]
+	// profiles judges for each card (CardProfiles.For); versionProfiles
+	// holds what it said for the cards the ledger evaluated.
+	profiles CardProfiles
 }
 
 func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedger string, version *SearchScope) (*searchRun, error) {
@@ -387,7 +378,7 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 	if run.blocked, err = s.store.BlockedKeys(ctx); err != nil {
 		return nil, err
 	}
-	if run.profiles, run.formats, err = s.profiles.EffectiveProfiles(ctx, seriesID); err != nil {
+	if run.profiles, err = s.profiles.SeriesProfiles(ctx, seriesID); err != nil {
 		return nil, err
 	}
 	if version != nil && version.ReplaceQueueID > 0 {

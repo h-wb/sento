@@ -187,50 +187,47 @@ func (s *ProfileService) SetDefaultProfile(ctx context.Context, id int64) error 
 	return s.store.PutSetting(ctx, defaultProfileKey, raw)
 }
 
-// EffectiveProfiles resolves the release profile per edition of a
-// series — edition override > series > instance default — plus the
-// series-level profile under key 0 (the chapter ledger and any routing
-// fallback) and all formats. A nil seriesProfile (and empty map) means
-// none are configured — the funnel falls back to built-in rules.
-func (s *ProfileService) EffectiveProfiles(ctx context.Context, seriesID int64) (map[int64]*profile.Profile, []profile.Format, error) {
+// CardProfiles says which release profile judges for each card of a
+// series: the card's own, else the series', else the instance default.
+// With no profile configured everything is nil, and built-in rules apply.
+type CardProfiles struct {
+	Series  *profile.Profile
+	ByID    map[int64]*profile.Profile
+	Formats []profile.Format
+}
+
+// For is the profile that judges releases and files for one card.
+func (p CardProfiles) For(v store.CollectedVersion) *profile.Profile {
+	if own := p.ByID[v.ProfileID]; own != nil {
+		return own
+	}
+	return p.Series
+}
+
+// SeriesProfiles loads what CardProfiles needs for one series.
+func (s *ProfileService) SeriesProfiles(ctx context.Context, seriesID int64) (CardProfiles, error) {
 	series, err := s.store.GetSeries(ctx, seriesID)
 	if err != nil {
-		return nil, nil, err
+		return CardProfiles{}, err
 	}
 	all, err := s.store.ListProfiles(ctx)
-	if err != nil {
-		return nil, nil, err
+	if err != nil || len(all) == 0 {
+		return CardProfiles{}, err
 	}
-	if len(all) == 0 {
-		return nil, nil, nil
-	}
-	byID := map[int64]*profile.Profile{}
+	out := CardProfiles{ByID: map[int64]*profile.Profile{}}
 	for i := range all {
-		byID[all[i].ID] = &all[i]
+		out.ByID[all[i].ID] = &all[i]
 	}
-	seriesEff := byID[series.ProfileID]
-	if seriesEff == nil { // unset or stale assignment → instance default
+	out.Series = out.ByID[series.ProfileID]
+	if out.Series == nil { // unset or stale assignment → instance default
 		did, err := s.DefaultProfileID(ctx)
 		if err != nil {
-			return nil, nil, err
+			return CardProfiles{}, err
 		}
-		seriesEff = byID[did]
+		out.Series = out.ByID[did]
 	}
-	collections, err := s.store.ListEditions(ctx, seriesID)
-	if err != nil {
-		return nil, nil, err
-	}
-	out := map[int64]*profile.Profile{0: seriesEff}
-	// An edition's copies inherit the series' profile (a copy may set its
-	// own); editions carry none of their own.
-	for _, col := range collections {
-		out[col.ID] = seriesEff
-	}
-	formats, err := s.store.ListFormats(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	return out, formats, nil
+	out.Formats, err = s.store.ListFormats(ctx)
+	return out, err
 }
 
 // --- portable JSON form (recyclarr-style) ---

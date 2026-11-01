@@ -41,3 +41,22 @@ func TestEditionCollectedOncePerProfile(t *testing.T) {
 		t.Fatal("the last card of an edition was removed")
 	}
 }
+
+// A card is judged by its own profile, else the series'.
+func TestCardProfilesFor(t *testing.T) {
+	series, own := &profile.Profile{ID: 1}, &profile.Profile{ID: 2}
+	p := CardProfiles{Series: series, ByID: map[int64]*profile.Profile{1: series, 2: own}}
+	for _, tc := range []struct {
+		name string
+		card store.CollectedVersion
+		want *profile.Profile
+	}{
+		{"its own", store.CollectedVersion{ProfileID: 2}, own},
+		{"inherited", store.CollectedVersion{}, series},
+		{"a deleted profile falls back to the series'", store.CollectedVersion{ProfileID: 9}, series},
+	} {
+		if got := p.For(tc.card); got != tc.want {
+			t.Errorf("%s: got %+v", tc.name, got)
+		}
+	}
+}
