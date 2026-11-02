@@ -305,6 +305,52 @@ type FileMappingBody struct {
 	Replace bool `json:"replace,omitempty"`
 }
 
+type ReviewResolveBody struct {
+	FileIDs []int64 `json:"fileIds"`
+}
+
+// handleResolveFileReviews declines a pack of file reviews at once: every
+// file is marked reviewed and unmapped, the bulk counterpart of the bulk
+// accept. The response says which files were resolved and which were
+// skipped because they no longer waited.
+func (s *Server) handleResolveFileReviews(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body ReviewResolveBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	res, err := s.importer.ResolveFileReviews(r.Context(), id, body.FileIDs)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+type ReviewMatchBody struct {
+	VersionID int64   `json:"versionId"`
+	FileIDs   []int64 `json:"fileIds"`
+}
+
+// handleMatchRelease applies one collected version to a whole pack: each
+// file is mapped by its own parsed numbers, and files whose numbers do not
+// resolve are left for individual review.
+func (s *Server) handleMatchRelease(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body ReviewMatchBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	matches, err := s.importer.MatchReleaseFiles(r.Context(), id, body.VersionID, body.FileIDs)
+	respondList(w, matches, err)
+}
+
 func (s *Server) handleObservations(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {

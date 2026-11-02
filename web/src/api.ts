@@ -1,5 +1,12 @@
-import type { ReviewItem } from './types/store'
-import type { EditionOverview, FileChange, HealthReport, OrganizeResult, RemovedSeries, WantedRow } from './types/service'
+import type {
+  EditionOverview,
+  FileChange,
+  HealthReport,
+  OrganizeResult,
+  ReleaseFileMatch,
+  RemovedSeries,
+  WantedRow,
+} from './types/service'
 import type {
   CollectedVersion,
   Book,
@@ -12,6 +19,7 @@ import type {
   Work,
 } from './types/store'
 import type { CleanupFile, CleanupResult, BookStatus, FileMappingResult } from './types/service'
+import type { ReviewItem, ReviewResolution } from './types/store'
 // Typed client for the Sento API. All payload types are generated from the
 // Go structs (mise run gen) into ./types/ — the backend is the schema.
 
@@ -236,6 +244,19 @@ export const api = {
     request<FileMappingResult>(`/series/${id}/files/${fid}/mapping`, {
       method: 'PUT',
       body: JSON.stringify({ books, ...(replace ? { replace: true } : {}) }),
+    }),
+  // Decline a pack of file reviews at once: every file reviewed, unmapped.
+  resolveFileReviews: (id: number, fileIds: number[]) =>
+    request<ReviewResolution>(`/series/${id}/review/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ fileIds }),
+    }),
+  // Apply one collected version to a whole pack: each file maps by its own
+  // parsed numbers; unresolved files come back with the reason.
+  matchRelease: (id: number, versionId: number, fileIds: number[]) =>
+    request<ReleaseFileMatch[]>(`/series/${id}/review/match`, {
+      method: 'POST',
+      body: JSON.stringify({ versionId, fileIds }),
     }),
   observations: (id: number) => request<BookObservation[]>(`/series/${id}/observations`),
   reviewObservation: (id: number, oid: number, accept: boolean) =>

@@ -614,6 +614,31 @@ export interface RemovedSeries {
 }
 
 //////////
+// source: review_bulk.go
+
+/**
+ * ReleaseFileMatch is one file's outcome of matching a whole release at
+ * once: the books its own numbers resolved to, or why it was left for
+ * individual review.
+ */
+export interface ReleaseFileMatch {
+  fileId: number /* int64 */;
+  /**
+   * Books is empty when the file was left; Note then says why.
+   */
+  books: BookRef[];
+  /**
+   * Label names the resolved books in words ("volume 3").
+   */
+  label?: string;
+  /**
+   * Note says why the file was left for individual review, or what to
+   * check on a mapped one (an organize failure).
+   */
+  note?: string;
+}
+
+//////////
 // source: review_proposals.go
 
 
