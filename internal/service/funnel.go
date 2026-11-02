@@ -234,9 +234,12 @@ func coverageRanges(searchLedger string, rc *ReleaseCandidate) []parse.Range {
 // profile says, then, when nothing stands against it, its score
 // (decision-engine.md §3–4).
 func (s *SearchService) funnel(run *searchRun, c *ReleaseCandidate, ranges []parse.Range) {
-	// An inferred pack runs the whole funnel so its books are known, then
+	// A pack without explicit units runs the whole funnel so its books are known, then
 	// carries a soft rejection: a person has to confirm it.
-	if c.Parse.CompleteInferred && len(ranges) == 0 {
+	// "Complete" establishes neither the units nor the numbering. A pack
+	// of web chapters cannot silently stand for a volume edition, even
+	// when it is the only collected edition of the work.
+	if c.Parse.Complete && len(ranges) == 0 {
 		defer c.reject("rejected.pack_unverified")
 	}
 	prof := c.PolicySnapshot
