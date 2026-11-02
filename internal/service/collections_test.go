@@ -48,6 +48,7 @@ func standardEditions(t *testing.T, st *store.Store, id int64) []store.Edition {
 // Collections that are the same MangaBaka edition in the same language
 // are one edition: a book is wanted once, whatever media it exists in.
 func TestCollectionsOfOneEditionAreGrouped(t *testing.T) {
+	t.Parallel()
 	conn, dialect := dbtest.Open(t)
 	st := store.New(conn, dialect)
 	lib := NewLibrary(st, withPaperback(testProvider()))
@@ -122,6 +123,7 @@ func TestCollectionsOfOneEditionAreGrouped(t *testing.T) {
 // by a refresh, unless both hold something of the person's: those are
 // merged by hand.
 func TestRefreshGroupsExistingEditions(t *testing.T) {
+	t.Parallel()
 	for _, owned := range []bool{false, true} {
 		conn, dialect := dbtest.Open(t)
 		st := store.New(conn, dialect)

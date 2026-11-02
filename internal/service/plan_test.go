@@ -22,6 +22,7 @@ func planCandidate(name string, version int64, numbers ...int64) ReleaseCandidat
 }
 
 func TestPlanMarginalCoverageAndIndependentVersions(t *testing.T) {
+	t.Parallel()
 	a := planCandidate("a", 1, 1, 2, 3, 4, 5)
 	a.Score += 100
 	b := planCandidate("b", 1, 4, 5, 6, 7, 8)
@@ -56,6 +57,7 @@ func TestPlanMarginalCoverageAndIndependentVersions(t *testing.T) {
 }
 
 func TestPlanLeavesInefficientOverlapToAPerson(t *testing.T) {
+	t.Parallel()
 	a := planCandidate("a", 1, 1, 2, 3, 4, 5)
 	a.Score += 100
 	b := planCandidate("b", 1, 3, 4, 5, 6)
@@ -75,6 +77,7 @@ func TestPlanLeavesInefficientOverlapToAPerson(t *testing.T) {
 }
 
 func TestPlanAvailabilityAndUnknownSizes(t *testing.T) {
+	t.Parallel()
 	ready := planCandidate("ready", 1, 1)
 	ready.Size = 0
 	dead := planCandidate("dead", 1, 2)
@@ -106,6 +109,7 @@ func TestPlanAvailabilityAndUnknownSizes(t *testing.T) {
 }
 
 func TestPlanSubmissionRechecksOwnershipAndUsesClaims(t *testing.T) {
+	t.Parallel()
 	_, st, id, edition, books, version := modelFixture(t)
 	ctx := context.Background()
 	prov := &payloadProvider{}
@@ -151,6 +155,7 @@ func TestPlanSubmissionRechecksOwnershipAndUsesClaims(t *testing.T) {
 // A replacement search sees the stalled job's books as wanted, rules out the
 // job's own release, and keeps the job until a replacement claims its books.
 func TestReplacementKeepsOldDownloadUntilPicked(t *testing.T) {
+	t.Parallel()
 	_, st, id, edition, books, version := modelFixture(t)
 	ctx := context.Background()
 	prov := &payloadProvider{}
@@ -211,6 +216,7 @@ func TestReplacementKeepsOldDownloadUntilPicked(t *testing.T) {
 // The profile's score decides between releases; an indexer's priority
 // (lower wins) only breaks a tie, in the plan and in the result order.
 func TestIndexerPriorityOnlyBreaksTies(t *testing.T) {
+	t.Parallel()
 	low := planCandidate("low priority", 1, 1)
 	low.IndexerPriority = 50
 	high := planCandidate("high priority", 1, 1)

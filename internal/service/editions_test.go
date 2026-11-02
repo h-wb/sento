@@ -30,6 +30,7 @@ func collectionByName(t *testing.T, cols []store.Edition, name, lang string) sto
 }
 
 func TestCustomEditions(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 

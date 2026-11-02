@@ -37,6 +37,7 @@ func writePage(t *testing.T, path string, shade uint8) {
 }
 
 func TestLoosePagesImportInNaturalOrderAndKeepOriginals(t *testing.T) {
+	t.Parallel()
 	_, st, id, col, books, version := modelFixture(t)
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -86,6 +87,7 @@ func TestLoosePagesImportInNaturalOrderAndKeepOriginals(t *testing.T) {
 }
 
 func TestLoosePagesAmbiguityAndEscapingPaths(t *testing.T) {
+	t.Parallel()
 	for _, folder := range []string{"1", "Part 1", "ONE PIECE v01-v02"} {
 		t.Run(folder, func(t *testing.T) {
 			_, st, id, col, books, version := modelFixture(t)
@@ -119,6 +121,7 @@ func TestLoosePagesAmbiguityAndEscapingPaths(t *testing.T) {
 }
 
 func TestImageArchiveRejectsInvalidPageAndCleansStage(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	src := filepath.Join(dir, "001.png")
 	dest := filepath.Join(dir, "book.cbz")
@@ -134,6 +137,7 @@ func TestImageArchiveRejectsInvalidPageAndCleansStage(t *testing.T) {
 }
 
 func TestOverlappingPackImportKeepsFullContentsButClaimsSubset(t *testing.T) {
+	t.Parallel()
 	_, st, id, col, books, version := modelFixture(t)
 	ctx := context.Background()
 	dir := t.TempDir()

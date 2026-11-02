@@ -12,6 +12,7 @@ import (
 )
 
 func TestCleanupTrashRestoresIdentityAndProtectsSharedAssets(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	lib, st, sid, edition, books, version := modelFixture(t)
 	fid := ownedModelFile(t, st, sid, edition, books[0], version)
@@ -108,6 +109,7 @@ func TestCleanupTrashRestoresIdentityAndProtectsSharedAssets(t *testing.T) {
 }
 
 func TestCleanupRechecksSelectionsPinsAndReview(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, st, sid, e, books, v := modelFixture(t)
 	fid := ownedModelFile(t, st, sid, e, books[0], v)
@@ -183,6 +185,7 @@ func TestCleanupRechecksSelectionsPinsAndReview(t *testing.T) {
 }
 
 func TestExpiredTrashPurgeAndInterruptedMoveRecovery(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, st, sid, e, books, v := modelFixture(t)
 	fid := ownedModelFile(t, st, sid, e, books[0], v)

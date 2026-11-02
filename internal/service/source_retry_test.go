@@ -15,6 +15,7 @@ import (
 )
 
 func TestSourceFailureQueueRecovery(t *testing.T) {
+	t.Parallel()
 	for _, permanent := range []bool{false, true} {
 		t.Run(fmt.Sprintf("permanent=%v", permanent), func(t *testing.T) {
 			ctx := context.Background()
@@ -110,6 +111,7 @@ func TestSourceFailureQueueRecovery(t *testing.T) {
 // blocklists the release, so the next sweep picks another one, instead
 // of leaving the job for review.
 func TestGoneSourceListingIsBlocklisted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, st, sid, edition, books, version := modelFixture(t)
 	failure := &provider.DownloadError{Err: errors.New("listing pages: host: HTTP error 404"), Dead: true}
@@ -145,6 +147,7 @@ func TestGoneSourceListingIsBlocklisted(t *testing.T) {
 // Three releases in a row that a listing cannot give switch it off, and
 // history says so; fewer leave it on.
 func TestAListingThatKeepsFailingIsSwitchedOff(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, st, sid, edition, books, version := modelFixture(t)
 	bid, err := st.AddBinding(ctx, store.Binding{SeriesID: sid, SourceID: "1", SourceMangaKey: "broken", State: "active"})
@@ -187,6 +190,7 @@ func TestAListingThatKeepsFailingIsSwitchedOff(t *testing.T) {
 // Trying another release gives up a stuck job's release and says which
 // series to search again; a job already importing is left alone.
 func TestTryAnotherGivesUpTheRelease(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, st, sid, edition, books, version := modelFixture(t)
 	reserve := func(key string, book int) int64 {
@@ -223,6 +227,7 @@ func TestTryAnotherGivesUpTheRelease(t *testing.T) {
 
 // Recovery must never give up files already delivered to the review inbox.
 func TestTryAnotherPreservesImportReview(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, st, sid, edition, books, version := modelFixture(t)
 	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: provider.ProtocolSource, ReleaseKey: "review-pack"}, []store.BookRef{modelRef(edition, books[0], version)})
@@ -264,6 +269,7 @@ func (p *countingDeadProvider) State(context.Context, string) (provider.Download
 }
 
 func TestBrokenListingRetiresRemainingQueuedDownloads(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, st, sid, edition, _, version := modelFixture(t)
 	bid, err := st.AddBinding(ctx, store.Binding{SeriesID: sid, SourceID: "1", SourceMangaKey: "broken", State: "active"})
@@ -316,6 +322,7 @@ func TestBrokenListingRetiresRemainingQueuedDownloads(t *testing.T) {
 }
 
 func TestListingSuccessAndManualEnableResetFailures(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, st, sid, _, _, _ := modelFixture(t)
 	bid, err := st.AddBinding(ctx, store.Binding{SeriesID: sid, SourceID: "1", SourceMangaKey: "sometimes-broken", State: "active"})
