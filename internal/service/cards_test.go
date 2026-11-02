@@ -12,6 +12,7 @@ import (
 // after its profile; any way of collecting it can be removed but the last,
 // and removing the default makes another the default.
 func TestEditionCollectedOncePerProfile(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, standard, _, version := modelFixture(t)
 	ctx := context.Background()
 	colored, err := st.AddProfile(ctx, profile.Profile{Name: "Colored", FormatScores: map[int64]int{}})
@@ -44,6 +45,7 @@ func TestEditionCollectedOncePerProfile(t *testing.T) {
 
 // A card is judged by its own profile, else the series'.
 func TestCardProfilesFor(t *testing.T) {
+	t.Parallel()
 	series, own := &profile.Profile{ID: 1}, &profile.Profile{ID: 2}
 	p := cardProfiles{Series: series, ByID: map[int64]*profile.Profile{1: series, 2: own}}
 	for _, tc := range []struct {
@@ -63,6 +65,7 @@ func TestCardProfilesFor(t *testing.T) {
 
 // A profile that judges a card cannot be deleted from under it.
 func TestProfileInUseByACardIsKept(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, standard, _, _ := modelFixture(t)
 	ctx := context.Background()
 	svc := NewProfiles(st)
@@ -89,6 +92,7 @@ func TestProfileInUseByACardIsKept(t *testing.T) {
 }
 
 func TestKnownDigitalGroups(t *testing.T) {
+	t.Parallel()
 	f := profile.Format{ID: 1, Conditions: []profile.Condition{{Type: profile.CondGroup, Value: knownDigitalGroups}}}
 	for group, want := range map[string]bool{
 		"1r0n": true, "1r0n, Bingbong": true, "LuCaZ": true, "danke-Empire": true, "LostNerevarine-Empire": true,

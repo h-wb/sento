@@ -14,6 +14,7 @@ import (
 // A file Sento tagged is adopted back from its tags: the right book and
 // the release's facts, whatever its name now says (docs/domain/metadata.md).
 func TestRescanAdoptsATaggedFileFromItsNotes(t *testing.T) {
+	t.Parallel()
 	_, st, sid, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	series, err := st.GetSeries(ctx, sid)
@@ -79,6 +80,7 @@ func TestRescanAdoptsATaggedFileFromItsNotes(t *testing.T) {
 // Publisher means the publisher's book: a scanlator's chapter credits the
 // group as translator instead, unless the release names a publisher.
 func TestTagsTellPublishedFromFanTranslated(t *testing.T) {
+	t.Parallel()
 	_, st, sid, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	series, _ := st.GetSeries(ctx, sid)
@@ -98,6 +100,7 @@ func TestTagsTellPublishedFromFanTranslated(t *testing.T) {
 }
 
 func TestEditionFormat(t *testing.T) {
+	t.Parallel()
 	for name, want := range map[string]string{
 		"Standard Edition": "", "Chapters": "", "Deluxe Edition": "Deluxe", "Box Set Edition": "Box Set",
 		"Full Color Edition": "Full Color", "Fullmetal Edition": "Fullmetal", "Kanzenban": "Kanzenban",
@@ -111,6 +114,7 @@ func TestEditionFormat(t *testing.T) {
 // A folder of files Sento tagged is identified by them before its name is
 // looked up; files that disagree decide nothing.
 func TestImportProposalsReadTaggedFiles(t *testing.T) {
+	t.Parallel()
 	lib, _ := setup(t)
 	root := t.TempDir()
 	tag := func(dir, name string, id int64, series string) {

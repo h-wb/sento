@@ -16,6 +16,7 @@ import (
 // An upgrade is measured against the copy on disk, not against zero: a
 // release scoring the same as the installed one is not an upgrade.
 func TestUpgradeComparesAgainstTheInstalledCopy(t *testing.T) {
+	t.Parallel()
 	_, st, sid, c, ws, v := modelFixture(t)
 	ctx := context.Background()
 	fid := ownedModelFile(t, st, sid, c, ws[0], v)
@@ -69,6 +70,7 @@ func TestUpgradeComparesAgainstTheInstalledCopy(t *testing.T) {
 // numbered like a volume is not confirmed by the volume's file, and two
 // revisions of one volume go to review.
 func TestScanDoesNotConfirmBooksThatOnlyShareANumber(t *testing.T) {
+	t.Parallel()
 	_, st, sid, c, ws, _ := modelFixture(t)
 	ctx := context.Background()
 	parsed := parse.ParseAnchored("ONE PIECE v01 (Digital).cbz", parse.ChannelFile, []string{"ONE PIECE"})
@@ -112,6 +114,7 @@ func (h *discoveryHost) Chapters(context.Context, string, string) ([]extensions.
 // its trusted source which chapters exist, and the same search then
 // offers them.
 func TestEmptyChapterEditionDiscoversItsFirstBooks(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	c, err := lib.CreateEdition(ctx, sid, CreateEditionParams{EditionName: "Scanlation chapters", Language: "en", Type: "chapter", Monitored: true})

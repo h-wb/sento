@@ -67,6 +67,7 @@ func torrentRegistry(st *store.Store) *provider.Registry {
 }
 
 func TestUnifiedVolumeFunnel(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "all"})
@@ -153,6 +154,7 @@ func TestUnifiedVolumeFunnel(t *testing.T) {
 }
 
 func TestSiteConfigFiltering(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "all"})
@@ -202,6 +204,7 @@ func TestSiteConfigFiltering(t *testing.T) {
 // Trackers index release names, which spell symbols out: the query must
 // too, or "HUNTER×HUNTER" finds nothing where "hunter x hunter" does.
 func TestTextQuery(t *testing.T) {
+	t.Parallel()
 	for title, want := range map[string]string{
 		"HUNTER×HUNTER": "hunter x hunter",
 		"Re:ZERO -Starting Life in Another World-": "re zero starting life in another world",
@@ -219,6 +222,7 @@ func TestTextQuery(t *testing.T) {
 // ban recorded from a hash-less listing (guid-keyed job) still catches the
 // same release when the feed serves it with an infohash, and vice versa.
 func TestBlocklistMatchesReleaseUnderAnyKey(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "all"})

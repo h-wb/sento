@@ -49,6 +49,7 @@ func waitingFile(t *testing.T, st *store.Store, sid int64, dir, name, key string
 // files turn up in cleanup as trashed-able unmapped files. A file that no
 // longer waits is skipped with its reason, never overwritten.
 func TestBulkDeclineResolvesAPackAtOnce(t *testing.T) {
+	t.Parallel()
 	_, st, sid, standard, books, version := modelFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
@@ -137,6 +138,7 @@ func TestBulkDeclineResolvesAPackAtOnce(t *testing.T) {
 // numbers do not resolve are left for individual review, and the pack's
 // download only settles once they are answered.
 func TestMatchWholeReleaseMapsFilesByTheirNumbers(t *testing.T) {
+	t.Parallel()
 	_, st, sid, standard, books, version := modelFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()

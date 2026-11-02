@@ -11,6 +11,7 @@ import (
 )
 
 func TestCopyRuleMigrationPreservesProfilesAndIsRepeatable(t *testing.T) {
+	t.Parallel()
 	conn, dialect := dbtest.Open(t)
 	st := store.New(conn, dialect)
 	ctx := context.Background()
@@ -93,6 +94,7 @@ func TestCopyRuleMigrationPreservesProfilesAndIsRepeatable(t *testing.T) {
 }
 
 func TestProfileRulesRoundTripAndFileEvaluation(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, c, books, version := modelFixture(t)
 	ctx := context.Background()
 	svc := NewProfiles(st)

@@ -17,6 +17,7 @@ import (
 )
 
 func TestEditionDisappearanceSuspendsCollection(t *testing.T) {
+	t.Parallel()
 	lib, st, id, c, _, version := modelFixture(t)
 	ctx := context.Background()
 	p := testProvider()
@@ -45,6 +46,7 @@ func TestEditionDisappearanceSuspendsCollection(t *testing.T) {
 }
 
 func TestContentsSurviveTargetDeletionAndPolicyChanges(t *testing.T) {
+	t.Parallel()
 	lib, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	only := func(group string) int64 {
@@ -112,6 +114,7 @@ func TestContentsSurviveTargetDeletionAndPolicyChanges(t *testing.T) {
 }
 
 func TestUnavailableRootBlocksRedownloadButMissingArchiveDoesNot(t *testing.T) {
+	t.Parallel()
 	lib, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	ownedModelFile(t, st, id, c, ws[0], version)
@@ -155,6 +158,7 @@ func TestUnavailableRootBlocksRedownloadButMissingArchiveDoesNot(t *testing.T) {
 }
 
 func TestBulkMonitoringRollsBackForeignBook(t *testing.T) {
+	t.Parallel()
 	lib, st, id, _, ws, version := modelFixture(t)
 	ctx := context.Background()
 	if err := st.BulkMonitor(ctx, id, version.ID, []int64{ws[0].ID, 999999}, false); err == nil {
@@ -188,6 +192,7 @@ func TestBulkMonitoringRollsBackForeignBook(t *testing.T) {
 // An edition is what its names say: a rename can add what the catalog
 // leaves out, and a name that says nothing claims nothing.
 func TestEditionNameCarriesWhatItIs(t *testing.T) {
+	t.Parallel()
 	lib, st, id, c, _, _ := modelFixture(t)
 	_ = lib
 	ctx := context.Background()
@@ -227,6 +232,7 @@ func (p *recoveryProvider) Fetch(ctx context.Context, key string) (*provider.Pay
 }
 
 func TestImportReviewRetainsClaimsAndCompletesExistingPayload(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -274,6 +280,7 @@ func TestImportReviewRetainsClaimsAndCompletesExistingPayload(t *testing.T) {
 }
 
 func TestTransientProviderErrorBacksOffAndRetainsClaims(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	p := &recoveryProvider{stateErr: errors.New("client unavailable")}
@@ -316,6 +323,7 @@ func TestTransientProviderErrorBacksOffAndRetainsClaims(t *testing.T) {
 }
 
 func TestFileFactsAreSpecificAndManualCorrectionsSurviveRetry(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
@@ -351,6 +359,7 @@ func TestFileFactsAreSpecificAndManualCorrectionsSurviveRetry(t *testing.T) {
 }
 
 func TestChapterExtrasZeroAndReadOnlyLedger(t *testing.T) {
+	t.Parallel()
 	lib, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	c, err := lib.CreateEdition(ctx, id, CreateEditionParams{EditionName: "Local chapters", Language: "en", Type: "chapter", Monitored: true})
@@ -408,6 +417,7 @@ func TestChapterExtrasZeroAndReadOnlyLedger(t *testing.T) {
 }
 
 func TestTrustedChaptersRequireVerifiedBindingAndDoNotFillGaps(t *testing.T) {
+	t.Parallel()
 	lib, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	c, err := lib.CreateEdition(ctx, id, CreateEditionParams{EditionName: "Reader chapters", Language: "en", Type: "chapter", Monitored: true})
@@ -445,6 +455,7 @@ func TestTrustedChaptersRequireVerifiedBindingAndDoNotFillGaps(t *testing.T) {
 // without asking. A listing of volumes, or a source with several matches,
 // is left for a person to place.
 func TestASoleChapterListingIsPlacedAndTrusted(t *testing.T) {
+	t.Parallel()
 	_, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	editions, err := st.ListEditions(ctx, id)
@@ -500,6 +511,7 @@ func TestASoleChapterListingIsPlacedAndTrusted(t *testing.T) {
 }
 
 func TestConcurrentBookDeletionAndReservationDoNotLeaveDanglingPlan(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	start := make(chan struct{})
@@ -528,6 +540,7 @@ func TestConcurrentBookDeletionAndReservationDoNotLeaveDanglingPlan(t *testing.T
 }
 
 func TestLedgerReadsDoNotInferNewChapters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	conn, dialect := dbtest.Open(t)
 	st := store.New(conn, dialect)

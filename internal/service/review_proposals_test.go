@@ -18,6 +18,7 @@ import (
 // takes its kind from the download it came in, and stays unread outside
 // one.
 func TestReviewProposesWhatTheFileNameSays(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, standard, books, version := modelFixture(t)
 	ctx := context.Background()
 	titles := []string{"ONE PIECE"}
@@ -109,6 +110,7 @@ func packJob(t *testing.T, st *store.Store, sid int64, key string, refs []store.
 // proposed onto the collected volumes — not even the ones whose number
 // happens to be a volume.
 func TestUnnumberedPackProposesOnlyWhatItsNumbersFit(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, standard, books, version := modelFixture(t)
 	packJob(t, st, sid, "beyond", []store.BookRef{modelRef(standard, books[0], version), modelRef(standard, books[1], version), modelRef(standard, books[2], version)})
 	var files []int64
@@ -126,6 +128,7 @@ func TestUnnumberedPackProposesOnlyWhatItsNumbersFit(t *testing.T) {
 // chapter way: a download of volumes cannot read it as a volume number,
 // even when the pack's numbers are all books of the volume edition.
 func TestZeroPaddedPackNumbersAreNotVolumeNumbers(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, standard, books, version := modelFixture(t)
 	packJob(t, st, sid, "padded", []store.BookRef{modelRef(standard, books[0], version), modelRef(standard, books[1], version), modelRef(standard, books[2], version)})
 	var files []int64
@@ -143,6 +146,7 @@ func TestZeroPaddedPackNumbersAreNotVolumeNumbers(t *testing.T) {
 // book of the edition: "v01, v99" against a three-volume edition is not
 // volume 1 alone.
 func TestPartialNumbersProposeNothing(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, _, _, _ := modelFixture(t)
 	partial := addReviewFile(t, st, sid, "ONE PIECE v01, v99 (Digital).cbz", "")
 	if got := proposalOf(t, lib, sid, partial); got != nil {
@@ -159,6 +163,7 @@ func TestPartialNumbersProposeNothing(t *testing.T) {
 // of chapters, the plainly numbered file is proposed and the side-story
 // one is left to a person.
 func TestSideStoryNumbersAreNotBookNumbers(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	cols, err := st.ListEditions(ctx, sid)
@@ -202,6 +207,7 @@ func TestSideStoryNumbersAreNotBookNumbers(t *testing.T) {
 // A download held for review closes on the last confirmation of its
 // files, says what was confirmed, and wants again the books no file held.
 func TestReviewedDownloadClosesItself(t *testing.T) {
+	t.Parallel()
 	_, st, sid, standard, books, version := modelFixture(t)
 	ctx := context.Background()
 	im := NewImporter(st, nil, t.TempDir(), nil)
@@ -272,6 +278,7 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 // and a download waiting on it closes (an extra chapter like 92.1 that the
 // catalog has no book for).
 func TestKeepingAnExtraResolvesReview(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, standard, books, version := modelFixture(t)
 	ctx := context.Background()
 	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "pack", Title: "ONE PIECE pack"}, []store.BookRef{modelRef(standard, books[0], version)})
@@ -312,6 +319,7 @@ func TestKeepingAnExtraResolvesReview(t *testing.T) {
 // A source that found nothing for a series is a question for a person —
 // until it finds a match or is turned off for that series.
 func TestUnmatchedSourceIsAReviewQuestion(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	ix, err := st.AddIndexer(ctx, store.Indexer{Name: "Weeb Central (en)", Protocol: store.IndexerSource, Enabled: true, UseVolumes: true, UseChapters: true, Settings: []byte(`{"sourceId":"42"}`)})
@@ -361,6 +369,7 @@ func TestUnmatchedSourceIsAReviewQuestion(t *testing.T) {
 // for a black-and-white card. Overlapping policies need a choice, not a
 // silent fallback to the default card.
 func TestReviewProposesOnlyProfileCompatibleVersion(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, edition, _, version := modelFixture(t)
 	ctx := context.Background()
 	fidFormat, err := st.AddFormat(ctx, profile.Format{Name: "Colored", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "colored"}}})
@@ -444,6 +453,7 @@ func TestReviewProposesOnlyProfileCompatibleVersion(t *testing.T) {
 // the hint still carries the ledger and numbers, so review can prefill
 // them and map them once an edition is chosen.
 func TestReviewHintSurvivesWithoutProposal(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	for _, tc := range []struct {

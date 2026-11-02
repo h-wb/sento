@@ -12,6 +12,7 @@ import (
 )
 
 func TestActivityGroupsFileQuestionsWithTheirImport(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	lib, st, sid, edition, books, version := modelFixture(t)
 	reserve := func(key string, book int, status string) int64 {
@@ -89,6 +90,7 @@ func TestActivityGroupsFileQuestionsWithTheirImport(t *testing.T) {
 }
 
 func TestActivityRetiresFailedAttemptsOnlyWhenAllBooksAreCovered(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	lib, st, sid, edition, books, version := modelFixture(t)
 	old, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "old-pack"}, []store.BookRef{modelRef(edition, books[0], version), modelRef(edition, books[1], version)})
@@ -140,6 +142,7 @@ func TestActivityRetiresFailedAttemptsOnlyWhenAllBooksAreCovered(t *testing.T) {
 }
 
 func TestActivityOwnedBooksClearAFailureButKeepUnmatchedFilesVisible(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	lib, st, sid, edition, books, version := modelFixture(t)
 	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "failed"}, []store.BookRef{modelRef(edition, books[0], version)})
@@ -187,6 +190,7 @@ func TestActivityOwnedBooksClearAFailureButKeepUnmatchedFilesVisible(t *testing.
 }
 
 func TestActivityExplainsTheCauseWithoutMistakingURLNumbersForStatuses(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ error, issue string }{
 		{"listing pages: host: HTTP error 404", "gone"},
 		{"host: HTTP 403", "access"},
@@ -208,6 +212,7 @@ func TestActivityExplainsTheCauseWithoutMistakingURLNumbersForStatuses(t *testin
 // An unfinished pack must not hide the books that already imported, nor
 // silently abandon its unresolved books when additional files need review.
 func TestPartialImportShowsVerifiedBooksAndScopesReplacementToUnmatchedBooks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	lib, st, sid, edition, books, version := modelFixture(t)
 	refs := []store.BookRef{modelRef(edition, books[0], version), modelRef(edition, books[1], version)}
@@ -276,6 +281,7 @@ func TestPartialImportShowsVerifiedBooksAndScopesReplacementToUnmatchedBooks(t *
 }
 
 func TestActivityArchivesGoneSourcesWithoutHidingFileQuestions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	lib, st, sid, e, books, v := modelFixture(t)
 	refs := []store.BookRef{modelRef(e, books[0], v)}

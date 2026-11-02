@@ -7,6 +7,7 @@ import (
 )
 
 func TestMediaSettingsRoundtrip(t *testing.T) {
+	t.Parallel()
 	_, st := setup(t)
 	ctx := context.Background()
 
@@ -42,6 +43,7 @@ func TestMediaSettingsRoundtrip(t *testing.T) {
 }
 
 func TestMediaSettingsPreview(t *testing.T) {
+	t.Parallel()
 	p := PreviewMediaSettings(DefaultMediaSettings())
 	if p["seriesFolder"] != "ONE PIECE [mangabaka-377]" {
 		t.Fatalf("seriesFolder preview: %q", p["seriesFolder"])

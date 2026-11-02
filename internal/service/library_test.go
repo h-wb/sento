@@ -86,6 +86,7 @@ func setup(t *testing.T) (*Library, *store.Store) {
 }
 
 func TestAddSeriesDefaultMonitor(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 
@@ -109,6 +110,7 @@ func TestAddSeriesDefaultMonitor(t *testing.T) {
 }
 
 func TestAddSeriesMonitorNone(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 
@@ -128,6 +130,7 @@ func TestAddSeriesMonitorNone(t *testing.T) {
 }
 
 func TestDefaultEditionID(t *testing.T) {
+	t.Parallel()
 	cols := []metadata.Collection{
 		{ProviderID: "chap", EditionName: "Standard Edition", Language: "fr", Type: "chapter"},
 		{ProviderID: "omni-en", EditionName: "Omnibus Edition", Language: "en", Type: "volume"},
@@ -146,6 +149,7 @@ func TestDefaultEditionID(t *testing.T) {
 }
 
 func TestAddSeriesAndSlots(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 
@@ -216,6 +220,7 @@ func TestAddSeriesAndSlots(t *testing.T) {
 }
 
 func TestChapterSlots(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 
@@ -245,6 +250,7 @@ func TestChapterSlots(t *testing.T) {
 }
 
 func TestRefreshReconciliation(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 
@@ -292,6 +298,7 @@ func TestRefreshReconciliation(t *testing.T) {
 // Collected volumes hold the chapters out so far, so only new chapters are
 // wanted; a series without volumes (a one-shot) wants every chapter.
 func TestAddSeriesChapterCutoffFollowsVolumes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	lib, st := setup(t)
 	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
@@ -330,6 +337,7 @@ func TestAddSeriesChapterCutoffFollowsVolumes(t *testing.T) {
 // Importing a folder whose series is already in the library links the
 // folder's files to it, in place, instead of refusing.
 func TestImportFolderLinksIntoAnExistingSeries(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
@@ -360,6 +368,7 @@ func TestImportFolderLinksIntoAnExistingSeries(t *testing.T) {
 // use: the title, its titles in that language, the romanized one; other
 // languages' aliases only find other languages' releases.
 func TestQueryTitlesKeepToTheEditionsLanguage(t *testing.T) {
+	t.Parallel()
 	p := testProvider()
 	p.series.RawJSON = []byte(`{"id":377,"native_title":"ワンピース","romanized_title":"Wan Pīsu",
 		"secondary_titles":{"en":[{"title":"One Piece: Grand Line"}],"ko":[{"title":"원피스"}],"ms":[{"title":"Budak Getah"}]}}`)

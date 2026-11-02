@@ -16,6 +16,7 @@ import (
 // margin; pinned holds and disabled upgrades are left alone, and an
 // explicit force replaces regardless.
 func TestUpgradePathDisplacesOnlyBetterFiles(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, standard, books, version := modelFixture(t)
 	ctx := context.Background()
 	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
