@@ -70,6 +70,22 @@ and `SENTO_EXTENSIONS_REPOS` stay in force and are read-only in the UI when
 supplied by the environment. The `SENTO_API_KEY` configuration field currently
 does not protect routes; do not rely on it for authentication.
 
+## Empty indexer searches
+
+A successful connection test checks that the indexer answers, not that its
+feed contains manga. On **Indexers**, use **Test search** with a title you
+know the tracker has. Sento shows the Books result count, sample titles and
+their categories. An empty Books query also runs an unrestricted comparison.
+
+If the unrestricted samples are films or anime, check the tracker's own
+category setting in Prowlarr or Jackett. Some definitions fetch a fixed
+category and apply the requested Books filter only after the site's result
+limit. For Prowlarr's Nyaa definition, create a separate instance with
+**Category → Literature - English-translated** and use that instance's
+Torznab URL in Sento. Give it a separate tag if the existing instance also
+serves Sonarr or Radarr; each application's tags determine which indexers
+Prowlarr syncs to it. See [Prowlarr's settings guide](https://wiki.servarr.com/prowlarr/settings).
+
 ## Server binaries
 
 Release archives contain `sento` and `web-dist/`. Extract the archive and run

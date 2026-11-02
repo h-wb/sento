@@ -26,6 +26,7 @@ import {
   IconPencil,
   IconPlugConnected,
   IconRefresh,
+  IconSearch,
   IconTrash,
 } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -39,6 +40,7 @@ import {
   type Source,
 } from '../api'
 import SourcePrefsFields from '../components/SourcePrefsFields'
+import { IndexerSearchTest } from '../components/IndexerSearchTest'
 import { notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
@@ -61,6 +63,7 @@ export default function IndexersPage() {
   const [editing, setEditing] = useState<IndexerView | 'new' | null>(null)
   const [duplicating, setDuplicating] = useState<IndexerView | null>(null)
   const [managing, setManaging] = useState(false)
+  const [searchTesting, setSearchTesting] = useState<IndexerView | null>(null)
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['health'] })
     // Saving an entry may have installed its extension on the host.
@@ -204,6 +207,13 @@ export default function IndexersPage() {
               </Table.Td>
               <Table.Td>
                 <Group gap={2} wrap="nowrap" justify="flex-end">
+                  {ix.protocol === 'torznab' && (
+                    <Tooltip label="Test search">
+                      <ActionIcon size="md" variant="subtle" aria-label={`Test search on ${ix.name}`} onClick={() => setSearchTesting(ix)}>
+                        <IconSearch size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
                   <Tooltip label="Test">
                     <ActionIcon
                       size="md"
@@ -262,6 +272,7 @@ export default function IndexersPage() {
         />
       )}
       {managing && <ManageExtensionsModal onClose={() => setManaging(false)} />}
+      {searchTesting && <IndexerSearchTest indexer={searchTesting} onClose={() => setSearchTesting(null)} />}
     </>
   )
 }

@@ -224,10 +224,17 @@ func mountTorznab(mux *http.ServeMux) {
 	mux.HandleFunc("GET /torznab/api", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
 		if r.URL.Query().Get("t") == "caps" {
-			_, _ = w.Write([]byte(`<caps><searching><search available="yes" supportedParams="q"/></searching><categories><category id="7000" name="Books"><subcat id="7030" name="Comics"/></category></categories></caps>`))
+			_, _ = w.Write([]byte(`<caps><searching><search available="yes" supportedParams="q"/></searching><categories><category id="7000" name="Books"><subcat id="7030" name="Comics"/></category><category id="5000" name="TV"><subcat id="5070" name="Anime"/></category></categories></caps>`))
 			return
 		}
 		_, _ = fmt.Fprint(w, `<rss xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel>`)
+		if r.URL.Query().Get("q") == "Category diagnostic" {
+			if r.URL.Query().Get("cat") == "" {
+				_, _ = fmt.Fprint(w, `<item><title>Category diagnostic S01E01</title><torznab:attr name="category" value="5070"/></item>`)
+			}
+			_, _ = fmt.Fprint(w, `</channel></rss>`)
+			return
+		}
 		for i := 1; i <= 3; i++ {
 			title := fmt.Sprintf("%s v%02d (Digital) (Fixture)", firstWords(r.URL.Query().Get("q")), i)
 			hash := fmt.Sprintf("%040d", i)

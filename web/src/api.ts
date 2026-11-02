@@ -39,6 +39,7 @@ import type {
   MediaSettings,
   ReleaseCandidate,
   IndexerView,
+  IndexerSearchCheck,
   ProwlarrIndexer,
   ScanResult,
   SearchEvent,
@@ -392,6 +393,8 @@ export const api = {
     }),
   deleteIndexer: (iid: number) => request<void>(`/indexers/${iid}`, { method: 'DELETE' }),
   testIndexer: (iid: number) => request<void>(`/indexers/${iid}/test`, { method: 'POST' }),
+  testIndexerSearch: (iid: number, query: string) =>
+    request<IndexerSearchCheck>(`/indexers/${iid}/search-test`, { method: 'POST', body: JSON.stringify({ query }) }),
   browseProwlarr: (body: BrowseProwlarrBody) =>
     request<ProwlarrIndexer[]>('/indexers/browse', {
       method: 'POST',

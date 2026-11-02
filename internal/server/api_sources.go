@@ -26,6 +26,7 @@ func (s *Server) mountSourceAPI(r chi.Router) {
 	r.Patch("/indexers/{iid}", s.handlePatchIndexer)
 	r.Delete("/indexers/{iid}", s.handleDeleteIndexer)
 	r.Post("/indexers/{iid}/test", s.handleTestIndexer)
+	r.Post("/indexers/{iid}/search-test", s.handleTestIndexerSearch)
 	r.Get("/series/{id}/indexers", s.handleSeriesIndexers)
 	r.Put("/series/{id}/indexers/{iid}", s.handleSeriesIndexerOverride)
 
@@ -203,6 +204,30 @@ func (s *Server) handleDeleteIndexer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleTestIndexerSearch(w http.ResponseWriter, r *http.Request) {
+	iid, ok := pathID(w, r, "iid")
+	if !ok {
+		return
+	}
+	var body struct {
+		Query string `json:"query"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	ix, err := s.store.GetIndexer(r.Context(), iid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	result, err := service.TestIndexerSearch(r.Context(), *ix, body.Query)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleTestIndexer(w http.ResponseWriter, r *http.Request) {
