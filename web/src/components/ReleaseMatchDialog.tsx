@@ -59,11 +59,19 @@ export function ReleaseMatchDialog({
       return { label: 'Name does not say which books it holds', left: true }
     if (f.hint.ledger && f.hint.ledger !== edition.type)
       return { label: `Holds ${f.hint.ledger}s; this card collects ${edition.type}s`, left: true }
-    const held = (books[String(version.id)] ?? []).filter((b: BookStatus) =>
-      f.hint!.numbers!.includes(b.book.sequenceStr),
-    )
-    if (!held.length) return { label: `Numbers are not ${edition.type}s of this card`, left: true }
-    const numbers = held.map((b: BookStatus) => b.book.sequenceStr).join(', ')
+    // A hint number can be a range ("1–5"); the books it holds are the
+    // card's books inside it, and every range must resolve to at least
+    // one book — the same rule the server applies on save.
+    const within = f.hint.numbers.map((n) => {
+      const [from, to] = n.includes('–') ? n.split('–').map(Number) : [Number(n), Number(n)]
+      return (books[String(version.id)] ?? []).filter(
+        (b: BookStatus) =>
+          Number(b.book.sequenceStr) >= from && Number(b.book.sequenceStr) <= to,
+      )
+    })
+    if (!within.every((held: BookStatus[]) => held.length))
+      return { label: `Numbers are not ${edition.type}s of this card`, left: true }
+    const numbers = [...new Set(within.flat().map((b: BookStatus) => b.book.sequenceStr))].join(', ')
     return { label: `${edition.type} ${numbers}`, left: false }
   }
   const resolvable = version ? files.filter((f) => !resolve(f).left).length : 0

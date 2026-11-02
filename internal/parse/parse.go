@@ -72,6 +72,7 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 					res.step("segment.range→chapters", sg.text)
 				} else {
 					res.Bare = append(res.Bare, ex.bare...)
+					res.BarePadded = append(res.BarePadded, ex.padded...)
 				}
 				if ex.version > res.Version {
 					res.Version = ex.version
@@ -149,6 +150,7 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 		}
 	}
 	res.Bare = append(res.Bare, ex.bare...)
+	res.BarePadded = append(res.BarePadded, ex.padded...)
 
 	resolveBare(res, ch)
 	res.Volumes = mergeRanges(res.Volumes)
@@ -254,6 +256,12 @@ func resolveBare(res *Result, ch Channel) {
 		case maxVol > 0 && b.From > maxVol*2:
 			res.Chapters = append(res.Chapters, b)
 			res.step("bare→chapter", "far above marker volumes")
+		case ch == ChannelTorrent && holdsRange(res.BarePadded, b):
+			// Zero-padding to three or more digits is the chapter-pack
+			// convention ("001"); a bare volume number is never written
+			// that way.
+			res.Chapters = append(res.Chapters, b)
+			res.step("bare→chapter", "zero-padded")
 		default:
 			remaining = append(remaining, b)
 		}
@@ -261,8 +269,31 @@ func resolveBare(res *Result, ch Channel) {
 	// Whatever stays in res.Bare is deliberately unresolved: nothing
 	// downstream reads it for book coverage (only the implicit-pack count
 	// and scoreConfidence look at it). An ambiguous number conservatively
-	// matches no book rather than guessing an axis.
+	// matches no book rather than guessing an axis. BarePadded stays a
+	// fact about whichever numbers remain unresolved.
 	res.Bare = remaining
+	res.BarePadded = keepRanges(res.BarePadded, remaining)
+}
+
+// holdsRange says whether ranges holds exactly r.
+func holdsRange(ranges []Range, r Range) bool {
+	for _, o := range ranges {
+		if o == r {
+			return true
+		}
+	}
+	return false
+}
+
+// keepRanges keeps the ranges that appear in want.
+func keepRanges(ranges, want []Range) []Range {
+	var kept []Range
+	for _, r := range ranges {
+		if holdsRange(want, r) {
+			kept = append(kept, r)
+		}
+	}
+	return kept
 }
 
 type segInfo struct {

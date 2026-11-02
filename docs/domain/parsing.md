@@ -65,7 +65,10 @@ assumes this boring representation.
    then JP markers (`第N巻`/`第N話`), volume markers, chapter markers, the
    trailing-dash convention ("Berserk - 375"), finally bare numbers with
    axis deferred. Channel priors (`resolveBare`) then claim bare numbers
-   (source channel / decimals / ≥1000 / far-above-volumes → chapters).
+   the chapter way (source channel / decimals / ≥1000 / far above marker
+   volumes / zero-padded to three or more digits on the torrent channel);
+   the padding of the ones that stay unresolved is kept as a fact
+   (`BarePadded`) for whoever resolves the axis.
 4. **Free text** — season, language words (two tiers: unambiguous words
    anywhere; bare codes like `FR` only standalone-UPPERCASE), edition
    phrases, keywords. Consumed spans pull `titleEnd` left; the title is

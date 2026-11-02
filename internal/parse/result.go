@@ -50,11 +50,15 @@ type Step struct {
 }
 
 type Result struct {
-	Title       string       `json:"title,omitempty"`
-	AltTitles   []string     `json:"altTitles,omitempty"`
-	Volumes     []Range      `json:"volumes,omitempty"`
-	Chapters    []Range      `json:"chapters,omitempty"`
-	Bare        []Range      `json:"bare,omitempty"` // axis deferred to resolver
+	Title     string   `json:"title,omitempty"`
+	AltTitles []string `json:"altTitles,omitempty"`
+	Volumes   []Range  `json:"volumes,omitempty"`
+	Chapters  []Range  `json:"chapters,omitempty"`
+	Bare      []Range  `json:"bare,omitempty"` // axis deferred to resolver
+	// BarePadded are the unresolved bare numbers written zero-padded to
+	// three or more digits ("001"), the chapter-number convention; the
+	// padding is a fact for whoever resolves the axis, not one.
+	BarePadded  []Range      `json:"barePadded,omitempty"`
 	Season      *int         `json:"season,omitempty"`
 	Year        *int         `json:"year,omitempty"`
 	YearRange   *[2]int      `json:"yearRange,omitempty"`

@@ -139,11 +139,12 @@ func (p *proposer) matchSlots(fileID int64, edition store.Edition, versionID int
 	if ledger != edition.Type {
 		return nil, nil, fmt.Sprintf("Holds %ss; this edition collects %ss", ledger, edition.Type), false
 	}
-	books, ambiguous := resolveBooks(p.books[edition.ID], bookRanges(parsed, ledger), parsed.Extra)
+	ranges := bookRanges(parsed, ledger)
+	books, ambiguous := resolveBooks(p.books[edition.ID], ranges, parsed.Extra)
 	switch {
 	case ambiguous:
 		return nil, nil, "Its number is shared by two books of this edition", false
-	case len(books) == 0:
+	case len(books) == 0 || !everyNumberHeld(books, ranges):
 		return nil, nil, fmt.Sprintf("Its numbers are not %ss of this edition", edition.Type), false
 	}
 	for _, b := range books {

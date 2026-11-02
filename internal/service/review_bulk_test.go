@@ -150,11 +150,15 @@ func TestMatchWholeReleaseMapsFilesByTheirNumbers(t *testing.T) {
 	}
 	names := []struct {
 		name, key, note string
+		books           int
 	}{
-		{"ONE PIECE v01 (Digital).cbz", "pack", ""},
-		{"ONE PIECE c005 (Digital).cbz", "pack", "collects volumes"},
-		{"ONE PIECE v07 (Digital).cbz", "pack", "not volumes of this edition"},
-		{"3.cbz", "", "does not say which books"},
+		{"ONE PIECE v01 (Digital).cbz", "pack", "", 1},
+		// A range maps to every book of the card it covers, like a proposal.
+		{"ONE PIECE v02-03 (Digital).cbz", "pack", "", 2},
+		{"ONE PIECE c005 (Digital).cbz", "pack", "collects volumes", 0},
+		{"ONE PIECE v07 (Digital).cbz", "pack", "not volumes of this edition", 0},
+		{"ONE PIECE v06-07 (Digital).cbz", "pack", "not volumes of this edition", 0},
+		{"3.cbz", "", "does not say which books", 0},
 	}
 	var ids []int64
 	for _, n := range names {
@@ -172,8 +176,8 @@ func TestMatchWholeReleaseMapsFilesByTheirNumbers(t *testing.T) {
 	for i, m := range matches {
 		if names[i].note == "" {
 			mapped++
-			if len(m.Books) != 1 || m.Books[0].BookID != books[0].ID || m.Label != "volume 1" {
-				t.Errorf("%s: mapped to %+v (%q), want volume 1 of the standard edition", names[i].name, m.Books, m.Label)
+			if len(m.Books) != names[i].books {
+				t.Errorf("%s: mapped to %+v, want %d books", names[i].name, m.Books, names[i].books)
 			}
 			if m.Note != "" {
 				t.Errorf("%s: unexpected note %q", names[i].name, m.Note)
@@ -184,18 +188,19 @@ func TestMatchWholeReleaseMapsFilesByTheirNumbers(t *testing.T) {
 			t.Errorf("%s: left with %q, want it to say %q", names[i].name, m.Note, names[i].note)
 		}
 	}
-	if mapped != 1 {
-		t.Fatalf("%d files mapped, want the one whose numbers resolve", mapped)
+	if mapped != 2 {
+		t.Fatalf("%d files mapped, want the ones whose numbers resolve", mapped)
 	}
 	files, err := st.ListFiles(ctx, sid)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range files {
-		if f.ID == ids[0] && (f.NeedsReview || f.Unrequested) {
-			t.Error("the mapped file still waits for review")
+		resolved := f.ID == ids[0] || f.ID == ids[1]
+		if resolved && (f.NeedsReview || f.Unrequested) {
+			t.Error("a mapped file still waits for review")
 		}
-		if f.ID != ids[0] && !f.NeedsReview {
+		if !resolved && !f.NeedsReview {
 			t.Errorf("file %d was taken off review without resolving", f.ID)
 		}
 	}

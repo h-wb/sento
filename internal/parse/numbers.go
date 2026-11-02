@@ -11,6 +11,7 @@ type extraction struct {
 	volumes  []Range
 	chapters []Range
 	bare     []Range
+	padded   []Range // bare numbers zero-padded to three or more digits
 	version  int
 	spans    []span // consumed regions (for title cutting)
 }
@@ -145,6 +146,11 @@ func extractNumbers(text string, res *Result) extraction {
 			}
 			ex.spans = append(ex.spans, span{m[0], m[1]})
 			ex.bare = append(ex.bare, r)
+			// "001" keeps its padding as a fact: three or more digits
+			// behind a leading zero is the chapter-pack convention.
+			if digits := group(buf, m, 1); len(digits) >= 3 && digits[0] == '0' && digits[1] != '.' {
+				ex.padded = append(ex.padded, r)
+			}
 			res.step("number.bare", text[m[0]:m[1]])
 		}
 	}
