@@ -272,22 +272,43 @@ func (s *Store) QueryTitles(ctx context.Context, seriesID int64, languages ...st
 	return titles, nil
 }
 
-func (s *Store) PendingBooks(ctx context.Context, seriesID int64) (map[string]bool, error) {
-	raws, err := list[string](ctx, s, `SELECT books_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`, seriesID)
+// PendingBookStates retains the phase of each reservation. File review can
+// hold an unfinished pack without hiding books it already imported. An
+// overlapping transfer takes precedence over review-only work.
+func (s *Store) PendingBookStates(ctx context.Context, seriesID int64) (map[string]string, error) {
+	rows, err := list[struct {
+		Books  string `db:"books_json"`
+		Status string
+	}](ctx, s, `SELECT books_json,status FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	out := map[string]bool{}
-	for _, raw := range raws {
+	out := map[string]string{}
+	for _, row := range rows {
 		var slots []BookRef
-		if err = json.Unmarshal([]byte(raw), &slots); err != nil {
+		if err = json.Unmarshal([]byte(row.Books), &slots); err != nil {
 			return nil, err
 		}
 		for _, sl := range slots {
 			if sl.VersionID > 0 && sl.BookID > 0 {
-				out[BookKey(sl.VersionID, sl.BookID)] = true
+				key := BookKey(sl.VersionID, sl.BookID)
+				if out[key] == "" || out[key] == QueueNeedsReview {
+					out[key] = row.Status
+				}
 			}
 		}
+	}
+	return out, nil
+}
+
+func (s *Store) PendingBooks(ctx context.Context, seriesID int64) (map[string]bool, error) {
+	states, err := s.PendingBookStates(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for key := range states {
+		out[key] = true
 	}
 	return out, nil
 }

@@ -51,3 +51,17 @@ stay failed; ordinary acquisition decides whether to try the release again.
 Activity keeps a failed attempt under Needs attention until another
 download covers its books: what stays there is what no source could replace.
 A chapter's 30-minute timeout starts when a download slot opens.
+
+An archive-range read failure is not evidence of permanent damage; Activity
+labels it as an archive read error and retains the queue's actual retry or
+failure phase. An empty page list says that no file was downloaded, rather
+than presenting it as an import decision. A 404/410 means the download or a
+required page is unavailable; uncovered books still need a replacement.
+
+Partial imports show accepted books as owned and identify the requested
+books that remain unmatched, while file questions and their reservations
+remain intact. **Find releases for unmatched books** uses the normal guided
+replacement search: it excludes the original release, leaves its files and
+job intact until another release is selected, and does not reacquire books
+already accepted from the partial import. Retry times interpret stored UTC
+timestamps consistently with the other Activity dates.

@@ -190,12 +190,87 @@ func TestActivityExplainsTheCauseWithoutMistakingURLNumbersForStatuses(t *testin
 	for _, tc := range []struct{ error, issue string }{
 		{"listing pages: host: HTTP error 404", "gone"},
 		{"host: HTTP 403", "access"},
-		{"page 3: host: Not a local file header", "damaged"},
+		{"page 3: host: Not a local file header", "archive_read"},
+		{"chapter has no pages", "empty"},
+		{"host: unreadable archive", "damaged"},
+		{"host: HTTP 429", "rate_limit"},
+		{"host: HTTP 503", "connection"},
+		{"open file: permission denied", "storage"},
 		{"failed reading https://example/404/file.cbz", "download"},
 	} {
 		issue, _ := downloadIssue(store.QueueItem{Status: store.QueueFailed, Error: tc.error})
 		if issue != tc.issue {
 			t.Errorf("%q: %s, want %s", tc.error, issue, tc.issue)
 		}
+	}
+}
+
+// An unfinished pack must not hide the books that already imported, nor
+// silently abandon its unresolved books when additional files need review.
+func TestPartialImportShowsVerifiedBooksAndScopesReplacementToUnmatchedBooks(t *testing.T) {
+	ctx := context.Background()
+	lib, st, sid, edition, books, version := modelFixture(t)
+	refs := []store.BookRef{modelRef(edition, books[0], version), modelRef(edition, books[1], version)}
+	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "partial", Title: "Example pack"}, refs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.UpdateQueueItem(ctx, qid, store.QueueNeedsReview, "partial import"); err != nil {
+		t.Fatal(err)
+	}
+	path := t.TempDir() + "/confirmed.cbz"
+	if err = os.WriteFile(path, []byte("verified pages"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Presence: "present", Facts: store.AssetFacts{ReleaseKey: "partial"}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.MapFile(ctx, sid, fid, refs[:1]); err != nil {
+		t.Fatal(err)
+	}
+	extraPath := t.TempDir() + "/extra.cbz"
+	if err = os.WriteFile(extraPath, []byte("extra pages"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.AddFile(ctx, store.File{SeriesID: sid, Path: extraPath, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{ReleaseKey: "partial"}}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []int64{0, sid} {
+		data, err := lib.Activity(ctx, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := data.Downloads[0]
+		if d.ImportedBooks != 1 || len(d.UnresolvedBooks) != 1 || d.UnresolvedBooks[0] != refs[1] || !d.Attention || d.History || d.Job.CanTryAnother {
+			t.Fatalf("incorrect partial import: %+v", d)
+		}
+	}
+	view, err := lib.BooksByVersion(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view[version.ID][0].State != StateOwned || view[version.ID][1].State != StatePending {
+		t.Fatalf("partial ownership: %+v", view[version.ID])
+	}
+	svc := NewSearchService(st, provider.NewRegistry())
+	run := &searchRun{seriesID: sid, ledger: LedgerVolume, scope: &SearchScope{VersionID: version.ID, ReplaceQueueID: qid, All: true}, replacing: map[string]bool{refKey(refs[0]): true, refKey(refs[1]): true}}
+	if err = svc.prepareVersions(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	if run.wantedBooks[version.ID][books[0].ID] || !run.wantedBooks[version.ID][books[1].ID] {
+		t.Fatalf("replacement would redownload confirmed books: %+v", run.wantedBooks)
+	}
+	pending, err := st.PendingBooks(ctx, sid)
+	if err != nil || !pending[store.BookKey(version.ID, books[0].ID)] || !pending[store.BookKey(version.ID, books[1].ID)] {
+		t.Fatalf("review reservations were lost: %v %v", pending, err)
+	}
+	// Transfers still take precedence: an upgrade is visibly in progress.
+	if err = st.UpdateQueueItem(ctx, qid, store.QueueDownloading, ""); err != nil {
+		t.Fatal(err)
+	}
+	view, err = lib.BooksByVersion(ctx, sid)
+	if err != nil || view[version.ID][0].State != StatePending {
+		t.Fatalf("active transfer hidden: %+v %v", view, err)
 	}
 }

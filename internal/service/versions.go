@@ -13,8 +13,7 @@ import (
 // BookState is where one book stands for one card.
 type BookState string
 
-// The states, in the order bookState weighs them: the first that holds
-// is the book's state.
+// bookState derives these states from ownership, reservation phase and policy.
 const (
 	// StatePending: a download or import already holds the book.
 	StatePending BookState = "pending"
@@ -63,6 +62,7 @@ type bookFacts struct {
 	OnDisk    bool // some present file holds it
 	Review    bool // a file's mapping to it awaits confirmation
 	Reserved  bool // a download or import holds it
+	Reviewing bool // its reservation is held by a download awaiting review
 	// Availability is released, upcoming or unknown.
 	Availability   string
 	AcquireUnknown bool
@@ -80,6 +80,8 @@ func bookState(f bookFacts) (state BookState, reason string, wanted bool) {
 	// A download in flight says what is happening to the book; the file
 	// awaiting review still shows in Review, and a confirmed download
 	// makes the book owned either way.
+	case f.Reserved && f.Reviewing && f.Owned:
+		return StateOwned, "A verified file is available; the download is awaiting review", false
 	case f.Reserved:
 		return StatePending, "A download or import already holds this book", false
 	case f.Review && !f.Owned:
@@ -213,7 +215,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	if err != nil {
 		return nil, err
 	}
-	pending, err := st.PendingBooks(ctx, seriesID)
+	pending, err := st.PendingBookStates(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +289,7 @@ type ledgerIndex struct {
 	present     map[int64]bool                 // file → on disk and confirmed
 	unavailable map[string]bool                // ledger → its folder cannot be checked
 	contents    map[int64][]store.AssetContent // book → files holding it
-	pending     map[string]bool                // store.BookKey → reserved
+	pending     map[string]string              // store.BookKey → reservation phase
 }
 
 // cardBooks is where each book of a card stands.
@@ -341,7 +343,8 @@ func (idx ledgerIndex) cardBooks(version store.CollectedVersion, col store.Editi
 		sl.State, sl.Reason, sl.Wanted = bookState(bookFacts{
 			Collected: sl.Monitored, Why: why,
 			Owned: len(sl.FileIDs) > 0, OnDisk: len(sl.OnDiskFileIDs) > 0, Review: review,
-			Reserved:     idx.pending[store.BookKey(version.ID, w.ID)],
+			Reserved:     idx.pending[store.BookKey(version.ID, w.ID)] != "",
+			Reviewing:    idx.pending[store.BookKey(version.ID, w.ID)] == store.QueueNeedsReview,
 			Availability: sl.Availability, AcquireUnknown: version.AcquireUnknown,
 			StorageDown: idx.unavailable[col.Type], Upgrade: upgrade, Refused: judged.refused[w.ID],
 		})

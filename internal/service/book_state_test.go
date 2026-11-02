@@ -21,6 +21,8 @@ func TestBookStatePriority(t *testing.T) {
 		{"a download in flight outranks an unconfirmed file", with(func(f *bookFacts) { f.Review, f.Reserved = true, true }), StatePending, false},
 		{"an unconfirmed file outranks wanting the book", with(func(f *bookFacts) { f.Review = true }), StateNeedsReview, false},
 		{"a confirmed file settles review", with(func(f *bookFacts) { f.Review, f.Owned = true, true }), StateOwned, false},
+		{"verified files survive another file’s review", with(func(f *bookFacts) { f.Reserved, f.Reviewing, f.Owned = true, true, true }), StateOwned, false},
+		{"review still reserves an unfulfilled book", with(func(f *bookFacts) { f.Reserved, f.Reviewing = true, true }), StatePending, false},
 		{"a download in flight outranks ownership", with(func(f *bookFacts) { f.Reserved, f.Owned = true, true }), StatePending, false},
 		{"a download in flight outranks storage", with(func(f *bookFacts) { f.Reserved, f.StorageDown = true, true }), StatePending, false},
 		{"owned stays owned when not collected", with(func(f *bookFacts) { f.Owned, f.Collected, f.Why = true, false, "paused" }), StateOwned, false},
