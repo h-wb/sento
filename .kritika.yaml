@@ -27,8 +27,5 @@ tools:
   aqua:sharkdp/fd: v10.5.0
   # renovate: datasource=github-releases depName=BurntSushi/ripgrep
   aqua:BurntSushi/ripgrep: 15.2.0
-# Keep the reviewer's dashboard URL out of this public repository's comments:
-# findings keep text severity labels instead of badge images, and the summary
-# has no re-run link. Home-ops keeps its links; it is private.
 comments:
   dashboard: false
