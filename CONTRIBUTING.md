@@ -13,6 +13,9 @@ screenshot often helps. Remove passwords, tokens and private tracker URLs.
 
 Issues track current bugs and planned work.
 
+For vulnerabilities, follow the [security policy](SECURITY.md) rather than
+posting details in a public issue.
+
 ## Work on the code
 
 Follow [the development guide](docs/development.md). Tools are pinned in
@@ -24,9 +27,12 @@ and how you checked it. Add a regression test for a bug when practical, and
 update the relevant docs when changing behavior. New architecture should fit
 the [domain model](docs/domain/editions.md); explain any change to that model.
 
-Before submitting:
+Before submitting, install a C compiler for the race detector (for example,
+`build-essential` on Debian/Ubuntu or Xcode Command Line Tools on macOS).
+Install the browser once, then run the checks:
 
 ```sh
+mise run e2e:install # first time; may need administrator access on Linux
 mise run ci
 ```
 

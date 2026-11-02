@@ -58,6 +58,7 @@ binary setup, backups and upgrades.
 **Sento has no working built-in authentication yet.** Keep it on a trusted
 network or use an authenticating reverse proxy. The extension sidecar should
 only be reachable by Sento.
+See the [security policy](SECURITY.md) for deployment limits and private reports.
 
 ## Development
 

@@ -12,6 +12,14 @@ data/
 *.db-wal
 *.db-shm
 config.yml
+fnox.toml
+fnox.local.toml
+.env
+**/.env
+**/.env.local
+**/.env.*.local
+deploy/library/
+deploy/downloads/
 harvest
 matchcheck
 

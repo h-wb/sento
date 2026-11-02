@@ -8,7 +8,7 @@ body:
     attributes:
       value: |
         Filed from an exploratory testing run (see
-        [docs/exploratory-testing.md](../../docs/exploratory-testing.md)).
+        [the exploratory guide](https://github.com/h-wb/sento/blob/main/docs/exploratory-testing.md)).
         Link any related issue below so findings can be tracked together.
   - type: input
     id: mission
