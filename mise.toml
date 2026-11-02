@@ -159,7 +159,10 @@ run = "go test ./..."
 [tasks."test:race"]
 description = "Run Go tests under the race detector"
 # The detector needs cgo, which the build itself keeps off (static binary).
-run = "go test -race ./..."
+# The service suite is sqlite-bound and takes ~6 minutes under the detector
+# on a fast runner; GitHub-hosted runners vary by half again, past Go's
+# 10-minute default per-package timeout.
+run = "go test -race -timeout 20m ./..."
 env = { CGO_ENABLED = "1" }
 
 [tasks."test:harness"]

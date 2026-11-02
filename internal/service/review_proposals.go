@@ -27,10 +27,18 @@ func (l *Library) ReviewItems(ctx context.Context, seriesID int64) ([]store.Revi
 		}
 		p, ok := proposers[items[i].SeriesID]
 		if !ok {
-			if p, err = l.newProposer(ctx, items[i].SeriesID); err != nil {
+			if p, err = newProposer(ctx, l.store, items[i].SeriesID); err != nil {
 				return nil, err
 			}
 			proposers[items[i].SeriesID] = p
+		}
+		// Pack-level review actions group a download's files together, so
+		// each question says which release it arrived in.
+		if f, exists := p.files[items[i].ItemID]; exists && f.Facts.ReleaseKey != "" {
+			items[i].ReleaseKey = f.Facts.ReleaseKey
+			if job, fromJob := p.jobs[f.Facts.ReleaseKey]; fromJob {
+				items[i].Release = job.Title
+			}
 		}
 		items[i].Proposal = p.propose(items[i].ItemID)
 		items[i].Hint = p.hint(items[i].ItemID)
@@ -52,43 +60,45 @@ type proposer struct {
 	packs    map[string][]parse.Range   // a download's bare numbers, by release key
 }
 
-func (l *Library) newProposer(ctx context.Context, seriesID int64) (*proposer, error) {
+// newProposer reads everything one series' proposals are read against, for
+// review's per-file questions and the pack-level actions alike.
+func newProposer(ctx context.Context, st *store.Store, seriesID int64) (*proposer, error) {
 	p := &proposer{versions: map[int64][]store.CollectedVersion{}, books: map[int64][]store.Book{}, files: map[int64]store.File{}, jobs: map[string]store.QueueItem{}, parses: map[int64]parse.Result{}, packs: map[string][]parse.Range{}}
 	var err error
-	if p.titles, err = l.store.SeriesTitles(ctx, seriesID); err != nil {
+	if p.titles, err = st.SeriesTitles(ctx, seriesID); err != nil {
 		return nil, err
 	}
-	if p.editions, err = l.store.ListEditions(ctx, seriesID); err != nil {
+	if p.editions, err = st.ListEditions(ctx, seriesID); err != nil {
 		return nil, err
 	}
-	series, err := l.store.GetSeries(ctx, seriesID)
+	series, err := st.GetSeries(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
 	p.shelf = seriesShelf(p.editions, series)
-	versions, err := l.store.ListVersions(ctx, seriesID)
+	versions, err := st.ListVersions(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
 	for _, v := range versions {
 		p.versions[v.EditionID] = append(p.versions[v.EditionID], v)
 	}
-	if p.profiles, err = NewProfiles(l.store).seriesProfiles(ctx, seriesID); err != nil {
+	if p.profiles, err = NewProfiles(st).seriesProfiles(ctx, seriesID); err != nil {
 		return nil, err
 	}
 	for _, e := range p.editions {
-		if p.books[e.ID], err = l.store.ListBooks(ctx, e.ID); err != nil {
+		if p.books[e.ID], err = st.ListBooks(ctx, e.ID); err != nil {
 			return nil, err
 		}
 	}
-	files, err := l.store.ListFiles(ctx, seriesID)
+	files, err := st.ListFiles(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
 	for _, f := range files {
 		p.files[f.ID] = f
 	}
-	jobs, err := l.store.SeriesQueueItems(ctx, seriesID)
+	jobs, err := st.SeriesQueueItems(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
