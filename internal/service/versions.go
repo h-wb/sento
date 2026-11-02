@@ -148,7 +148,7 @@ type cardFiles struct {
 func judgeCardFiles(col store.Edition, prof *profile.Profile, formats []profile.Format, coverage []store.AssetCoverage, byFile map[int64]store.File, present map[int64]bool) cardFiles {
 	out := cardFiles{accepted: map[int64][]int64{}, pinned: map[int64]bool{}, scores: map[int64]int{}, refused: map[int64]string{}}
 	for _, a := range coverage {
-		facts := byFile[a.FileID].Facts
+		facts := backedFacts(byFile[a.FileID].Facts, byFile[a.FileID].Claims)
 		reason := ""
 		if a.Evidence != "manual" && facts.Language != "" && facts.Language != "multi" && baseLang(facts.Language) != baseLang(col.Language) {
 			reason = "The file on disk is in another language"
@@ -336,7 +336,7 @@ func (idx ledgerIndex) cardBooks(version store.CollectedVersion, col store.Editi
 			if i == 0 || judged.scores[fid] > best {
 				best = judged.scores[fid]
 			}
-			known = known && idx.files[fid].Facts.FactsKnown
+			known = known && backedFacts(idx.files[fid].Facts, idx.files[fid].Claims).FactsKnown
 		}
 		sl.CurrentScore = best
 		upgrade := prof != nil && prof.UpgradesEnabled && known && !judged.pinned[w.ID] && (prof.UpgradeUntilScore == 0 || best < prof.UpgradeUntilScore)
@@ -351,6 +351,55 @@ func (idx ledgerIndex) cardBooks(version store.CollectedVersion, col store.Editi
 		slots = append(slots, sl)
 	}
 	return slots
+}
+
+// backedFacts is what a file is judged on: its own facts, with the
+// release's claims backing the fields the facts do not carry. Organizing
+// and importing name a file after its books ("Volume 1.cbz"), which drops
+// the digital/group/resolution evidence the release itself carried; the
+// claims are that evidence, so a good copy is not forgotten. A field the
+// facts do carry always wins over the offer, and a file without claims
+// (a folder scan) keeps scoring from its own name alone.
+func backedFacts(facts, claims store.AssetFacts) store.AssetFacts {
+	if !claims.FactsKnown && claims.Title == "" {
+		return facts
+	}
+	if facts.Group == "" {
+		facts.Group = claims.Group
+	}
+	if facts.Language == "" {
+		facts.Language = claims.Language
+	}
+	if facts.Site == "" {
+		facts.Site = claims.Site
+	}
+	if facts.Protocol == "" {
+		facts.Protocol = claims.Protocol
+	}
+	if facts.Resolution == 0 {
+		facts.Resolution = claims.Resolution
+	}
+	if claims.Digital && !facts.Digital {
+		facts.Digital = true
+	}
+	var backed []string
+	for flag, set := range claims.Flags {
+		if set && !facts.Flags[flag] {
+			backed = append(backed, flag)
+		}
+	}
+	if len(backed) > 0 {
+		flags := maps.Clone(facts.Flags)
+		if flags == nil {
+			flags = map[string]bool{}
+		}
+		for _, flag := range backed {
+			flags[flag] = true
+		}
+		facts.Flags = flags
+	}
+	facts.FactsKnown = facts.FactsKnown || claims.FactsKnown
+	return facts
 }
 
 func assetJudgement(f store.AssetFacts, p *profile.Profile, formats []profile.Format) profile.Judgement {
@@ -406,6 +455,13 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 		wanted := map[int64]bool{}
 		run.ownedScores[t.ID] = map[int64]int{}
 		for _, sl := range view.Status[t.ID] {
+			// A scheduled search only fills what is missing or
+			// unsatisfactory: an upgrade-eligible book keeps its copy
+			// until a person searches for a better one, so unattended
+			// sweeps never hunt quality upgrades (Sonarr parity).
+			if run.scheduled && sl.State == StateUpgradeEligible {
+				continue
+			}
 			// A book reserved by the download being replaced is still wanted.
 			if sl.Wanted && sl.State != "pending" || sl.State == "pending" && run.replacing[store.BookKey(t.ID, sl.Book.ID)] {
 				run.wanted[store.BookKey(t.ID, sl.Book.ID)] = true

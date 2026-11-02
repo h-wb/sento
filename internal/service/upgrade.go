@@ -224,12 +224,13 @@ func (im *Importer) exileToReview(ctx context.Context, seriesID int64, f store.F
 
 // autoUpgrade is the profile's rule for displacing a current owner without
 // a person asking: upgrades on, owner's facts known, not pinned, below the
-// until-score ceiling, and beaten by at least MinUpgradeScore.
+// until-score ceiling, and beaten by at least MinUpgradeScore. Known means
+// the file's own facts or its release's claims say enough to judge it.
 func autoUpgrade(prof *profile.Profile, owner store.BookOwner, fromScore, toScore int) bool {
 	if prof == nil || !prof.UpgradesEnabled || owner.Pinned {
 		return false
 	}
-	if !owner.Facts.FactsKnown {
+	if !backedFacts(owner.Facts, owner.Claims).FactsKnown {
 		return false
 	}
 	if prof.UpgradeUntilScore != 0 && fromScore >= prof.UpgradeUntilScore {

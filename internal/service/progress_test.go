@@ -9,6 +9,7 @@ import (
 )
 
 func TestPersistentStallDetectionAndRecovery(t *testing.T) {
+	t.Parallel()
 	_, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	qid, err := st.AddQueueItem(ctx, store.QueueItem{SeriesID: id, Protocol: "torrent", ExternalID: "hash", Title: "book", Status: store.QueueDownloading, Books: store.JSONText(`[]`)})

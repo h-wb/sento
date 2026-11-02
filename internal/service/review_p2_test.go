@@ -18,6 +18,7 @@ import (
 // the torrent hash learned while grabbing, so the same listing does not
 // come back on the next search.
 func TestBlocklistCoversTheListingAndItsHash(t *testing.T) {
+	t.Parallel()
 	_, st, sid, c, ws, v := modelFixture(t)
 	ctx := context.Background()
 	const guid = "https://indexer/release/123"
@@ -55,6 +56,7 @@ func TestBlocklistCoversTheListingAndItsHash(t *testing.T) {
 // The worker's list holds every job it can advance, oldest first; jobs
 // waiting on a person never crowd one out.
 func TestQueueWorkerSeesOldJobsBehindReviewJobs(t *testing.T) {
+	t.Parallel()
 	_, st, sid, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	old, err := st.AddQueueItem(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ExternalID: "runnable", Status: store.QueueQueued, Books: []byte(`[]`)})
@@ -104,6 +106,7 @@ func TestQueueWorkerSeesOldJobsBehindReviewJobs(t *testing.T) {
 // With chapters in their own folder, that folder being unreachable does
 // not stop volumes from being wanted.
 func TestUnreachableChapterFolderLeavesVolumesWanted(t *testing.T) {
+	t.Parallel()
 	_, st, sid, _, ws, v := modelFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
@@ -137,6 +140,7 @@ func TestUnreachableChapterFolderLeavesVolumesWanted(t *testing.T) {
 
 // A plain .zip is a comic archive like a .cbz and is imported, not skipped.
 func TestZipPayloadIsImported(t *testing.T) {
+	t.Parallel()
 	_, st, sid, c, ws, v := modelFixture(t)
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -156,6 +160,7 @@ func TestZipPayloadIsImported(t *testing.T) {
 // Replacing an archive at a path Sento already knows drops what was
 // recorded about the old bytes; the file is matched again as new.
 func TestScanNoticesAReplacedArchive(t *testing.T) {
+	t.Parallel()
 	_, st, sid, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -192,6 +197,7 @@ func TestScanNoticesAReplacedArchive(t *testing.T) {
 // A copy that only an additional version claims is filed under that
 // version, the way import placed it.
 func TestOrganizeKeepsAnAdditionalVersionsCopyInItsFolder(t *testing.T) {
+	t.Parallel()
 	_, st, sid, c, ws, v := modelFixture(t)
 	ctx := context.Background()
 	other := v

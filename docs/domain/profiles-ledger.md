@@ -58,6 +58,6 @@ Monitoring is gated by the series, parent edition, work, version, extras rule, e
 
 On-disk contents are independent of fulfillment. A confirmed archive can satisfy multiple versions of the same edition when it meets each version’s language, group, and profile requirements. Policy changes may leave an existing copy unsatisfactory. Pins prevent upgrades; changing or deleting edition preferences does not delete knowledge of an archive’s contents.
 
-Pending downloads and jobs awaiting review keep reservations. Storage uncertainty blocks acquisition. Wanted therefore means the book is collectible, available under policy, lacks a satisfactory copy (or qualifies for an enabled upgrade), and has no pending claim or unresolved storage/content issue.
+Pending downloads and jobs awaiting review keep reservations. Storage uncertainty blocks acquisition. Wanted therefore means the book is collectible, available under policy, lacks a satisfactory copy (or qualifies for an enabled upgrade), and has no pending claim or unresolved storage/content issue. Upgrade eligibility alone never drives an unattended search: Sento's own scheduled sweeps plan only missing and unsatisfactory books, and a better copy is grabbed when a person searches the book or the edition.
 
 Acquisition identity is `(version ID, book ID)`, never the displayed volume/chapter number. The earlier number-keyed slot model (`internal/ledger`, `/series/{id}/slots`, number-only search requests) has been removed.

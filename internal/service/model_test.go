@@ -60,6 +60,7 @@ func modelRef(c store.Edition, w store.Book, version store.CollectedVersion) sto
 }
 
 func TestModelRefreshKeepsIdentityAndCoverage(t *testing.T) {
+	t.Parallel()
 	lib, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	fid := ownedModelFile(t, st, id, c, ws[0], version)
@@ -106,6 +107,7 @@ func TestModelRefreshKeepsIdentityAndCoverage(t *testing.T) {
 }
 
 func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, _, _ := modelFixture(t)
 	ctx := context.Background()
 	local, err := st.AddCustomEdition(ctx, store.Edition{SeriesID: id, EditionName: c.EditionName, Language: c.Language, Publisher: c.Publisher, Medium: c.Medium, Monitored: true}, c.ID, 0)
@@ -162,6 +164,7 @@ func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
 }
 
 func TestModelCatalogLinkIsSuggestedAndCompletesTheEdition(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, _, _ := modelFixture(t)
 	ctx := context.Background()
 	local, err := st.AddCustomEdition(ctx, store.Edition{SeriesID: id, EditionName: "Ma collection", Language: c.Language, Monitored: true}, c.ID, 0)
@@ -236,6 +239,7 @@ func TestModelCatalogLinkIsSuggestedAndCompletesTheEdition(t *testing.T) {
 }
 
 func TestModelTargetsReserveOnceAndFreezeCombinedPlan(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	other := version
@@ -283,6 +287,7 @@ func TestModelTargetsReserveOnceAndFreezeCombinedPlan(t *testing.T) {
 }
 
 func TestModelFractionalZeroExtrasAndUnknownDates(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, _, version := modelFixture(t)
 	ctx := context.Background()
 	for _, w := range []store.Book{{SequenceStr: "0", SequenceNum: 0, NumberKnown: true, CountType: "main"}, {SequenceStr: "1.5", SequenceNum: 150, NumberKnown: true, CountType: "main"}, {SequenceStr: "Special", SequenceNum: 100, NumberKnown: true, CountType: "extra"}, {SequenceStr: "Artbook", NumberKnown: false, CountType: "other"}} {
@@ -319,6 +324,7 @@ func TestModelFractionalZeroExtrasAndUnknownDates(t *testing.T) {
 }
 
 func TestModelCoverageReviewPinAndVersionDeletion(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	fid := ownedModelFile(t, st, id, c, ws[0], version)
@@ -357,6 +363,7 @@ func TestModelCoverageReviewPinAndVersionDeletion(t *testing.T) {
 }
 
 func TestModelObservationReviewIsBoundedAndIdempotent(t *testing.T) {
+	t.Parallel()
 	_, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	cs, _ := st.ListEditions(ctx, id)
@@ -389,6 +396,7 @@ func TestModelObservationReviewIsBoundedAndIdempotent(t *testing.T) {
 }
 
 func TestModelQualifyingAssetReusedAcrossVersions(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	other := version
@@ -417,6 +425,7 @@ func TestModelQualifyingAssetReusedAcrossVersions(t *testing.T) {
 }
 
 func TestModelAtomicInstallCannotClobber(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	src := filepath.Join(dir, "incoming")
 	dst := filepath.Join(dir, "existing")
@@ -452,6 +461,7 @@ func TestModelAtomicInstallCannotClobber(t *testing.T) {
 }
 
 func TestModelUpgradeReevaluatesFactsAndRespectsPins(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	fid := ownedModelFile(t, st, id, c, ws[0], version)
@@ -505,6 +515,7 @@ func TestModelUpgradeReevaluatesFactsAndRespectsPins(t *testing.T) {
 }
 
 func TestModelPackStaysOneAssetAcrossUnitsAndVersions(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	other := version
@@ -543,6 +554,7 @@ func TestModelPackStaysOneAssetAcrossUnitsAndVersions(t *testing.T) {
 }
 
 func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, _, _ := modelFixture(t)
 	ctx := context.Background()
 	duplicate, err := st.AddCustomEdition(ctx, store.Edition{SeriesID: id, EditionName: c.EditionName, Language: c.Language, Publisher: c.Publisher, Medium: c.Medium, Monitored: true}, c.ID, 0)
@@ -597,6 +609,7 @@ func TestModelDuplicateMergePreservesTargetPoliciesAndCoverage(t *testing.T) {
 }
 
 func TestModelLayoutSurvivesDisplayRenameAndRequiresEvidence(t *testing.T) {
+	t.Parallel()
 	_, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	cs, _ := st.ListEditions(ctx, id)
@@ -624,6 +637,7 @@ func TestModelLayoutSurvivesDisplayRenameAndRequiresEvidence(t *testing.T) {
 }
 
 func TestModelEditingOneUnitFieldDoesNotFreezeCatalogDates(t *testing.T) {
+	t.Parallel()
 	_, st, id, _, ws, _ := modelFixture(t)
 	ctx := context.Background()
 	w := ws[1]
@@ -643,6 +657,7 @@ func TestModelEditingOneUnitFieldDoesNotFreezeCatalogDates(t *testing.T) {
 }
 
 func TestModelNewChapterEditionDoesNotBorrowSeriesNumbering(t *testing.T) {
+	t.Parallel()
 	lib, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	local, err := lib.CreateEdition(ctx, id, CreateEditionParams{EditionName: "French chapters", Language: "fr", Type: "chapter", Monitored: true})
@@ -667,6 +682,7 @@ func TestModelNewChapterEditionDoesNotBorrowSeriesNumbering(t *testing.T) {
 }
 
 func TestModelFileReviewPreservesPinsInOtherVersions(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	fid := ownedModelFile(t, st, id, c, ws[0], version)
@@ -688,6 +704,7 @@ func TestModelFileReviewPreservesPinsInOtherVersions(t *testing.T) {
 }
 
 func TestCatalogIdentityCorrectionRequiresCoverageReview(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	fid := ownedModelFile(t, st, id, c, ws[0], version)
@@ -723,6 +740,7 @@ func TestCatalogIdentityCorrectionRequiresCoverageReview(t *testing.T) {
 // What an edition is follows the catalog: when MangaBaka files a
 // collection under another edition, the edition here changes with it.
 func TestEditionFollowsTheCatalogName(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, _, _ := modelFixture(t)
 	ctx := context.Background()
 	p := testProvider()
@@ -737,6 +755,7 @@ func TestEditionFollowsTheCatalogName(t *testing.T) {
 }
 
 func TestCalendarSeparatesVersionsAndDuplicateNumbers(t *testing.T) {
+	t.Parallel()
 	lib, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	ownedModelFile(t, st, id, c, ws[0], version)
@@ -831,6 +850,7 @@ func booksOf(t *testing.T, lib *Library, st *store.Store, sid, cid int64) []Book
 // A person confirming a bare-numbered file as an explicit Full Color
 // edition supplies color evidence that its filename cannot carry.
 func TestConfirmedColorEditionSatisfiesColoredProfile(t *testing.T) {
+	t.Parallel()
 	formats := []profile.Format{{ID: 1, Name: "Colored", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "colored"}}}}
 	prof := &profile.Profile{Name: "Colored", Required: []int64{1}}
 	for _, tc := range []struct {

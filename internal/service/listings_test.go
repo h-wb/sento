@@ -55,6 +55,7 @@ func (h *listingHost) Chapters(_ context.Context, _, key string) ([]extensions.C
 // An existing root binding must gain nested releases in the same search,
 // with ordinary profile scoring and independently disabled matches.
 func TestNestedListingSearch(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 	if err := NewProfiles(st).EnsureDefaults(ctx); err != nil {
@@ -145,6 +146,7 @@ func TestNestedListingSearch(t *testing.T) {
 }
 
 func TestListingDiscoveryLimitsAndPartialFailure(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 	sid, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
@@ -179,6 +181,7 @@ func TestListingDiscoveryLimitsAndPartialFailure(t *testing.T) {
 // that carries the series' title is switched off; listings found before
 // they had names are renamed once, and a person's choice afterwards holds.
 func TestNestedListingsAreNamedAndJudged(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 	sid, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
@@ -244,6 +247,7 @@ func TestNestedListingsAreNamedAndJudged(t *testing.T) {
 // in: from a colorized listing it is colored, for formats and for edition
 // rules alike.
 func TestReleasesInheritTheirListing(t *testing.T) {
+	t.Parallel()
 	run := &searchRun{ledger: LedgerVolume, titles: []string{"One Piece"}}
 	cand := provider.Candidate{Title: "Vol. 001 (Digital)", Protocol: provider.ProtocolSource,
 		Source: &provider.SourceRef{ChapterKey: "v1", Listing: "One Piece - Digital Colored Comics", Lang: "en"}}

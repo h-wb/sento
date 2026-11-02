@@ -26,6 +26,7 @@ func (p *removingProvider) Remove(_ context.Context, externalID string) error {
 // Removing a series deletes, when asked, its files and the folders that
 // leaves empty (never the library), and the torrents only it uses.
 func TestRemoveSeriesTakesItsFilesAndOwnTorrents(t *testing.T) {
+	t.Parallel()
 	_, st, sid, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	other := testProvider()
@@ -83,6 +84,7 @@ func TestRemoveSeriesTakesItsFilesAndOwnTorrents(t *testing.T) {
 
 // Without the options, a removal is what it always was: records only.
 func TestRemoveSeriesKeepsFilesAndTorrentsByDefault(t *testing.T) {
+	t.Parallel()
 	_, st, sid, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	ownedModelFile(t, st, sid, c, ws[0], version)
@@ -105,6 +107,7 @@ func TestRemoveSeriesKeepsFilesAndTorrentsByDefault(t *testing.T) {
 // Deleting a file a card pinned is refused; otherwise the file goes from
 // disk, with the folder it leaves empty.
 func TestDeleteFileRespectsPins(t *testing.T) {
+	t.Parallel()
 	_, st, sid, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
@@ -140,6 +143,7 @@ func TestDeleteFileRespectsPins(t *testing.T) {
 
 // A removed series takes its history with it.
 func TestRemoveSeriesForgetsItsHistory(t *testing.T) {
+	t.Parallel()
 	_, st, sid, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	if err := st.AddDecision(ctx, sid, store.DecisionBody{Event: "grabbed", Title: "ONE PIECE v01"}); err != nil {

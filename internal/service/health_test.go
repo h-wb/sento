@@ -24,6 +24,7 @@ func healthIndexer(t *testing.T, st *store.Store, name, protocol, settings strin
 }
 
 func TestHealthChecks(t *testing.T) {
+	t.Parallel()
 	_, st := setup(t)
 	ctx := context.Background()
 
@@ -106,6 +107,7 @@ func TestHealthChecks(t *testing.T) {
 }
 
 func TestHealthLibraryPath(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	if issue := checkLibraryPath(dir); issue != nil {
 		t.Fatalf("writable folder flagged: %+v", issue)

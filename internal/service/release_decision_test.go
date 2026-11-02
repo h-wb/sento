@@ -13,6 +13,7 @@ import (
 )
 
 func TestReleaseClassificationAndDecisionEvidence(t *testing.T) {
+	t.Parallel()
 	_, st, id, _, _, version := modelFixture(t)
 	ctx := context.Background()
 	svc := NewSearchService(st, provider.NewRegistry())
@@ -85,6 +86,7 @@ func TestReleaseClassificationAndDecisionEvidence(t *testing.T) {
 }
 
 func TestExtraReleaseDoesNotClaimRegularVolume(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, works, version := modelFixture(t)
 	ctx := context.Background()
 	version.IncludeExtras = true
@@ -112,6 +114,7 @@ func TestExtraReleaseDoesNotClaimRegularVolume(t *testing.T) {
 // Edition fit: medium only breaks ties, and only editions the user
 // collects compete for a release.
 func TestEditionAmbiguity(t *testing.T) {
+	t.Parallel()
 	paper := store.Edition{ID: 1, Type: "volume", Language: "en", Medium: "paperback", EditionName: "Standard Edition"}
 	digital := store.Edition{ID: 2, Type: "volume", Language: "en", Medium: "digital", EditionName: "Standard Edition"}
 	french := store.Edition{ID: 3, Type: "volume", Language: "fr", EditionName: "Standard Edition"}
@@ -165,6 +168,7 @@ func TestEditionAmbiguity(t *testing.T) {
 // End to end: an ambiguous release is offered for review with its books,
 // never as ready, and a stated language makes it ready.
 func TestAmbiguousEditionIsReviewable(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, _, version := modelFixture(t)
 	ctx := context.Background()
 	french, err := st.AddCustomEdition(ctx, store.Edition{SeriesID: id, EditionName: "Standard Edition", Language: "fr", Monitored: true}, c.ID, 0)
@@ -217,6 +221,7 @@ func TestAmbiguousEditionIsReviewable(t *testing.T) {
 // A name without a language takes it from the evidence around it, in
 // order: indexer section, English-only publisher, indexer default.
 func TestLanguageEvidenceForUntaggedReleases(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, _, version := modelFixture(t)
 	ctx := context.Background()
 	if _, err := st.AddCustomEdition(ctx, store.Edition{SeriesID: id, EditionName: "Standard Edition", Language: "fr", Monitored: true}, c.ID, 0); err != nil {
@@ -259,6 +264,7 @@ func TestLanguageEvidenceForUntaggedReleases(t *testing.T) {
 // An edition-wide search covers the wanted books; AllBooks widens it to
 // every book, so a paused edition can still be browsed.
 func TestEditionSearchScope(t *testing.T) {
+	t.Parallel()
 	_, st, id, _, works, version := modelFixture(t)
 	ctx := context.Background()
 	version.Monitored = false
@@ -314,6 +320,7 @@ func TestEditionSearchScope(t *testing.T) {
 
 // The raw catalog documents supply what the extracted columns do not.
 func TestApplyCatalog(t *testing.T) {
+	t.Parallel()
 	info := mediafile.ComicInfo{Summary: "Series summary"}
 	applyCatalog(&info,
 		`{"authors":["Yoshihiro Togashi"],"artists":["Yoshihiro Togashi"],"genres":["action","slice_of_life"],"tags":["Survival","Rivals"],"content_rating":"suggestive"}`,
@@ -342,6 +349,7 @@ func TestApplyCatalog(t *testing.T) {
 // numbers, a color the edition claims and another edition's name say no;
 // a word alone leaves it for a person (docs/reviews/edition-rules.md).
 func TestEditionRules(t *testing.T) {
+	t.Parallel()
 	titles := []string{"NAUSICAA"}
 	parsed := func(name string) parse.Result { return parse.ParseAnchored(name, parse.ChannelTorrent, titles) }
 	edition := func(id int64, medium, name string) store.Edition {
@@ -430,6 +438,7 @@ func TestEditionRules(t *testing.T) {
 // The rules on real release names (Nyaa, English-translated) against the
 // series' MangaBaka editions, as surveyed for edition-rules.md.
 func TestEditionRulesOnRealNames(t *testing.T) {
+	t.Parallel()
 	id := int64(0)
 	ed := func(name string, last int64) store.Edition {
 		id++
@@ -504,6 +513,7 @@ func TestEditionRulesOnRealNames(t *testing.T) {
 // A catalog box set is one item; the books inside become volumes that
 // carry its ISBN and date, and the box itself stops being wanted.
 func TestSplitBox(t *testing.T) {
+	t.Parallel()
 	lib, st, id, _, _, _ := modelFixture(t)
 	ctx := context.Background()
 	cols, _ := st.ListEditions(ctx, id)
@@ -573,6 +583,7 @@ func TestSplitBox(t *testing.T) {
 
 // Volumes and chapters are collected independently: a name is one kind.
 func TestLedgerOf(t *testing.T) {
+	t.Parallel()
 	titles := []string{"HUNTER x HUNTER"}
 	for name, want := range map[string]string{
 		"Hunter x Hunter v01 (2005) (Digital) (LuCaZ)":                           LedgerVolume,
@@ -604,6 +615,7 @@ func TestLedgerOf(t *testing.T) {
 // A release ruled out as another edition says which edition it is, and
 // whether the series has one like it: the search offers to add it if not.
 func TestRuledOutReleaseNamesItsEdition(t *testing.T) {
+	t.Parallel()
 	_, st, sid, _, _, version := modelFixture(t)
 	ctx := context.Background()
 	svc := NewSearchService(st, provider.NewRegistry())
@@ -635,6 +647,7 @@ func TestRuledOutReleaseNamesItsEdition(t *testing.T) {
 // release calling itself the omnibus fits; an ongoing series' edition is
 // only behind, and named siblings keep a bare "Omnibus" a question.
 func TestAnEditionsShapeNamesItsNumbering(t *testing.T) {
+	t.Parallel()
 	std := func(id, books int64) store.Edition {
 		return store.Edition{ID: id, Type: "volume", Language: "en", EditionName: "Standard Edition", ProviderEditionName: "Standard Edition", LastNumber: books * 100}
 	}

@@ -9,6 +9,7 @@ import (
 )
 
 func TestCompletedEditionDoesNotClipAnotherNumberingToItsBooks(t *testing.T) {
+	t.Parallel()
 	edition := store.Edition{
 		ID: 1, Type: LedgerVolume, Language: "en", EditionName: "Full Color Collection Edition",
 		NumberingSource: "catalog", LastNumber: 800, CountMain: 8,

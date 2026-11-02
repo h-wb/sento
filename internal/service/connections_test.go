@@ -11,6 +11,7 @@ import (
 // Connection settings: env/file seeds the first load, saves win after,
 // and Apply rebuilds the shared registry in place.
 func TestConnectionSettings(t *testing.T) {
+	t.Parallel()
 	_, st := setup(t)
 	ctx := context.Background()
 
@@ -82,6 +83,7 @@ func TestConnectionSettings(t *testing.T) {
 
 // Connections saved under the sidecar's old name still load.
 func TestConnectionSettingsLegacyKey(t *testing.T) {
+	t.Parallel()
 	_, st := setup(t)
 	ctx := context.Background()
 	if err := st.PutSetting(ctx, connectionsKey, []byte(`{"sourceHost":{"url":"http://old.example"},"qbittorrent":{"url":"http://qb.example"}}`)); err != nil {
