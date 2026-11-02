@@ -107,6 +107,12 @@ export interface Result {
   volumes?: Range[];
   chapters?: Range[];
   bare?: Range[]; // axis deferred to resolver
+  /**
+   * BarePadded are the unresolved bare numbers written zero-padded to
+   * three or more digits ("001"), the chapter-number convention; the
+   * padding is a fact for whoever resolves the axis, not one.
+   */
+  barePadded?: Range[];
   season?: number /* int */;
   year?: number /* int */;
   yearRange?: number /* int */[];

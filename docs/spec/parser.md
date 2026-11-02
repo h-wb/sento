@@ -140,17 +140,24 @@ spec and locked by the corpus.
 - **Marker-bound beats bare**: `v05 c034` → volume 5, chapter 34. A bare
   number is only assigned when no marker-bound number of that axis exists.
 - **Bare-number axis** is decided by the *resolver* (§7), not the parser.
-  Parser emits `BareNumbers []Range` internally and defers; in blind mode
-  the channel prior applies (torrent → volume if ≤ plausible, else chapter;
-  source → chapter).
+  Parser emits `BareNumbers []Range` internally and defers; the channel
+  priors in `resolveBare` then claim what the string says the chapter way
+  (source channel / decimals / ≥1000 / far above marker volumes /
+  zero-padded to three or more digits on the torrent channel), and the
+  rest stay in `Result.Bare`.
 - **Decimals & sub-chapters**: `110.5`, `Ch. 34.2` parsed exactly (`Num`
   hundredths). Alpha suffix: `4a → 4.10`, `4b → 4.20` (Mihon convention).
-  `extra/omake/special` after a number → `IsExtra` (Mihon maps to
-  .99/.98/.97 — we keep the flag instead; integer-slot policy D8 decides).
+  `extra/omake/special/side story` after a number → `IsExtra` (Mihon maps
+  to .99/.98/.97 — we keep the flag instead; integer-slot policy D8
+  decides).
 - **Ranges**: `-`, `~`, `–`, `to` between two numbers of the same axis;
   `v01-v38`, `v01-38`, `c001-050`, `[01-270]`, `164-169`. Mixed lists:
   `v01-03 + v05`, `v000-v105 & ch0035-1078` → multiple ranges, both axes.
-- **Padding is meaningless**: `001` ≡ `1`. Leading `v00`/`c000` (prologue
+- **Padding is meaningless to the value, not as a fact**: `001` ≡ `1`.
+  Zero-padding to three or more digits is the chapter-number convention:
+  the torrent prior above claims such a bare number as a chapter, and the
+  padding of those that stay unresolved is kept in `Result.BarePadded`
+  for whoever resolves the axis. Leading `v00`/`c000` (prologue
   volume 0) are legal: `Num` ≥ 0.
 - **Release version, not number**: `v2` *immediately after* a chapter number
   (`Ch.34v2`) or in a tag segment `(v2)` → `Version=2`, never volume 2.
@@ -351,3 +358,6 @@ recognition behavior, our corpus documents *our* behavior independently.
 - Unresolved bare numbers (axis undecidable from the string) are kept in
   `Result.Bare` but feed nothing downstream except confidence — an
   ambiguous number conservatively covers no slot (`resolveBare`).
+  Zero-padding to three or more digits stays visible as `BarePadded`:
+  the review proposer reads it as the chapter convention and never
+  reads a padded number as a volume.

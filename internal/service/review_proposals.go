@@ -48,10 +48,12 @@ type proposer struct {
 	books    map[int64][]store.Book
 	files    map[int64]store.File
 	jobs     map[string]store.QueueItem // by release key
+	parses   map[int64]parse.Result     // each file's own name, parsed once
+	packs    map[string][]parse.Range   // a download's bare numbers, by release key
 }
 
 func (l *Library) newProposer(ctx context.Context, seriesID int64) (*proposer, error) {
-	p := &proposer{versions: map[int64][]store.CollectedVersion{}, books: map[int64][]store.Book{}, files: map[int64]store.File{}, jobs: map[string]store.QueueItem{}}
+	p := &proposer{versions: map[int64][]store.CollectedVersion{}, books: map[int64][]store.Book{}, files: map[int64]store.File{}, jobs: map[string]store.QueueItem{}, parses: map[int64]parse.Result{}, packs: map[string][]parse.Range{}}
 	var err error
 	if p.titles, err = l.store.SeriesTitles(ctx, seriesID); err != nil {
 		return nil, err
@@ -98,31 +100,57 @@ func (l *Library) newProposer(ctx context.Context, seriesID int64) (*proposer, e
 	return p, nil
 }
 
-// parseFile reads a file's own name against the series: what it claims
-// to hold (ledger, ranges), or why it cannot be read at all.
-func (p *proposer) parseFile(fileID int64) (parsed parse.Result, ledger, evidence string, job store.QueueItem, fromJob, ok bool) {
-	f, exists := p.files[fileID]
-	if !exists || !f.NeedsReview || !f.Unrequested || f.Presence == "unavailable" {
-		return parse.Result{}, "", "", store.QueueItem{}, false, false
+// fileParse reads a file's own name once; every question review asks
+// about the file reads the same parse.
+func (p *proposer) fileParse(f store.File) parse.Result {
+	if parsed, ok := p.parses[f.ID]; ok {
+		return parsed
 	}
 	name := f.Facts.Title
 	if name == "" {
 		name = filepath.Base(f.Path)
 	}
-	parsed = parse.ParseAnchored(name, parse.ChannelFile, p.titles)
-	if parsed.ContentType != parse.ContentManga || parsed.TitleLeftover != "" {
-		return parse.Result{}, "", "", store.QueueItem{}, false, false
+	parsed := parse.ParseAnchored(name, parse.ChannelFile, p.titles)
+	p.parses[f.ID] = parsed
+	return parsed
+}
+
+// readsName says whether review reads a file's own name at all: a file
+// that is not manga, a different work that merely contains the title, or
+// nothing tying it to the series says nothing about its books. The job
+// of a name it does read is returned with it.
+func (p *proposer) readsName(f store.File) (parsed parse.Result, job store.QueueItem, fromJob, ok bool) {
+	if !f.NeedsReview || !f.Unrequested || f.Presence == "unavailable" {
+		return parse.Result{}, store.QueueItem{}, false, false
 	}
-	job, fromJob = p.jobs[f.Facts.ReleaseKey]
-	fromJob = fromJob && f.Facts.ReleaseKey != ""
+	parsed = p.fileParse(f)
+	if parsed.ContentType != parse.ContentManga || parsed.TitleLeftover != "" {
+		return parse.Result{}, store.QueueItem{}, false, false
+	}
 	// A name without the series title ("Volume_01.cbz") is only this
 	// series' because the download it came in was.
+	job, fromJob = p.jobs[f.Facts.ReleaseKey]
+	fromJob = fromJob && f.Facts.ReleaseKey != ""
 	if !parsed.Anchored && !fromJob {
+		return parse.Result{}, store.QueueItem{}, false, false
+	}
+	return parsed, job, fromJob, true
+}
+
+// parseFile reads a file's own name against the series: what it claims
+// to hold (ledger, ranges), or why it cannot be read at all.
+func (p *proposer) parseFile(fileID int64) (parsed parse.Result, ledger, evidence string, job store.QueueItem, fromJob, ok bool) {
+	f, exists := p.files[fileID]
+	if !exists {
+		return parse.Result{}, "", "", store.QueueItem{}, false, false
+	}
+	parsed, job, fromJob, ok = p.readsName(f)
+	if !ok {
 		return parse.Result{}, "", "", store.QueueItem{}, false, false
 	}
 	ledger, evidence = ledgerOf(parsed), "from the file name"
 	if ledger == "" {
-		ledger, evidence = bareLedger(parsed, job, fromJob)
+		ledger, evidence = p.bareLedger(parsed, job, fromJob)
 		if ledger == "" {
 			return parse.Result{}, "", "", store.QueueItem{}, false, false
 		}
@@ -179,7 +207,7 @@ func (p *proposer) propose(fileID int64) *store.ReviewProposal {
 	var found []match
 	for _, e := range p.shelf.prefer(parsed, fits) {
 		books, ambiguous := resolveBooks(p.books[e.ID], ranges, parsed.Extra)
-		if !ambiguous && len(books) > 0 && len(p.versions[e.ID]) > 0 {
+		if !ambiguous && len(books) > 0 && everyNumberHeld(books, ranges) && len(p.versions[e.ID]) > 0 {
 			found = append(found, match{e, books})
 		}
 	}
@@ -254,9 +282,12 @@ func (p *proposer) proposedVersion(edition store.Edition, facts store.AssetFacts
 
 // bareLedger reads a number with no volume or chapter marker ("067") as
 // the kind the download's own name gives that number, or failing that the
-// kind of books the download was for. A file outside any download stays
-// unread: its number could be either.
-func bareLedger(parsed parse.Result, job store.QueueItem, fromJob bool) (string, string) {
+// kind of books the download was planned for — and the plan only decides
+// when the download's own files bear that reading out: an unnumbered
+// completed pack says nothing about its numbering, so its numbers as a
+// whole must be books of the planned kind. A file outside any download
+// stays unread: its number could be either.
+func (p *proposer) bareLedger(parsed parse.Result, job store.QueueItem, fromJob bool) (string, string) {
 	if !fromJob || len(parsed.Bare) == 0 {
 		return "", ""
 	}
@@ -276,7 +307,57 @@ func bareLedger(parsed parse.Result, job store.QueueItem, fromJob bool) (string,
 	if json.Unmarshal(job.Books, &plan) != nil || len(plan) == 0 {
 		return "", ""
 	}
+	// A number zero-padded to three or more digits ("001") is written the
+	// chapter way; a download of volumes cannot make it a volume number.
+	if plan[0].Ledger == LedgerVolume && len(parsed.BarePadded) > 0 {
+		return "", ""
+	}
+	if !p.packReadsAs(plan, job.ReleaseKey) {
+		return "", ""
+	}
 	return plan[0].Ledger, fmt.Sprintf("numbered %s, inside a download of %ss", rangeText(parsed.Bare), plan[0].Ledger)
+}
+
+// packNumbers gathers the bare numbers every file of one download waiting
+// for review carries: the distribution the release's own name does not
+// give (an unnumbered completed pack).
+func (p *proposer) packNumbers(key string) []parse.Range {
+	if numbers, ok := p.packs[key]; ok {
+		return numbers
+	}
+	var numbers []parse.Range
+	for _, f := range p.files {
+		if f.Facts.ReleaseKey != key {
+			continue
+		}
+		if parsed, _, _, ok := p.readsName(f); ok {
+			numbers = append(numbers, parsed.Bare...)
+		}
+	}
+	p.packs[key] = numbers
+	return numbers
+}
+
+// packReadsAs says whether the numbers of the download's files fit the
+// kind of books the download was planned for: every one of them must
+// stand for a book of the plan's editions. A pack numbered past what
+// that kind holds (200 files against a 15-volume edition) is another
+// numbering's chapters, not this plan's books.
+func (p *proposer) packReadsAs(plan []store.BookRef, key string) bool {
+	var books []store.Book
+	seen := map[int64]bool{}
+	for _, ref := range plan {
+		if !seen[ref.EditionID] {
+			seen[ref.EditionID] = true
+			books = append(books, p.books[ref.EditionID]...)
+		}
+	}
+	for _, r := range p.packNumbers(key) {
+		if !numberHolds(books, r) {
+			return false
+		}
+	}
+	return true
 }
 
 // covers says whether every number in want falls inside one of ranges.
