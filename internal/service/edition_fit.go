@@ -137,6 +137,9 @@ func (s *shelf) judge(p parse.Result, e store.Edition, evidence int64) (fitVerdi
 	if last := lastVolume(p); e.Type == LedgerVolume && last > e.LastNumber && completedNumbering(e) {
 		return fitUnsure, fmt.Sprintf("The release goes to volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", hundredths(parse.Num(last)), hundredths(parse.Num(e.LastNumber)))
 	}
+	if last := lastVolume(p); e.Type == LedgerVolume && last > 0 && last < e.LastNumber && p.Complete && !p.CompleteInferred && completedNumbering(e) {
+		return fitUnsure, fmt.Sprintf("The release calls itself complete at volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", hundredths(parse.Num(last)), hundredths(parse.Num(e.LastNumber)))
+	}
 	if last := lastVolume(p); e.Type == LedgerVolume && e.LastNumber > 0 && last > e.LastNumber+newVolumeSlack {
 		for _, o := range siblings {
 			if o.LastNumber >= last {

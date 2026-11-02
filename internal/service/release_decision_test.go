@@ -31,6 +31,8 @@ func TestReleaseClassificationAndDecisionEvidence(t *testing.T) {
 		{"novel", "ONE PIECE Light Novel v01 [English Digital]", "rejected.content_type", "blocked", 30},
 		{"pack", "ONE PIECE (2003-2026) [English Digital]", "rejected.pack_unverified", "review", 30},
 		{"bare pack", "ONE PIECE [English Digital]", "rejected.pack_unverified", "review", 30},
+		{"explicit complete without units", "ONE PIECE (Complete) [English Digital]", "rejected.pack_unverified", "review", 30},
+		{"explicit complete cannot bypass language", "ONE PIECE (Complete) [French/German Digital]", "rejected.language", "blocked", 30},
 		{"other work", "ONE PIECE Party [English Digital]", "rejected.series_match", "blocked", 30},
 	}
 	for _, tc := range cases {
@@ -48,6 +50,9 @@ func TestReleaseClassificationAndDecisionEvidence(t *testing.T) {
 			}
 			if candidate.Decision.CanForce != (tc.status == "review") {
 				t.Fatalf("force eligibility drift: %+v", candidate.Decision)
+			}
+			if tc.name == "explicit complete without units" && len(BuildPlan(got, nil, true).Picks) != 0 {
+				t.Fatal("unverified complete pack entered the automatic plan")
 			}
 			if len(candidate.ParseTrace) == 0 {
 				t.Fatal("classification has no evidence")
