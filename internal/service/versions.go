@@ -406,6 +406,13 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 		wanted := map[int64]bool{}
 		run.ownedScores[t.ID] = map[int64]int{}
 		for _, sl := range view.Status[t.ID] {
+			// A scheduled search only fills what is missing or
+			// unsatisfactory: an upgrade-eligible book keeps its copy
+			// until a person searches for a better one, so unattended
+			// sweeps never hunt quality upgrades (Sonarr parity).
+			if run.scheduled && sl.State == StateUpgradeEligible {
+				continue
+			}
 			// A book reserved by the download being replaced is still wanted.
 			if sl.Wanted && sl.State != "pending" || sl.State == "pending" && run.replacing[store.BookKey(t.ID, sl.Book.ID)] {
 				run.wanted[store.BookKey(t.ID, sl.Book.ID)] = true

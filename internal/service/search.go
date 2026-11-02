@@ -318,6 +318,10 @@ type SearchEvent struct {
 // goroutines (read-only after prepare).
 type searchRun struct {
 	planBooks []PlanBook
+	// scheduled is set when Sento's own loops, not a person, started the
+	// search (Scheduled ctx): it only fills missing and unsatisfactory
+	// books and never hunts quality upgrades.
+	scheduled bool
 	// wanted holds the books the version wants, by refKey: in an
 	// all-books search the plan's default selection is still only these.
 	wanted map[string]bool
@@ -373,7 +377,8 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 	}
 	run := &searchRun{
 		seriesID: seriesID, ledger: searchLedger, scope: version,
-		titles: titles, sites: sites,
+		scheduled: scheduled(ctx),
+		titles:    titles, sites: sites,
 		allowed: map[string]map[string]bool{}, priorities: map[[2]string]int{},
 	}
 	for _, st := range sites {
