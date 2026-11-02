@@ -19,13 +19,10 @@ internal data class ErrorDto(
 internal fun sourceError(error: Exception): ErrorDto {
     val causes = generateSequence<Throwable>(error) { it.cause }.take(16).toList()
     val http = causes.filterIsInstance<HttpException>().firstOrNull()
-    // OkHttp wraps what an interceptor throws in an IOException: an archive
-    // the source cannot read ("Not a local file header") surfaces as one,
-    // and is not a network failure.
-    val unreadable = http == null && (
-        causes.any { it is ZipException } ||
-            causes.any { it is IOException } && causes.any { it is IllegalArgumentException }
-        )
+    // An IO-wrapped header error can come from a transient range response,
+    // even when the archive and its entry offsets are valid. It does not
+    // establish a permanently unreadable release.
+    val unreadable = http == null && causes.any { it is ZipException }
     return ErrorDto(
         error = error.message ?: error.javaClass.simpleName,
         retryable = if (http != null) {

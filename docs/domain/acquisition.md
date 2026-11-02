@@ -38,7 +38,16 @@ After five queue retries it moves to Review with its book reservations intact.
 Other permanent source errors go directly to Review. Neither outcome
 blocklists the release. A source that cannot give the release is different:
 one that no longer has the listing or a page of it (404, 410), or serves
-an archive it cannot read ("Not a local file header": the sidecar marks
-it unreadable rather than a network failure). No retry or review brings
-it back, so the job fails and the release is blocklisted, like a torrent
-that never completes, and the series is searched again within the minute for another (the same happens when you ask to try another release). Activity keeps a failed attempt under Needs attention until another download covers its books: what stays there is what no source could replace. A chapter's 30-minute timeout starts when a download slot opens.
+an archive with an explicit ZIP format error. The job fails and the release
+is blocklisted, like a torrent that never completes, and the series is
+searched again within the minute for another (the same happens when you ask
+to try another release).
+
+An IO-wrapped range/header failure, including "Not a local file header",
+remains retryable: a transient response can fail that check even for a valid
+archive. Upgrades remove automatic blocks created by the old classification,
+preserving manual blocks and evidence that a release is gone. Historical jobs
+stay failed; ordinary acquisition decides whether to try the release again.
+Activity keeps a failed attempt under Needs attention until another
+download covers its books: what stays there is what no source could replace.
+A chapter's 30-minute timeout starts when a download slot opens.
