@@ -4,6 +4,39 @@ const LAZY = 'eu.kanade.tachiyomi.extension.all.lazysource'
 
 type Ext = { pkgName: string; installedVersion?: string; sources?: { id: string }[] }
 
+test('test search distinguishes a working Books feed from unrelated results without queuing downloads', async ({ page, request }) => {
+  const connections = await (await request.get('/api/v1/settings/connections')).json()
+  const upstream = new URL('/torznab/api', connections.extensions.url).href
+  const added = await request.post('/api/v1/indexers', { data: {
+    name: 'Search diagnostic fixture', protocol: 'torznab', enabled: true, useVolumes: true, useChapters: false,
+    priority: 0, settings: { url: upstream, apiKey: 'fixture-key' },
+  } })
+  expect(added.ok()).toBeTruthy()
+  const { id } = await added.json()
+  const queueIds = async () => ((await (await request.get('/api/v1/queue?all=1')).json()) as { id: number }[]).map((job) => job.id)
+  const before = await queueIds()
+  try {
+    await page.goto('/indexers')
+    await page.getByRole('button', { name: 'Test search on Search diagnostic fixture', exact: true }).click()
+    const modal = page.getByRole('dialog', { name: 'Test search · Search diagnostic fixture' })
+    await modal.getByRole('textbox', { name: 'Title', exact: true }).fill('Example')
+    await modal.getByRole('button', { name: 'Test search', exact: true }).click()
+    await expect(modal.getByText('Books results for “Example”: 3')).toBeVisible()
+    await expect(modal.getByText('Example v01 (Digital) (Fixture)', { exact: true })).toBeVisible()
+    await expect(modal.getByText('Comics (7030)').first()).toBeVisible()
+    await modal.getByRole('textbox', { name: 'Title', exact: true }).fill('Category diagnostic')
+    await modal.getByRole('button', { name: 'Test search', exact: true }).click()
+    await expect(modal.getByText('Books results for “Category diagnostic”: 0')).toBeVisible()
+    await expect(modal.getByText('Unfiltered results: 1')).toBeVisible()
+    await expect(modal.getByText(/Check its category setting in Prowlarr or Jackett/)).toBeVisible()
+    await expect(modal.getByText('Category diagnostic S01E01', { exact: true })).toBeVisible()
+    await expect(modal.getByText('Anime (5070)', { exact: true })).toBeVisible()
+    expect(await queueIds()).toEqual(before)
+  } finally {
+    await request.delete(`/api/v1/indexers/${id}`)
+  }
+})
+
 // With no repo configured there is nothing to pick. The dialog says why
 // and takes the repo URL right there, instead of sending the user to the
 // Connections page and back. (Later tests rely on the repo added here.)

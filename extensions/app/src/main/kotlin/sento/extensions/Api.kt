@@ -21,6 +21,7 @@ import kotlinx.serialization.json.Json
 import suwayomi.tachidesk.manga.model.dataclass.ContentWarning
 
 private val json = Json { ignoreUnknownKeys = true }
+private val chapterRequests = ChapterRequests()
 
 @Serializable
 data class SourceDto(
@@ -136,9 +137,7 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
             }
         val chapters =
             runBlocking {
-                source
-                    .getMangaUpdate(manga, emptyList(), fetchDetails = false, fetchChapters = true)
-                    .chapters
+                chapterRequests.chapters(source, manga)
             }
         ctx.respond(
             chapters.map {

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -127,6 +128,56 @@ func TestAPIErrorShapes(t *testing.T) {
 	}
 	if rec := do(t, h, http.MethodPost, "/api/v1/series", `{not json`); rec.Code != http.StatusBadRequest {
 		t.Errorf("malformed body = %d, want 400", rec.Code)
+	}
+}
+
+func TestIndexerSearchDiagnosticEndpoint(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("t") == "caps" {
+			_, _ = w.Write([]byte(`<caps><categories><category id="7000" name="Books"/></categories></caps>`))
+			return
+		}
+		if r.URL.Query().Get("q") != "Example" || r.URL.Query().Get("cat") != "7000" {
+			t.Errorf("unexpected diagnostic query: %v", r.URL.Query())
+		}
+		_, _ = w.Write([]byte(`<rss><channel><item><title>Example v01</title></item></channel></rss>`))
+	}))
+	defer upstream.Close()
+	h, _ := testServer(t)
+	data, err := json.Marshal(map[string]any{
+		"name": "Diagnostic fixture", "protocol": "torznab", "enabled": true,
+		"settings": map[string]string{"url": upstream.URL, "apiKey": "fixture-key"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := do(t, h, http.MethodPost, "/api/v1/indexers", string(data))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create indexer: %d %s", created.Code, created.Body.String())
+	}
+	var ix struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &ix); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/indexers/" + strconv.FormatInt(ix.ID, 10) + "/search-test"
+	response := do(t, h, http.MethodPost, path, `{"query":"Example"}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("search diagnostic: %d %s", response.Code, response.Body.String())
+	}
+	var result service.IndexerSearchCheck
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.BooksFound != 1 || len(result.Samples) != 1 || result.Samples[0].Title != "Example v01" {
+		t.Fatalf("diagnostic = %+v", result)
+	}
+	if response := do(t, h, http.MethodPost, path, `{"query":" "}`); response.Code != http.StatusBadRequest {
+		t.Fatalf("empty query status = %d", response.Code)
+	}
+	if response := do(t, h, http.MethodPost, "/api/v1/indexers/99999/search-test", `{"query":"Example"}`); response.Code != http.StatusNotFound {
+		t.Fatalf("unknown indexer status = %d", response.Code)
 	}
 }
 

@@ -253,6 +253,25 @@ export interface SearchTarget {
 }
 
 //////////
+// source: indexer_search.go
+
+/**
+ * IndexerSearchCheck compares the real Books query with an unrestricted
+ * query when Books returns nothing. It never evaluates or queues releases.
+ */
+export interface IndexerSearchCheck {
+  query: string;
+  booksFound: number /* int */;
+  unfilteredFound?: number /* int */;
+  samples: IndexerSearchSample[];
+  warnings: string[];
+}
+export interface IndexerSearchSample {
+  title: string;
+  categories: string[];
+}
+
+//////////
 // source: indexers.go
 
 /**
