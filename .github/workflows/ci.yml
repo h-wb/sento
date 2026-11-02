@@ -1,6 +1,10 @@
 # The checks themselves live in mise.toml (`mise run ci`), so anything CI
 # does can be reproduced locally with one command. This file only decides
-# when to run them and on what machine.
+# when to run them and on what machine: the suite is split into parallel
+# jobs — lint, Go race, web, browser — so the wall clock is the slowest
+# job instead of the sum, and a change that cannot affect a suite (docs
+# or repository metadata) skips it. The job still runs and reports, so
+# the required checks never wait on a skipped suite.
 name: CI
 
 on:
@@ -24,13 +28,45 @@ env:
   MISE_DISABLE_TOOLS: go:golang.org/x/tools/gopls
 
 jobs:
-  check:
-    name: Lint, test, e2e
+  # One place decides whether the change can affect code or the web app.
+  # paths-filter reads the pull request's file list from the API instead of
+  # merge-base math: `all` counts every changed file and `meta` the ones that
+  # cannot affect the suites, so a change is heavy unless every changed file
+  # is metadata. Pushes to main and manual runs always run everything. The
+  # jobs below still report when they skip, so required checks never wait.
+  changes:
+    name: Changed files
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 5
+    outputs:
+      heavy: ${{ github.event_name != 'pull_request' || steps.filter.outputs.all_count != steps.filter.outputs.meta_count }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            all:
+              - '**'
+            meta:
+              - 'docs/**'
+              - '**/*.md'
+              - 'LICENSE'
+              - '.kritika*'
+              - '.kritika/**'
+              - 'renovate.json'
+              - '.gitignore'
+              - '.dockerignore'
+              - '.release-please-manifest.json'
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # mise.toml pins go, node, golangci-lint and the rest; the runner
       # image's own toolchains are never used. The full pinned set is
       # installed rather than a subset — cache: true makes that cheap after
@@ -54,16 +90,88 @@ jobs:
           key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
           restore-keys: go-${{ runner.os }}-
 
+      - name: Lint Go code
+        run: mise run lint
+      - name: Lint workflows and scripts
+        run: mise run lint:ci
+      - name: Lint documentation links
+        run: mise run lint:docs
+      - name: Test repository workflow helpers
+        run: mise run test:tooling
+      - name: Check generated types
+        run: mise run gen:check
+
+  race:
+    name: Go race tests
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        with:
+          cache: true
+      - name: Cache Go build and module caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+      - name: Run the harness and race suites
+        if: needs.changes.outputs.heavy == 'true'
+        run: |
+          mise run test:harness
+          mise run test:race
+      - name: Skipped (documentation or metadata only)
+        if: needs.changes.outputs.heavy != 'true'
+        run: echo "No Go or web files changed; harness and race suites skipped."
+
+  web:
+    name: Web lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        with:
+          cache: true
       - name: Cache npm downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
-
       - name: Install web dependencies
         run: mise run web:install
+      - name: Lint the web UI
+        run: mise run lint:web
 
+  e2e:
+    name: Browser e2e
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+        with:
+          cache: true
+      - name: Cache Go build and module caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+      - name: Cache npm downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
       - name: Cache the Playwright browser
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -71,12 +179,18 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
 
+      - name: Install web dependencies
+        if: needs.changes.outputs.heavy == 'true'
+        run: mise run web:install
       - name: Install the Playwright browser
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        if: needs.changes.outputs.heavy == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
         run: mise run e2e:install
-
-      - name: Run the full check suite
-        run: mise run ci
+      - name: Run the Playwright suite
+        if: needs.changes.outputs.heavy == 'true'
+        run: mise run e2e
+      - name: Skipped (documentation or metadata only)
+        if: needs.changes.outputs.heavy != 'true'
+        run: echo "No Go or web files changed; browser suite skipped."
 
       - name: Upload the Playwright report
         if: failure()
