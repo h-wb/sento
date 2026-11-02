@@ -95,6 +95,27 @@ const (
 // go: the catalog lists a new volume a little after it is out.
 const newVolumeSlack = 2 * 100
 
+// completedNumbering is positive catalog evidence of a closed numbering,
+// rather than merely a catalog that currently lists fewer volumes. Every
+// linked product line must explicitly be completed and agree with the known
+// final number; unknown or conflicting lines retain the ordinary lag policy.
+func completedNumbering(e store.Edition) bool {
+	if e.Custom || e.NumberingSource != "catalog" || e.LastNumber <= 0 {
+		return false
+	}
+	found := false
+	for _, c := range e.Collections {
+		if c.SyncState != "linked" {
+			continue
+		}
+		if c.Status != "completed" || c.CountMain <= 0 || int64(c.CountMain)*100 != e.LastNumber {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
 // judge weighs a release against edition e, answering fits, unsure or no
 // with the reason in words. evidence is the edition a verified source
 // listing ties the release to (0: none): another edition is no; e itself
@@ -113,6 +134,9 @@ func (s *shelf) judge(p parse.Result, e store.Edition, evidence int64) (fitVerdi
 		return fitNo, "The stated language does not match this edition."
 	}
 	ec, r, siblings := s.claim(e), p.Claim, s.siblings(e)
+	if last := lastVolume(p); e.Type == LedgerVolume && last > e.LastNumber && completedNumbering(e) {
+		return fitUnsure, fmt.Sprintf("The release goes to volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", hundredths(parse.Num(last)), hundredths(parse.Num(e.LastNumber)))
+	}
 	if last := lastVolume(p); e.Type == LedgerVolume && e.LastNumber > 0 && last > e.LastNumber+newVolumeSlack {
 		for _, o := range siblings {
 			if o.LastNumber >= last {
