@@ -58,7 +58,7 @@ func TestUpgradePathDisplacesOnlyBetterFiles(t *testing.T) {
 
 	owners := func() []store.BookOwner {
 		t.Helper()
-		os, err := st.BookOwners(ctx, books[0].ID)
+		os, err := st.BookOwners(ctx, version.ID, books[0].ID)
 		if err != nil {
 			t.Fatal(err)
 		}
