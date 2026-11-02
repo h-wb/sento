@@ -3,12 +3,10 @@ package service
 import (
 	"context"
 	"log/slog"
-	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -18,14 +16,16 @@ type Replacement struct {
 	Path      string `json:"path"`
 	FileID    int64  `json:"fileId"`
 	BookID    int64  `json:"bookId"`
+	VersionID int64  `json:"versionId"`
 	FromScore int    `json:"fromScore"`
 	ToScore   int    `json:"toScore"`
 }
 
-// KeptClaim is one book the mapped file did not take because a current
-// holder outranks it (or is pinned): the file stays an extra instead.
+// KeptClaim is one version's book the mapped file did not take because
+// its current holder outranks it or is pinned.
 type KeptClaim struct {
 	BookID       int64  `json:"bookId"`
+	VersionID    int64  `json:"versionId"`
 	HolderFileID int64  `json:"holderFileId"`
 	HolderPath   string `json:"holderPath"`
 	HolderScore  int    `json:"holderScore"`
@@ -49,14 +49,14 @@ func (im *Importer) ApplyUpgrades(ctx context.Context, seriesID, fileID int64, s
 	return im.DisplaceOwners(ctx, seriesID, fileID, slots, force)
 }
 
-// DisplaceOwners enforces one owner per book, Sonarr-style: when another
+// DisplaceOwners enforces one owner per collected version's book: when another
 // verified, present file already holds a claimed book, the better-scoring
 // file takes the hold and the other is released and moved out of the final
 // directory to review/ (its bytes stay; nothing is deleted). Automatic
 // replacement follows the version profile's upgrade rules and never touches
 // pinned holds; force — a person's explicit choice in review — overrides
-// both. A file that does not outscore the current holder keeps no claim on
-// the book and stays an extra.
+// both. A file that does not outscore the holder gives up that version's
+// selection, preserving its verified contents and other selections.
 func (im *Importer) DisplaceOwners(ctx context.Context, seriesID, fileID int64, slots []store.BookRef, force bool) (*FileMappingResult, error) {
 	profiles, err := NewProfiles(im.store).seriesProfiles(ctx, seriesID)
 	if err != nil {
@@ -70,17 +70,23 @@ func (im *Importer) DisplaceOwners(ctx context.Context, seriesID, fileID int64, 
 	for _, f := range files {
 		byID[f.ID] = f
 	}
-	newFile, ok := byID[fileID]
+	_, ok := byID[fileID]
 	if !ok {
 		return nil, store.ErrNotFound
 	}
 	res := &FileMappingResult{}
-	seen := map[int64]bool{}
+	seen := map[string]bool{}
+	affected := map[int64]bool{fileID: true}
+	present := map[int64]bool{}
+	for id, f := range byID {
+		present[id] = f.Presence == "present" && !f.NeedsReview
+	}
 	for _, sl := range slots {
-		if seen[sl.BookID] {
+		key := store.BookKey(sl.VersionID, sl.BookID)
+		if seen[key] {
 			continue
 		}
-		seen[sl.BookID] = true
+		seen[key] = true
 		version, err := im.store.GetVersion(ctx, sl.VersionID)
 		if err != nil {
 			return nil, err
@@ -90,17 +96,29 @@ func (im *Importer) DisplaceOwners(ctx context.Context, seriesID, fileID int64, 
 			return nil, err
 		}
 		prof := profiles.For(*version)
-		owners, err := im.store.BookOwners(ctx, sl.BookID)
+		owners, err := im.store.BookOwners(ctx, sl.VersionID, sl.BookID)
 		if err != nil {
 			return nil, err
 		}
-		toScore := scoredFacts(newFile.Facts, "manual", *col, prof, profiles.Formats)
+		var cov []store.AssetCoverage
+		for _, o := range owners {
+			cov = append(cov, store.AssetCoverage{FileID: o.FileID, VersionID: sl.VersionID, BookID: sl.BookID, Evidence: o.Evidence, Verified: o.Verified, Pinned: o.Pinned})
+		}
+		judged := judgeCardFiles(*col, prof, profiles.Formats, cov, byID, present)
+		eligible := map[int64]bool{}
+		for _, id := range judged.accepted[sl.BookID] {
+			eligible[id] = true
+		}
+		if !eligible[fileID] {
+			continue // an observed profile refusal cannot displace an accepted file
+		}
+		toScore := judged.scores[fileID]
 		var beaten, blockers []store.BookOwner
 		for _, o := range owners {
-			if o.FileID == fileID || !o.Verified || !o.Present {
+			if o.FileID == fileID || !eligible[o.FileID] {
 				continue
 			}
-			fromScore := scoredFacts(o.Facts, o.Evidence, *col, prof, profiles.Formats)
+			fromScore := judged.scores[o.FileID]
 			if force || autoUpgrade(prof, o, fromScore, toScore) {
 				beaten = append(beaten, o)
 			} else {
@@ -108,31 +126,46 @@ func (im *Importer) DisplaceOwners(ctx context.Context, seriesID, fileID int64, 
 			}
 		}
 		if len(blockers) > 0 {
-			// A pinned or better holder keeps the book; this file stays an
-			// extra instead of sharing the final directory with it.
+			// This version keeps its pinned or better holder. Other versions
+			// may still select the incoming file.
 			b := blockers[0]
-			if _, err := im.store.ReleaseBook(ctx, fileID, sl.BookID); err != nil {
+			if err := im.store.DeselectBook(ctx, fileID, sl.VersionID, sl.BookID); err != nil {
 				return nil, err
 			}
 			res.Kept = append(res.Kept, KeptClaim{
-				BookID: sl.BookID, HolderFileID: b.FileID, HolderPath: b.Path,
-				HolderScore: scoredFacts(b.Facts, b.Evidence, *col, prof, profiles.Formats), Score: toScore,
+				BookID: sl.BookID, VersionID: sl.VersionID, HolderFileID: b.FileID, HolderPath: b.Path,
+				HolderScore: judged.scores[b.FileID], Score: toScore,
 			})
 			continue
 		}
 		for _, o := range beaten {
-			holdless, err := im.store.ReleaseBook(ctx, o.FileID, sl.BookID)
-			if err != nil {
+			if err := im.store.DeselectBook(ctx, o.FileID, sl.VersionID, sl.BookID); err != nil {
 				return nil, err
 			}
-			if holdless {
-				im.exileToReview(ctx, seriesID, byID[o.FileID])
-			}
+			affected[o.FileID] = true
 			res.Replaced = append(res.Replaced, Replacement{
-				FileID: o.FileID, Path: o.Path, BookID: sl.BookID,
-				FromScore: scoredFacts(o.Facts, o.Evidence, *col, prof, profiles.Formats), ToScore: toScore,
+				FileID: o.FileID, Path: o.Path, BookID: sl.BookID, VersionID: sl.VersionID,
+				FromScore: judged.scores[o.FileID], ToScore: toScore,
 			})
 		}
+	}
+	coverage, err := im.store.Coverage(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	versions, err := im.store.ListVersions(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	editions, err := im.store.ListEditions(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range preferredFileOwners(versions, editions, coverage, byID, profiles) {
+		delete(affected, id)
+	}
+	for id := range affected {
+		im.exileToReview(ctx, seriesID, byID[id])
 	}
 	return res, nil
 }
@@ -201,21 +234,4 @@ func autoUpgrade(prof *profile.Profile, owner store.BookOwner, fromScore, toScor
 		return false
 	}
 	return toScore-fromScore >= max(prof.MinUpgradeScore, 1)
-}
-
-// scoredFacts is the file's profile score, with the same manual-mapping
-// adjustments judgeCardFiles makes: a confirmed mapping counts the edition's
-// language, and confirming a color edition confirms color.
-func scoredFacts(f store.AssetFacts, evidence string, col store.Edition, prof *profile.Profile, formats []profile.Format) int {
-	if evidence == "manual" {
-		f.Language = col.Language
-		if parse.ReadEdition(col.EditionName).Color {
-			f.Flags = maps.Clone(f.Flags)
-			if f.Flags == nil {
-				f.Flags = map[string]bool{}
-			}
-			f.Flags["colored"] = true
-		}
-	}
-	return assetJudgement(f, prof, formats).Score
 }

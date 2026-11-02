@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/h-wb/sento/internal/mediafile"
-	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -77,10 +76,13 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		}
 	}
 
-	// One file per book in the final folders: the pinned holder, else the
-	// best-scoring one. Other verified holders of the same book are planned
-	// into review/ instead of next to the placed copy.
+	// Choose a placed file per collected version, respecting its profile
+	// and pins. Distinct copies may keep distinct files of the same book.
 	profiles, err := NewProfiles(im.store).seriesProfiles(ctx, seriesID)
+	if err != nil {
+		return nil, nil, ms, err
+	}
+	editions, err := im.store.ListEditions(ctx, seriesID)
 	if err != nil {
 		return nil, nil, ms, err
 	}
@@ -88,38 +90,14 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	for _, f := range files {
 		byFile[f.ID] = f
 	}
-	placed := map[int64]int64{}      // book → the file placed for it
-	placedPinned := map[int64]bool{} // whether that file's hold is pinned
-	placedScore := map[int64]int{}   // its score
-	anyCov := map[int64]bool{}       // file → holds any verified book
+	placed := preferredFileOwners(versions, editions, coverage, byFile, profiles)
+	anyCov := map[int64]bool{}
 	for _, c := range coverage {
-		if !c.Verified || c.FileID == 0 {
-			continue
-		}
-		anyCov[c.FileID] = true
-		w, err := im.store.GetBook(ctx, c.BookID)
-		if err != nil {
-			continue
-		}
-		col, err := im.store.GetEdition(ctx, w.EditionID)
-		if err != nil {
-			continue
-		}
-		var prof *profile.Profile
-		if t, err := im.store.GetVersion(ctx, c.VersionID); err == nil {
-			prof = profiles.For(*t)
-		}
-		score := scoredFacts(byFile[c.FileID].Facts, c.Evidence, *col, prof, profiles.Formats)
-		cur, seen := placed[c.BookID]
-		better := !seen ||
-			(c.Pinned && !placedPinned[c.BookID]) ||
-			(c.Pinned == placedPinned[c.BookID] && (score > placedScore[c.BookID] || score == placedScore[c.BookID] && c.FileID < cur))
-		if better {
-			placed[c.BookID] = c.FileID
-			placedPinned[c.BookID] = c.Pinned
-			placedScore[c.BookID] = score
+		if c.Verified {
+			anyCov[c.FileID] = true
 		}
 	}
+
 	reviewDirs := []string{filepath.Join(volumesDir, "review"), filepath.Join(chaptersDir, "review")}
 	inReview := func(p string) bool {
 		for _, r := range reviewDirs {
@@ -156,7 +134,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 			}
 			// A book already placed through another file does not place this
 			// one next to it.
-			if p, ok := placed[c.BookID]; ok && p != f.ID {
+			if placed[store.BookKey(c.VersionID, c.BookID)] != f.ID {
 				continue
 			}
 			w, err := im.store.GetBook(ctx, c.BookID)

@@ -327,42 +327,28 @@ func (s *Store) PathTaken(ctx context.Context, path string, exceptFileID int64) 
 	return *n > 0, nil
 }
 
-// BookOwners lists the files holding one book, pinned flag from coverage.
-func (s *Store) BookOwners(ctx context.Context, bookID int64) ([]BookOwner, error) {
+// BookOwners lists the selected files for one collected version's book.
+// Selection and pins in another version do not participate.
+func (s *Store) BookOwners(ctx context.Context, versionID, bookID int64) ([]BookOwner, error) {
 	return list[BookOwner](ctx, s, `
 		SELECT c.file_id,c.book_id,c.verified,COALESCE(c.evidence,'observed') AS evidence,f.path,f.facts_json,
 		       f.presence='present' AS present,COALESCE(v.pinned,FALSE) AS pinned
 		FROM asset_contents c
+		JOIN books w ON w.id=c.book_id
+		JOIN versions t ON t.edition_id=w.edition_id AND t.id=?
 		JOIN files f ON f.id=c.file_id
-		LEFT JOIN asset_coverage v ON v.file_id=c.file_id AND v.book_id=c.book_id
-		WHERE c.book_id=? ORDER BY c.file_id`, bookID)
+		LEFT JOIN asset_coverage v ON v.file_id=c.file_id AND v.book_id=c.book_id AND v.version_id=t.id
+		WHERE c.book_id=? AND COALESCE(v.selected,TRUE)=TRUE ORDER BY c.file_id`, versionID, bookID)
 }
 
-// ReleaseBook drops one file's hold on one book (contents and coverage). The
-// file itself stays on disk; with no holds left it is an extra again, and
-// holdless reports whether that happened.
-func (s *Store) ReleaseBook(ctx context.Context, fileID, bookID int64) (holdless bool, err error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_contents WHERE file_id=? AND book_id=?`), fileID, bookID); err != nil {
-		return false, err
-	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_coverage WHERE file_id=? AND book_id=?`), fileID, bookID); err != nil {
-		return false, err
-	}
-	var remaining int
-	if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM asset_contents WHERE file_id=?`), fileID).Scan(&remaining); err != nil {
-		return false, err
-	}
-	if remaining == 0 {
-		if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET unrequested=TRUE WHERE id=?`), fileID); err != nil {
-			return false, err
-		}
-	}
-	return remaining == 0, tx.Commit()
+// DeselectBook gives up a file for one collected version, preserving its
+// verified contents and selections in other versions.
+func (s *Store) DeselectBook(ctx context.Context, fileID, versionID, bookID int64) error {
+	return s.touch(ctx, `INSERT INTO asset_coverage(file_id,version_id,book_id,selected)
+ SELECT c.file_id,t.id,c.book_id,FALSE FROM asset_contents c
+ JOIN books w ON w.id=c.book_id JOIN versions t ON t.edition_id=w.edition_id
+ WHERE c.file_id=? AND t.id=? AND c.book_id=?
+ ON CONFLICT(file_id,version_id,book_id) DO UPDATE SET selected=FALSE`, fileID, versionID, bookID)
 }
 
 func (s *Store) SetBookMonitored(ctx context.Context, seriesID, versionID, bookID int64, monitored bool) error {

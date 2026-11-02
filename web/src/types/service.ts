@@ -780,15 +780,17 @@ export interface Replacement {
   path: string;
   fileId: number /* int64 */;
   bookId: number /* int64 */;
+  versionId: number /* int64 */;
   fromScore: number /* int */;
   toScore: number /* int */;
 }
 /**
- * KeptClaim is one book the mapped file did not take because a current
- * holder outranks it (or is pinned): the file stays an extra instead.
+ * KeptClaim is one version's book the mapped file did not take because
+ * its current holder outranks it or is pinned.
  */
 export interface KeptClaim {
   bookId: number /* int64 */;
+  versionId: number /* int64 */;
   holderFileId: number /* int64 */;
   holderPath: string;
   holderScore: number /* int */;

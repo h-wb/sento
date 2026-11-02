@@ -111,6 +111,14 @@ Every import is post-processed into a self-contained book when **Embed metadata*
 
 A book's identity is its **content fingerprint**: the SHA-256 of the sorted SHA-256s of its page images. Container, names, order and ComicInfo do not enter it, so a payload and its processed copy are the same asset and re-tagging never changes identity. Non-archives fall back to a byte hash.
 
+Upgrade ownership and placement are per collected version's book. A colored
+copy cannot block or displace a black-and-white copy of the same book; each
+uses its own profile and pins. Compatible versions can still share one file.
+Replacing a selected file changes that version's selection, preserving the
+old asset's verified contents and selections in other versions. A file moves
+to `review/` only when no version selects it for placement. Organization uses
+the same profile-aware selection as upgrades, including hard refusals.
+
 **Organize files** (series → Files) previews and applies what the current settings would change in existing files: move and rename to the templated path, and rewrite embedded metadata where the merge would change it. Fingerprints, coverage and pins are unaffected; emptied folders are removed; a seeding payload hardlinked to an old library file is never modified.
 
 A series has a folder for its volumes (`series.path`) and, when chapters are kept apart, one for its chapters (`series.chapter_path`). Optional top folders per type (`volumesRoot`, `chaptersRoot`) put the type above the series: `Volumes/<series>/…` and `Chapters/<series>/…`; equal values (both empty by default) keep one folder per series. A series keeps its own folder name when re-rooted, and one adopted from outside the library root is never moved. Scans cover both folders, and storage availability is judged per folder, so an unreachable chapter tree does not block volumes. The `{type}` token puts the split inside the series instead (`<series>/Volumes/…`).
