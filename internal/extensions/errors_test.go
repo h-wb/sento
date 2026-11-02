@@ -19,6 +19,7 @@ func TestSourceHTTPError(t *testing.T) {
 		{"throttled", `{"error":"HTTP error 429","upstreamStatus":429,"retryable":true,"retryAfter":"120"}`, "", 429, true, 120 * time.Second},
 		{"unauthorized", `{"error":"HTTP error 401","upstreamStatus":401,"retryable":false}`, "", 401, false, 0},
 		{"unknown permanent", `{"error":"bad archive","retryable":false}`, "", 502, false, 0},
+		{"invalid archive range", `{"error":"Not a local file header","retryable":true,"unreadable":false}`, "", 502, true, 0},
 		{"legacy gateway", `{"error":"unavailable"}`, "60", 502, true, time.Minute},
 		{"proxy gateway", "bad gateway", "", 502, true, 0},
 	} {

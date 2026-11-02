@@ -87,7 +87,7 @@ object SourcePrefs {
         val value = fromJson(pref, body.value)
         pref.saveNewValue(value)
         pref.callChangeListener(value)
-        GetSource.unregisterSource(source.id)
+        GetSource.reloadSource(source.id)
     }
 
     private fun Any?.toJson(): JsonElement =

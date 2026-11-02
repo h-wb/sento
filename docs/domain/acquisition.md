@@ -17,6 +17,10 @@ shows sample titles and categories. These diagnostic results never enter
 acquisition plans or start downloads; they help distinguish an empty query
 from a feed whose category settings need attention.
 
+Saving a source preference rebuilds its loaded instance before the save
+finishes. The source stays discoverable alongside other installed sources,
+including when saved preferences are restored after a sidecar restart.
+
 The common interaction is a coverage summary and editable selection of releases, with raw release details and rejected candidates available below. A provisional plan accompanies each batch of results so the view fills in during the search; it becomes editable when the search ends. Submission searches and evaluates again and reports each release's outcome; it never silently substitutes a different release.
 
 Stall detection reports sustained lack of progress, excluding deliberate pauses and queued/checking states. Recovery is guided: a replacement search treats the stalled job's books as wanted and rules out the job's own release, while the job keeps running and keeps its reservations. Sento stops tracking the old job only when a chosen replacement claims one of its books; a search that finds nothing changes nothing. The torrent and its files are never removed from the client, and no replacement is made automatically.
@@ -34,7 +38,16 @@ After five queue retries it moves to Review with its book reservations intact.
 Other permanent source errors go directly to Review. Neither outcome
 blocklists the release. A source that cannot give the release is different:
 one that no longer has the listing or a page of it (404, 410), or serves
-an archive it cannot read ("Not a local file header": the sidecar marks
-it unreadable rather than a network failure). No retry or review brings
-it back, so the job fails and the release is blocklisted, like a torrent
-that never completes, and the series is searched again within the minute for another (the same happens when you ask to try another release). Activity keeps a failed attempt under Needs attention until another download covers its books: what stays there is what no source could replace. A chapter's 30-minute timeout starts when a download slot opens.
+an archive with an explicit ZIP format error. The job fails and the release
+is blocklisted, like a torrent that never completes, and the series is
+searched again within the minute for another (the same happens when you ask
+to try another release).
+
+An IO-wrapped range/header failure, including "Not a local file header",
+remains retryable: a transient response can fail that check even for a valid
+archive. Upgrades remove automatic blocks created by the old classification,
+preserving manual blocks and evidence that a release is gone. Historical jobs
+stay failed; ordinary acquisition decides whether to try the release again.
+Activity keeps a failed attempt under Needs attention until another
+download covers its books: what stays there is what no source could replace.
+A chapter's 30-minute timeout starts when a download slot opens.

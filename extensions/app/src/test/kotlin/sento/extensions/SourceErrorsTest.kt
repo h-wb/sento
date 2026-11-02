@@ -79,11 +79,17 @@ class SourceErrorsTest {
     }
 
     @Test
-    fun `an archive the source cannot read is unreadable, not a network failure`() {
-        val damaged = IOException(IllegalArgumentException("Not a local file header"))
-        assertFalse(sourceError(damaged).retryable)
-        assertTrue(sourceError(damaged).unreadable)
-        assertTrue(sourceError(java.util.zip.ZipException("invalid entry size")).unreadable)
-        assertFalse(sourceError(IOException("connection reset")).unreadable)
+    fun `an IO-wrapped range header failure does not establish a damaged archive`() {
+        val error = sourceError(IOException(IllegalArgumentException("Not a local file header")))
+        assertTrue(error.retryable)
+        assertFalse(error.unreadable)
+        assertTrue(Json.encodeToString(error).contains("\"retryable\":true"))
+    }
+
+    @Test
+    fun `an explicit ZIP format error remains unreadable`() {
+        val error = sourceError(java.util.zip.ZipException("invalid entry size"))
+        assertFalse(error.retryable)
+        assertTrue(error.unreadable)
     }
 }
