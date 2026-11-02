@@ -462,6 +462,15 @@ export interface ReviewItem {
    * it yet, so review can prefill the ledger and numbers.
    */
   hint?: FileHint;
+  /**
+   * ReleaseKey groups a pack's file questions: the download its files
+   * arrived in. Empty for a file that came in on its own.
+   */
+  releaseKey?: string;
+  /**
+   * Release names the group in words (the download's title).
+   */
+  release?: string;
 }
 /**
  * FileHint is a file name's parsed ledger and numbers ("volume", ["1"]),
@@ -480,6 +489,21 @@ export interface ReviewProposal {
   edition: string;
   label: string;
   evidence: string;
+}
+/**
+ * ReviewSkip is one file a bulk review action left alone, and why.
+ */
+export interface ReviewSkip {
+  fileId: number /* int64 */;
+  reason: string;
+}
+/**
+ * ReviewResolution is what a bulk decline did: the files it marked reviewed
+ * and unmapped, and those it left as they were.
+ */
+export interface ReviewResolution {
+  resolved: number /* int64 */[];
+  skipped: ReviewSkip[];
 }
 
 //////////

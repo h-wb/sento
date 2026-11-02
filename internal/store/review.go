@@ -2,8 +2,13 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
+
+	"github.com/h-wb/sento/internal/apperr"
 )
 
 // ReviewItem is one question for a person: a file to match ("file"), a
@@ -29,6 +34,11 @@ type ReviewItem struct {
 	// Hint is what a file's own name says it holds when no edition claims
 	// it yet, so review can prefill the ledger and numbers.
 	Hint *FileHint `json:"hint,omitempty" db:"-"`
+	// ReleaseKey groups a pack's file questions: the download its files
+	// arrived in. Empty for a file that came in on its own.
+	ReleaseKey string `json:"releaseKey,omitempty" db:"-"`
+	// Release names the group in words (the download's title).
+	Release string `json:"release,omitempty" db:"-"`
 }
 
 // FileHint is a file name's parsed ledger and numbers ("volume", ["1"]),
@@ -45,6 +55,72 @@ type ReviewProposal struct {
 	Edition  string    `json:"edition"`
 	Label    string    `json:"label"`
 	Evidence string    `json:"evidence"`
+}
+
+// ReviewSkip is one file a bulk review action left alone, and why.
+type ReviewSkip struct {
+	FileID int64  `json:"fileId"`
+	Reason string `json:"reason"`
+}
+
+// ReviewResolution is what a bulk decline did: the files it marked reviewed
+// and unmapped, and those it left as they were.
+type ReviewResolution struct {
+	Resolved []int64      `json:"resolved"`
+	Skipped  []ReviewSkip `json:"skipped"`
+}
+
+// DeclineFiles resolves file reviews in bulk: the exact counterpart of
+// saving each file's mapping with no books (MapFile with empty slots), one
+// decision for a whole pack. Every resolved file stays in the library,
+// reviewed, claiming no book — and so shows up in cleanup as an unmapped
+// file. The batch is one transaction; a file that no longer waits for a
+// mapping decision is skipped with the reason, never overwritten.
+func (s *Store) DeclineFiles(ctx context.Context, seriesID int64, fileIDs []int64) (*ReviewResolution, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res := &ReviewResolution{Resolved: []int64{}, Skipped: []ReviewSkip{}}
+	for _, fid := range slices.Compact(slices.Sorted(slices.Values(fileIDs))) {
+		var fileSeries int64
+		var waiting bool
+		err := tx.QueryRowContext(ctx, s.q(`SELECT series_id, needs_review OR EXISTS(SELECT 1 FROM asset_contents c WHERE c.file_id=files.id AND c.verified=FALSE) FROM files WHERE id=?`), fid).Scan(&fileSeries, &waiting)
+		if errors.Is(err, sql.ErrNoRows) {
+			res.Skipped = append(res.Skipped, ReviewSkip{fid, "File is no longer available"})
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if fileSeries != seriesID {
+			res.Skipped = append(res.Skipped, ReviewSkip{fid, "File does not belong to this series"})
+			continue
+		}
+		if err = s.rejectTrashEdit(ctx, tx, fid); err != nil {
+			if errors.Is(err, apperr.ErrConflict) {
+				res.Skipped = append(res.Skipped, ReviewSkip{fid, err.Error()})
+				continue
+			}
+			return nil, err
+		}
+		if !waiting {
+			res.Skipped = append(res.Skipped, ReviewSkip{fid, "File is no longer waiting for review"})
+			continue
+		}
+		if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_coverage WHERE file_id=?`), fid); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_contents WHERE file_id=?`), fid); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=FALSE,unrequested=TRUE WHERE id=?`), fid); err != nil {
+			return nil, err
+		}
+		res.Resolved = append(res.Resolved, fid)
+	}
+	return res, tx.Commit()
 }
 
 func (s *Store) ReviewItems(ctx context.Context, sid int64) ([]ReviewItem, error) {
