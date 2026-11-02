@@ -194,14 +194,32 @@ func (s *Store) Coverage(ctx context.Context, seriesID int64) ([]AssetCoverage, 
 	return list[AssetCoverage](ctx, s, `SELECT c.file_id,t.id AS version_id,c.book_id,c.verified,COALESCE(a.pinned,FALSE) AS pinned,c.evidence
  FROM asset_contents c JOIN books w ON w.id=c.book_id JOIN versions t ON t.edition_id=w.edition_id
  JOIN files f ON f.id=c.file_id LEFT JOIN asset_coverage a ON a.file_id=c.file_id AND a.book_id=c.book_id AND a.version_id=t.id
- WHERE f.series_id=? AND COALESCE(a.selected,TRUE)=TRUE`, seriesID)
+ WHERE f.series_id=? AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=f.id) AND COALESCE(a.selected,TRUE)=TRUE`, seriesID)
 }
 func (s *Store) PinCoverage(ctx context.Context, seriesID int64, a AssetCoverage) error {
-	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,pinned)
+	version, err := s.GetVersion(ctx, a.VersionID)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err = s.lockEditions(ctx, tx, true, version.EditionID); err != nil {
+		return err
+	}
+	if err = s.rejectTrashEdit(ctx, tx, a.FileID); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,pinned)
  SELECT c.file_id,t.id,c.book_id,? FROM asset_contents c JOIN books w ON w.id=c.book_id JOIN versions t ON t.edition_id=w.edition_id JOIN files f ON f.id=c.file_id
  WHERE c.file_id=? AND t.id=? AND c.book_id=? AND f.series_id=?
  ON CONFLICT(file_id,version_id,book_id) DO UPDATE SET pinned=excluded.pinned`), a.Pinned, a.FileID, a.VersionID, a.BookID, seriesID)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 func (s *Store) SetAssetFacts(ctx context.Context, id int64, f AssetFacts, hash string) error {
 	raw, err := json.Marshal(f)
@@ -248,6 +266,9 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Boo
 		cids = append(cids, sl.EditionID)
 	}
 	if err = s.lockEditions(ctx, tx, true, cids...); err != nil {
+		return err
+	}
+	if err = s.rejectTrashEdit(ctx, tx, fileID); err != nil {
 		return err
 	}
 	for _, sl := range slots {
@@ -338,7 +359,7 @@ func (s *Store) BookOwners(ctx context.Context, versionID, bookID int64) ([]Book
 		JOIN versions t ON t.edition_id=w.edition_id AND t.id=?
 		JOIN files f ON f.id=c.file_id
 		LEFT JOIN asset_coverage v ON v.file_id=c.file_id AND v.book_id=c.book_id AND v.version_id=t.id
-		WHERE c.book_id=? AND COALESCE(v.selected,TRUE)=TRUE ORDER BY c.file_id`, versionID, bookID)
+		WHERE c.book_id=? AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=f.id) AND COALESCE(v.selected,TRUE)=TRUE ORDER BY c.file_id`, versionID, bookID)
 }
 
 // DeselectBook gives up a file for one collected version, preserving its

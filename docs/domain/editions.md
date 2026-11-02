@@ -103,7 +103,7 @@ The ledger is computed from books, monitoring intent, eligible coverage, file pr
 
 Global Activity and a series' Activity are two scopes of the same interface: **In progress**, **Needs attention**, and **History**. Series pages have Editions, Files, and Activity; older Review and History links open the corresponding Activity filter. The shell badge counts grouped unresolved issues, falling back to active downloads when nothing needs attention.
 
-In progress groups current downloads by series, with compact expandable rows and progress. Automatic retries stay here, with the retry time and a **Retry now** action. Needs attention groups repeated source failures by listing and cause; a download with several files waiting for confirmation is one import question, expandable into its file questions. File matching, catalog linking and source decisions work in place in either scope. Raw errors are available under Details. History contains completed and cancelled downloads and previous failed attempts whose books are now owned, no longer collected or covered by another live download. Partly uncovered packs remain attention items. These views are derived without changing queue records, reservations or file presence on a page read. History is paginated; decision history and blocked releases are secondary sections.
+In progress groups current downloads by series, with compact expandable rows and progress. Automatic retries stay here, with the retry time and a **Retry now** action. Needs attention groups repeated source failures by listing and cause; a download with several files waiting for confirmation is one import question, expandable into its file questions. File matching, catalog linking and source decisions work in place in either scope. Raw errors are available under Details. History contains completed and cancelled downloads and previous failed attempts whose books are now owned, no longer collected or covered by another live download. Partly uncovered packs remain attention items. Confirmed source 404/410 attempts without file questions belong to History even while their books remain wanted. These views are derived without changing queue records, reservations or file presence on a page read. History is paginated; decision history and blocked releases are secondary sections.
 
 Every download uses the same recovery actions in both scopes. **Try another release** is offered for unresolved failed downloads and dead download reviews that have delivered no files. It blocklists and retires the selected releases, frees their books and immediately searches the series again. Temporary failures offer Retry now, and jobs already importing or holding files for review keep their reservations. A stalled download offers **Choose a replacement**, keeping the original running until a replacement is selected. An uncertain submission offers **Confirm download**, attaching the existing client ID without submitting twice.
 
@@ -150,6 +150,37 @@ Scans and acquisition checks record `present`, `missing`, `unavailable`, or `unk
 Offer claims and per-file observed facts are stored separately. Filename observations take precedence over advertised language/group/quality; stream imports retain offer evidence. The file editor supports manual language/group corrections with provenance. Retrying or scanning identical bytes preserves manual corrections and content confirmation. Group contradictions remain visible for review.
 
 Transient client errors back off from 30 seconds up to 32 minutes. If dispatch succeeded but saving its handle was interrupted, reconciliation checks the stable provider key without submitting again. Unresolved dispatch after ten minutes enters review, where a user can attach the client ID or cancel the reservation. Cancelling leaves remote downloads and files intact; an active import must finish before cancellation. Pending plans and edition identity edits use a common transactional parent lock.
+
+## File cleanup and trash
+
+**Clean up files**, available from Files and each edition menu, previews file
+sizes and explains whether each file is protected or eligible. The user must
+select files explicitly. Turning Collect off or pausing a series does not
+move files. Candidates include reviewed unmapped files, files used only by
+uncollected editions, and copies no collected version selects. A file still
+selected by any collected version, a pinned asset (including a deselected
+pin), unfinished file review, or an asset from an active download is protected.
+Shared assets are judged as a whole, across their edition and version mappings.
+The server checks current selections and pins again when applying a preview.
+
+Cleanup moves each selected archive into a hidden `.sento-trash` folder on
+the same filesystem. It retains file identity, observed facts, intrinsic
+contents and version selections, but excludes the file from ownership,
+review, scans and organization while it is in trash. Download-client payloads
+and other hardlinks remain intact; selected archive sizes do not promise
+immediate disk-space savings. Only regular files are moved, without overwriting
+another path or rewriting archive bytes. A journal retains interrupted moves
+for recovery.
+
+The confirmation chooses 7, 30 or 90 days of retention (30 by default).
+Trash can be inspected and restored from Files even after all active files
+are gone. Restore verifies retained bytes and refuses an occupied original
+path. It restores mappings and leaves collection preferences unchanged.
+Permanent deletion requires confirmation, or happens after expiry during the
+daily housekeeping task. Files whose interrupted move still leaves an original
+are retained for explicit restore. A series with recoverable trash must have
+its trash restored or emptied before series removal, so removing the series
+cannot orphan recovery records.
 
 ## Screens and evaluation
 

@@ -110,7 +110,12 @@ func (l *Library) Activity(ctx context.Context, seriesID int64) (*ActivityData, 
 				}
 			}
 		}
-		if job.Status == store.QueueFailed && !hasQuestions {
+		d.Issue, d.Explanation = downloadIssue(job)
+		if job.Status == store.QueueFailed && job.Protocol == "source" && d.Issue == "gone" && !hasQuestions {
+			d.History, d.Attention, d.Job.CanTryAnother = true, false, false
+			d.Resolution = "Release unavailable. Missing books remain wanted and will be searched again."
+		}
+		if job.Status == store.QueueFailed && !hasQuestions && !d.History {
 			if _, ok := ledgers[job.SeriesID]; !ok {
 				ledgers[job.SeriesID], err = loadLedger(ctx, l.store, job.SeriesID)
 				if err != nil {
@@ -125,7 +130,6 @@ func (l *Library) Activity(ctx context.Context, seriesID int64) (*ActivityData, 
 			}
 		}
 		d.Job.Snapshot = nil // Decisions and listing metadata above are the UI's compact view.
-		d.Issue, d.Explanation = downloadIssue(job)
 		key := fmt.Sprintf("%d/%s", job.SeriesID, job.ReleaseKey)
 		if job.ReleaseKey != "" && !d.History {
 			if _, exists := byRelease[key]; !exists {

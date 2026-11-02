@@ -274,3 +274,51 @@ func TestPartialImportShowsVerifiedBooksAndScopesReplacementToUnmatchedBooks(t *
 		t.Fatalf("active transfer hidden: %+v %v", view, err)
 	}
 }
+
+func TestActivityArchivesGoneSourcesWithoutHidingFileQuestions(t *testing.T) {
+	ctx := context.Background()
+	lib, st, sid, e, books, v := modelFixture(t)
+	refs := []store.BookRef{modelRef(e, books[0], v)}
+	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "source", ReleaseKey: "gone-release", Title: "Gone volume"}, refs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.UpdateQueueItem(ctx, qid, store.QueueFailed, "listing pages: host: HTTP error 404"); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.AddBlocklist(ctx, "source", "gone-release", "HTTP 404"); err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []int64{0, sid} {
+		data, err := lib.Activity(ctx, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := data.Downloads[0]
+		if !d.History || d.Attention || d.Job.CanTryAnother || d.Resolution == "" {
+			t.Fatalf("dead download remains a task: %+v", d)
+		}
+	}
+	byVersion, err := lib.BooksByVersion(ctx, sid)
+	if err != nil || !byVersion[v.ID][0].Wanted {
+		t.Fatal("archiving changed wanted intent", byVersion, err)
+	}
+	job, err := st.GetQueueItem(ctx, qid)
+	if err != nil || job.Status != store.QueueFailed {
+		t.Fatal("page read rewrote the job", job, err)
+	}
+	path := t.TempDir() + "/partial.cbz"
+	if err = os.WriteFile(path, []byte("pages"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.AddFile(ctx, store.File{SeriesID: sid, Path: path, NeedsReview: true, Facts: store.AssetFacts{ReleaseKey: "gone-release"}}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	data, err := lib.Activity(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := data.Downloads[0]; !d.Attention || d.History || len(d.Files) != 1 {
+		t.Fatalf("404 hid an unfinished import: %+v", d)
+	}
+}

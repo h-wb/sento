@@ -69,11 +69,23 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 	if err = s.lockEditions(ctx, tx, true, cids...); err != nil {
 		return 0, err
 	}
+	var held int
+	if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM file_trash t JOIN files f ON f.id=t.file_id WHERE f.path=?`), f.Path).Scan(&held); err != nil {
+		return 0, err
+	}
+	if held > 0 {
+		return 0, apperr.Conflictf("restore or empty this path's trash entry before importing it again")
+	}
 	var oldID int64
 	var oldHash, oldFacts string
 	oldErr := tx.QueryRowContext(ctx, s.q(`SELECT id,COALESCE(hash,''),facts_json FROM files WHERE path=? AND series_id=?`), f.Path, f.SeriesID).Scan(&oldID, &oldHash, &oldFacts)
 	if oldErr != nil && !errors.Is(oldErr, sql.ErrNoRows) {
 		return 0, oldErr
+	}
+	if oldErr == nil {
+		if err = s.rejectTrashEdit(ctx, tx, oldID); err != nil {
+			return 0, err
+		}
 	}
 	if oldErr == nil && f.Hash != "" && oldHash == f.Hash {
 		var manual int
@@ -158,7 +170,7 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 func (s *Store) ListFiles(ctx context.Context, seriesID int64) ([]File, error) {
 	return list[File](ctx, s, `
 		SELECT id, series_id, path, size, provenance, unrequested, added_at,needs_review,COALESCE(hash,'') AS hash,facts_json,claims_json,presence,presence_error,checked_at
-		FROM files WHERE series_id = ? ORDER BY path`, seriesID)
+		FROM files WHERE series_id = ? AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=files.id) ORDER BY path`, seriesID)
 }
 
 // ForgetFile drops what is recorded about a file whose bytes were replaced
@@ -205,7 +217,7 @@ func (s *Store) LowestOwnedChapters(ctx context.Context, seriesID int64) (map[in
 	}](ctx, s, `
 		SELECT w.edition_id, MIN(w.sequence_num) AS lowest
 		FROM asset_contents a JOIN books w ON w.id=a.book_id JOIN editions c ON c.id=w.edition_id JOIN files f ON f.id=a.file_id
-		WHERE f.series_id=? AND c.type='chapter' AND a.verified=TRUE AND f.needs_review=FALSE AND w.sequence_num>0
+		WHERE f.series_id=? AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=f.id) AND c.type='chapter' AND a.verified=TRUE AND f.needs_review=FALSE AND w.sequence_num>0
 		GROUP BY w.edition_id`, seriesID)
 	if err != nil {
 		return nil, err

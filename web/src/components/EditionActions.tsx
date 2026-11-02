@@ -1,3 +1,4 @@
+import FileCleanup from './FileCleanup'
 import { useState, type ReactNode } from 'react'
 import { Alert, Button, Group, Menu, Modal, Stack, Text } from '@mantine/core'
 import { IconDotsVertical, IconTrash } from '@tabler/icons-react'
@@ -27,6 +28,7 @@ export default function EditionActions({
   run: (fn: () => Promise<unknown>, msg?: string) => void
 }) {
   const { confirm, confirmation } = useConfirmAction()
+  const [cleanup, setCleanup] = useState(false)
   const [merge, setMerge] = useState<Edition | null>(null)
   // A local edition merges into its duplicate; a catalog edition into
   // another of the same MangaBaka edition it was kept apart from.
@@ -60,6 +62,7 @@ export default function EditionActions({
         </Menu.Target>
         <Menu.Dropdown>
           {children}
+          <Menu.Item onClick={() => setCleanup(true)}>Clean up files</Menu.Item>
           {(more || candidates.length > 0 || edition.collections.length > 1) && (
             <Menu.Sub position="left-start">
               <Menu.Sub.Target>
@@ -130,6 +133,7 @@ export default function EditionActions({
         </Menu.Dropdown>
       </Menu>
       {confirmation}
+      {cleanup && <FileCleanup seriesID={seriesID} editionID={edition.id} onClose={() => setCleanup(false)} />}
       {merge && (
         <MergePreview
           seriesID={seriesID}

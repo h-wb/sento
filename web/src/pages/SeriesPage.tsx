@@ -1,4 +1,5 @@
 import EditionManager, { type EditionSection } from '../components/EditionManager'
+import FileCleanup from '../components/FileCleanup'
 import OrganizeFiles from '../components/OrganizeFiles'
 import AddEdition, { type EditionStart } from '../components/AddEdition'
 import { useCallback, useState } from 'react'
@@ -97,6 +98,7 @@ export default function SeriesPage() {
     setParam('sources', open ? '1' : null)
     if (!open && view === 'sources') setTab(null)
   }
+  const [cleanup, setCleanup] = useState(false)
   const [organize, setOrganize] = useState(false)
 
   const queryClient = useQueryClient()
@@ -441,6 +443,7 @@ export default function SeriesPage() {
                   Organize files
                 </Button>
               </Tooltip>
+              <Button size="xs" variant="default" onClick={() => setCleanup(true)}>Clean up files</Button>
             </Group>
             {editionManager('files')}
             {filesQuery.isPending && <QueryFeedback pending />}
@@ -464,6 +467,7 @@ export default function SeriesPage() {
           busy={busy}
         />
       </Modal>
+      {cleanup && <FileCleanup seriesID={seriesID} onClose={() => setCleanup(false)} />}
       {organize && <OrganizeFiles seriesID={seriesID} onClose={() => setOrganize(false)} />}
       <BookDialog
         seriesID={seriesID}

@@ -32,6 +32,15 @@ export interface BookMonitorBody {
 }
 
 //////////
+// source: api_file_cleanup.go
+
+export interface FileCleanupBody {
+  editionId: number /* int64 */;
+  fileIds: number /* int64 */[];
+  retentionDays: number /* int */;
+}
+
+//////////
 // source: server.go
 /*
 Package server wires the HTTP API and serves the web UI.

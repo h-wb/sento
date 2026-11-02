@@ -43,6 +43,8 @@ type FileMappingResult struct {
 // ApplyUpgrades maps the file to its books (atomically, like MapFile) and
 // then applies the upgrade path per book.
 func (im *Importer) ApplyUpgrades(ctx context.Context, seriesID, fileID int64, slots []store.BookRef, force bool) (*FileMappingResult, error) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
 	if err := im.store.MapFile(ctx, seriesID, fileID, slots); err != nil {
 		return nil, err
 	}
