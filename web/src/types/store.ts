@@ -606,6 +606,7 @@ export interface BookOwner {
   evidence: string;
   path: string;
   facts: AssetFacts;
+  claims: AssetFacts;
   fileId: number /* int64 */;
   bookId: number /* int64 */;
   verified: boolean;

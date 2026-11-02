@@ -331,6 +331,7 @@ type BookOwner struct {
 	Evidence string     `json:"evidence" db:"evidence"`
 	Path     string     `json:"path" db:"path"`
 	Facts    AssetFacts `json:"facts" db:"facts_json"`
+	Claims   AssetFacts `json:"claims" db:"claims_json"`
 	FileID   int64      `json:"fileId" db:"file_id"`
 	BookID   int64      `json:"bookId" db:"book_id"`
 	Verified bool       `json:"verified" db:"verified"`
@@ -352,7 +353,7 @@ func (s *Store) PathTaken(ctx context.Context, path string, exceptFileID int64) 
 // Selection and pins in another version do not participate.
 func (s *Store) BookOwners(ctx context.Context, versionID, bookID int64) ([]BookOwner, error) {
 	return list[BookOwner](ctx, s, `
-		SELECT c.file_id,c.book_id,c.verified,COALESCE(c.evidence,'observed') AS evidence,f.path,f.facts_json,
+		SELECT c.file_id,c.book_id,c.verified,COALESCE(c.evidence,'observed') AS evidence,f.path,f.facts_json,f.claims_json,
 		       f.presence='present' AS present,COALESCE(v.pinned,FALSE) AS pinned
 		FROM asset_contents c
 		JOIN books w ON w.id=c.book_id
