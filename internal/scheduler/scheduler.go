@@ -451,7 +451,11 @@ func (s *Scheduler) tickVolumes(ctx context.Context) error {
 }
 
 // sweep runs the unified wanted-search for one ledger across the library.
+// The marked context tells the search it is Sento's own: it plans only
+// missing and unsatisfactory books, never quality upgrades, and the grabs
+// are attributed to the schedule.
 func (s *Scheduler) sweep(ctx context.Context, searchLedger string, include func(store.Series) bool) error {
+	ctx = service.Scheduled(ctx)
 	series, err := s.store.ListSeries(ctx)
 	if err != nil {
 		return err
@@ -468,7 +472,7 @@ func (s *Scheduler) sweep(ctx context.Context, searchLedger string, include func
 			slog.Warn("sweep failed", "ledger", searchLedger, "series", sr.ID, "error", err)
 			continue
 		}
-		if queued := s.search.GrabBest(service.Scheduled(ctx), sr.ID, searchLedger, result.Candidates); len(queued) > 0 {
+		if queued := s.search.GrabBest(ctx, sr.ID, searchLedger, result.Candidates); len(queued) > 0 {
 			slog.Info("releases grabbed", "ledger", searchLedger, "series", sr.Title, "count", len(queued))
 		}
 	}
