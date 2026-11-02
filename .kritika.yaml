@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://kritika.home-operations.com/kritika.schema.json
+# How kritika (the self-hosted PR reviewer, kubernetes/apps/main/kritika in home-ops)
+# reviews this repository. Read from each pull request's merge base, so a pull request
+# cannot weaken its own review, and a branch older than this file is reviewed without it
+# (the admin config carries a baseline gate for that case).
+rules:
+  - id: domain-behavior
+    file: .kritika/domain.md
+  - id: release
+    file: .kritika/release.md
+    when: [{ expr: pr.headRef.startsWith("release-please--branches") }]
+context:
+  - path: AGENTS.md
+    description: Tooling, checks and repo rules (mise, migrations, generated types)
+  - path: CONTRIBUTING.md
+    description: Contribution rules, commit conventions and license
+  - path: docs/architecture.md
+    description: Server, sidecar, web and store layout
+  - path: docs/domain/editions.md
+    description: Editions, versions, files, coverage and upgrade rules
+  - path: docs/domain/acquisition.md
+    description: Search, decisions, downloads and review behavior
+  - path: docs/testing/README.md
+    description: Test suites and which checks use the network
+tools:
+  # renovate: datasource=github-releases depName=sharkdp/fd
+  aqua:sharkdp/fd: v10.5.0
+  # renovate: datasource=github-releases depName=BurntSushi/ripgrep
+  aqua:BurntSushi/ripgrep: 15.2.0
+comments:
+  dashboard: false
