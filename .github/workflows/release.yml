@@ -5,6 +5,20 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to package again (vMAJOR.MINOR.PATCH)
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  VERSION: ${{ inputs.tag || github.ref_name }}
+  MISE_DISABLE_TOOLS: go:golang.org/x/tools/gopls
 
 permissions:
   actions: read
@@ -15,14 +29,26 @@ jobs:
     name: Verify release tag and CI
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.commit.outputs.sha }}
     steps:
+      - name: Validate tag format
+        run: |
+          if [[ ! "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Expected vMAJOR.MINOR.PATCH.' >&2
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/tags/${{ env.VERSION }}
           fetch-depth: 0
       - run: bash scripts/check-release.sh
         env:
           GH_TOKEN: ${{ github.token }}
-          SENTO_RELEASE_TAG: ${{ github.ref_name }}
+          SENTO_RELEASE_TAG: ${{ env.VERSION }}
+      - name: Record source commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   web:
     name: Build shared web UI
@@ -31,6 +57,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.VERSION }}
       - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
         with:
           install_args: node
@@ -44,7 +72,7 @@ jobs:
           if-no-files-found: error
 
   build:
-    needs: web
+    needs: [validate, web]
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -57,10 +85,13 @@ jobs:
           - { goos: darwin, goarch: amd64 }
           - { goos: darwin, goarch: arm64 }
     env:
-      VERSION: ${{ github.ref_name }}
-      COMMIT: ${{ github.sha }}
+      COMMIT: ${{ needs.validate.outputs.commit }}
+      TARGET_GOOS: ${{ matrix.goos }}
+      TARGET_GOARCH: ${{ matrix.goarch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.VERSION }}
 
       # mise.toml pins go and node; the runner's toolchains are never used.
       - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
@@ -74,20 +105,17 @@ jobs:
           path: web-dist
 
       - name: Build the server
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
         run: |
-          CGO_ENABLED=0 mise exec -- go build -trimpath \
+          mise exec go -- env CGO_ENABLED=0 GOOS="$TARGET_GOOS" GOARCH="$TARGET_GOARCH" go build -trimpath \
             -ldflags "-s -w -X github.com/h-wb/sento/internal/version.Version=${VERSION#v} -X github.com/h-wb/sento/internal/version.Commit=${COMMIT}" \
-            -o "sento-${VERSION#v}-${GOOS}-${GOARCH}/sento" ./cmd/sento
+            -o "sento-${VERSION#v}-${TARGET_GOOS}-${TARGET_GOARCH}/sento" ./cmd/sento
 
       - name: Package
         run: |
-          cp LICENSE "sento-${VERSION#v}-${GOOS}-${GOARCH}/LICENSE"
-          cp -r web-dist "sento-${VERSION#v}-${GOOS}-${GOARCH}/web-dist"
-          tar -czf "sento-${VERSION#v}-${GOOS}-${GOARCH}.tar.gz" \
-            "sento-${VERSION#v}-${GOOS}-${GOARCH}"
+          cp LICENSE "sento-${VERSION#v}-${TARGET_GOOS}-${TARGET_GOARCH}/LICENSE"
+          cp -r web-dist "sento-${VERSION#v}-${TARGET_GOOS}-${TARGET_GOARCH}/web-dist"
+          tar -czf "sento-${VERSION#v}-${TARGET_GOOS}-${TARGET_GOARCH}.tar.gz" \
+            "sento-${VERSION#v}-${TARGET_GOOS}-${TARGET_GOARCH}"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -102,6 +130,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.VERSION }}
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -110,8 +140,6 @@ jobs:
           merge-multiple: true
 
       - name: Source archive
-        env:
-          VERSION: ${{ github.ref_name }}
         run: git archive --format=tar.gz --prefix="sento-${VERSION#v}/" HEAD > "dist/sento-${VERSION#v}-source.tar.gz"
 
       - name: Checksums
@@ -123,7 +151,6 @@ jobs:
       - name: Attach release artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ github.ref_name }}
         run: |
           if ! gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" \
