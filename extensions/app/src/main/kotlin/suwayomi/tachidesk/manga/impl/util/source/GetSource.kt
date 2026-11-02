@@ -38,6 +38,14 @@ object GetSource {
         sourceCache.remove(sourceId)
     }
 
+    // Preference changes must rebuild the instance immediately. Removing
+    // just this source leaves all() with a nonempty, incomplete registry,
+    // so discovery would never ask for the missing source to reload it.
+    fun reloadSource(sourceId: Long) {
+        unregisterSource(sourceId)
+        getSourceOrNull(sourceId)
+    }
+
     fun unregisterAllSources() {
         sourceCache.clear()
     }

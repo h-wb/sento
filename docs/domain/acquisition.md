@@ -17,6 +17,10 @@ shows sample titles and categories. These diagnostic results never enter
 acquisition plans or start downloads; they help distinguish an empty query
 from a feed whose category settings need attention.
 
+Saving a source preference rebuilds its loaded instance before the save
+finishes. The source stays discoverable alongside other installed sources,
+including when saved preferences are restored after a sidecar restart.
+
 The common interaction is a coverage summary and editable selection of releases, with raw release details and rejected candidates available below. A provisional plan accompanies each batch of results so the view fills in during the search; it becomes editable when the search ends. Submission searches and evaluates again and reports each release's outcome; it never silently substitutes a different release.
 
 Stall detection reports sustained lack of progress, excluding deliberate pauses and queued/checking states. Recovery is guided: a replacement search treats the stalled job's books as wanted and rules out the job's own release, while the job keeps running and keeps its reservations. Sento stops tracking the old job only when a chosen replacement claims one of its books; a search that finds nothing changes nothing. The torrent and its files are never removed from the client, and no replacement is made automatically.
