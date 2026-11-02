@@ -58,26 +58,59 @@ type ReleaseFileMatch struct {
 // name, the other ledger, numbers the edition does not hold, a number two
 // books share — are left for individual review rather than guessed.
 func (im *Importer) MatchReleaseFiles(ctx context.Context, seriesID, versionID int64, fileIDs []int64) ([]ReleaseFileMatch, error) {
-	if len(fileIDs) == 0 || len(fileIDs) > 500 {
-		return nil, apperr.Invalidf("select between 1 and 500 files")
-	}
-	version, err := im.store.GetVersion(ctx, versionID)
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	out, err := releaseFileMatches(ctx, im.store, seriesID, versionID, fileIDs)
 	if err != nil {
 		return nil, err
 	}
-	edition, err := im.store.GetEdition(ctx, version.EditionID)
+	for i := range out {
+		m := &out[i]
+		if len(m.Books) == 0 {
+			continue
+		}
+		if _, err = im.applyUpgrades(ctx, seriesID, m.FileID, m.Books, false); err != nil {
+			m.Books, m.Label, m.Note = []store.BookRef{}, "", err.Error()
+			continue
+		}
+		// A failed move preserves the mapping and is reported per file.
+		if err = im.organizeReviewedFile(ctx, seriesID, m.FileID); err != nil {
+			m.Note = fmt.Sprintf("mapping saved, but organizing the file failed: %v", err)
+		}
+	}
+	if err = im.SettleReviewedJobs(ctx, seriesID); err != nil {
+		slog.Warn("settling reviewed jobs failed", "series", seriesID, "error", err)
+	}
+	return out, nil
+}
+
+// PreviewReleaseFiles uses the same resolver as submission, without changing
+// mappings or files. The browser displays these decisions instead of deriving
+// book identity from display numbers a second time.
+func (l *Library) PreviewReleaseFiles(ctx context.Context, seriesID, versionID int64, fileIDs []int64) ([]ReleaseFileMatch, error) {
+	return releaseFileMatches(ctx, l.store, seriesID, versionID, fileIDs)
+}
+
+func releaseFileMatches(ctx context.Context, st *store.Store, seriesID, versionID int64, fileIDs []int64) ([]ReleaseFileMatch, error) {
+	if len(fileIDs) == 0 || len(fileIDs) > 500 {
+		return nil, apperr.Invalidf("select between 1 and 500 files")
+	}
+	version, err := st.GetVersion(ctx, versionID)
+	if err != nil {
+		return nil, err
+	}
+	edition, err := st.GetEdition(ctx, version.EditionID)
 	if err != nil {
 		return nil, err
 	}
 	if edition.SeriesID != seriesID {
 		return nil, store.ErrNotFound
 	}
-	p, err := newProposer(ctx, im.store, seriesID)
+	p, err := newProposer(ctx, st, seriesID)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]ReleaseFileMatch, 0, len(fileIDs))
-	organized := []int64{}
 	for _, fid := range slices.Compact(slices.Sorted(slices.Values(fileIDs))) {
 		m := ReleaseFileMatch{FileID: fid, Books: []store.BookRef{}}
 		slots, books, note, ok := p.matchSlots(fid, *edition, version.ID)
@@ -86,31 +119,9 @@ func (im *Importer) MatchReleaseFiles(ctx context.Context, seriesID, versionID i
 			out = append(out, m)
 			continue
 		}
-		if _, err = im.ApplyUpgrades(ctx, seriesID, fid, slots, false); err != nil {
-			m.Note = err.Error()
-			out = append(out, m)
-			continue
-		}
 		m.Books = slots
 		m.Label = bookLabel(edition.Type, books)
 		out = append(out, m)
-		organized = append(organized, fid)
-	}
-	// The pack's naming follows its confirmation, one file at a time; a
-	// failed move preserves the mapping and is reported per file.
-	for _, fid := range organized {
-		if err = im.OrganizeReviewedFile(ctx, seriesID, fid); err != nil {
-			for i := range out {
-				if out[i].FileID == fid {
-					out[i].Note = fmt.Sprintf("mapping saved, but organizing the file failed: %v", err)
-				}
-			}
-		}
-	}
-	if len(organized) > 0 {
-		if err = im.SettleReviewedJobs(ctx, seriesID); err != nil {
-			slog.Warn("settling reviewed jobs failed", "series", seriesID, "error", err)
-		}
 	}
 	return out, nil
 }

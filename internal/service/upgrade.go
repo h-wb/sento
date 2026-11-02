@@ -45,6 +45,11 @@ type FileMappingResult struct {
 func (im *Importer) ApplyUpgrades(ctx context.Context, seriesID, fileID int64, slots []store.BookRef, force bool) (*FileMappingResult, error) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
+	return im.applyUpgrades(ctx, seriesID, fileID, slots, force)
+}
+
+// applyUpgrades runs with im.mu held, including during a bulk review.
+func (im *Importer) applyUpgrades(ctx context.Context, seriesID, fileID int64, slots []store.BookRef, force bool) (*FileMappingResult, error) {
 	if err := im.store.MapFile(ctx, seriesID, fileID, slots); err != nil {
 		return nil, err
 	}

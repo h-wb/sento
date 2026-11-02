@@ -89,6 +89,23 @@ func TestReviewBulkEndpoints(t *testing.T) {
 	m1 := add("Yotsuba v02 (Digital).cbz")
 	m2 := add("Yotsuba extras.cbz")
 	body = fmt.Sprintf(`{"versionId":%d,"fileIds":[%d,%d]}`, versionID, m1, m2)
+	rec = do(t, h, http.MethodPost, base+"/match?preview=1", body)
+	if rec.Code != http.StatusOK {
+		t.Fatal(rec.Code, rec.Body.String())
+	}
+	var preview []service.ReleaseFileMatch
+	if err = json.Unmarshal(rec.Body.Bytes(), &preview); err != nil || len(preview) != 2 || len(preview[0].Books) != 1 || len(preview[1].Books) != 0 {
+		t.Fatalf("preview: %+v %v", preview, err)
+	}
+	filesBefore, err := srv.store.ListFiles(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range filesBefore {
+		if (f.ID == m1 || f.ID == m2) && (!f.NeedsReview || !f.Unrequested) {
+			t.Fatal("preview changed the file's mappings", f)
+		}
+	}
 	rec = do(t, h, http.MethodPost, base+"/match", body)
 	if rec.Code != http.StatusOK {
 		t.Fatal(rec.Code, rec.Body.String())

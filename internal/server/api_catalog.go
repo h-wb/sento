@@ -347,6 +347,11 @@ func (s *Server) handleMatchRelease(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
+	if r.URL.Query().Get("preview") == "1" {
+		matches, err := s.library.PreviewReleaseFiles(r.Context(), id, body.VersionID, body.FileIDs)
+		respondList(w, matches, err)
+		return
+	}
 	matches, err := s.importer.MatchReleaseFiles(r.Context(), id, body.VersionID, body.FileIDs)
 	respondList(w, matches, err)
 }

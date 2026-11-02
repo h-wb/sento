@@ -136,6 +136,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return text ? (JSON.parse(text) as T) : (undefined as T)
 }
 
+// A release can contain more files than one bounded review request accepts.
+// Keep batching here so previews and both bulk actions share the limit.
+const reviewBatchSize = 500
+
+async function matchReleaseFiles(id: number, versionId: number, fileIds: number[], preview: boolean) {
+  const matches: ReleaseFileMatch[] = []
+  for (let offset = 0; offset < fileIds.length; offset += reviewBatchSize) {
+    matches.push(...await request<ReleaseFileMatch[]>(`/series/${id}/review/match${preview ? '?preview=1' : ''}`, {
+      method: 'POST',
+      body: JSON.stringify({ versionId, fileIds: fileIds.slice(offset, offset + reviewBatchSize) }),
+    }))
+  }
+  return matches
+}
+
 export const api = {
   setBindingEdition: (id: number, bid: number, editionId: number) =>
     request<void>(`/series/${id}/bindings/${bid}`, {
@@ -246,18 +261,24 @@ export const api = {
       body: JSON.stringify({ books, ...(replace ? { replace: true } : {}) }),
     }),
   // Decline a pack of file reviews at once: every file reviewed, unmapped.
-  resolveFileReviews: (id: number, fileIds: number[]) =>
-    request<ReviewResolution>(`/series/${id}/review/resolve`, {
-      method: 'POST',
-      body: JSON.stringify({ fileIds }),
-    }),
+  resolveFileReviews: async (id: number, fileIds: number[]) => {
+    const result: ReviewResolution = { resolved: [], skipped: [] }
+    for (let offset = 0; offset < fileIds.length; offset += reviewBatchSize) {
+      const batch = await request<ReviewResolution>(`/series/${id}/review/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ fileIds: fileIds.slice(offset, offset + reviewBatchSize) }),
+      })
+      result.resolved.push(...batch.resolved)
+      result.skipped.push(...batch.skipped)
+    }
+    return result
+  },
   // Apply one collected version to a whole pack: each file maps by its own
   // parsed numbers; unresolved files come back with the reason.
   matchRelease: (id: number, versionId: number, fileIds: number[]) =>
-    request<ReleaseFileMatch[]>(`/series/${id}/review/match`, {
-      method: 'POST',
-      body: JSON.stringify({ versionId, fileIds }),
-    }),
+    matchReleaseFiles(id, versionId, fileIds, false),
+  previewReleaseMatch: (id: number, versionId: number, fileIds: number[]) =>
+    matchReleaseFiles(id, versionId, fileIds, true),
   observations: (id: number) => request<BookObservation[]>(`/series/${id}/observations`),
   reviewObservation: (id: number, oid: number, accept: boolean) =>
     request<void>(`/series/${id}/observations/${oid}`, {

@@ -3,6 +3,7 @@ package parse
 import (
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 type span struct{ start, end int }
@@ -148,7 +149,8 @@ func extractNumbers(text string, res *Result) extraction {
 			ex.bare = append(ex.bare, r)
 			// "001" keeps its padding as a fact: three or more digits
 			// behind a leading zero is the chapter-pack convention.
-			if digits := group(buf, m, 1); len(digits) >= 3 && digits[0] == '0' && digits[1] != '.' {
+			digits, _, _ := strings.Cut(group(buf, m, 1), ".")
+			if len(digits) >= 3 && digits[0] == '0' {
 				ex.padded = append(ex.padded, r)
 			}
 			res.step("number.bare", text[m[0]:m[1]])

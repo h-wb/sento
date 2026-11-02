@@ -235,7 +235,7 @@ func (p *proposer) propose(fileID int64) *store.ReviewProposal {
 		return nil
 	}
 	m := found[0]
-	version := p.proposedVersion(m.edition, f.Facts)
+	version := p.proposedVersion(m.edition, backedFacts(f.Facts, f.Claims))
 	if version == nil {
 		return nil
 	}

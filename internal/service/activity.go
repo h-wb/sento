@@ -177,15 +177,9 @@ func (l *Library) Activity(ctx context.Context, seriesID int64) (*ActivityData, 
 			}
 			var requested []store.BookRef
 			_ = json.Unmarshal(d.Job.Books, &requested)
+			linked, _ := releaseCoverage(d.Job.ReleaseKey, requested, ledgers[d.Job.SeriesID], files[d.Job.SeriesID])
 			for _, ref := range requested {
-				matched := false
-				for _, book := range ledgers[d.Job.SeriesID].Status[ref.VersionID] {
-					if book.Book.ID == ref.BookID && len(book.FileIDs) > 0 {
-						matched = true
-						break
-					}
-				}
-				if matched {
+				if linked[store.BookKey(ref.VersionID, ref.BookID)] {
 					d.ImportedBooks++
 				} else {
 					d.UnresolvedBooks = append(d.UnresolvedBooks, ref)

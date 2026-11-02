@@ -328,3 +328,27 @@ func TestActivityArchivesGoneSourcesWithoutHidingFileQuestions(t *testing.T) {
 		t.Fatalf("404 hid an unfinished import: %+v", d)
 	}
 }
+
+func TestActivityDoesNotAttributeOtherCopiesToAPartialImport(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	lib, st, sid, edition, books, version := modelFixture(t)
+	refs := []store.BookRef{modelRef(edition, books[0], version)}
+	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "partial"}, refs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.UpdateQueueItem(ctx, qid, store.QueueNeedsReview, "partial import"); err != nil {
+		t.Fatal(err)
+	}
+	ownedModelFile(t, st, sid, edition, books[0], version)
+	waitingFile(t, st, sid, t.TempDir(), "ONE PIECE extra.cbz", "partial")
+	data, err := lib.Activity(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := data.Downloads[0]
+	if d.ImportedBooks != 0 || len(d.UnresolvedBooks) != 1 || d.UnresolvedBooks[0] != refs[0] {
+		t.Fatalf("attributed an existing copy to this download: %+v", d)
+	}
+}

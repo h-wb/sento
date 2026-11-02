@@ -128,3 +128,51 @@ func TestAutoUpgradeJudgesOwnerOnClaimsWhenFactsUnknown(t *testing.T) {
 		t.Fatal("unknown owner displaced automatically")
 	}
 }
+
+func TestClearedFileFactsDoNotInheritReleaseClaims(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, col, books, version := factsClaimsFixture(t)
+	ctx := context.Background()
+	fid := addFactFile(t, st, sid, col, books[0], version, "Volume 1.cbz",
+		store.AssetFacts{FactsKnown: true},
+		store.AssetFacts{FactsKnown: true, Group: "LuCaZ", Language: "fr"})
+	empty := ""
+	if err := st.CorrectFileFacts(ctx, sid, fid, store.AssetFactPatch{Group: &empty, Language: &empty}); err != nil {
+		t.Fatal(err)
+	}
+	sl := bookStatus(t, lib, sid, version, books[0])
+	if len(sl.FileIDs) != 1 || sl.CurrentScore != 0 {
+		t.Fatalf("cleared facts inherited the offer's group or language: %+v", sl)
+	}
+}
+
+func TestReviewUsesTheSameReleaseEvidenceAsOwnership(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, _, _, version := modelFixture(t)
+	ctx := context.Background()
+	format, err := st.AddFormat(ctx, profile.Format{Name: "Digital only", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "digital"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := st.AddProfile(ctx, profile.Profile{Name: "Digital only", Required: []int64{format}, MinFormatScore: profile.MinScoreOff})
+	if err != nil {
+		t.Fatal(err)
+	}
+	version.ProfileID = pid
+	if _, err = lib.SaveVersion(ctx, sid, version); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "ONE PIECE v01.cbz")
+	if err = os.WriteFile(path, []byte("archive bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true,
+		Facts:  store.AssetFacts{Title: "ONE PIECE v01.cbz", FactsKnown: true},
+		Claims: store.AssetFacts{FactsKnown: true, Digital: true, Flags: map[string]bool{"digital": true}}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := proposalOf(t, lib, sid, fid); got == nil || got.Books[0].VersionID != version.ID {
+		t.Fatalf("review refused the release evidence accepted by ownership: %+v", got)
+	}
+}
