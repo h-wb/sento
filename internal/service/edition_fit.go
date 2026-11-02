@@ -127,6 +127,22 @@ func completedNumbering(e store.Edition) bool {
 // the release naming a sibling; a regrouping offered to a box of the
 // original volumes. Words alone that disagree leave it unsure.
 func (s *shelf) judge(p parse.Result, e store.Edition, evidence int64) (fitVerdict, string) {
+	verdict, reason := s.judgeIdentity(p, e, evidence)
+	// Confirmation only qualifies an otherwise fitting release. Established
+	// contradictions (including a named sibling) remain hard rejections.
+	if verdict != fitYes {
+		return verdict, reason
+	}
+	if last := lastVolume(p); e.Type == LedgerVolume && last > e.LastNumber && completedNumbering(e) {
+		return fitUnsure, fmt.Sprintf("The release goes to volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", hundredths(parse.Num(last)), hundredths(parse.Num(e.LastNumber)))
+	}
+	if last := lastVolume(p); e.Type == LedgerVolume && last > 0 && last < e.LastNumber && p.Complete && !p.CompleteInferred && completedNumbering(e) {
+		return fitUnsure, fmt.Sprintf("The release calls itself complete at volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", hundredths(parse.Num(last)), hundredths(parse.Num(e.LastNumber)))
+	}
+	return verdict, reason
+}
+
+func (s *shelf) judgeIdentity(p parse.Result, e store.Edition, evidence int64) (fitVerdict, string) {
 	if evidence != 0 && evidence != e.ID {
 		return fitNo, "A verified source lists this release under another edition."
 	}
@@ -143,12 +159,6 @@ func (s *shelf) judge(p parse.Result, e store.Edition, evidence int64) (fitVerdi
 	}
 	if ec.Color && !r.Color {
 		return fitNo, fmt.Sprintf("%s is a color edition; the release does not say it is colored.", e.EditionName)
-	}
-	if last := lastVolume(p); e.Type == LedgerVolume && last > e.LastNumber && completedNumbering(e) {
-		return fitUnsure, fmt.Sprintf("The release goes to volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", hundredths(parse.Num(last)), hundredths(parse.Num(e.LastNumber)))
-	}
-	if last := lastVolume(p); e.Type == LedgerVolume && last > 0 && last < e.LastNumber && p.Complete && !p.CompleteInferred && completedNumbering(e) {
-		return fitUnsure, fmt.Sprintf("The release calls itself complete at volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", hundredths(parse.Num(last)), hundredths(parse.Num(e.LastNumber)))
 	}
 	if r.Shares(ec) || ec.Own != "" && p.Mentions(ec.Own) {
 		return fitYes, ""

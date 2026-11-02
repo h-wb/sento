@@ -46,6 +46,13 @@ func TestCompletedEditionDoesNotClipAnotherNumberingToItsBooks(t *testing.T) {
 	if verdict, reason := newShelf([]store.Edition{edition, longer}).judge(p, edition, 0); verdict != fitNo {
 		t.Fatalf("numbering confirmation weakened a known sibling mismatch: %v, %s", verdict, reason)
 	}
+	plain, omnibus := edition, edition
+	plain.EditionName = "Standard Edition"
+	omnibus.ID, omnibus.EditionName = 2, "3-in-1 Edition"
+	p = parse.ParseAnchored("Example 3-in-1 v01-07 COMPLETE (Digital)", parse.ChannelTorrent, []string{"Example"})
+	if verdict, reason := newShelf([]store.Edition{plain, omnibus}).judge(p, plain, 0); verdict != fitNo {
+		t.Fatalf("numbering confirmation weakened a named sibling mismatch: %v, %s", verdict, reason)
+	}
 	for _, status := range []string{"unknown", "releasing"} {
 		e := edition
 		e.Collections = []store.Collection{{SyncState: "linked", Status: status, CountMain: 8}}
