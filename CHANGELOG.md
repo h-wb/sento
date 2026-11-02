@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0](https://github.com/h-wb/sento/compare/v0.1.1...v0.2.0) (2026-11-02)
+
+
+### Features
+
+* add recoverable file cleanup and archive unavailable releases ([#8](https://github.com/h-wb/sento/issues/8)) ([0e6bb78](https://github.com/h-wb/sento/commit/0e6bb7825f32c7b07cda21de141aec315109e48d))
+* **review:** decline a whole pack and match a release at once ([#12](https://github.com/h-wb/sento/issues/12)) ([08338cc](https://github.com/h-wb/sento/commit/08338cc5d89c4153c80c60095ba3f71a7d110855))
+
+
+### Bug Fixes
+
+* explain partial imports and classify activity errors ([#6](https://github.com/h-wb/sento/issues/6)) ([f07785d](https://github.com/h-wb/sento/commit/f07785daff6ee981295b4bacf55fd31fbd4e0594))
+* harden file cleanup and bulk review decisions ([#25](https://github.com/h-wb/sento/issues/25)) ([c4b36b0](https://github.com/h-wb/sento/commit/c4b36b0016bbb6ae4362b60392f8010684169945))
+* **review:** read a pack's numbers before trusting the download plan ([#11](https://github.com/h-wb/sento/issues/11)) ([0ae2418](https://github.com/h-wb/sento/commit/0ae24186ad4e5155dd018966fd5e7b7672a1932d))
+* **search:** keep quality upgrades out of scheduled searches ([#16](https://github.com/h-wb/sento/issues/16)) ([c17a694](https://github.com/h-wb/sento/commit/c17a69412acc23d273384edfc63536ab4f341112))
+* **upgrade:** back file scores with their release claims ([#18](https://github.com/h-wb/sento/issues/18)) ([4a9dc55](https://github.com/h-wb/sento/commit/4a9dc5564743f8abc8d4ef61c1e27716e46d2302))
+* **web:** keep input font at 16px on touch screens to stop iOS focus zoom ([#20](https://github.com/h-wb/sento/issues/20)) ([3cca581](https://github.com/h-wb/sento/commit/3cca581d0ec027fa7bd1c9e46928d84c2b907a9b))
+
 ## [0.1.1](https://github.com/h-wb/sento/compare/v0.1.0...v0.1.1) (2026-11-02)
 
 
