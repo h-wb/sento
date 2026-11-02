@@ -13,6 +13,7 @@ import (
 )
 
 func TestIndexerSearchChecksCategoryFiltering(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name       string
 		books      bool
@@ -75,6 +76,7 @@ func TestIndexerSearchChecksCategoryFiltering(t *testing.T) {
 }
 
 func TestIndexerSearchRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
 	for _, query := range []string{" ", strings.Repeat("a", 201)} {
 		if _, err := TestIndexerSearch(context.Background(), store.Indexer{Protocol: store.IndexerTorznab}, query); err == nil {
 			t.Errorf("query %q should be invalid", query)

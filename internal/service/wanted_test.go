@@ -33,6 +33,7 @@ func containsInt(xs []int64, want int64) bool {
 // file closes its book, and a vanished file reopens it once presence is
 // re-checked.
 func TestWantedListsMissingAndRescanReopens(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 	sid, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})

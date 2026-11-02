@@ -135,6 +135,7 @@ func queueVolumes(t *testing.T, st *store.Store, seriesID, editionID int64, hash
 // duplicate rows, and — above all — the seeding payload left byte-for-byte
 // intact.
 func TestImportTorrentPayloadIsIdempotent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	lib, st := setup(t)
 	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
@@ -217,6 +218,7 @@ func TestImportTorrentPayloadIsIdempotent(t *testing.T) {
 }
 
 func TestMapPath(t *testing.T) {
+	t.Parallel()
 	im := NewImporter(nil, nil, "", []string{"/data=/mnt/seedbox", "/data/complete=/mnt/complete", "bogus"})
 	for remote, want := range map[string]string{
 		"/data/complete/sento":   "/mnt/complete/sento", // longest prefix wins
@@ -235,6 +237,7 @@ func TestMapPath(t *testing.T) {
 // change moves them, a metadata change rewrites them, and neither changes
 // which book they are.
 func TestOrganizeRenamesAndRetags(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	lib, st := setup(t)
 	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
@@ -370,6 +373,7 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 }
 
 func TestSeriesFolders(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join(string(filepath.Separator), "library")
 	base := DefaultMediaSettings()
 	split := base
@@ -413,6 +417,7 @@ func TestSeriesFolders(t *testing.T) {
 // An archive holding several books is named and titled for its range,
 // not for the first book in it.
 func TestMultiBookFileIsNamedForItsRange(t *testing.T) {
+	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	im := NewImporter(st, nil, t.TempDir(), nil)
@@ -436,6 +441,7 @@ func TestMultiBookFileIsNamedForItsRange(t *testing.T) {
 // word the series has no edition for does not send the file to review.
 // One that another edition answers to still does.
 func TestFilesInsideAGrabTrustItsEdition(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, tc := range []struct {
 		name   string

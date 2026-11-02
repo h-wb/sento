@@ -13,6 +13,7 @@ import (
 )
 
 func TestUpgradeKeepsBlackAndWhiteAndColoredCopies(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, edition, books, bw := modelFixture(t)
 	ctx := context.Background()
 	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
@@ -154,6 +155,7 @@ func TestUpgradeKeepsBlackAndWhiteAndColoredCopies(t *testing.T) {
 }
 
 func TestUpgradeScopesPinsAndBothVersionsOfTheSameBook(t *testing.T) {
+	t.Parallel()
 	lib, st, sid, edition, books, first := modelFixture(t)
 	ctx := context.Background()
 	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)

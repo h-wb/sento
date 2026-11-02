@@ -92,6 +92,7 @@ func addSourceEntry(t *testing.T, st *store.Store, name, sourceID, pkg string) i
 // Indexer entries drive the extension lifecycle; a wiped host converges
 // back to whatever the entries reference.
 func TestExtensionReconcile(t *testing.T) {
+	t.Parallel()
 	_, st := setup(t)
 	ctx := context.Background()
 
@@ -179,6 +180,7 @@ func TestExtensionReconcile(t *testing.T) {
 // Without a host, reconcile is a no-op and the management API
 // unavailable.
 func TestExtensionsNoManager(t *testing.T) {
+	t.Parallel()
 	_, st := setup(t)
 	svc := NewExtensionService(st, func() extensions.Host { return nil })
 	if svc.HasManager() {
@@ -219,6 +221,7 @@ func (f *fakePrefHost) SetSourcePreference(_ context.Context, sid, key string, v
 // Stored preferences replay onto fresh hosts; unchanged values are not
 // re-pushed.
 func TestPreferenceReconcile(t *testing.T) {
+	t.Parallel()
 	_, st := setup(t)
 	ctx := context.Background()
 
@@ -256,6 +259,7 @@ func TestPreferenceReconcile(t *testing.T) {
 // Every stored repo is reported, with what the host gets from it — or,
 // when the host cannot be asked, with that reason instead of vanishing.
 func TestRepoStatus(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, st := setup(t)
 	host := &fakeExtHost{catalog: []string{"ext.a", "ext.b"}, installed: map[string]bool{}}
@@ -290,6 +294,7 @@ func TestRepoStatus(t *testing.T) {
 // one, cannot be edited, and is what the sidecar ends up with — nothing
 // more.
 func TestConfiguredReposAreAuthoritative(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, st := setup(t)
 	host := &fakeExtHost{catalog: []string{"ext.a"}, installed: map[string]bool{}}

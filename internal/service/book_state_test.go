@@ -5,6 +5,7 @@ import "testing"
 // Each row is a case where two facts compete; the first state in
 // bookState's order wins.
 func TestBookStatePriority(t *testing.T) {
+	t.Parallel()
 	collected := bookFacts{Collected: true, Availability: "released"}
 	with := func(edit func(*bookFacts)) bookFacts {
 		f := collected

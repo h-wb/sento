@@ -56,6 +56,7 @@ func upgradeRelease() []provider.Candidate {
 // stays out of its plan and cannot be grabbed unattended, while a person's
 // search still offers the upgrade (Sonarr parity).
 func TestScheduledSearchSkipsUpgradeEligibleBooks(t *testing.T) {
+	t.Parallel()
 	st, sid, _, ws, v := upgradeSearchFixture(t)
 	svc := NewSearchService(st, torrentRegistry(st))
 
@@ -97,6 +98,7 @@ func TestScheduledSearchSkipsUpgradeEligibleBooks(t *testing.T) {
 // even when the release does not clear the profile's minimum improvement,
 // which a batch search still enforces.
 func TestPerBookSearchOffersUpgradesBeyondTheImprovementGate(t *testing.T) {
+	t.Parallel()
 	st, sid, _, ws, v := upgradeSearchFixture(t)
 	svc := NewSearchService(st, torrentRegistry(st))
 	ctx := context.Background()

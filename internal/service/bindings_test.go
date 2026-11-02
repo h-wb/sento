@@ -10,6 +10,7 @@ import (
 // Multi-binding semantics: a site holds several manga entries, upserts key
 // on the entry, and an active binding clears the "unmatched" sentinel.
 func TestMultiBindings(t *testing.T) {
+	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
 
@@ -78,6 +79,7 @@ func TestMultiBindings(t *testing.T) {
 }
 
 func TestResolveQueries(t *testing.T) {
+	t.Parallel()
 	got := resolveQueries([]string{"HUNTER×HUNTER", "ハンター×ハンター", "Hunter x Hunter", "Cazador X"})
 	// Primary, its normalized form, then the first distinct Latin alias —
 	// the native-script alias is skipped, "Hunter x Hunter" dedupes against
