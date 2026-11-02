@@ -188,14 +188,22 @@ func queueBooks(q *store.QueueItem) []store.BookRef {
 
 type scheduledKey struct{}
 
-// Scheduled marks what is grabbed under ctx as chosen by Sento's own
-// schedule; anything else was picked by a person.
+// Scheduled marks the work under ctx as Sento's own, not a person's: what
+// it grabs is attributed to the schedule, and its searches only fill what
+// is missing — quality upgrades wait for a person to ask (Sonarr parity).
 func Scheduled(ctx context.Context) context.Context {
 	return context.WithValue(ctx, scheduledKey{}, true)
 }
 
+// scheduled reports whether Sento's own loops, not a person, started the
+// work under ctx.
+func scheduled(ctx context.Context) bool {
+	v, _ := ctx.Value(scheduledKey{}).(bool)
+	return v
+}
+
 func grabbedBy(ctx context.Context) string {
-	if scheduled, _ := ctx.Value(scheduledKey{}).(bool); scheduled {
+	if scheduled(ctx) {
 		return "schedule"
 	}
 	return "you"
