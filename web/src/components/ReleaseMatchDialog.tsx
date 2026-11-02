@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button, Group, Select, Stack, Text } from '@mantine/core'
 import { api } from '../api'
-import type { BookStatus, ReleaseFileMatch } from '../types/service'
+import type { ReleaseFileMatch } from '../types/service'
 import type { CollectedVersion, Edition, ReviewItem } from '../types/store'
 import { cardLabel, fileName } from './editionText'
 import { EditorModal } from './EditorModal'
@@ -28,16 +28,21 @@ export function ReleaseMatchDialog({
   const query = useQuery({
     queryKey: ['series', seriesID, 'release-match'],
     queryFn: async () => {
-      const [detail, versions, books] = await Promise.all([
+      const [detail, versions] = await Promise.all([
         api.getSeries(seriesID),
         api.versions(seriesID),
-        api.versionBooks(seriesID),
       ])
-      return { editions: detail.editions, versions, books }
+      return { editions: detail.editions, versions }
     },
   })
   const [versionID, setVersionID] = useState<string | null>(null)
   const edit = useEditor()
+  const fileIDs = files.map((f) => f.itemId)
+  const preview = useQuery({
+    queryKey: ['series', seriesID, 'release-match', versionID, fileIDs],
+    queryFn: () => api.previewReleaseMatch(seriesID, Number(versionID), fileIDs),
+    enabled: versionID != null,
+  })
   if (!query.data)
     return (
       <EditorModal title="Match whole release" dirty={false} busy={false} onClose={close}>
@@ -48,39 +53,17 @@ export function ReleaseMatchDialog({
         />
       </EditorModal>
     )
-  const { editions, versions, books } = query.data
+  const { editions, versions } = query.data
   const version = versions.find((t) => String(t.id) === versionID)
-  const edition = version ? editions.find((c) => c.id === version.editionId) : undefined
-  // What each file's own numbers say against the chosen card. The server
-  // resolves authoritatively on save; this is the preview.
-  const resolve = (f: ReviewItem): { label: string; left: boolean } => {
-    if (!version || !edition) return { label: 'Pick a card first', left: true }
-    if (!f.hint?.numbers?.length)
-      return { label: 'Name does not say which books it holds', left: true }
-    if (f.hint.ledger && f.hint.ledger !== edition.type)
-      return { label: `Holds ${f.hint.ledger}s; this card collects ${edition.type}s`, left: true }
-    // A hint number can be a range ("1–5"); the books it holds are the
-    // card's books inside it, and every range must resolve to at least
-    // one book — the same rule the server applies on save.
-    const within = f.hint.numbers.map((n) => {
-      const [from, to] = n.includes('–') ? n.split('–').map(Number) : [Number(n), Number(n)]
-      return (books[String(version.id)] ?? []).filter(
-        (b: BookStatus) =>
-          Number(b.book.sequenceStr) >= from && Number(b.book.sequenceStr) <= to,
-      )
-    })
-    if (!within.every((held: BookStatus[]) => held.length))
-      return { label: `Numbers are not ${edition.type}s of this card`, left: true }
-    const numbers = [...new Set(within.flat().map((b: BookStatus) => b.book.sequenceStr))].join(', ')
-    return { label: `${edition.type} ${numbers}`, left: false }
-  }
-  const resolvable = version ? files.filter((f) => !resolve(f).left).length : 0
+  const resolvable = preview.data?.filter((m) => m.books.length > 0).length ?? 0
   const save = async () => {
     const matches = await api.matchRelease(
       seriesID,
       Number(versionID),
-      files.map((f) => f.itemId),
-    )
+      fileIDs,
+    ).finally(() => Promise.all(
+      ['activity', 'review', 'queue', 'series'].map((key) => qc.invalidateQueries({ queryKey: [key] })),
+    ))
     const mapped = matches.filter((m: ReleaseFileMatch) => m.books.length > 0)
     const left = matches.filter((m: ReleaseFileMatch) => m.books.length === 0)
     if (mapped.length) notify.ok(`Matched ${mapped.length} of ${matches.length} files by their numbers`)
@@ -90,9 +73,8 @@ export function ReleaseMatchDialog({
           .map((m: ReleaseFileMatch) => `${fileName(files.find((f) => f.itemId === m.fileId)?.title ?? '')} — ${m.note}`)
           .join('; ')}`,
       )
-    await Promise.all(
-      ['activity', 'review', 'queue', 'series'].map((key) => qc.invalidateQueries({ queryKey: [key] })),
-    )
+    const warnings = mapped.filter((m) => m.note)
+    if (warnings.length) notify.err(warnings.map((m) => m.note).join('; '))
     close()
   }
   return (
@@ -132,22 +114,27 @@ export function ReleaseMatchDialog({
         />
         {version && (
           <Stack gap={4}>
+            <QueryFeedback
+              pending={preview.isPending}
+              error={preview.error}
+              onRetry={() => void preview.refetch()}
+            />
             {files.map((f) => {
-              const p = resolve(f)
+              const p = preview.data?.find((m) => m.fileId === f.itemId)
               return (
                 <Group key={f.id} justify="space-between" gap="xs" wrap="nowrap">
                   <Text size="xs" style={{ overflowWrap: 'anywhere' }} title={f.title}>
                     {fileName(f.title)}
                   </Text>
-                  <Text size="xs" c={p.left ? 'orange' : 'dimmed'} style={{ flexShrink: 0 }}>
-                    {p.label}
+                  <Text size="xs" c={p?.books.length ? 'dimmed' : 'orange'} style={{ flexShrink: 0 }}>
+                    {p?.label || p?.note || ''}
                   </Text>
                 </Group>
               )
             })}
           </Stack>
         )}
-        {version && resolvable === 0 && (
+        {version && preview.data && resolvable === 0 && (
           <Alert variant="light" color="orange">
             No file resolves against this card. Try another card, or review the files
             individually.
@@ -157,7 +144,7 @@ export function ReleaseMatchDialog({
         <Group justify="flex-end">
           <Button
             loading={edit.busy}
-            disabled={!version || resolvable === 0}
+            disabled={!version || preview.isFetching || !!preview.error || resolvable === 0}
             onClick={() => void edit.run(save)}
           >
             Match {resolvable > 0 ? `${resolvable} of ${files.length} files` : ''}

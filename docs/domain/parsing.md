@@ -67,7 +67,9 @@ assumes this boring representation.
    axis deferred. Channel priors (`resolveBare`) then claim bare numbers
    the chapter way (source channel / decimals / ≥1000 / far above marker
    volumes / zero-padded to three or more digits on the torrent channel);
-   the padding of the ones that stay unresolved is kept as a fact
+   only digits before the decimal point count toward padding (`01.0` is
+   not three-digit padding, `001.0` is). The padding of the ones that stay
+   unresolved is kept as a fact
    (`BarePadded`) for whoever resolves the axis.
 4. **Free text** — season, language words (two tiers: unambiguous words
    anywhere; bare codes like `FR` only standalone-UPPERCASE), edition

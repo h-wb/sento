@@ -87,25 +87,13 @@ test('a release pack maps by one card choice and leaves unreadable files for rev
       json: [{ id: 10, editionId: 30, name: 'Default', isDefault: true, monitored: true, profileId: 0 }],
     }),
   )
-  await page.route('**/api/v1/series/901/books', (route) =>
-    route.fulfill({
-      json: {
-        '10': [1, 2].map((n) => ({
-          versionId: 10,
-          book: { id: 19 + n, editionId: 30, sequenceNum: n * 100, sequenceStr: String(n), countType: 'main' },
-          fileIds: [],
-          onDiskFileIds: [],
-        })),
-      },
-    }),
-  )
-  await page.route('**/api/v1/series/901/review/match', (route) => {
-    matched = route.request().postDataJSON()
+  await page.route('**/api/v1/series/901/review/match*', (route) => {
+    if (!route.request().url().includes('preview=1')) matched = route.request().postDataJSON()
     return route.fulfill({
       json: [
         { fileId: 301, books: [{ versionId: 10, bookId: 20, editionId: 30, ledger: 'volume', number: 100 }], label: 'volume 1' },
         { fileId: 302, books: [{ versionId: 10, bookId: 21, editionId: 30, ledger: 'volume', number: 200 }], label: 'volume 2' },
-        { fileId: 303, books: [], note: "The file's own name does not say which books it holds" },
+        { fileId: 303, books: [], note: 'Its number is shared by two books of this edition' },
       ],
     })
   })
@@ -118,10 +106,59 @@ test('a release pack maps by one card choice and leaves unreadable files for rev
   // Each file previews by its own numbers; the unreadable one stays orange.
   await expect(dialog.getByText('volume 1', { exact: true })).toBeVisible()
   await expect(dialog.getByText('volume 2', { exact: true })).toBeVisible()
-  await expect(dialog.getByText('Name does not say which books it holds')).toBeVisible()
+  await expect(dialog.getByText('Its number is shared by two books of this edition')).toBeVisible()
+  expect(matched).toBeUndefined()
   await dialog.getByRole('button', { name: 'Match 2 of 3 files' }).click()
   await expect(dialog).toBeHidden()
   await expect(page.getByText(/Matched 2 of 3 files/)).toBeVisible()
   await expect(page.getByText(/1 file\(s\) left for review/)).toBeVisible()
   expect(matched).toEqual({ versionId: 10, fileIds: [301, 302, 303] })
+})
+
+test('large packs use bounded requests for preview, match and decline', async ({ page }) => {
+  const files = Array.from({ length: 501 }, (_, n) => ({
+    ...packFiles[0], id: `file-${n + 1000}`, itemId: n + 1000, title: `Volume ${n + 1}.cbz`,
+  }))
+  const batches = { preview: [] as number[][], match: [] as number[][], decline: [] as number[][] }
+  await page.route('**/api/v1/activity?seriesId=*', (route) =>
+    route.fulfill({ json: activityFixture([], {}, files) }),
+  )
+  await page.route('**/api/v1/series/901/', (route) => route.fulfill({ json: {
+    series: { id: 901, title: 'One Piece' },
+    editions: [{ id: 30, seriesId: 901, editionName: 'Standard Edition', language: 'en', type: 'volume' }],
+  } }))
+  await page.route('**/api/v1/series/901/versions', (route) => route.fulfill({ json: [
+    { id: 10, editionId: 30, name: 'Default', isDefault: true, monitored: true, profileId: 0 },
+  ] }))
+  await page.route('**/api/v1/series/901/review/match*', (route) => {
+    const ids: number[] = route.request().postDataJSON().fileIds
+    expect(ids.length).toBeLessThanOrEqual(500)
+    batches[route.request().url().includes('preview=1') ? 'preview' : 'match'].push(ids)
+    return route.fulfill({ json: ids.map((fileId) => ({
+      fileId, books: [{ versionId: 10, bookId: 20, editionId: 30, ledger: 'volume', number: 100 }], label: 'volume 1',
+    })) })
+  })
+  await page.route('**/api/v1/series/901/review/resolve', (route) => {
+    const ids: number[] = route.request().postDataJSON().fileIds
+    expect(ids.length).toBeLessThanOrEqual(500)
+    batches.decline.push(ids)
+    return route.fulfill({ json: { resolved: ids, skipped: [] } })
+  })
+  await page.goto('/queue')
+  await page.getByRole('button', { name: 'Match whole release' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Match whole release' })
+  await dialog.getByRole('combobox', { name: 'Card', exact: true }).click()
+  await page.getByRole('option', { name: 'en · Standard Edition' }).click()
+  await dialog.getByRole('button', { name: 'Match 501 of 501 files' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('Matched 501 of 501 files by their numbers')).toBeVisible()
+  await page.getByRole('button', { name: 'Decline all (501)' }).click()
+  const confirmation = page.getByRole('dialog', { name: 'Decline all 501 files?' })
+  await confirmation.getByRole('button', { name: 'Mark 501 reviewed and unmapped' }).click()
+  await expect(confirmation).toBeHidden()
+  for (const action of ['preview', 'match', 'decline'] as const) {
+    expect(batches[action].some((ids) => ids.length === 500)).toBe(true)
+    expect(batches[action].some((ids) => ids.length === 1)).toBe(true)
+    expect([...new Set(batches[action].flat())]).toEqual(files.map((f) => f.itemId))
+  }
 })

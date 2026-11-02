@@ -132,14 +132,13 @@ export default function ReviewQuestions({
       ),
       label: `Mark ${pack.length} reviewed and unmapped`,
       onConfirm: async () => {
-        const res = await api.resolveFileReviews(pack[0].seriesId, pack.map((f) => f.itemId))
+        const res = await api.resolveFileReviews(pack[0].seriesId, pack.map((f) => f.itemId)).finally(invalidate)
         if (res.resolved.length)
           notify.ok(
             `${res.resolved.length} file(s) reviewed and unmapped; clean them up from Files → Clean up files`,
           )
         if (res.skipped.length)
           notify.err(`Left as they were: ${res.skipped.map((s) => s.reason).join('; ')}`)
-        await invalidate()
       },
     })
   }

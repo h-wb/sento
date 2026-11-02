@@ -141,6 +141,16 @@ Scans consider paused editions too, check parsed language and edition evidence, 
 
 Review proposes what a waiting file holds when its own name resolves it, read against every edition of the series, collected or not (D16). A number with no volume or chapter marker ("Kagurabachi 067") takes its kind from the download it came in — the volumes or chapters the release names, or the kind of books it was grabbed for — and stays unread outside a download. An unnumbered pack vouches for the planned kind only while every number its files carry is a book of it: a pack numbered past the planned edition (200 chapter files against 15 volumes) is another numbering, and none of its files is proposed onto it; a number zero-padded to three or more digits ("001") is written the chapter way and never read as a volume. A name not all of whose numbers resolve to books of the edition proposes nothing, rather than a subset of them. A name without the series title ("Volume_01.cbz") is only proposed inside a download of the series. Among editions holding the books, the collected one wins; still several, or a number shared by two books, and nothing is proposed. Within that edition, a proposal selects a collected version only when exactly one profile accepts the file, and names that profile when several versions exist. Refused files and overlapping profiles require an explicit choice instead of silently using the default version. Proposals are computed when review is read and recorded only on Accept (one, or all at once); Review file opens the mapping pre-filled. File questions group by the release they arrived in, and a group carries the pack-level answers: **Decline all** marks every file of the pack reviewed and unmapped in one transaction (a confirmation lists what will be marked; files that no longer wait are skipped, never overwritten), and **Match whole release** applies one chosen card to the pack, mapping each file by its own numbers through the same upgrade path as one file's review. Files whose numbers do not resolve — an unreadable name, the other ledger, numbers the edition does not hold, a number two books share — are left for individual review rather than guessed. Retrying a fully reviewed payload completes from its recorded files without fetching it again. Partial retries preserve already confirmed bytes and mappings. Confirming or editing a file mapping also organizes that file using the current import naming and metadata settings, moving it out of the review folder. Other series files are left alone. A failed move preserves the mapping and reports that organization still needs to finish.
 
+Bulk-match preview and submission use the same service resolver, including book
+kind and duplicate-number checks. Both endpoints of each named range must be
+books of the edition; a range extending past it stays for review instead of
+being clipped. Submission rechecks current review state and serializes file
+mutations with import, cleanup and organization. Large packs use bounded batches;
+each decline batch is transactional.
+
+Partial-import counts identify files from that download. An existing copy from
+another release does not count as imported by the unfinished job.
+
 File review can map an archive to several books and versions. Editing one version's mappings preserves the others. Clearing coverage keeps the file without claiming ownership. Coverage pins survive edits to retained mappings. Removing a version preserves intrinsic content knowledge and files; deleting a pinned file requires unpinning first. Duplicate-edition merges require unique book matches and preserve version policies, pins, coverage, and paths. Pending downloads block destructive identity changes.
 
 ## Presence, file facts, and recovery
@@ -148,6 +158,10 @@ File review can map an archive to several books and versions. Editing one versio
 Scans and acquisition checks record `present`, `missing`, `unavailable`, or `unknown` presence. An unreadable/missing series root blocks automatic acquisition for the series; a missing archive under a healthy root remains wanted. Page reads do not probe the filesystem or initialize models. Review provides an explicit recheck action.
 
 Offer claims and per-file observed facts are stored separately. Filename observations take precedence over advertised language/group/quality; stream imports retain offer evidence. Judging a file falls back to its release's claims for the fields its own facts do not carry, so a copy organized to a bare name ("Volume 1.cbz") keeps the digital/group/resolution score its release earned; a field the facts do carry wins, and a file without claims still scores from its filename alone. The file editor supports manual language/group corrections with provenance. Retrying or scanning identical bytes preserves manual corrections and content confirmation. Group contradictions remain visible for review.
+
+Manual corrections take precedence even when a language or group is explicitly
+cleared. Review proposals judge the same combined file and release evidence as
+ownership and upgrade scoring.
 
 Transient client errors back off from 30 seconds up to 32 minutes. If dispatch succeeded but saving its handle was interrupted, reconciliation checks the stable provider key without submitting again. Unresolved dispatch after ten minutes enters review, where a user can attach the client ID or cancel the reservation. Cancelling leaves remote downloads and files intact; an active import must finish before cancellation. Pending plans and edition identity edits use a common transactional parent lock.
 
@@ -171,6 +185,9 @@ and other hardlinks remain intact; selected archive sizes do not promise
 immediate disk-space savings. Only regular files are moved, without overwriting
 another path or rewriting archive bytes. A journal retains interrupted moves
 for recovery.
+
+A missing trash entry is purged from the database only while its storage folder
+is accessible. Unavailable storage retains the journal and mappings for recovery.
 
 The confirmation chooses 7, 30 or 90 days of retention (30 by default).
 Trash can be inspected and restored from Files even after all active files

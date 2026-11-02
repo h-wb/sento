@@ -31,9 +31,8 @@ type Importer struct {
 	libraryRoot  string
 	pathMappings []string // "remote=local" download-client path translations
 
-	// mu serializes queue passes: the scheduler tick, the System "run now"
-	// button and POST /queue/process can overlap, and two passes over the
-	// same finished item would import it twice.
+	// mu serializes queue passes and file mutations (review, organization,
+	// removal and trash), so decisions and disk operations cannot interleave.
 	mu sync.Mutex
 
 	// again holds the series whose download failed since the last
@@ -443,9 +442,20 @@ func (im *Importer) alreadyImported(ctx context.Context, item store.QueueItem, e
 	if err != nil {
 		return nil, nil, err
 	}
+	linked, hashes = releaseCoverage(item.ReleaseKey, expected, view, known)
+	return linked, hashes, nil
+}
+
+// releaseCoverage identifies accepted books delivered by this release, rather
+// than copies held from other downloads. Import retries and Activity share it.
+func releaseCoverage(key string, expected []store.BookRef, view *ledgerView, files []store.File) (linked, hashes map[string]bool) {
+	linked, hashes = map[string]bool{}, map[string]bool{}
+	if key == "" {
+		return linked, hashes
+	}
 	belongs := map[int64]bool{}
-	for _, f := range known {
-		if f.Facts.ReleaseKey == item.ReleaseKey && f.Presence == "present" && !f.NeedsReview && !f.Unrequested {
+	for _, f := range files {
+		if f.Facts.ReleaseKey == key && f.Presence == "present" && !f.NeedsReview && !f.Unrequested {
 			belongs[f.ID] = true
 			if f.Hash != "" {
 				hashes[f.Hash] = true
@@ -464,7 +474,7 @@ func (im *Importer) alreadyImported(ctx context.Context, item store.QueueItem, e
 			}
 		}
 	}
-	return linked, hashes, nil
+	return linked, hashes
 }
 
 // importArchive installs one archive of a download: into the library for

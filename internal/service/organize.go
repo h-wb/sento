@@ -266,6 +266,11 @@ func (im *Importer) Organize(ctx context.Context, seriesID int64, rename, retag 
 func (im *Importer) OrganizeReviewedFile(ctx context.Context, seriesID, fileID int64) error {
 	im.mu.Lock()
 	defer im.mu.Unlock()
+	return im.organizeReviewedFile(ctx, seriesID, fileID)
+}
+
+// organizeReviewedFile runs with im.mu held, including during a bulk review.
+func (im *Importer) organizeReviewedFile(ctx context.Context, seriesID, fileID int64) error {
 	res, err := im.organize(ctx, seriesID, fileID, true, true)
 	if err != nil {
 		return err

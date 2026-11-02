@@ -343,6 +343,11 @@ func (im *Importer) purgeTrashedFile(ctx context.Context, sid, fid int64) error 
 	trashInfo, trashErr := os.Lstat(f.TrashPath)
 	originalInfo, originalErr := os.Lstat(f.Path)
 	if errors.Is(trashErr, fs.ErrNotExist) {
+		// Only a missing entry in accessible storage can be an interrupted
+		// purge. An unavailable mount must retain its identity and mappings.
+		if _, err = os.ReadDir(filepath.Dir(f.TrashPath)); err != nil {
+			return fmt.Errorf("recheck trash storage before purging: %w", err)
+		}
 		if !errors.Is(originalErr, fs.ErrNotExist) {
 			return apperr.Conflictf("original file still exists; restore the interrupted move first")
 		}

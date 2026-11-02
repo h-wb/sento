@@ -160,6 +160,8 @@ func TestMatchWholeReleaseMapsFilesByTheirNumbers(t *testing.T) {
 		{"ONE PIECE c005 (Digital).cbz", "pack", "collects volumes", 0},
 		{"ONE PIECE v07 (Digital).cbz", "pack", "not volumes of this edition", 0},
 		{"ONE PIECE v06-07 (Digital).cbz", "pack", "not volumes of this edition", 0},
+		{"ONE PIECE v02-07 (Digital).cbz", "pack", "not volumes of this edition", 0},
+		{"ONE PIECE v00-02 (Digital).cbz", "pack", "not volumes of this edition", 0},
 		{"3.cbz", "", "does not say which books", 0},
 	}
 	var ids []int64
@@ -220,5 +222,50 @@ func TestMatchWholeReleaseMapsFilesByTheirNumbers(t *testing.T) {
 	}
 	if _, err = im.MatchReleaseFiles(ctx, sid, version.ID, nil); !errors.Is(err, apperr.ErrInvalid) {
 		t.Errorf("match of no files: got %v, want invalid", err)
+	}
+}
+
+func TestReleaseMatchPreviewUsesBookIdentityAndRevalidatesOnSave(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, _, books, version := modelFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	im := NewImporter(st, nil, root, nil)
+	bonus := books[0]
+	bonus.ID, bonus.ProviderID, bonus.CountType, bonus.SequenceStr = 0, "", "extra", "Bonus 1"
+	bonusID, err := st.SaveBook(ctx, sid, bonus)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := books[1]
+	revision.ID, revision.ProviderID, revision.SequenceStr = 0, "", "2 (revised)"
+	if _, err = st.SaveBook(ctx, sid, revision); err != nil {
+		t.Fatal(err)
+	}
+	main := waitingFile(t, st, sid, root, "ONE PIECE v01.cbz", "")
+	extra := waitingFile(t, st, sid, root, "ONE PIECE v01 extra.cbz", "")
+	ambiguous := waitingFile(t, st, sid, root, "ONE PIECE v02.cbz", "")
+	ids := []int64{main, extra, ambiguous}
+	preview, err := lib.PreviewReleaseFiles(ctx, sid, version.ID, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preview) != 3 || len(preview[0].Books) != 1 || preview[0].Books[0].BookID != books[0].ID || len(preview[1].Books) != 1 || preview[1].Books[0].BookID != bonusID || len(preview[2].Books) != 0 {
+		t.Fatalf("preview guessed book identity from a display number: %+v", preview)
+	}
+	// A decision made after the preview must survive a stale submission.
+	if _, err = im.ResolveFileReviews(ctx, sid, []int64{main}); err != nil {
+		t.Fatal(err)
+	}
+	matches, err := im.MatchReleaseFiles(ctx, sid, version.ID, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches[0].Books) != 0 || !strings.Contains(matches[0].Note, "no longer waiting") || len(matches[1].Books) != 1 || len(matches[2].Books) != 0 {
+		t.Fatalf("submission ignored current review state: %+v", matches)
+	}
+	contents, err := st.Contents(ctx, sid)
+	if err != nil || len(contents) != 1 || contents[0].BookID != bonusID || contents[0].FileID != extra {
+		t.Fatalf("preview changed contents or submission guessed: %+v %v", contents, err)
 	}
 }

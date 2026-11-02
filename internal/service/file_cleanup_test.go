@@ -248,3 +248,37 @@ func TestExpiredTrashPurgeAndInterruptedMoveRecovery(t *testing.T) {
 		t.Fatal("expired bytes retained", err)
 	}
 }
+
+func TestTrashPurgeRetainsRecordWhenStorageDisappears(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, st, sid, e, books, v := modelFixture(t)
+	fid := ownedModelFile(t, st, sid, e, books[0], v)
+	v.Monitored = false
+	if _, err := st.SaveVersion(ctx, sid, v); err != nil {
+		t.Fatal(err)
+	}
+	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+	result, err := im.CleanupFiles(ctx, sid, 0, []int64{fid}, 7)
+	if err != nil || len(result.Moved) != 1 {
+		t.Fatal(result, err)
+	}
+	entry, err := st.GetFileTrash(ctx, fid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Dir(entry.Path)
+	// A temporarily unavailable mount makes both paths report ENOENT.
+	if err = os.Rename(root, root+"-offline"); err != nil {
+		t.Fatal(err)
+	}
+	if err = im.PurgeTrashedFile(ctx, sid, fid); err == nil {
+		t.Error("purged a record while its storage was unavailable")
+	}
+	if err = os.Rename(root+"-offline", root); err != nil {
+		t.Fatal(err)
+	}
+	if err = im.RestoreTrashedFile(ctx, sid, fid); err != nil {
+		t.Fatalf("lost retained identity or mappings: %v", err)
+	}
+}

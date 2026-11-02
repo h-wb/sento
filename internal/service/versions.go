@@ -364,10 +364,10 @@ func backedFacts(facts, claims store.AssetFacts) store.AssetFacts {
 	if !claims.FactsKnown && claims.Title == "" {
 		return facts
 	}
-	if facts.Group == "" {
+	if facts.Group == "" && facts.Sources["group"] != "manual" {
 		facts.Group = claims.Group
 	}
-	if facts.Language == "" {
+	if facts.Language == "" && facts.Sources["language"] != "manual" {
 		facts.Language = claims.Language
 	}
 	if facts.Site == "" {

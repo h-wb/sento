@@ -60,32 +60,18 @@ func resolveBooks(books []store.Book, ranges []parse.Range, extra bool) (matched
 }
 
 // numberHolds says whether one bare number stands for a book: a single
-// number is a book of the edition, and a range lies within the numbering
-// its books run to.
+// number is a book of the edition, and both ends of a range identify books.
+// Gaps inside a range need not be consecutive catalog numbers.
 func numberHolds(books []store.Book, r parse.Range) bool {
-	if r.From == r.To {
-		for _, b := range books {
-			if b.NumberKnown && b.SequenceNum == int64(r.From) {
-				return true
-			}
-		}
-		return false
-	}
-	var low, high int64
-	first := true
+	from, to := false, false
 	for _, b := range books {
 		if !b.NumberKnown {
 			continue
 		}
-		if first || b.SequenceNum < low {
-			low = b.SequenceNum
-		}
-		if first || b.SequenceNum > high {
-			high = b.SequenceNum
-		}
-		first = false
+		from = from || b.SequenceNum == int64(r.From)
+		to = to || b.SequenceNum == int64(r.To)
 	}
-	return !first && int64(r.From) >= low && int64(r.To) <= high
+	return from && to
 }
 
 // everyNumberHeld says the books resolve the whole name: each number it
@@ -93,14 +79,7 @@ func numberHolds(books []store.Book, r parse.Range) bool {
 // Story 08" is not volume 8 alone).
 func everyNumberHeld(books []store.Book, ranges []parse.Range) bool {
 	for _, r := range ranges {
-		held := false
-		for _, b := range books {
-			if b.SequenceNum >= int64(r.From) && b.SequenceNum <= int64(r.To) {
-				held = true
-				break
-			}
-		}
-		if !held {
+		if !numberHolds(books, r) {
 			return false
 		}
 	}
