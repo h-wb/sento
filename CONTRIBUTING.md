@@ -13,6 +13,9 @@ screenshot often helps. Remove passwords, tokens and private tracker URLs.
 
 Issues track current bugs and planned work.
 
+For vulnerabilities, follow the [security policy](SECURITY.md) rather than
+posting details in a public issue.
+
 ## Work on the code
 
 Follow [the development guide](docs/development.md). Tools are pinned in

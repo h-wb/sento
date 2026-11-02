@@ -39,6 +39,26 @@ do not trigger ordinary CI and tag workflows. See [the action's token guidance](
 The checked-in action is pinned by commit. Default workflow tokens only get
 permissions needed by each workflow.
 
+## Making the repository public
+
+Before announcing the project, review the full Git history, release assets,
+screenshots and old workflow logs for credentials or private infrastructure
+details. Deleting a file from the current tree does not remove its history.
+
+After changing repository visibility:
+
+- Make both `sento` and `sento-extensions` packages public in their GitHub
+  package settings, then test the Compose instructions without a registry login.
+  [Package visibility is separate from repository access](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
+- Enable [private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository)
+  so the contact in [the security policy](../SECURITY.md) works. Enable GitHub's
+  secret scanning and push protection where available.
+- Protect main with required CI checks and PRs. Keep squash commit titles set
+  to the PR title, and allow only squash merges so release classification is
+  preserved. Review fork workflow approval settings before accepting outside PRs.
+
+These are maintainer settings; release workflows do not change them.
+
 ## Cutting a release
 
 After a successful **push CI** run on main, Release Please opens or updates a

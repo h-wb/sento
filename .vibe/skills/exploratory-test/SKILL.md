@@ -6,7 +6,8 @@ description: Run Sento's exploratory correctness and usability pass in an isolat
 # Sento exploratory pass
 
 Read `docs/exploratory-testing.md` as the mission brief, then
-`docs/testing/exploratory-missions.md` and `docs/dogfooding.md`.
+`docs/testing/exploratory-missions.md` and
+`docs/testing/exploratory-scenarios.md`.
 
 - Default to the offline stack: `paseo script start fixtures`, then
   `sandboxapi`, then `sandboxweb`. Use `paseo script ls` and post all three
@@ -20,14 +21,13 @@ Read `docs/exploratory-testing.md` as the mission brief, then
   failures through recovery/reload/restart instead of stopping at a click.
   Do not repair SQLite, intercept Sento's API, or reset upstream counters
   during a measured recovery to manufacture a pass.
-- Real-upstream smoke mode has separate services and explicit limits in
-  the brief: Nyaa through the test VPN client, Weeb Central downloads,
-  optional Madokami metadata with test credentials. Production Sento and
-  the real library remain off-limits.
+- Only run real-upstream smoke checks when explicitly requested. Use your
+  own isolated dev instance, test credentials and small downloads as described
+  in the brief. Never use production services or the real library.
 - Leave `data/exploratory/report.md` using the report template. Mark each
   mission passed, failed, blocked or untested; identify skipped subcases.
   Link redacted evidence and record resources left behind. Do not call a
-  blocked pass clean or treat stale dogfooding notes as current defects.
+  blocked pass clean or treat old reports as current defects.
 - Report rather than rework. A small fix may ride along in a worktree PR;
-  never push main during an exploratory pass. Deduplicate GitHub findings;
-  use `mise x --secrets GH_TOKEN -- gh ...` for every GitHub write.
+  never push main during an exploratory pass. Deduplicate findings and file
+  GitHub issues only when requested; do not assume access to a maintainer token.

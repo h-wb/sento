@@ -10,7 +10,11 @@ function markdown(dir) {
 }
 
 let failures = 0
-const files = ['README.md', 'CONTRIBUTING.md', 'AGENTS.md', ...markdown('docs')]
+const files = [
+  'README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'AGENTS.md', 'CLAUDE.md',
+  'extensions/README.md', 'extensions/NOTICE.md',
+  ...markdown('docs'), ...markdown('.vibe'),
+]
 for (const file of files) {
   for (const match of readFileSync(file, 'utf8').matchAll(/!?\[[^\]]*\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g)) {
     const target = match[1].replace(/^<|>$/g, '')

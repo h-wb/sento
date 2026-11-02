@@ -76,7 +76,11 @@ func TestOverdueTaskRunsSoonAfterARestart(t *testing.T) {
 	if err := first.Run("volume-sweep"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "the manual run", func() bool { return status(first, "volume-sweep").LastRun != "" })
+	// The in-memory status is updated before the asynchronous save. Wait
+	// for persistence so that save cannot overwrite the simulated past below.
+	waitFor(t, "the manual run to persist", func() bool {
+		return !first.loadState(ctx)["volume-sweep"].IsZero()
+	})
 
 	// Second life, with a clock far enough ahead that the sweep is overdue:
 	// rewrite the persisted run into the past.
