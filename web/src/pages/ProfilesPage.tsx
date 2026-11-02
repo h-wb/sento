@@ -30,6 +30,7 @@ import {
   IconUpload,
 } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMediaQuery } from '@mantine/hooks'
 import { api, type Condition, type Format, type Profile, type ProfileDoc } from '../api'
 import { notify, usePageTitle } from '../ui'
 import { QueryFeedback } from '../components/QueryFeedback'
@@ -748,6 +749,8 @@ function FormatModal({
 
 function ImportModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [text, setText] = useState('')
+  // Match the theme's mobile input rule: under 16px iOS zooms on focus.
+  const coarseInput = useMediaQuery('(pointer: coarse), (max-width: 48em)')
 
   const doc = useMemo(() => {
     try {
@@ -793,7 +796,7 @@ function ImportModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
           placeholder='{"name": "…", "minFormatScore": -10000, "formats": [...]}'
           value={text}
           onChange={(e) => setText(e.currentTarget.value)}
-          styles={{ input: { fontFamily: 'monospace', fontSize: 12 } }}
+          styles={{ input: { fontFamily: 'monospace', fontSize: coarseInput ? 16 : 12 } }}
         />
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>

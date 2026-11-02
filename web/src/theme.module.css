@@ -1,6 +1,12 @@
 .tableHeader { font-size: 11px; font-weight: 500; color: var(--mantine-color-dimmed); }
 .tableCell { border-color: var(--mantine-color-default-border); }
 .input { font-size: 13px; }
+/* iOS zooms into a focused input whose font-size is under 16px, and inside a
+   fixed modal the zoom often sticks after blur. Keep inputs at 16px on touch
+   or narrow screens so focusing never zooms. */
+@media (pointer: coarse), (max-width: 48em) {
+  .input { font-size: 16px; }
+}
 .modalTitle { font-weight: 600; letter-spacing: -0.02em; }
 .badgeLabel { text-transform: none; letter-spacing: 0; }
 .tabsList { gap: 5px; }
