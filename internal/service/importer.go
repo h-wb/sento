@@ -666,7 +666,6 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 	if err != nil {
 		return err
 	}
-	var coverage []store.AssetCoverage
 	for _, job := range jobs {
 		if job.Status != store.QueueNeedsReview || job.ReleaseKey == "" {
 			continue
@@ -683,20 +682,15 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 		if waiting || len(delivered) == 0 {
 			continue
 		}
-		if coverage == nil {
-			if coverage, err = im.store.Coverage(ctx, seriesID); err != nil {
-				return err
-			}
-		}
-		held := map[int64]bool{}
-		for _, c := range coverage {
-			held[c.BookID] = held[c.BookID] || delivered[c.FileID]
-		}
 		var plan []store.BookRef
 		_ = json.Unmarshal(job.Books, &plan)
+		linked, _, err := im.alreadyImported(ctx, job, plan)
+		if err != nil {
+			return err
+		}
 		var missing []string
 		for _, ref := range plan {
-			if !held[ref.BookID] {
+			if !linked[store.BookKey(ref.VersionID, ref.BookID)] {
 				missing = append(missing, im.bookName(ctx, ref))
 			}
 		}
@@ -710,6 +704,7 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 		note := fmt.Sprintf("%d %s confirmed in review.", len(delivered), plural(len(delivered), "file"))
 		if len(missing) > 0 {
 			note += " Not in this download, wanted again: " + strings.Join(missing, ", ") + "."
+			im.searchAgain(job)
 		}
 		if err := im.store.AddDecision(ctx, seriesID, store.DecisionBody{Event: "imported_after_review", Title: job.Title, Provider: job.ProviderID, Key: job.ExternalID, Note: note}); err != nil {
 			return err

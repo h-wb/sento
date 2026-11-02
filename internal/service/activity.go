@@ -22,16 +22,18 @@ type ActivityData struct {
 }
 
 type ActivityDownload struct {
-	Job         store.QueueItem    `json:"job"`
-	Files       []store.ReviewItem `json:"files"`
-	Attention   bool               `json:"attention"`
-	History     bool               `json:"history"`
-	Resolution  string             `json:"resolution,omitempty"`
-	Issue       string             `json:"issue"`
-	Explanation string             `json:"explanation"`
-	ListingID   int64              `json:"listingId,omitempty"`
-	ListingName string             `json:"listingName,omitempty"`
-	SourceName  string             `json:"sourceName,omitempty"`
+	ImportedBooks   int                `json:"importedBooks,omitempty"`
+	UnresolvedBooks []store.BookRef    `json:"unresolvedBooks,omitempty"`
+	Job             store.QueueItem    `json:"job"`
+	Files           []store.ReviewItem `json:"files"`
+	Attention       bool               `json:"attention"`
+	History         bool               `json:"history"`
+	Resolution      string             `json:"resolution,omitempty"`
+	Issue           string             `json:"issue"`
+	Explanation     string             `json:"explanation"`
+	ListingID       int64              `json:"listingId,omitempty"`
+	ListingName     string             `json:"listingName,omitempty"`
+	SourceName      string             `json:"sourceName,omitempty"`
 }
 
 func (l *Library) Activity(ctx context.Context, seriesID int64) (*ActivityData, error) {
@@ -162,6 +164,36 @@ func (l *Library) Activity(ctx context.Context, seriesID int64) (*ActivityData, 
 	}
 	for i := range data.Downloads {
 		d := &data.Downloads[i]
+		if d.Job.Status == store.QueueNeedsReview && len(d.Files) > 0 {
+			if _, ok := ledgers[d.Job.SeriesID]; !ok {
+				ledgers[d.Job.SeriesID], err = loadLedger(ctx, l.store, d.Job.SeriesID)
+				if err != nil {
+					return nil, err
+				}
+			}
+			var requested []store.BookRef
+			_ = json.Unmarshal(d.Job.Books, &requested)
+			for _, ref := range requested {
+				matched := false
+				for _, book := range ledgers[d.Job.SeriesID].Status[ref.VersionID] {
+					if book.Book.ID == ref.BookID && len(book.FileIDs) > 0 {
+						matched = true
+						break
+					}
+				}
+				if matched {
+					d.ImportedBooks++
+				} else {
+					d.UnresolvedBooks = append(d.UnresolvedBooks, ref)
+				}
+			}
+			if d.ImportedBooks > 0 {
+				d.Explanation = fmt.Sprintf("%d of %d requested books are imported.", d.ImportedBooks, len(requested))
+				if len(d.UnresolvedBooks) > 0 {
+					d.Explanation += fmt.Sprintf(" Still unmatched: %d.", len(d.UnresolvedBooks))
+				}
+			}
+		}
 		for _, f := range d.Files {
 			if f.Status == "unknown" || f.Status == "unavailable" {
 				d.Explanation = "Check that these files are accessible, then confirm their contents."
@@ -261,16 +293,20 @@ func downloadIssue(job store.QueueItem) (string, string) {
 		status = match[1]
 	}
 	switch {
-	case strings.Contains(e, "not a local file header") || strings.Contains(e, "damaged archive") || strings.Contains(e, "unreadable archive"):
+	case strings.Contains(e, "not a local file header"):
+		return "archive_read", "The source could not read part of the archive."
+	case strings.Contains(e, "chapter has no pages"):
+		return "empty", "The source returned no pages. No file was downloaded."
+	case strings.Contains(e, "damaged archive") || strings.Contains(e, "unreadable archive"):
 		return "damaged", "The source archive is damaged."
 	case status == "404" || status == "410":
-		return "gone", "This release is no longer available."
+		return "gone", "The source no longer provides this download or one of its pages. Its books still need a replacement."
 	case status == "403" || status == "401":
 		return "access", "The source did not allow this download."
 	case status == "429":
 		return "rate_limit", "The source is limiting requests."
 	case strings.Contains(e, "timeout") || strings.Contains(e, "connection refused") || status == "503":
-		return "connection", "The source or download client could not be reached."
+		return "connection", "The source or download client is temporarily unavailable."
 	case strings.Contains(e, "permission denied") || strings.Contains(e, "no such file"):
 		return "storage", "The downloaded files could not be accessed."
 	}

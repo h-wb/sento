@@ -80,7 +80,11 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 	if err = st.UpdateQueueItem(ctx, qid, store.QueueNeedsReview, "partial import: verified 0 of 2 expected books; unmatched files need review"); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/1.cbz", NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "1.cbz", ReleaseKey: "pack"}}, nil, nil)
+	path := t.TempDir() + "/1.cbz"
+	if err = os.WriteFile(path, []byte("verified pages"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "1.cbz", ReleaseKey: "pack"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,6 +120,15 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 	want := "1 file confirmed in review. Not in this download, wanted again: Standard Edition volume " + books[1].SequenceStr + "."
 	if last.Note != want {
 		t.Errorf("note = %q, want %q", last.Note, want)
+	}
+	if searches := im.TakeSearches(); len(searches) != 1 || searches[0].SeriesID != sid || searches[0].Ledger != LedgerVolume {
+		t.Fatalf("unmatched books did not schedule recovery: %+v", searches)
+	}
+	if err = im.SettleReviewedJobs(ctx, sid); err != nil {
+		t.Fatal(err)
+	}
+	if searches := im.TakeSearches(); len(searches) != 0 {
+		t.Fatalf("repeated recovery: %+v", searches)
 	}
 	// Its books are free for another download.
 	if _, _, err = st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "next", Title: "ONE PIECE v02"}, []store.BookRef{modelRef(standard, books[1], version)}); err != nil {

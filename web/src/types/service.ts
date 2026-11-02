@@ -20,6 +20,8 @@ export interface ActivityData {
   seriesTitles: { [key: number /* int64 */]: string};
 }
 export interface ActivityDownload {
+  importedBooks?: number /* int */;
+  unresolvedBooks?: BookRef[];
   job: QueueItem;
   files: ReviewItem[];
   attention: boolean;

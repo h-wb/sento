@@ -183,3 +183,38 @@ test('a large waiting queue keeps the current download visible', async ({ page }
   await expect(page.getByText('Waiting volume 80', { exact: true })).toBeVisible()
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
+
+test('a partial import explains imported books and exposes recovery without discarding file review', async ({ page }) => {
+  const ref = { versionId: 10, bookId: 20, editionId: 30, ledger: 'volume', number: 3300 }
+  await page.route('**/api/v1/activity?seriesId=*', (route) => route.fulfill({
+    json: activityFixture([{ id: 90, title: 'Partial pack', status: 'needs_review', books: [ref] }], {
+      90: {
+        importedBooks: 23,
+        unresolvedBooks: [ref, { ...ref, bookId: 21, number: 3500 }],
+        explanation: '23 of 25 requested books are imported. Still unmatched: 2.',
+        files: [{ id: 'file-301', kind: 'file', seriesId: 901, seriesTitle: 'One Piece', itemId: 301, title: 'Additional volume.cbz', status: 'present', detail: 'Confirm the edition and books' }],
+      },
+    }),
+  }))
+  await page.goto('/queue')
+  const row = page.getByTestId('download-row').filter({ hasText: 'Partial pack' })
+  await expect(row.getByText(/23 of 25 requested books are imported/)).toBeVisible()
+  await expect(row.getByText('Still unmatched: volume 33, volume 35.')).toBeVisible()
+  await expect(row.getByRole('button', { name: 'Review 1 file', exact: true })).toBeVisible()
+  await expect(row.getByRole('button', { name: 'Try another release', exact: true })).toHaveCount(0)
+  await row.getByRole('button', { name: 'More actions for Partial pack' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Find releases for unmatched books' })).toBeVisible()
+})
+
+test.describe('UTC retry deadlines', () => {
+  test.use({ timezoneId: 'Europe/Paris' })
+  test('an automatic retry shows the correct delay outside UTC', async ({ page }) => {
+    await page.clock.install({ time: new Date('2026-11-02T12:00:00Z') })
+    await page.route('**/api/v1/activity?seriesId=*', (route) => route.fulfill({
+      json: activityFixture([{ id: 91, title: 'Temporary source failure', status: 'retry_wait', retryAt: '2026-11-02 12:02:00', error: 'HTTP 429' }]),
+    }))
+    await page.goto('/queue')
+    await page.getByRole('button', { name: 'Show downloads for One Piece' }).click()
+    await expect(page.getByText(/Retrying in 2 min/)).toBeVisible()
+  })
+})

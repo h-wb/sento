@@ -362,7 +362,7 @@ export default function ActivityPanel({
         },
       }),
     replace: (d) => {
-      const book = d.job.books?.[0]
+      const book = d.unresolvedBooks?.[0] ?? d.job.books?.[0]
       if (!book?.versionId) return
       setRecovery({
         seriesID: d.job.seriesId,

@@ -3,7 +3,7 @@ import { Badge, Button, Group, Menu, Progress, Stack, Text } from '@mantine/core
 import { IconDotsVertical } from '@tabler/icons-react'
 import type { ActivityDownload } from '../types/service'
 import { fmtWhen } from '../ui'
-import { downloadLabel } from './activityModel'
+import { activityTime, downloadLabel } from './activityModel'
 import ReviewQuestions from './ReviewQuestions'
 import classes from './Activity.module.css'
 
@@ -19,7 +19,7 @@ export type DownloadActions = {
 }
 
 function retryWhen(value: string) {
-  const seconds = Math.max(0, Math.ceil((Date.parse(value) - Date.now()) / 1000))
+  const seconds = Math.max(0, Math.ceil((activityTime(value) - Date.now()) / 1000))
   if (!Number.isFinite(seconds) || seconds < 60) return 'Retrying shortly'
   if (seconds < 3600) return `Retrying in ${Math.ceil(seconds / 60)} min`
   return `Retrying in ${Math.ceil(seconds / 3600)} hr`
@@ -78,9 +78,14 @@ export function DownloadActivityRow({
             {retryWhen(job.retryAt)}. Sento will try this download again automatically.
           </Text>
         )}
-        {!d.history && d.attention && !d.files.length && d.explanation && (
+        {!d.history && d.attention && d.explanation && (
           <Text size="sm" c="orange">
             {d.explanation}
+          </Text>
+        )}
+        {!d.history && !!d.unresolvedBooks?.length && (
+          <Text size="xs" c="dimmed">
+            Still unmatched: {d.unresolvedBooks.slice(0, 8).map((book) => `${book.ledger} ${book.number / 100}`).join(', ')}{d.unresolvedBooks.length > 8 ? ` and ${d.unresolvedBooks.length - 8} more` : ''}.
           </Text>
         )}
         {hasProgress && (
@@ -166,6 +171,11 @@ export function DownloadActivityRow({
                         Try another release
                       </Menu.Item>
                     )}
+                  {!!d.importedBooks && !!d.unresolvedBooks?.length && (
+                    <Menu.Item onClick={() => actions.replace(d)}>
+                      Find releases for unmatched books
+                    </Menu.Item>
+                  )}
                   {d.files.length > 0 && (
                     <Menu.Item onClick={() => actions.recheck(job.seriesId)}>
                       Recheck files
