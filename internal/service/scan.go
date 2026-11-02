@@ -50,6 +50,9 @@ func (sc *Scanner) LinkFolder(ctx context.Context, seriesID int64, dir string) (
 }
 
 func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt bool) (*ScanResult, error) {
+	if inFileTrash(dir) {
+		return nil, fmt.Errorf("restore files from trash before scanning this folder")
+	}
 	if err := sc.store.CheckFilePresence(ctx, seriesID); err != nil {
 		return nil, err
 	}
@@ -107,6 +110,14 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 		}
 	}
 
+	trash, err := sc.store.ListFileTrash(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	held := map[string]bool{}
+	for _, f := range trash {
+		held[f.Path] = true
+	}
 	known := map[string]store.File{}
 	existing, err := sc.store.ListFiles(ctx, seriesID)
 	if err != nil {
@@ -123,6 +134,9 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if held[path] {
+			return nil
 		}
 		if d.IsDir() || !mediafile.IsBook(path) {
 			return nil
@@ -400,7 +414,15 @@ func (sc *Scanner) ScanAndAdoptCutoff(ctx context.Context, seriesID int64, dir s
 // error the visitor returns.
 func walkDirs(dirs []string, fn fs.WalkDirFunc) error {
 	for _, dir := range dirs {
-		if err := filepath.WalkDir(dir, fn); err != nil {
+		if inFileTrash(dir) {
+			return fmt.Errorf("restore files from trash before scanning this folder")
+		}
+		if err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err == nil && d.IsDir() && d.Name() == fileTrashDir {
+				return filepath.SkipDir
+			}
+			return fn(path, d, err)
+		}); err != nil {
 			return err
 		}
 	}

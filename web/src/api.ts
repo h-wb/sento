@@ -7,15 +7,17 @@ import type {
   CatalogLinkPreview,
   AssetCoverage,
   BookRef,
+  TrashedFile,
   BookObservation,
   Work,
 } from './types/store'
-import type { BookStatus, FileMappingResult } from './types/service'
+import type { CleanupFile, CleanupResult, BookStatus, FileMappingResult } from './types/service'
 // Typed client for the Sento API. All payload types are generated from the
 // Go structs (mise run gen) into ./types/ — the backend is the schema.
 
 import type { SeriesRef, Edition as CatalogEdition } from './types/metadata'
 import type {
+  FileCleanupBody,
   SearchBody,
   BrowseProwlarrBody,
   EditionPatch,
@@ -492,6 +494,11 @@ export const api = {
       reader.releaseLock()
     }
   },
+  cleanupPreview: (id: number, editionId?: number) => request<CleanupFile[]>(`/series/${id}/files/cleanup${editionId ? `?editionId=${editionId}` : ''}`),
+  cleanupFiles: (id: number, body: FileCleanupBody) => request<CleanupResult>(`/series/${id}/files/cleanup`, { method: 'POST', body: JSON.stringify(body) }),
+  fileTrash: (id: number) => request<TrashedFile[]>(`/series/${id}/files/trash`),
+  restoreTrash: (id: number, fid: number) => request<void>(`/series/${id}/files/trash/${fid}/restore`, { method: 'POST' }),
+  purgeTrash: (id: number, fid: number) => request<void>(`/series/${id}/files/trash/${fid}`, { method: 'DELETE' }),
   deleteFile: (fid: number) => request<void>(`/files/${fid}`, { method: 'DELETE' }),
 
   scanSeries: (id: number, path?: string) =>

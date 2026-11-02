@@ -216,6 +216,23 @@ export interface Book {
 }
 
 //////////
+// source: file_trash.go
+
+/**
+ * TrashedFile retains the original file identity and mappings until expiry.
+ * Path is its original library path, reserved until restore or permanent deletion.
+ */
+export interface TrashedFile {
+  fileId: number /* int64 */;
+  seriesId: number /* int64 */;
+  path: string;
+  trashPath: string;
+  size: number /* int64 */;
+  trashedAt: string;
+  purgeAfter: string;
+}
+
+//////////
 // source: files.go
 
 export interface File {

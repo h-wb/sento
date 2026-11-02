@@ -5,6 +5,7 @@ package scheduler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -131,7 +132,7 @@ func New(st *store.Store, lib *service.Library, search *service.SearchService,
 			})
 	}
 	s.tasks = append(s.tasks, &task{
-		slug: "housekeeping", name: "Prune Finished Queue & History",
+		slug: "housekeeping", name: "Empty Expired Trash & Prune History",
 		interval: 24 * time.Hour, tick: s.tickHousekeeping,
 	})
 	return s
@@ -140,17 +141,21 @@ func New(st *store.Store, lib *service.Library, search *service.SearchService,
 // tickHousekeeping keeps the database bounded: terminal queue jobs and old
 // history beyond what the UI shows are pruned.
 func (s *Scheduler) tickHousekeeping(ctx context.Context) error {
+	var trashErr error
+	if s.importer != nil {
+		trashErr = s.importer.PurgeExpiredTrash(ctx)
+	}
 	if n, err := s.store.PruneFinishedQueue(ctx, 200); err != nil {
-		return err
+		return errors.Join(trashErr, err)
 	} else if n > 0 {
 		slog.Info("pruned finished queue items", "count", n)
 	}
 	if n, err := s.store.PruneDecisions(ctx, 1000); err != nil {
-		return err
+		return errors.Join(trashErr, err)
 	} else if n > 0 {
 		slog.Info("pruned old decisions", "count", n)
 	}
-	return nil
+	return trashErr
 }
 
 // Register adds a loop owned by another component (the health checks).

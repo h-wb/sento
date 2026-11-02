@@ -256,12 +256,16 @@ func (im *Importer) PlanOrganize(ctx context.Context, seriesID int64) ([]FileCha
 // rename moves them to their templated path, retag rewrites their embedded
 // metadata. One file failing does not stop the others.
 func (im *Importer) Organize(ctx context.Context, seriesID int64, rename, retag bool) (*OrganizeResult, error) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
 	return im.organize(ctx, seriesID, 0, rename, retag)
 }
 
 // OrganizeReviewedFile finishes the import of the file just confirmed. Its
 // naming and metadata follow the import settings; other files are untouched.
 func (im *Importer) OrganizeReviewedFile(ctx context.Context, seriesID, fileID int64) error {
+	im.mu.Lock()
+	defer im.mu.Unlock()
 	res, err := im.organize(ctx, seriesID, fileID, true, true)
 	if err != nil {
 		return err

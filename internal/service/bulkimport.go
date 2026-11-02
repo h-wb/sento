@@ -34,6 +34,9 @@ var (
 // ProposeImports scans root's subfolders and matches each against
 // MangaBaka. Read-only: nothing is added until the user confirms.
 func (l *Library) ProposeImports(ctx context.Context, root string) ([]ImportProposal, error) {
+	if inFileTrash(root) {
+		return nil, apperr.Invalidf("restore files from trash before importing this folder")
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, apperr.Invalidf("reading import root: %w", err)
@@ -104,6 +107,9 @@ func taggedSeries(dir string) (id int64, title string) {
 	const enough, budget = 3, 20
 	agree, read := 0, 0
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() && d.Name() == fileTrashDir {
+			return filepath.SkipDir
+		}
 		if err != nil || d.IsDir() || !strings.EqualFold(filepath.Ext(path), ".cbz") {
 			return nil
 		}

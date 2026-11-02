@@ -48,8 +48,11 @@ remains retryable: a transient response can fail that check even for a valid
 archive. Upgrades remove automatic blocks created by the old classification,
 preserving manual blocks and evidence that a release is gone. Historical jobs
 stay failed; ordinary acquisition decides whether to try the release again.
-Activity keeps a failed attempt under Needs attention until another
-download covers its books: what stays there is what no source could replace.
+Confirmed source 404/410 failures move to Activity History while their books
+remain wanted for replacement searches. They do not remain tasks merely
+because no replacement exists. Downloaded files with unresolved review
+questions still require attention. Other failures retain the normal
+coverage-based resolution rule.
 A chapter's 30-minute timeout starts when a download slot opens.
 
 An archive-range read failure is not evidence of permanent damage; Activity

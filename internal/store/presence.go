@@ -67,7 +67,7 @@ type AssetContent struct {
 }
 
 func (s *Store) Contents(ctx context.Context, seriesID int64) ([]AssetContent, error) {
-	return list[AssetContent](ctx, s, `SELECT c.file_id,c.book_id,c.verified,c.evidence FROM asset_contents c JOIN files f ON f.id=c.file_id WHERE f.series_id=?`, seriesID)
+	return list[AssetContent](ctx, s, `SELECT c.file_id,c.book_id,c.verified,c.evidence FROM asset_contents c JOIN files f ON f.id=c.file_id WHERE f.series_id=? AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=f.id)`, seriesID)
 }
 func (s *Store) SeriesBooks(ctx context.Context, seriesID int64) ([]Book, error) {
 	return list[Book](ctx, s, `SELECT `+bookColumns+` FROM books WHERE edition_id IN(SELECT id FROM editions WHERE series_id=?) ORDER BY sequence_num,count_type,id`, seriesID)

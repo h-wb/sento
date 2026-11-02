@@ -180,6 +180,27 @@ export interface ExtensionService {
 }
 
 //////////
+// source: file_cleanup.go
+
+export interface CleanupFile {
+  fileId: number /* int64 */;
+  path: string;
+  size: number /* int64 */;
+  editions: string[];
+  category: string;
+  reason: string;
+  eligible: boolean;
+}
+export interface CleanupSkipped {
+  fileId: number /* int64 */;
+  reason: string;
+}
+export interface CleanupResult {
+  moved: number /* int64 */[];
+  skipped: CleanupSkipped[];
+}
+
+//////////
 // source: grab.go
 
 

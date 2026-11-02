@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -37,6 +38,15 @@ type RemovedSeries struct {
 // clean-up after it is best effort, and what it could not do is reported
 // rather than failing a removal that already happened.
 func (im *Importer) RemoveSeries(ctx context.Context, id int64, opts RemoveOptions) (*RemovedSeries, error) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	trash, err := im.store.ListFileTrash(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(trash) > 0 {
+		return nil, apperr.Conflictf("restore or empty this series’ file trash before removing it")
+	}
 	files, err := im.store.ListFiles(ctx, id)
 	if err != nil {
 		return nil, err
@@ -121,6 +131,13 @@ func (im *Importer) pruneEmptyDirs(dir string) {
 // pinned is refused. When the record goes but the disk refuses, the error
 // says so: a rescan adopts the file again.
 func (im *Importer) DeleteFile(ctx context.Context, id int64) error {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	if f, err := im.store.GetFileTrash(ctx, id); err == nil {
+		return im.purgeTrashedFile(ctx, f.SeriesID, id)
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
 	path, err := im.store.DeleteFile(ctx, id)
 	if err != nil {
 		return err
