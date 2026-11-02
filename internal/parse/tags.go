@@ -67,6 +67,7 @@ type segmentHints struct {
 	yearRange   *[2]int
 	complete    bool
 	ongoing     bool
+	extra       bool
 	version     int
 	recognized  bool // at least one token classified
 }
@@ -189,6 +190,14 @@ func scanTags(lower string) segmentHints {
 	scanned := strings.Join(tokens, " ")
 
 	phrase := func(p string) bool { return indexWord(scanned, p) >= 0 }
+
+	// A side story's number ("Side Story 08") is not a book number; the
+	// extra marker reaches it wherever the vocabulary scanner does. It is
+	// a hint, so it never cuts the title (that is the keyword pass's).
+	if phrase("side story") {
+		h.extra = true
+		h.recognized = true
+	}
 
 	// Edition words come from the one vocabulary (edition.go); the flags
 	// are what custom formats can test.
@@ -316,6 +325,9 @@ func (r *Result) fold(h segmentHints, text string) {
 	if h.ongoing {
 		r.Ongoing = true
 		r.Complete = false
+	}
+	if h.extra {
+		r.Extra = true
 	}
 	e, q := &r.Edition, &r.Quality
 	e.Omnibus = e.Omnibus || h.edition.Omnibus

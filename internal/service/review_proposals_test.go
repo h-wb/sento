@@ -67,6 +67,138 @@ func TestReviewProposesWhatTheFileNameSays(t *testing.T) {
 	}
 }
 
+func addReviewFile(t *testing.T, st *store.Store, sid int64, name, key string) int64 {
+	t.Helper()
+	fid, err := st.AddFile(context.Background(), store.File{SeriesID: sid, Path: t.TempDir() + "/" + name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, ReleaseKey: key}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fid
+}
+
+func proposalOf(t *testing.T, lib *Library, sid, fid int64) *store.ReviewProposal {
+	t.Helper()
+	items, err := lib.ReviewItems(context.Background(), sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, i := range items {
+		if i.Kind == "file" && i.ItemID == fid {
+			return i.Proposal
+		}
+	}
+	return nil
+}
+
+// packJob reserves a download of one unnumbered completed pack, planned
+// against the given books.
+func packJob(t *testing.T, st *store.Store, sid int64, key string, refs []store.BookRef) {
+	t.Helper()
+	ctx := context.Background()
+	release := "ONE PIECE (Scanlated) (Void) | Completed"
+	snap, _ := json.Marshal(ReleaseCandidate{Parse: parse.ParseAnchored(release, parse.ChannelTorrent, []string{"ONE PIECE"})})
+	if _, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: key, Title: release, Snapshot: snap}, refs); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An unnumbered completed pack says nothing about its numbering, so the
+// plan's kind is only trusted while the pack's own numbers are books of
+// it. A pack numbered past the planned edition (200 chapter files against
+// a 15-volume edition) is another numbering, and none of its files is
+// proposed onto the collected volumes — not even the ones whose number
+// happens to be a volume.
+func TestUnnumberedPackProposesOnlyWhatItsNumbersFit(t *testing.T) {
+	lib, st, sid, standard, books, version := modelFixture(t)
+	packJob(t, st, sid, "beyond", []store.BookRef{modelRef(standard, books[0], version), modelRef(standard, books[1], version), modelRef(standard, books[2], version)})
+	var files []int64
+	for _, n := range []string{"1", "2", "3", "4", "5"} {
+		files = append(files, addReviewFile(t, st, sid, "ONE PIECE "+n+" (Scanlated) (Void).cbz", "beyond"))
+	}
+	for _, fid := range files {
+		if got := proposalOf(t, lib, sid, fid); got != nil {
+			t.Errorf("file %d: proposed %s of %s, want nothing", fid, got.Label, got.Edition)
+		}
+	}
+}
+
+// A number zero-padded to three or more digits ("001") is written the
+// chapter way: a download of volumes cannot read it as a volume number,
+// even when the pack's numbers are all books of the volume edition.
+func TestZeroPaddedPackNumbersAreNotVolumeNumbers(t *testing.T) {
+	lib, st, sid, standard, books, version := modelFixture(t)
+	packJob(t, st, sid, "padded", []store.BookRef{modelRef(standard, books[0], version), modelRef(standard, books[1], version), modelRef(standard, books[2], version)})
+	var files []int64
+	for _, n := range []string{"001", "002", "003"} {
+		files = append(files, addReviewFile(t, st, sid, "ONE PIECE "+n+" (Scanlated) (Void).cbz", "padded"))
+	}
+	for _, fid := range files {
+		if got := proposalOf(t, lib, sid, fid); got != nil {
+			t.Errorf("file %d: proposed %s of %s, want nothing", fid, got.Label, got.Edition)
+		}
+	}
+}
+
+// A file is proposed only when every number in its name resolves to a
+// book of the edition: "v01, v99" against a three-volume edition is not
+// volume 1 alone.
+func TestPartialNumbersProposeNothing(t *testing.T) {
+	lib, st, sid, _, _, _ := modelFixture(t)
+	partial := addReviewFile(t, st, sid, "ONE PIECE v01, v99 (Digital).cbz", "")
+	if got := proposalOf(t, lib, sid, partial); got != nil {
+		t.Errorf("partially resolving name: proposed %s of %s, want nothing", got.Label, got.Edition)
+	}
+	whole := addReviewFile(t, st, sid, "ONE PIECE v01, v02 (Digital).cbz", "")
+	got := proposalOf(t, lib, sid, whole)
+	if got == nil || got.Label != "volumes 1–2" {
+		t.Errorf("fully resolving name: proposed %+v, want volumes 1–2", got)
+	}
+}
+
+// A side story's number never becomes a book number: inside a download
+// of chapters, the plainly numbered file is proposed and the side-story
+// one is left to a person.
+func TestSideStoryNumbersAreNotBookNumbers(t *testing.T) {
+	lib, st, sid, _, _, _ := modelFixture(t)
+	ctx := context.Background()
+	cols, err := st.ListEditions(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chapters := collectionByName(t, cols, "Chapters", "en")
+	books, err := st.ListBooks(ctx, chapters.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byNumber := map[int64]store.Book{}
+	for _, b := range books {
+		byNumber[b.SequenceNum] = b
+	}
+	versions, err := st.ListVersions(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var version store.CollectedVersion
+	for _, v := range versions {
+		if v.EditionID == chapters.ID && v.IsDefault {
+			version = v
+		}
+	}
+	var refs []store.BookRef
+	for _, n := range []int64{700, 800} {
+		refs = append(refs, modelRef(chapters, byNumber[n], version))
+	}
+	packJob(t, st, sid, "side", refs)
+	plain := addReviewFile(t, st, sid, "ONE PIECE 7 (Digital).cbz", "side")
+	story := addReviewFile(t, st, sid, "ONE PIECE 7 - Side Story 08 (Digital).cbz", "side")
+	if got := proposalOf(t, lib, sid, plain); got == nil || got.Label != "chapter 7" {
+		t.Errorf("plainly numbered file: proposed %+v, want chapter 7", got)
+	}
+	if got := proposalOf(t, lib, sid, story); got != nil {
+		t.Errorf("side story file: proposed %s of %s, want nothing", got.Label, got.Edition)
+	}
+}
+
 // A download held for review closes on the last confirmation of its
 // files, says what was confirmed, and wants again the books no file held.
 func TestReviewedDownloadClosesItself(t *testing.T) {
