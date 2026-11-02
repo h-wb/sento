@@ -22,6 +22,13 @@ export interface FileMappingBody {
    */
   replace?: boolean;
 }
+export interface ReviewResolveBody {
+  fileIds: number /* int64 */[];
+}
+export interface ReviewMatchBody {
+  versionId: number /* int64 */;
+  fileIds: number /* int64 */[];
+}
 export interface ObservationReviewBody {
   accept: boolean;
 }
