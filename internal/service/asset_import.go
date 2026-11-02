@@ -125,7 +125,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		if e != nil {
 			return e
 		}
-		if assetJudgement(facts, profiles.For(*version), profiles.Formats).Broken != "" {
+		if assetJudgement(backedFacts(facts, claims), profiles.For(*version), profiles.Formats).Broken != "" {
 			review = true
 		}
 	}
