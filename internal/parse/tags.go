@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"math"
 	"regexp"
 	"slices"
 	"sort"
@@ -81,7 +82,9 @@ var (
 	reYear      = regexp.MustCompile(`^(1[89]\d\d|20\d\d|2100)$`)
 	reYearRange = regexp.MustCompile(`^(1[89]\d\d|20\d\d)\s*[-–~]\s*(1[89]\d\d|20\d\d|2100)$`)
 	reVersion   = regexp.MustCompile(`^v(\d)$`)
-	reResPx     = regexp.MustCompile(`^x?(\d{3,4})px?$|^(\d{3,4})px$`)
+	// Resolution tokens must match in full so group names like "2KScans"
+	// remain group candidates. Keep the legacy Np/xNpx forms as well.
+	reResolution = regexp.MustCompile(`^(?:x?(\d{3,4})px?|x(\d{3,4})|([1-9]\d*)k)(-repack)?$`)
 )
 
 // classifySegment inspects one delimited segment's text.
@@ -265,12 +268,28 @@ func scanTags(lower string) segmentHints {
 		case "oneshot", "one-shot":
 			h.recognized = true
 		default:
-			if m := reResPx.FindStringSubmatch(tok); m != nil {
+			if m := reResolution.FindStringSubmatch(tok); m != nil {
 				v := m[1]
 				if v == "" {
 					v = m[2]
 				}
-				h.quality.Resolution, _ = strconv.Atoi(v)
+				if v == "" {
+					v = m[3]
+				}
+				resolution, err := strconv.Atoi(v)
+				if err != nil {
+					continue
+				}
+				if m[3] != "" {
+					if resolution > math.MaxInt/1024 {
+						continue
+					}
+					resolution *= 1024
+				}
+				h.quality.Resolution = max(h.quality.Resolution, resolution)
+				if m[4] != "" {
+					h.version = max(h.version, 2)
+				}
 				h.recognized = true
 			}
 		}
