@@ -45,6 +45,9 @@ extension URL and repository environment settings remain enforced overrides.
 See [configuration](installation.md#configuration). Never commit credentials
 or a populated database.
 
+Browser tests in the unprivileged Paseo agent image use the hidden
+`mise run e2e:paseo` task; see the [environment-specific reference](testing/paseo.md).
+
 For a backend-only session, `mise run run` starts Go without the sidecar or UI.
 Extension errors are expected until a sidecar is available; library features
 still work. `mise run build` creates `bin/sento` with a version derived from git.

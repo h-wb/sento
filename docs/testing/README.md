@@ -49,6 +49,11 @@ mise run e2e:install
 mise run e2e
 ```
 
+In the unprivileged Paseo agent image, use the hidden `mise run e2e:paseo`
+task with its shared browser dependency cache. See the
+[Paseo environment reference](paseo.md) for the missing-library workaround
+and setup assumptions. This does not change ordinary development or CI.
+
 Playwright starts `bin/sento` and `bin/e2estub`, built by the task, with the
 real UI and temporary SQLite/library state under `web/.playwright/`. The
 simulator stands in for MangaBaka, the extension runtime, Prowlarr, Torznab

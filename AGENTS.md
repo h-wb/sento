@@ -14,6 +14,9 @@ stable specs in [docs/spec/](docs/spec). Current work belongs in issues.
   to production services or the maintainer's credentials.
 - Run checks appropriate to the change; [docs/testing/README.md](docs/testing/README.md)
   explains the suites. `mise run ci` runs the standard checks.
+- In the Paseo agent image only, run browser tests with the hidden
+  `mise run e2e:paseo` task. [docs/testing/paseo.md](docs/testing/paseo.md)
+  explains its shared dependency cache and why the root installer fails there.
 - Run `mise run gen` after changing API structs and include `web/src/types`.
   Schema migrations need both SQLite and PostgreSQL versions.
 - Preserve spec filenames, section numbers and decision IDs cited by code.
