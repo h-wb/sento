@@ -32,9 +32,10 @@ function SeriesWanted({ rows }: { rows: WantedRow[] }) {
     mutationFn: (ledger: 'volume' | 'chapter') =>
       api.search(first.seriesId, { ledger, force: false }),
     onSuccess: (res) => {
+      const queued = res.queued?.length ?? 0
       notify.ok(
-        res.queued.length > 0
-          ? `Queued ${res.queued.length} release${res.queued.length > 1 ? 's' : ''} for ${first.seriesTitle}`
+        queued > 0
+          ? `Queued ${queued} release${queued > 1 ? 's' : ''} for ${first.seriesTitle}`
           : `No usable release found for ${first.seriesTitle}`,
       )
       void client.invalidateQueries({ queryKey: ['queue'] })

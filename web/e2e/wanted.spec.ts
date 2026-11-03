@@ -11,7 +11,7 @@ test('wanted page lists missing books, searches them, and rescans on demand', as
   const series = await (await request.get('/api/v1/series/')).json()
   const id = series.find((s: { mangabakaId: number }) => s.mangabakaId === 103).id
 
-  // The automatic search is deterministic: no usable release.
+  // Check the queued-release notification first.
   await page.route(`**/api/v1/series/${id}/search`, (route) =>
     route.fulfill({
       json: { candidates: [], searched: [], sites: [], ledger: 'volume', queued: [900], outcomes: [] },
@@ -33,6 +33,15 @@ test('wanted page lists missing books, searches them, and rescans on demand', as
   // The automatic search queues its release and says so.
   await section.getByRole('button', { name: /Search volume for Deterministic Diaries/ }).click()
   await expect(page.getByText(/Queued 1 release for Deterministic Diaries/)).toBeVisible()
+
+  // With the real backend, no configured volume indexer means nothing can
+  // be queued. This used to return null and crash the success handler.
+  await page.unroute(`**/api/v1/series/${id}/search`)
+  const response = page.waitForResponse((res) => res.url().endsWith(`/api/v1/series/${id}/search`))
+  await section.getByRole('button', { name: /Search volume for Deterministic Diaries/ }).click()
+  expect(await (await response).json()).toMatchObject({ queued: [] })
+  await expect(page.getByText('No usable release found for Deterministic Diaries', { exact: true })).toBeVisible()
+  await expect(page.getByText('Something went wrong', { exact: true })).toHaveCount(0)
 
   // The library-scan task is registered, and a manual run succeeds —
   // that is the loop that keeps the wanted list honest.

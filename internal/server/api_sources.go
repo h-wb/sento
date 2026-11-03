@@ -377,6 +377,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	default:
 		queued = s.search.GrabBest(r.Context(), id, body.Ledger, result.Candidates)
 	}
+	if queued == nil {
+		queued = []int64{}
+	}
 	writeJSON(w, http.StatusOK, SearchResponse{SearchResult: *result, Queued: queued, Outcomes: outcomes})
 }
 
