@@ -85,6 +85,15 @@ export interface SeriesDetail {
   publishers: SeriesPublisher[];
 }
 /**
+ * UnblockBody is POST /blocklist/unblock: select entries by ID, or one
+ * release by its protocol and known keys. Related aliases are cleared too.
+ */
+export interface UnblockBody {
+  ids?: number /* int64 */[];
+  protocol?: string;
+  keys?: string[];
+}
+/**
  * SearchBody is POST /series/{id}/search.
  */
 export interface SearchBody {

@@ -39,6 +39,7 @@ import type {
   SearchResponse,
   SeriesDetail,
   StatusResponse,
+  UnblockBody,
 } from './types/server'
 import type {
   AddSeriesRequest,
@@ -571,6 +572,8 @@ export const api = {
     ),
   blocklist: () => request<BlocklistEntry[]>('/blocklist'),
   unblock: (id: number) => request<void>(`/blocklist/${id}`, { method: 'DELETE' }),
+  unblockReleases: (body: UnblockBody) => request<void>('/blocklist/unblock', { method: 'POST', body: JSON.stringify(body) }),
+  unblockAll: () => request<void>('/blocklist', { method: 'DELETE' }),
 }
 
 export function fmtNum(hundredths: number): string {

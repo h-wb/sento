@@ -55,6 +55,17 @@ questions still require attention. Other failures retain the normal
 coverage-based resolution rule.
 A chapter's 30-minute timeout starts when a download slot opens.
 
+Blocked releases can be reconsidered from Activity → History → Blocked
+releases, individually, as a selection, or all at once. The list groups a
+release's known listing, download and feed identifiers into one entry and
+shows its title, block reason and date. Clearing all blocks asks for
+confirmation and includes manual blocks and releases outside the current
+page or filter. Search results rejected by the blocklist also offer
+**Unblock**, then search again to evaluate current policy and ownership.
+Unblocking removes all known blocked identifiers of the chosen release;
+it leaves previous attempts, files and reservations unchanged. Releases
+become eligible for normal searches and automatic acquisition again.
+
 An archive-range read failure is not evidence of permanent damage; Activity
 labels it as an archive read error and retains the queue's actual retry or
 failure phase. An empty page list says that no file was downloaded, rather

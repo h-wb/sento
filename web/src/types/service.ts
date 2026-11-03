@@ -710,6 +710,7 @@ export interface SearchScope {
 export interface ReleaseCandidate {
   key: string;
   contentKey: string;
+  externalKey: string; // release identity used by the blocklist
   contents?: BookRef[];
   decision: ReleaseDecision;
   scoreParts?: ScorePart[];
