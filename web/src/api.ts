@@ -1,5 +1,6 @@
 import type {
   EditionOverview,
+  FileScore,
   FileChange,
   HealthReport,
   OrganizeResult,
@@ -345,6 +346,8 @@ export const api = {
   deleteEdition: (id: number, cid: number) =>
     request<void>(`/series/${id}/editions/${cid}`, { method: 'DELETE' }),
   files: (id: number) => request<SeriesFile[]>(`/series/${id}/files`),
+  fileScore: (id: number, vid: number, fid: number) =>
+    request<FileScore>(`/series/${id}/versions/${vid}/files/${fid}/score`),
 
   listProfiles: () => request<Profile[]>('/profiles/'),
   createProfile: (p: Omit<Profile, 'id'>) =>

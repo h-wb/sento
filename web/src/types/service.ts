@@ -201,6 +201,22 @@ export interface CleanupResult {
 }
 
 //////////
+// source: file_score.go
+
+/**
+ * FileScore evaluates stored file evidence under a collected version's current
+ * effective profile, including any confirmed edition context.
+ */
+export interface FileScore {
+  profileId: number /* int64 */;
+  profileName: string;
+  score: number /* int */;
+  formats: FormatHit[];
+  factsKnown: boolean;
+  reason: string;
+}
+
+//////////
 // source: grab.go
 
 

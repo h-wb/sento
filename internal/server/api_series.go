@@ -261,6 +261,27 @@ func (s *Server) handleUpdateEdition(w http.ResponseWriter, r *http.Request) {
 
 // --- files ---
 
+func (s *Server) handleFileScore(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	vid, ok := pathID(w, r, "vid")
+	if !ok {
+		return
+	}
+	fid, ok := pathID(w, r, "fid")
+	if !ok {
+		return
+	}
+	score, err := s.library.FileScore(r.Context(), id, vid, fid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, score)
+}
+
 func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
