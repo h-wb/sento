@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"github.com/h-wb/sento/internal/apperr"
-	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 	"maps"
@@ -148,33 +147,10 @@ type cardFiles struct {
 func judgeCardFiles(col store.Edition, prof *profile.Profile, formats []profile.Format, coverage []store.AssetCoverage, byFile map[int64]store.File, present map[int64]bool) cardFiles {
 	out := cardFiles{accepted: map[int64][]int64{}, pinned: map[int64]bool{}, scores: map[int64]int{}, refused: map[int64]string{}}
 	for _, a := range coverage {
-		facts := backedFacts(byFile[a.FileID].Facts, byFile[a.FileID].Claims)
-		reason := ""
-		if a.Evidence != "manual" && facts.Language != "" && facts.Language != "multi" && baseLang(facts.Language) != baseLang(col.Language) {
-			reason = "The file on disk is in another language"
-		}
-		if a.Evidence == "manual" {
-			facts.Language = col.Language
-			// Confirming a file as this explicit color edition also confirms color,
-			// even when its bare filename ("Volume 1.cbz") cannot state it.
-			if parse.ReadEdition(col.EditionName).Color {
-				facts.Flags = maps.Clone(facts.Flags)
-				if facts.Flags == nil {
-					facts.Flags = map[string]bool{}
-				}
-				facts.Flags["colored"] = true
-			}
-		}
-		judgement := assetJudgement(facts, prof, formats)
-		if judgement.Broken != "" {
-			reason = "The file on disk " + judgement.Broken
-		}
+		judgement := judgeMappedFile(col, prof, formats, byFile[a.FileID], a)
 		out.scores[a.FileID] = judgement.Score
-		if prof != nil && prof.MinFormatScore > profile.MinScoreOff && facts.FactsKnown && judgement.Score < prof.MinFormatScore {
-			reason = "The file on disk is below the profile’s minimum score"
-		}
-		if reason != "" {
-			out.refused[a.BookID] = reason
+		if judgement.Reason != "" {
+			out.refused[a.BookID] = judgement.Reason
 			continue
 		}
 		// A pin holds whether or not the pinned file is confirmed yet.

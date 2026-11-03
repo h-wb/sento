@@ -22,6 +22,7 @@ import AcquisitionPlan from './AcquisitionPlan'
 import type { EditionStart } from './AddEdition'
 import type { AcquisitionPlan as Plan } from '../types/service'
 import { useConfirmAction } from './ConfirmAction'
+import { FileScoreDetails } from './FileScoreDetails'
 
 export type BookSelection = {
   // A download this search looks to replace: it keeps running until a
@@ -538,6 +539,7 @@ function Inner({
                             {fmtSize(f.size)}
                           </Text>
                         </Group>
+                        <FileScoreDetails seriesID={seriesID} versionID={sel.versionId} fileID={f.id} />
                       </div>
                       <Button
                         size="compact-xs"

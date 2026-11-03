@@ -64,6 +64,7 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Get("/books", s.handleBooksByVersion)
 			r.Get("/edition-overview", s.handleEditionOverview)
 			r.Get("/versions/{vid}/books", s.handleVersionBooks)
+			r.Get("/versions/{vid}/files/{fid}/score", s.handleFileScore)
 			r.Post("/versions/{vid}/monitor", s.handleBulkMonitor)
 			r.Post("/books", s.handleSaveBook)
 			r.Put("/books/{bid}", s.handleSaveBook)

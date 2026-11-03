@@ -6,6 +6,7 @@ import type { Edition, CollectedVersion, File as SeriesFile, FileHint } from '..
 import type { BookStatus, FileMappingResult } from '../types/service'
 import { EditorModal } from './EditorModal'
 import { useEditor } from './useEditor'
+import { FileScoreDetails } from './FileScoreDetails'
 
 export function MappingEditor({
   seriesID,
@@ -204,6 +205,14 @@ export function MappingEditor({
             pickBooks(Number(v), nums)
           }}
         />
+        {t ? (
+          <>
+            <FileScoreDetails seriesID={seriesID} versionID={t.id} fileID={value.id} />
+            {(language !== initialLanguage || group !== initialGroup) && (
+              <Text size="xs" c="dimmed">The score uses saved facts. Save your corrections to update it.</Text>
+            )}
+          </>
+        ) : <Text size="xs" c="dimmed">Choose an edition to see this file’s current score.</Text>}
         <MultiSelect
           label="Books in this file"
           searchable
