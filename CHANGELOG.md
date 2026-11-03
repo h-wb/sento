@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/h-wb/sento/compare/v0.2.0...v0.3.0) (2026-11-03)
+
+
+### Features
+
+* **acquisition:** add release unblock controls ([#28](https://github.com/h-wb/sento/issues/28)) ([0bfd120](https://github.com/h-wb/sento/commit/0bfd120417ae7d1ca0ff63076779399fee9a8c14))
+
+
+### Bug Fixes
+
+* **parser:** parse resolution tags before release groups ([#29](https://github.com/h-wb/sento/issues/29)) ([67aec23](https://github.com/h-wb/sento/commit/67aec230ed848888ec6391b49db2ffe3007ec064))
+* **wanted:** handle searches that queue no releases ([#26](https://github.com/h-wb/sento/issues/26)) ([41807f1](https://github.com/h-wb/sento/commit/41807f11643ab727c1c1882b89acd40e6e8307d9))
+
 ## [0.2.0](https://github.com/h-wb/sento/compare/v0.1.1...v0.2.0) (2026-11-02)
 
 
