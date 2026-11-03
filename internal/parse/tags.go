@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"math"
 	"regexp"
 	"slices"
 	"sort"
@@ -83,7 +84,7 @@ var (
 	reVersion   = regexp.MustCompile(`^v(\d)$`)
 	// Resolution tokens must match in full so group names like "2KScans"
 	// remain group candidates. Keep the legacy Np/xNpx forms as well.
-	reResolution = regexp.MustCompile(`^(?:x?(\d{3,4})px?|x(\d{3,4})|([1-9])k)(-repack)?$`)
+	reResolution = regexp.MustCompile(`^(?:x?(\d{3,4})px?|x(\d{3,4})|([1-9]\d*)k)(-repack)?$`)
 )
 
 // classifySegment inspects one delimited segment's text.
@@ -272,10 +273,18 @@ func scanTags(lower string) segmentHints {
 				if v == "" {
 					v = m[2]
 				}
-				resolution, _ := strconv.Atoi(v)
+				if v == "" {
+					v = m[3]
+				}
+				resolution, err := strconv.Atoi(v)
+				if err != nil {
+					continue
+				}
 				if m[3] != "" {
-					k, _ := strconv.Atoi(m[3])
-					resolution = k * 1024
+					if resolution > math.MaxInt/1024 {
+						continue
+					}
+					resolution *= 1024
 				}
 				h.quality.Resolution = max(h.quality.Resolution, resolution)
 				if m[4] != "" {

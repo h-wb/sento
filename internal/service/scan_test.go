@@ -118,6 +118,7 @@ func TestResolutionScoresReleasesAndScannedFiles(t *testing.T) {
 		{"ONE PIECE v01 (Digital) (danke-Empire) (1920px).cbz", 1920, 0, 275},
 		{"ONE PIECE v02 (Digital) (danke-Empire) (1800px-Repack).cbz", 1800, 2, 275},
 		{"ONE PIECE v03 (Digital) (danke-Empire).cbz", 0, 0, 250},
+		{"ONE PIECE v01 (Digital) (danke-Empire) (10K).cbz", 10240, 0, 275},
 	}
 	for _, tc := range cases {
 		candidate := ReleaseCandidate{Title: tc.name, Protocol: "torrent", Parse: parse.Parse(tc.name, parse.ChannelTorrent)}

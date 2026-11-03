@@ -83,9 +83,9 @@ assumes this boring representation.
 
 Resolution tags are classified before group election: `1800px`, `1920px`,
 `x3200` and `2K` populate the resolution quality fact (`2K` = 2048 pixels;
-integer K tags use multiples of 1024). A `-Repack` suffix on a resolution
-token, such as `(1800px-Repack)`, also sets revision 2 without replacing a
-higher explicit revision. The highest stated resolution wins. These tags
+integer K tags use multiples of 1024, including `10K` = 10240). A `-Repack`
+suffix on a resolution token, such as `(1800px-Repack)`, also sets revision 2
+without replacing a higher explicit revision. The highest stated resolution wins. These tags
 never become the release group or book numbers, so `(danke-Empire)` before
 them remains the group. Search scoring and imported file facts use this
 resolution for custom formats, including High Resolution (at least 1600).

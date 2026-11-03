@@ -15,3 +15,6 @@
 {"in":"Series Name v01 [Anon-repack]","ch":"torrent","want":{"group":"Anon-repack","quality":{"resolution":0},"version":0}}
 {"in":"Series Name v01 (Team1800px)","ch":"torrent","want":{"group":"Team1800px","quality":{"resolution":0}}}
 {"in":"Series Name (v01 Digital 1800px-Repack) (danke-Empire)","ch":"torrent","want":{"title":"series name","volumes":[[1,1]],"chapters":null,"bare":null,"group":"danke-Empire","quality":{"digital":true,"resolution":1800},"version":2}}
+{"in":"Series Name v01 (danke-Empire) (10K)","ch":"torrent","want":{"group":"danke-Empire","quality":{"resolution":10240},"chapters":null,"bare":null}}
+{"in":"Series Name v01 (danke-Empire) (10K-Repack).cbz","ch":"file","titles":["Series Name"],"want":{"group":"danke-Empire","quality":{"resolution":10240},"version":2,"chapters":null,"bare":null}}
+{"in":"Series Name v01 (10KScans)","ch":"torrent","want":{"group":"10KScans","quality":{"resolution":0}}}

@@ -1,6 +1,11 @@
 package parse
 
-import "testing"
+import (
+	"math"
+	"strconv"
+	"strings"
+	"testing"
+)
 
 // TestTagPathConsistency locks Finding A: a tag means the same thing whether
 // it sits in brackets (classifySegment) or in free text (parseInto), because
@@ -39,5 +44,29 @@ func TestTagWordBoundary(t *testing.T) {
 	}
 	if Parse("Discolored Memories v01", ChannelTorrent).Edition.Colored {
 		t.Error(`"color" fired inside "discolored"`)
+	}
+}
+
+func TestKResolutionBounds(t *testing.T) {
+	maxK := math.MaxInt / 1024
+	cases := []struct {
+		name       string
+		token      string
+		resolution int
+	}{
+		{"largest representable", strconv.Itoa(maxK) + "K", maxK * 1024},
+		{"pixel conversion overflow", strconv.Itoa(maxK+1) + "K-Repack", 0},
+		{"integer parsing overflow", strconv.FormatUint(uint64(math.MaxInt)+1, 10) + "K-Repack", 0},
+		{"very long count", strings.Repeat("9", 100) + "K", 0},
+		{"overflow preserves valid resolution", "1800px " + strings.Repeat("9", 100) + "K-Repack", 1800},
+		{"zero", "0K", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := classifySegment(tc.token)
+			if h.quality.Resolution != tc.resolution || h.recognized != (tc.resolution > 0) || h.version != 0 {
+				t.Fatalf("%s: got resolution %d, recognized %v, revision %d; want resolution %d", tc.token, h.quality.Resolution, h.recognized, h.version, tc.resolution)
+			}
+		})
 	}
 }

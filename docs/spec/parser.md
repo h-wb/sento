@@ -200,9 +200,9 @@ collections (resolver R6).
 `(2048px)` `(x3200)` `(HQ)/(LQ)` `(F)`/`(f)` = fixed → `Version`
 `{Tapas}` `(Compressed)` `(JPEG)/(PNG)`.
 Resolution tokens also accept integer K notation (`2K` → 2048 pixels,
-`4K` → 4096) and a `-Repack` suffix (`1800px-Repack` → resolution 1800,
-version at least 2). Matching is case-insensitive and consumes the whole
-token before group extraction; the highest stated resolution wins.
+`4K` → 4096, `10K` → 10240) and a `-Repack` suffix (`1800px-Repack` →
+resolution 1800, version at least 2). Matching is case-insensitive and consumes
+the whole token before group extraction; the highest stated resolution wins.
 
 ### 5.6 Content-type tags (rejection-critical)
 `(Novel)` `(LN)` `[Audiobook]` `(Artbook)` `(Fanbook)` `(Anthology)`
