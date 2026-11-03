@@ -34,6 +34,7 @@ func (s *SearchService) process(run *searchRun, cands []provider.Candidate) (out
 	for i := range out {
 		out[i].Key = candidateKey(out[i])
 		out[i].ContentKey = out[i].Provider + "/" + out[i].cand.ExternalKey()
+		out[i].ExternalKey = out[i].cand.ExternalKey()
 		out[i].replaces = run.replaceQueueID
 		if run.excludeRelease != "" && out[i].ContentKey == run.excludeRelease {
 			out[i].Rejections = append(out[i].Rejections, "rejected.previous_download")

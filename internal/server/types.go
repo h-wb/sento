@@ -34,6 +34,14 @@ type SeriesDetail struct {
 	Publishers []service.SeriesPublisher `json:"publishers"`
 }
 
+// UnblockBody is POST /blocklist/unblock: select entries by ID, or one
+// release by its protocol and known keys. Related aliases are cleared too.
+type UnblockBody struct {
+	IDs      []int64  `json:"ids,omitempty"`
+	Protocol string   `json:"protocol,omitempty"`
+	Keys     []string `json:"keys,omitempty"`
+}
+
 // SearchBody is POST /series/{id}/search.
 type SearchBody struct {
 	Picks         []service.PlanPick   `json:"picks,omitempty"`

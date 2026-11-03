@@ -61,9 +61,10 @@ type SearchScope struct {
 // ReleaseCandidate is one candidate run through the funnel, for either
 // ledger.
 type ReleaseCandidate struct {
-	Key        string          `json:"key"`
-	ContentKey string          `json:"contentKey"`
-	Contents   []store.BookRef `json:"contents,omitempty"`
+	Key         string          `json:"key"`
+	ContentKey  string          `json:"contentKey"`
+	ExternalKey string          `json:"externalKey"` // release identity used by the blocklist
+	Contents    []store.BookRef `json:"contents,omitempty"`
 	// replaces is the download the search set out to replace, if any.
 	replaces int64
 	// languageSource names where an inferred Parse.Language came from

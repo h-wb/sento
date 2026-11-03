@@ -76,6 +76,8 @@ func (s *Store) ListDecisions(ctx context.Context, seriesID int64, limit int) ([
 // BlocklistEntry bans one release (by protocol + external key) from ever
 // being grabbed again.
 type BlocklistEntry struct {
+	// Title and release aliases are retained independently of queue history.
+	Title     string `json:"title,omitempty"`
 	ID        int64  `json:"id"`
 	Protocol  string `json:"protocol"`
 	Key       string `json:"key"`
@@ -93,11 +95,11 @@ func (s *Store) AddBlocklist(ctx context.Context, protocol, key, reason string) 
 
 func (s *Store) ListBlocklist(ctx context.Context) ([]BlocklistEntry, error) {
 	return list[BlocklistEntry](ctx, s, `
-		SELECT id, protocol, key, reason, created_at FROM blocklist ORDER BY id DESC LIMIT 500`)
+		SELECT id, protocol, key, COALESCE(reason,'') AS reason, created_at, title FROM blocklist ORDER BY id DESC`)
 }
 
 func (s *Store) DeleteBlocklist(ctx context.Context, id int64) error {
-	return s.touch(ctx, `DELETE FROM blocklist WHERE id = ?`, id)
+	return s.UnblockReleases(ctx, []int64{id}, "", nil)
 }
 
 // BlockedKeys returns the active ban set keyed "protocol/key".

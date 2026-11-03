@@ -13,6 +13,7 @@ import {
   Text,
 } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
+import { useQueryClient } from '@tanstack/react-query'
 import { IconFile, IconListSearch, IconRefresh, IconSearch, IconTrash } from '@tabler/icons-react'
 import { api, fmtNum, fmtSize, type ReleaseCandidate, type SeriesFile } from '../api'
 import { notify } from '../ui'
@@ -122,6 +123,7 @@ function Inner({
   const linked = files.filter((f) => sel.fileIds.includes(f.id))
 
   const { confirm, confirmation } = useConfirmAction()
+  const qc = useQueryClient()
   const searchController = useRef<AbortController | null>(null)
   useEffect(() => () => searchController.current?.abort(), [])
   const [busy, setBusy] = useState(false)
@@ -275,6 +277,16 @@ function Inner({
     } finally {
       setBusy(false)
     }
+  }
+
+  const unblock = async (c: ReleaseCandidate) => {
+    setBusy(true)
+    try {
+      await api.unblockReleases({ protocol: c.protocol, keys: [...new Set([c.externalKey, c.guid].filter(Boolean))] })
+      void qc.invalidateQueries({ queryKey: ['blocklist'] })
+      notify.ok('Release unblocked. Checking releases again…')
+    } finally { setBusy(false) }
+    await interactiveSearch()
   }
 
   return (
@@ -486,12 +498,13 @@ function Inner({
                     <AcquisitionPlan key={`${result.plan.searchedAt}/${result.candidates.length}/${searching}`}
                       plan={result.plan} candidates={result.candidates} searching={searching}
                       seriesID={seriesID} ledger={sel.ledger} scope={searchScope(allBooks)} busy={busy}
-                      onGrab={grab} onChanged={onChanged} onBusyChange={setBusy} />
+                      onGrab={grab} onUnblock={unblock} onChanged={onChanged} onBusyChange={setBusy} />
                   ) : result.candidates.length > 0 && (
                     <CandidateList
                       candidates={result.candidates}
                       dropped={result.dropped}
                       onGrab={grab}
+                      onUnblock={unblock}
                       busy={busy}
                       searching={searching}
                       editionWide={editionWide}

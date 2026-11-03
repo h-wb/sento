@@ -42,6 +42,8 @@ func (s *Server) mountSourceAPI(r chi.Router) {
 	r.Get("/history", s.handleHistory)
 	r.Get("/series/{id}/history", s.handleHistory)
 	r.Get("/blocklist", s.handleListBlocklist)
+	r.Delete("/blocklist", s.handleClearBlocklist)
+	r.Post("/blocklist/unblock", s.handleUnblockReleases)
 	r.Delete("/blocklist/{bid}", s.handleDeleteBlocklist)
 }
 
@@ -62,8 +64,46 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListBlocklist(w http.ResponseWriter, r *http.Request) {
-	entries, err := s.store.ListBlocklist(r.Context())
+	entries, err := s.store.ListBlockedReleases(r.Context())
 	respondList(w, entries, err)
+}
+
+func (s *Server) handleClearBlocklist(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.ClearBlocklist(r.Context()); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleUnblockReleases(w http.ResponseWriter, r *http.Request) {
+	var body UnblockBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	byID := len(body.IDs) > 0 && body.Protocol == "" && len(body.Keys) == 0
+	byKey := len(body.IDs) == 0 && (body.Protocol == provider.ProtocolSource || body.Protocol == provider.ProtocolTorrent) && len(body.Keys) > 0
+	if !byID && !byKey {
+		writeError(w, http.StatusBadRequest, "select blocklist IDs or release keys with a protocol")
+		return
+	}
+	for _, id := range body.IDs {
+		if id <= 0 {
+			writeError(w, http.StatusBadRequest, "blocklist IDs must be positive")
+			return
+		}
+	}
+	for _, key := range body.Keys {
+		if key == "" {
+			writeError(w, http.StatusBadRequest, "release keys must not be empty")
+			return
+		}
+	}
+	if err := s.store.UnblockReleases(r.Context(), body.IDs, body.Protocol, body.Keys); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleDeleteBlocklist(w http.ResponseWriter, r *http.Request) {

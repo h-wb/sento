@@ -42,7 +42,7 @@ const outcomeBadges: Record<string, [string, string]> = {
 }
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
-export default function AcquisitionPlan({ plan, candidates, searching = false, seriesID, ledger, scope, busy, onGrab, onChanged, onBusyChange }: {
+export default function AcquisitionPlan({ plan, candidates, searching = false, seriesID, ledger, scope, busy, onGrab, onUnblock, onChanged, onBusyChange }: {
   plan: Plan
   candidates: ReleaseCandidate[]
   // Sources are still answering: the plan is provisional and read-only.
@@ -52,6 +52,7 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
   scope: SearchScope
   busy: boolean
   onGrab: (c: ReleaseCandidate, force: boolean) => Promise<void>
+  onUnblock: (c: ReleaseCandidate) => Promise<void>
   onChanged: () => void
   onBusyChange: (busy: boolean) => void
 }) {
@@ -290,7 +291,7 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
         </Group>
       )}
       {(browsing || focus || rows.length === 0) && (listedCandidates.length > 0 || !focus) && (
-        <CandidateList key={focus ? bookKey(focus.book) : 'all'} candidates={listedCandidates} onGrab={onGrab} busy={locked}
+        <CandidateList key={focus ? bookKey(focus.book) : 'all'} candidates={listedCandidates} onGrab={onGrab} onUnblock={onUnblock} busy={locked}
           searching={searching} editionWide selected={selected} onToggle={toggle} showAll={!!focus} allBooks={scope.allBooks} />
       )}
     </Stack>

@@ -329,6 +329,13 @@ depends = ["e2e:build"]
 dir = "web"
 run = "npm run e2e:ui"
 
+# Only for the unprivileged Paseo agent image; see docs/testing/paseo.md.
+# Keep the ordinary developer/CI browser setup independent of that image.
+[tasks."e2e:paseo"]
+description = "Run browser tests with Paseo's cached Chromium runtime libraries"
+hide = true
+run = "bash scripts/paseo-e2e.sh"
+
 # --- sidecar (JVM; vendored Suwayomi pieces) ---
 
 [tasks."extensions:contract"]

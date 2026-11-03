@@ -18,6 +18,10 @@ export interface Binding {
 }
 
 //////////
+// source: blocklist.go
+
+
+//////////
 // source: calendar.go
 
 /**
@@ -304,6 +308,10 @@ export interface DecisionBody {
  * being grabbed again.
  */
 export interface BlocklistEntry {
+  /**
+   * Title and release aliases are retained independently of queue history.
+   */
+  title?: string;
   id: number /* int64 */;
   protocol: string;
   key: string;

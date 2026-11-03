@@ -79,6 +79,7 @@ export default function CandidateList({
   candidates,
   dropped = 0,
   onGrab,
+  onUnblock,
   busy = false,
   searching = false,
   editionWide = false,
@@ -90,6 +91,7 @@ export default function CandidateList({
   candidates: ReleaseCandidate[]
   dropped?: number
   onGrab?: (c: ReleaseCandidate, force: boolean) => void | Promise<void>
+  onUnblock?: (c: ReleaseCandidate) => Promise<void>
   busy?: boolean
   searching?: boolean
   // A whole-edition search mixes packs with single books: offer to
@@ -211,6 +213,15 @@ export default function CandidateList({
       })
     else void download(c, false).catch(() => {}) // The result list retains the actionable error.
   }
+  const unblock = async (c: ReleaseCandidate) => {
+    if (!onUnblock || busy || searching || downloading.current) return
+    downloading.current = true
+    setActive(releaseKey(c))
+    setError('')
+    try { await onUnblock(c) }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    finally { downloading.current = false; setActive('') }
+  }
   return (
     <Stack gap="sm">
       <Group justify="space-between" gap="xs">
@@ -323,7 +334,7 @@ export default function CandidateList({
       {error && (
         <Alert
           color="red"
-          title="Download could not be queued"
+          title="Release action failed"
           style={{ overflowWrap: 'anywhere' }}
         >
           {error}
@@ -393,6 +404,8 @@ export default function CandidateList({
               allBooks={allBooks}
               loading={active === releaseKey(c)}
               onGrab={onGrab ? requestDownload : undefined}
+              onUnblock={onUnblock ? () => void unblock(c) : undefined}
+              unblockDisabled={searching}
               selected={selected?.has(c.key)}
               onToggle={onToggle ? () => onToggle(c) : undefined}
             />
@@ -420,6 +433,8 @@ function ReleaseRow({
   busy,
   loading,
   onGrab,
+  onUnblock,
+  unblockDisabled,
   selected,
   onToggle,
 }: {
@@ -430,6 +445,8 @@ function ReleaseRow({
   busy: boolean
   loading: boolean
   onGrab?: (c: ReleaseCandidate, force: boolean) => void
+  onUnblock?: () => void
+  unblockDisabled?: boolean
   selected?: boolean
   onToggle?: () => void
 }) {
@@ -524,6 +541,8 @@ function ReleaseRow({
           <Badge variant="light" color="blue">
             Queued
           </Badge>
+        ) : onUnblock && c.rejections?.includes('rejected.blocklisted') ? (
+          <Button size="xs" variant="default" disabled={busy || unblockDisabled} loading={loading} onClick={onUnblock}>Unblock</Button>
         ) : onToggle && state === 'ready' ? (
           // Inside a download plan a ready release joins the plan instead
           // of starting its own download.
@@ -557,7 +576,9 @@ function ReleaseRow({
                 <Text key={r.code} size="sm" style={{ overflowWrap: 'anywhere' }}>
                   {r.message}{' '}
                   <Text span size="xs" c="dimmed">
-                    {r.owner === 'book'
+                    {r.code === 'rejected.blocklisted'
+                      ? 'Unblock this release to evaluate it again.'
+                      : r.owner === 'book'
                       ? 'Not this book: nothing to change.'
                       : r.override
                         ? 'Can be overridden for this download.'

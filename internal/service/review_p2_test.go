@@ -51,6 +51,30 @@ func TestBlocklistCoversTheListingAndItsHash(t *testing.T) {
 			}
 		}
 	}
+	// The block's identities survive housekeeping before anyone lists or
+	// unblocks the release; they do not depend on the failed queue record.
+	if n, err := st.PruneFinishedQueue(ctx, 0); err != nil || n != 1 {
+		t.Fatalf("pruning failed attempt: %d, %v", n, err)
+	}
+	// Unblocking a feed result clears the download identity too. Re-run
+	// evaluation against fresh state rather than overriding a rejection.
+	if err := st.UnblockReleases(ctx, nil, "torrent", []string{guid}); err != nil {
+		t.Fatal(err)
+	}
+	run, err = svc.prepare(ctx, sid, LedgerVolume, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, _ := svc.process(run, []provider.Candidate{{Provider: "torrent", Protocol: "torrent", Title: "ONE PIECE v01 (Digital)",
+		Torrent: &provider.TorrentRef{GUID: "elsewhere", InfoHash: "derived-infohash", Size: 100 << 20, Seeders: 30}}})
+	if len(cs) == 0 {
+		t.Fatal("unblocked release not evaluated")
+	}
+	for _, rc := range cs {
+		if slices.Contains(rc.Rejections, "rejected.blocklisted") || rc.ExternalKey != "derived-infohash" {
+			t.Errorf("unblocked candidate = %+v", rc)
+		}
+	}
 }
 
 // The worker's list holds every job it can advance, oldest first; jobs

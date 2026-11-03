@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/h-wb/sento/internal/apperr"
 	"io"
 	"log/slog"
 	"os"
@@ -600,20 +599,7 @@ func (im *Importer) blockRelease(ctx context.Context, item store.QueueItem, reas
 	if _ = json.Unmarshal(item.Snapshot, &snap); snap.GUID != "" && !slices.Contains(keys, snap.GUID) {
 		keys = append(keys, snap.GUID)
 	}
-	blocked := false
-	for _, key := range keys {
-		if key == "" {
-			continue
-		}
-		if err := im.store.AddBlocklist(ctx, item.Protocol, key, reason); err != nil {
-			return err
-		}
-		blocked = true
-	}
-	if !blocked {
-		return apperr.Invalidf("this job has no release identity to block")
-	}
-	return nil
+	return im.store.AddReleaseBlocklist(ctx, item.Protocol, keys, item.Title, reason)
 }
 
 // Reviewed payloads can complete without redownloading or reparsing names that
