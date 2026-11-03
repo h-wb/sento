@@ -36,7 +36,9 @@ func (s *Store) reviewRevision(ctx context.Context, db reviewQuerier, sid int64)
 		`SELECT id,status,books_json,snapshot_json,release_key,external_id FROM queue_items WHERE series_id=? ORDER BY id`,
 		`SELECT * FROM profiles ORDER BY id`,
 		`SELECT * FROM custom_formats ORDER BY id`,
-		`SELECT * FROM settings ORDER BY key`,
+		// Scheduler timestamps and connection bookkeeping do not change a
+		// review decision. Only inherited policy and file placement do.
+		`SELECT * FROM settings WHERE key IN('default_profile_id','media') ORDER BY key`,
 	}
 	for _, query := range queries {
 		if err := json.NewEncoder(h).Encode(query); err != nil {

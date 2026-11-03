@@ -471,6 +471,26 @@ func TestReviewChoicesUnusedDecisionSurvivesIdenticalRescan(t *testing.T) {
 	}
 }
 
+func TestReviewChoicesSurvivesSchedulerTicks(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, _, _, _ := factsClaimsFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	im := NewImporter(st, nil, root, nil)
+	fid := waitingScoredFile(t, st, sid, root, "unmatched.cbz", "")
+	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{}}}}
+	plan, err := lib.PreviewReviewChoices(ctx, sid, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.PutSetting(ctx, "scheduler", []byte(`{"queue":"2026-11-03T23:00:00Z"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+		t.Fatalf("routine scheduler bookkeeping invalidated the review: %v", err)
+	}
+}
+
 func TestReviewChoicesPolicyRefusalsAndUnknownFacts(t *testing.T) {
 	t.Parallel()
 	lib, st, sid, col, books, v := factsClaimsFixture(t)
