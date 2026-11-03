@@ -1,0 +1,231 @@
+package store
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"slices"
+	"strings"
+
+	"github.com/h-wb/sento/internal/apperr"
+)
+
+type reviewQuerier interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+// ReviewRevision identifies the facts a review decision depends on. Stable
+// ordering includes deselected mappings and pins, not just accepted owners.
+func (s *Store) ReviewRevision(ctx context.Context, sid int64) (string, error) {
+	return s.reviewRevision(ctx, s.db, sid)
+}
+
+func (s *Store) reviewRevision(ctx context.Context, db reviewQuerier, sid int64) (string, error) {
+	h := sha256.New()
+	queries := []string{
+		`SELECT * FROM series WHERE id=? ORDER BY id`,
+		`SELECT * FROM editions WHERE series_id=? ORDER BY id`,
+		`SELECT * FROM versions WHERE edition_id IN(SELECT id FROM editions WHERE series_id=?) ORDER BY id`,
+		`SELECT * FROM books WHERE edition_id IN(SELECT id FROM editions WHERE series_id=?) ORDER BY id`,
+		`SELECT id,series_id,path,size,hash,facts_json,claims_json,presence,needs_review,unrequested,review_action FROM files WHERE series_id=? ORDER BY id`,
+		`SELECT c.* FROM asset_contents c JOIN files f ON f.id=c.file_id WHERE f.series_id=? ORDER BY c.file_id,c.book_id`,
+		`SELECT a.* FROM asset_coverage a JOIN files f ON f.id=a.file_id WHERE f.series_id=? ORDER BY a.file_id,a.version_id,a.book_id`,
+		`SELECT t.* FROM file_trash t JOIN files f ON f.id=t.file_id WHERE f.series_id=? ORDER BY t.file_id`,
+		`SELECT id,status,books_json,snapshot_json,release_key,external_id FROM queue_items WHERE series_id=? ORDER BY id`,
+		`SELECT * FROM profiles ORDER BY id`,
+		`SELECT * FROM custom_formats ORDER BY id`,
+		`SELECT * FROM settings ORDER BY key`,
+	}
+	for _, query := range queries {
+		if err := json.NewEncoder(h).Encode(query); err != nil {
+			return "", err
+		}
+		var args []any
+		if strings.ContainsRune(query, '?') {
+			args = []any{sid}
+		}
+		rows, err := db.QueryContext(ctx, s.q(query), args...)
+		if err != nil {
+			return "", err
+		}
+		columns, err := rows.Columns()
+		if err != nil {
+			_ = rows.Close()
+			return "", err
+		}
+		for rows.Next() {
+			values := make([]any, len(columns))
+			ptrs := make([]any, len(columns))
+			for i := range values {
+				ptrs[i] = &values[i]
+			}
+			if err = rows.Scan(ptrs...); err != nil {
+				_ = rows.Close()
+				return "", err
+			}
+			if err = json.NewEncoder(h).Encode(values); err != nil {
+				_ = rows.Close()
+				return "", err
+			}
+		}
+		err = rows.Err()
+		_ = rows.Close()
+		if err != nil {
+			return "", err
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// FileReviewWrite records content confirmation independently of selection.
+// Replacements name the exact former owners seen in the validated preview.
+type FileReviewWrite struct {
+	FileID       int64
+	Facts        AssetFacts
+	Hash         string
+	Reset        bool
+	Contents     []BookRef
+	Selected     []BookRef
+	Replacements []AssetCoverage
+	Disposition  string
+}
+
+func (s *Store) CommitFileReviews(ctx context.Context, sid int64, revision string, writes []FileReviewWrite) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, s.q(`SELECT id FROM editions WHERE series_id=? ORDER BY id`), sid)
+	if err != nil {
+		return err
+	}
+	var eids []int64
+	for rows.Next() {
+		var id int64
+		if err = rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		eids = append(eids, id)
+	}
+	err = rows.Err()
+	_ = rows.Close()
+	if err != nil {
+		return err
+	}
+	if err = s.lockEditions(ctx, tx, true, eids...); err != nil {
+		return err
+	}
+	if s.pg {
+		// Configuration writers do not take edition locks. Keep the profile,
+		// format and default-setting snapshot stable until selection commits.
+		if _, err = tx.ExecContext(ctx, `LOCK TABLE profiles,custom_formats,settings IN SHARE MODE`); err != nil {
+			return err
+		}
+	}
+	fresh, err := s.reviewRevision(ctx, tx, sid)
+	if err != nil {
+		return err
+	}
+	if revision != fresh {
+		return apperr.Conflictf("review changed; refresh the preview before applying choices")
+	}
+	for _, w := range writes {
+		if err = s.writeFileReview(ctx, tx, sid, w); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) writeFileReview(ctx context.Context, tx *sql.Tx, sid int64, w FileReviewWrite) error {
+	if err := s.rejectTrashEdit(ctx, tx, w.FileID); err != nil {
+		return err
+	}
+	pins := map[string]bool{}
+	rows, err := tx.QueryContext(ctx, s.q(`SELECT version_id,book_id FROM asset_coverage WHERE file_id=? AND pinned=TRUE`), w.FileID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var vid, bid int64
+		if err = rows.Scan(&vid, &bid); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		pins[BookKey(vid, bid)] = true
+	}
+	err = rows.Err()
+	_ = rows.Close()
+	if err != nil {
+		return err
+	}
+	if w.Reset {
+		for key := range pins {
+			if !slices.ContainsFunc(w.Selected, func(b BookRef) bool { return BookKey(b.VersionID, b.BookID) == key }) {
+				return apperr.Conflictf("unpin the file before removing its selections")
+			}
+		}
+		if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_coverage WHERE file_id=?`), w.FileID); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_contents WHERE file_id=?`), w.FileID); err != nil {
+			return err
+		}
+	}
+	for _, b := range w.Contents {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,book_id,verified,evidence) VALUES(?,?,TRUE,'manual') ON CONFLICT(file_id,book_id) DO UPDATE SET verified=TRUE,evidence='manual'`), w.FileID, b.BookID); err != nil {
+			return err
+		}
+		// Explicitly record non-selection in every existing version. Otherwise
+		// the implicit selection rule would adopt an unused duplicate.
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,selected,evidence)
+ SELECT ?,id,?,FALSE,'manual' FROM versions WHERE edition_id=? ON CONFLICT DO NOTHING`), w.FileID, b.BookID, b.EditionID); err != nil {
+			return err
+		}
+	}
+	for _, b := range w.Contents {
+		selected := slices.ContainsFunc(w.Selected, func(v BookRef) bool { return v.VersionID == b.VersionID && v.BookID == b.BookID })
+		if pins[BookKey(b.VersionID, b.BookID)] && !selected {
+			return apperr.Conflictf("unpin the file before removing its selections")
+		}
+		if _, err = tx.ExecContext(ctx, s.q(`UPDATE asset_coverage SET selected=?,pinned=?,evidence='manual' WHERE file_id=? AND version_id=? AND book_id=?`), selected, pins[BookKey(b.VersionID, b.BookID)], w.FileID, b.VersionID, b.BookID); err != nil {
+			return err
+		}
+	}
+	for _, a := range w.Replacements {
+		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,selected)
+ VALUES(?,?,?,FALSE) ON CONFLICT(file_id,version_id,book_id) DO UPDATE SET selected=FALSE WHERE asset_coverage.pinned=FALSE`), a.FileID, a.VersionID, a.BookID); err != nil {
+			return err
+		}
+	}
+	if len(w.Contents) == 0 && !w.Reset {
+		if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_contents WHERE file_id=? AND verified=FALSE`), w.FileID); err != nil {
+			return err
+		}
+	}
+	var uses int
+	if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM asset_contents c JOIN books b ON b.id=c.book_id JOIN versions v ON v.edition_id=b.edition_id
+ LEFT JOIN asset_coverage a ON a.file_id=c.file_id AND a.version_id=v.id AND a.book_id=c.book_id
+ WHERE c.file_id=? AND (COALESCE(a.selected,TRUE)=TRUE OR COALESCE(a.pinned,FALSE)=TRUE)`), w.FileID).Scan(&uses); err != nil {
+		return err
+	}
+	if w.Disposition == "trash" {
+		if uses > 0 || len(pins) > 0 {
+			return apperr.Conflictf("this archive is still selected or pinned; keep the shared file")
+		}
+	}
+	raw, err := json.Marshal(w.Facts)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, s.q(`UPDATE files SET facts_json=?,hash=?,needs_review=FALSE,unrequested=?,review_action=? WHERE id=? AND series_id=?`), string(raw), w.Hash, uses == 0, w.Disposition, w.FileID, sid)
+	return err
+}
+
+func (s *Store) PendingReviewTrash(ctx context.Context) ([]File, error) {
+	return list[File](ctx, s, `SELECT `+fileColumns+` FROM files WHERE review_action='trash' AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=files.id) ORDER BY id LIMIT 500`)
+}

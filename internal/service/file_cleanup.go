@@ -228,7 +228,7 @@ func (im *Importer) trashFile(ctx context.Context, sid int64, f CleanupFile, day
 	}
 	// Link then unlink on the same filesystem: no overwrite, no payload rewrite.
 	if err = moveArchive(f.Path, dest); err != nil {
-		if rollback := im.store.RestoreFileRecord(context.WithoutCancel(ctx), f.FileID); rollback != nil {
+		if rollback := im.store.AbortFileTrash(context.WithoutCancel(ctx), f.FileID); rollback != nil {
 			return fmt.Errorf("move failed: %v; restore the retained trash entry: %w", err, rollback)
 		}
 		return err

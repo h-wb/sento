@@ -80,6 +80,8 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Put("/files/{fid}/mapping", s.handleRemapFile)
 			r.Post("/review/resolve", s.handleResolveFileReviews)
 			r.Post("/review/match", s.handleMatchRelease)
+			r.Post("/review/choices/preview", s.handleReviewChoicesPreview)
+			r.Post("/review/choices", s.handleReviewChoicesApply)
 			r.Patch("/files/{fid}/facts", s.handleFileFacts)
 			r.Post("/check-files", s.handleCheckFiles)
 			r.Get("/observations", s.handleObservations)

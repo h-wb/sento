@@ -125,11 +125,11 @@ func TestReviewMappingOrganizesOnlyConfirmedFile(t *testing.T) {
 	if code, body := save(fid, books[0]); code != http.StatusOK {
 		t.Fatalf("repeat save: %d %s", code, body)
 	}
-	// A file move failure must be visible while preserving the saved mapping.
+	// A missing archive fails preflight, before a mapping can be confirmed.
 	if err = os.Remove(otherPath); err != nil {
 		t.Fatal(err)
 	}
-	if code, body := save(otherID, books[1]); code != http.StatusInternalServerError || !strings.Contains(body, "mapping saved, but organizing the file failed") {
+	if code, body := save(otherID, books[1]); code != http.StatusInternalServerError || !strings.Contains(body, "read incoming archive") {
 		t.Fatalf("organize failure hidden: %d %s", code, body)
 	}
 	coverage, err := srv.store.Coverage(ctx, sid)
@@ -142,7 +142,7 @@ func TestReviewMappingOrganizesOnlyConfirmedFile(t *testing.T) {
 			found = true
 		}
 	}
-	if !found {
-		t.Fatal("organize failure lost the saved mapping")
+	if found {
+		t.Fatal("missing archive received a verified mapping")
 	}
 }

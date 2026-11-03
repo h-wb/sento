@@ -130,6 +130,17 @@ func (s *SearchService) grabClaims(ctx context.Context, seriesID int64, searchLe
 	if err := s.retire(ctx, c.replaces, slots); err != nil {
 		return 0, err
 	}
+	// Carry deliberate replacement intent into review; surplus pack contents
+	// never acquire it merely by having a matching number.
+	for _, ref := range slots {
+		owners, err := s.store.BookOwners(ctx, ref.VersionID, ref.BookID)
+		if err != nil {
+			return 0, err
+		}
+		if slices.ContainsFunc(owners, func(o store.BookOwner) bool { return o.Present && o.Verified }) {
+			c.RequestedReplacements = append(c.RequestedReplacements, ref)
+		}
+	}
 	snapshot, _ := json.Marshal(c)
 	qid, created, err := s.store.ReserveQueue(ctx, store.QueueItem{SeriesID: seriesID, Protocol: c.Protocol, ProviderID: c.Provider, ReleaseKey: c.cand.ExternalKey(), DownloadClient: client, Title: c.Title, Snapshot: snapshot}, slots)
 	if err != nil {

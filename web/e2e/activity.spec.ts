@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { activityFixture } from './activity-fixtures'
+import { reviewBook, reviewFile } from './review-choice-fixtures'
 
 test('global activity reviews files in place and confirms an uncertain download without submitting twice', async ({
   page,
@@ -79,11 +80,6 @@ test('global activity reviews files in place and confirms an uncertain download 
       ],
     }),
   )
-  let factsPatch: unknown = null
-  await page.route('**/api/v1/series/901/files/301/facts', (route) => {
-    factsPatch = route.request().postDataJSON()
-    return route.fulfill({ status: 204 })
-  })
   await page.route('**/api/v1/series/901/files', (route) =>
     route.fulfill({
       json: [
@@ -94,7 +90,7 @@ test('global activity reviews files in place and confirms an uncertain download 
           needsReview: true,
           // The file's own name says nothing about language; the release
           // it came from advertised en, so review prefills that.
-          facts: { title: 'Volume 1.cbz' },
+          facts: mapped ? { title: 'Volume 1.cbz', language: 'en', group: '1r0n' } : { title: 'Volume 1.cbz' },
           claims: { language: 'en', group: '1r0n' },
         },
       ],
@@ -115,21 +111,15 @@ test('global activity reviews files in place and confirms an uncertain download 
       },
     }),
   )
-  await page.route('**/api/v1/series/901/files/301/mapping', (route) => {
+  await page.route('**/api/v1/series/901/review/choices/preview', (route) => route.fulfill({ json: {
+    token: 'review-token', files: [reviewFile(301, [reviewBook(ref, 'volume 1')])],
+  } }))
+  await page.route('**/api/v1/series/901/review/choices', (route) => {
     saved = route.request().postDataJSON()
     attempts++
-    if (attempts === 1)
-      return route.fulfill({ status: 503, json: { error: 'Storage temporarily unavailable' } })
+    if (attempts === 1) return route.fulfill({ status: 503, json: { error: 'Storage temporarily unavailable' } })
     mapped = true
-    // The save displaced an older, worse file for the same book.
-    return route.fulfill({
-      status: 200,
-      json: {
-        replaced: [
-          { fileId: 299, path: '/library/Parasyte/Volume 1 [old].cbz', bookId: 20, fromScore: 0, toScore: 100 },
-        ],
-      },
-    })
+    return route.fulfill({ json: [{ fileId: 301, status: 'imported', note: 'Choices saved; organizing the archive still needs to finish: storage unavailable' }] })
   })
   await page.route('**/api/v1/queue/60/retry', (route) => {
     clientID = route.request().postDataJSON().remoteId
@@ -146,15 +136,19 @@ test('global activity reviews files in place and confirms an uncertain download 
   // Language and group are prefilled from what the release advertised.
   await expect(dialog.getByRole('textbox', { name: 'Confirmed language' })).toHaveValue('en')
   await expect(dialog.getByRole('textbox', { name: 'Confirmed release group' })).toHaveValue('1r0n')
-  await dialog.getByRole('button', { name: 'Save coverage' }).click()
+  await dialog.getByRole('button', { name: 'Apply choices' }).click()
   await expect(dialog.getByText(/Storage temporarily unavailable/)).toBeVisible()
-  await dialog.getByRole('button', { name: 'Save coverage' }).click()
+  await dialog.getByRole('button', { name: 'Apply choices' }).click()
+  await expect(dialog.getByText('Choices saved', { exact: true })).toBeVisible()
+  await expect(dialog.getByText(/organizing the archive still needs to finish/)).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Apply choices' })).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click()
   await expect(dialog).toBeHidden()
-  expect(saved).toEqual({ books: [ref] })
-  // The displaced older file is reported.
-  await expect(page.getByText(/Replaced .*Volume 1 \[old\]/)).toBeVisible()
-  // Saving recorded the prefilled claims as the file's confirmed facts.
-  expect(factsPatch).toEqual({ language: 'en', group: '1r0n' })
+  expect(saved).toEqual({
+    token: 'review-token',
+    request: { files: [{ fileId: 301, books: [ref], language: 'en', group: '1r0n' }] },
+    choices: [{ fileId: 301, use: [ref], disposition: 'keep' }],
+  })
   await expect(page.getByRole('button', { name: 'Review 1 file', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Confirm download', exact: true }).click()
   const confirmation = page.getByRole('dialog', { name: 'Confirm existing download' })

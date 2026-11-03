@@ -220,6 +220,24 @@ export interface Book {
 }
 
 //////////
+// source: file_review.go
+
+/**
+ * FileReviewWrite records content confirmation independently of selection.
+ * Replacements name the exact former owners seen in the validated preview.
+ */
+export interface FileReviewWrite {
+  FileID: number /* int64 */;
+  Facts: AssetFacts;
+  Hash: string;
+  Reset: boolean;
+  Contents: BookRef[];
+  Selected: BookRef[];
+  Replacements: AssetCoverage[];
+  Disposition: string;
+}
+
+//////////
 // source: file_trash.go
 
 /**
@@ -240,6 +258,8 @@ export interface TrashedFile {
 // source: files.go
 
 export interface File {
+  reviewAction?: string;
+  contentBooks?: BookRef[]; // intrinsic contents, without version selections
   claims: AssetFacts;
   presence: string;
   presenceError: string;

@@ -1,11 +1,10 @@
 import { cardLabel, fileName } from './editionText'
 import { useState } from 'react'
-import { Alert, Button, Group, MultiSelect, Select, Stack, Switch, Text, TextInput } from '@mantine/core'
-import { api } from '../api'
+import { Alert, Group, MultiSelect, Select, Stack, Text, TextInput } from '@mantine/core'
 import type { Edition, CollectedVersion, File as SeriesFile, FileHint } from '../types/store'
-import type { BookStatus, FileMappingResult } from '../types/service'
+import type { BookStatus } from '../types/service'
 import { EditorModal } from './EditorModal'
-import { useEditor } from './useEditor'
+import { ReviewChoices } from './ReviewChoices'
 import { FileScoreDetails } from './FileScoreDetails'
 
 export function MappingEditor({
@@ -16,9 +15,8 @@ export function MappingEditor({
   proposal,
   hint,
   books,
-  files,
   editions,
-  save,
+  applied,
   close,
 }: {
   seriesID: number
@@ -28,10 +26,8 @@ export function MappingEditor({
   proposal?: import('../types/store').ReviewProposal
   hint?: FileHint
   books: BookStatus[]
-  // All the series' files, to name the current owners a save may displace.
-  files: SeriesFile[]
   editions: Edition[]
-  save: (books: import('../types/store').BookRef[], replace?: boolean) => Promise<FileMappingResult | void>
+  applied: () => Promise<void>
   close: () => void
 }) {
   const mapped = existing.map((a) => ({
@@ -43,11 +39,14 @@ export function MappingEditor({
       editions.find((c) => c.id === versions.find((t) => t.id === a.versionId)?.editionId)
         ?.type ?? 'volume',
   }))
-  // An unmapped file starts from review's proposal; saving accepts it.
-  const initial =
-    mapped.length || !proposal
-      ? mapped
-      : proposal.books.map((b) => ({
+  // Confirmed contents remain editable even when this copy is unused.
+  const confirmed = (value.contentBooks ?? []).flatMap((b) => {
+    const t = versions.find((t) => t.editionId === b.editionId && t.isDefault)
+    return t && !mapped.some((a) => a.bookId === b.bookId) ? [{ ...b, versionId: t.id }] : []
+  })
+  const initial = mapped.length || confirmed.length
+    ? [...mapped, ...confirmed]
+    : (proposal?.books ?? []).map((b) => ({
           versionId: b.versionId ?? 0,
           bookId: b.bookId ?? 0,
           editionId: b.editionId,
@@ -60,14 +59,15 @@ export function MappingEditor({
       ? String(existing[0].versionId)
       : proposal?.books[0]
         ? String(proposal.books[0].versionId)
-        : null,
+        : confirmed[0] ? String(confirmed[0].versionId) : null,
   )
-  const edit = useEditor()
+  const [busy, setBusy] = useState(false)
+  const [choicesDirty, setChoicesDirty] = useState(false)
   // The release the file came from advertises language and group even
   // when the file's own name does not say them: prefill from the claims
   // so review only has to confirm. Saving records the confirmed values.
-  const initialLanguage = value.facts?.language || value.claims?.language || ''
-  const initialGroup = value.facts?.group || value.claims?.group || ''
+  const initialLanguage = value.facts?.sources?.language === 'manual' ? value.facts.language ?? '' : value.facts?.language || value.claims?.language || ''
+  const initialGroup = value.facts?.sources?.group === 'manual' ? value.facts.group ?? '' : value.facts?.group || value.claims?.group || ''
   const [language, setLanguage] = useState(initialLanguage)
   const [group, setGroup] = useState(initialGroup)
   // Numbers the file's own name carries. Shown greyed until an edition is
@@ -76,18 +76,6 @@ export function MappingEditor({
   const [pending, setPending] = useState<string[]>(hint?.numbers ?? [])
   const t = versions.find((t) => String(t.id) === version)
   const chosen = draft.filter((s) => s.versionId === t?.id).map((s) => String(s.bookId))
-  // Books already held by other verified files: saving may displace them
-  // (upgrade path) — automatically when this file scores better, or always
-  // when forced below.
-  const [forceReplace, setForceReplace] = useState(false)
-  const rivals = draft
-    .map((s) => books.find((b) => b.versionId === s.versionId && b.book.id === s.bookId)?.fileIds ?? [])
-    .flat()
-    .filter((fid) => fid !== value.id)
-  const rivalNames = [...new Set(rivals)]
-    .map((fid) => files.find((f) => f.id === fid))
-    .filter((f): f is SeriesFile => !!f)
-    .map((f) => f.facts?.title || fileName(f.path))
   const pickBooks = (versionId: number, numbers: string[]) => {
     const tv = versions.find((x) => x.id === versionId)
     if (!tv) return
@@ -109,11 +97,11 @@ export function MappingEditor({
   return (
     <EditorModal
       dirty={
-        JSON.stringify(draft) !== JSON.stringify(initial) ||
+        choicesDirty || JSON.stringify(draft) !== JSON.stringify(initial) ||
         language !== initialLanguage ||
         group !== initialGroup
       }
-      busy={edit.busy}
+      busy={busy}
       onClose={close}
       title="Match imported file"
     >
@@ -140,23 +128,8 @@ export function MappingEditor({
           <Alert variant="light" p="xs">
             <Text size="sm">
               Proposed: <b>{proposal.label}</b> of {proposal.edition} ({proposal.evidence}).
-              Save to accept, or change it below.
+              Confirm the contents, then choose which copies to keep below.
             </Text>
-          </Alert>
-        )}
-        {rivalNames.length > 0 && (
-          <Alert variant="light" color="orange" p="xs">
-            <Text size="sm">
-              Already held by {rivalNames.map((n) => `“${n}”`).join(', ')}. Saving replaces them
-              when this file scores better; force it below to replace regardless.
-            </Text>
-            <Switch
-              size="xs"
-              mt={6}
-              label="Replace the current file(s) even if this one does not score better"
-              checked={forceReplace}
-              onChange={(e) => setForceReplace(e.currentTarget.checked)}
-            />
           </Alert>
         )}
         {value.facts && (
@@ -178,17 +151,20 @@ export function MappingEditor({
         <Group grow>
           <TextInput
             label="Confirmed language"
+            disabled={busy}
             value={language}
             onChange={(e) => setLanguage(e.currentTarget.value)}
           />
           <TextInput
             label="Confirmed release group"
+            disabled={busy}
             value={group}
             onChange={(e) => setGroup(e.currentTarget.value)}
           />
         </Group>
         <Select
           label="Edition"
+          disabled={busy}
           data={versions.map((t) => ({
             value: String(t.id),
             label: cardLabel(editions.find((c) => c.id === t.editionId)!, t, versions),
@@ -216,7 +192,7 @@ export function MappingEditor({
         <MultiSelect
           label="Books in this file"
           searchable
-          disabled={!t}
+          disabled={busy || !t}
           data={
             t
               ? books
@@ -255,32 +231,18 @@ export function MappingEditor({
             This file will stay in the library without claiming ownership of any book.
           </Text>
         )}
-        {edit.error && <Alert color="red">{edit.error}</Alert>}
-        <Group justify="space-between">
-          <Button
-            variant="subtle"
-            color="red"
-            disabled={edit.busy || draft.length === 0}
-            onClick={() => setDraft([])}
-          >
-            Clear mappings
-          </Button>
-          <Button
-            loading={edit.busy}
-            onClick={() =>
-              void edit.run(async () => {
-                if (
-                  language !== (value.facts?.language ?? '') ||
-                  group !== (value.facts?.group ?? '')
-                )
-                  await api.correctFileFacts(seriesID, value.id, { language, group })
-                await save(draft, forceReplace)
-              })
-            }
-          >
-            Save coverage
-          </Button>
-        </Group>
+        <ReviewChoices
+          seriesID={seriesID}
+          request={{ files: [{
+            fileId: value.id,
+            books: draft.length || initial.length || JSON.stringify(draft) !== JSON.stringify(initial) ? draft : null,
+            ...(language !== (value.facts?.language ?? '') ? { language } : {}),
+            ...(group !== (value.facts?.group ?? '') ? { group } : {}),
+          }] }}
+          applied={applied}
+          onDirtyChange={setChoicesDirty}
+          onBusyChange={setBusy}
+        />
       </Stack>
     </EditorModal>
   )

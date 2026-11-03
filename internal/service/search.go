@@ -85,20 +85,21 @@ type ReleaseCandidate struct {
 	OtherEdition     *OtherEdition `json:"otherEdition,omitempty"`
 	RepresentedBooks int           `json:"representedBooks"`
 	// IndexerPriority breaks ties between equal scores (lower wins).
-	IndexerPriority int             `json:"indexerPriority,omitempty"`
-	VersionID       int64           `json:"versionId,omitempty"`
-	Coverage        []store.BookRef `json:"coverage,omitempty"`
-	ProfileID       int64           `json:"profileId,omitempty"`
-	GUID            string          `json:"guid"`
-	Provider        string          `json:"provider"`
-	Protocol        string          `json:"protocol"`
-	Site            string          `json:"site"`
-	SiteID          string          `json:"siteId"`
-	Title           string          `json:"title"`
-	URL             string          `json:"url,omitempty"` // release page on the indexer/source site
-	Size            int64           `json:"size,omitempty"`
-	Seeders         int             `json:"seeders,omitempty"`
-	Scanlator       string          `json:"scanlator,omitempty"`
+	IndexerPriority       int             `json:"indexerPriority,omitempty"`
+	VersionID             int64           `json:"versionId,omitempty"`
+	RequestedReplacements []store.BookRef `json:"requestedReplacements,omitempty"`
+	Coverage              []store.BookRef `json:"coverage,omitempty"`
+	ProfileID             int64           `json:"profileId,omitempty"`
+	GUID                  string          `json:"guid"`
+	Provider              string          `json:"provider"`
+	Protocol              string          `json:"protocol"`
+	Site                  string          `json:"site"`
+	SiteID                string          `json:"siteId"`
+	Title                 string          `json:"title"`
+	URL                   string          `json:"url,omitempty"` // release page on the indexer/source site
+	Size                  int64           `json:"size,omitempty"`
+	Seeders               int             `json:"seeders,omitempty"`
+	Scanlator             string          `json:"scanlator,omitempty"`
 	// BindingID is the source listing a source release came from.
 	BindingID   int64        `json:"bindingId,omitempty"`
 	EditionID   int64        `json:"editionId,omitempty"`

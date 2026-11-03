@@ -36,6 +36,7 @@ type KeptClaim struct {
 // file's own claims: which existing owners it displaced, and which books
 // it left to their current holder.
 type FileMappingResult struct {
+	Notes    []string      `json:"notes,omitempty"`
 	Replaced []Replacement `json:"replaced,omitempty"`
 	Kept     []KeptClaim   `json:"kept,omitempty"`
 }

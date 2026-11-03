@@ -60,7 +60,7 @@ test('file details show current profile scores and refresh after profile or fact
     await editor.getByRole('textbox', { name: 'Confirmed release group' }).fill('OtherGroup')
     await expect(editor.getByText('The score uses saved facts. Save your corrections to update it.')).toBeVisible()
     await expect(editor.getByText('Current score: -25', { exact: true })).toBeVisible()
-    await editor.getByRole('button', { name: 'Save coverage' }).click()
+    await editor.getByRole('button', { name: 'Apply choices' }).click()
     await expect(editor).toBeHidden()
     await page.getByRole('button', { name: 'Edit mappings', exact: true }).click()
     await expect(editor.getByText('Current score: 0', { exact: true })).toBeVisible()

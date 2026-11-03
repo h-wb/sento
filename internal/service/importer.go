@@ -105,6 +105,7 @@ func (im *Importer) mapPath(p string) string {
 func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
+	im.finishReviewTrash(ctx)
 
 	items, err := im.store.ListRunnableQueue(ctx)
 	if err != nil {
@@ -420,6 +421,11 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 		}
 	}
 	if len(linked) != len(expected) {
+		if complete, e := im.reviewedJobComplete(ctx, item); e != nil {
+			return e
+		} else if complete {
+			return nil
+		}
 		return fmt.Errorf("partial import: verified %d of %d expected books; unmatched files need review", len(linked), len(expected))
 	}
 	return nil
@@ -442,6 +448,15 @@ func (im *Importer) alreadyImported(ctx context.Context, item store.QueueItem, e
 		return nil, nil, err
 	}
 	linked, hashes = releaseCoverage(item.ReleaseKey, expected, view, known)
+	recorded, err := im.store.RecordedFiles(ctx, item.SeriesID)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, f := range recorded {
+		if f.Facts.ReleaseKey == item.ReleaseKey && f.ReviewAction != "" && f.Hash != "" {
+			hashes[f.Hash] = true
+		}
+	}
 	return linked, hashes, nil
 }
 
@@ -622,13 +637,21 @@ func (im *Importer) reviewedJobComplete(ctx context.Context, item store.QueueIte
 	if err != nil {
 		return false, err
 	}
-	files, err := im.store.ListFiles(ctx, item.SeriesID)
+	files, err := im.store.RecordedFiles(ctx, item.SeriesID)
 	if err != nil {
 		return false, err
 	}
 	belongs := map[int64]bool{}
+	explicit, waiting := false, false
 	for _, f := range files {
 		belongs[f.ID] = f.Facts.ReleaseKey == item.ReleaseKey
+		if belongs[f.ID] {
+			explicit = explicit || f.ReviewAction != ""
+			waiting = waiting || f.NeedsReview
+		}
+	}
+	if explicit && !waiting {
+		return true, nil
 	}
 	for _, sl := range plan {
 		found := false
@@ -658,7 +681,7 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 	if err != nil {
 		return err
 	}
-	files, err := im.store.ListFiles(ctx, seriesID)
+	files, err := im.store.RecordedFiles(ctx, seriesID)
 	if err != nil {
 		return err
 	}
@@ -685,9 +708,24 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 			return err
 		}
 		var missing []string
+		var kept []string
+		view, err := loadLedger(ctx, im.store, seriesID)
+		if err != nil {
+			return err
+		}
 		for _, ref := range plan {
 			if !linked[store.BookKey(ref.VersionID, ref.BookID)] {
-				missing = append(missing, im.bookName(ctx, ref))
+				owned := false
+				for _, book := range view.Status[ref.VersionID] {
+					if book.Book.ID == ref.BookID && len(book.FileIDs) > 0 {
+						owned = true
+					}
+				}
+				if owned {
+					kept = append(kept, im.bookName(ctx, ref))
+				} else {
+					missing = append(missing, im.bookName(ctx, ref))
+				}
 			}
 		}
 		settled, err := im.store.SettleReviewedQueue(ctx, job.ID)
@@ -698,6 +736,9 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 			_ = im.store.ListingWorked(ctx, listing)
 		}
 		note := fmt.Sprintf("%d %s confirmed in review.", len(delivered), plural(len(delivered), "file"))
+		if len(kept) > 0 {
+			note += " Kept existing: " + strings.Join(kept, ", ") + "."
+		}
 		if len(missing) > 0 {
 			note += " Not in this download, wanted again: " + strings.Join(missing, ", ") + "."
 			im.searchAgain(job)

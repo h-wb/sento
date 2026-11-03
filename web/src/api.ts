@@ -1,6 +1,10 @@
 import type {
   EditionOverview,
   FileScore,
+  ReviewPlan,
+  ReviewPlanRequest,
+  ReviewApplyRequest,
+  ReviewFileOutcome,
   FileChange,
   HealthReport,
   OrganizeResult,
@@ -252,6 +256,10 @@ export const api = {
       body: JSON.stringify({ catalogId }),
     }),
   coverage: (id: number) => request<AssetCoverage[]>(`/series/${id}/coverage`),
+  previewReviewChoices: (id: number, body: ReviewPlanRequest) =>
+    request<ReviewPlan>(`/series/${id}/review/choices/preview`, { method: 'POST', body: JSON.stringify(body) }),
+  applyReviewChoices: (id: number, body: ReviewApplyRequest) =>
+    request<ReviewFileOutcome[]>(`/series/${id}/review/choices`, { method: 'POST', body: JSON.stringify(body) }),
   pinCoverage: (id: number, coverage: AssetCoverage) =>
     request<void>(`/series/${id}/coverage/pin`, {
       method: 'PUT',
