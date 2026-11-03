@@ -51,6 +51,11 @@ func TestBlocklistCoversTheListingAndItsHash(t *testing.T) {
 			}
 		}
 	}
+	// The block's identities survive housekeeping before anyone lists or
+	// unblocks the release; they do not depend on the failed queue record.
+	if n, err := st.PruneFinishedQueue(ctx, 0); err != nil || n != 1 {
+		t.Fatalf("pruning failed attempt: %d, %v", n, err)
+	}
 	// Unblocking a feed result clears the download identity too. Re-run
 	// evaluation against fresh state rather than overriding a rejection.
 	if err := st.UnblockReleases(ctx, nil, "torrent", []string{guid}); err != nil {
@@ -69,10 +74,6 @@ func TestBlocklistCoversTheListingAndItsHash(t *testing.T) {
 		if slices.Contains(rc.Rejections, "rejected.blocklisted") || rc.ExternalKey != "derived-infohash" {
 			t.Errorf("unblocked candidate = %+v", rc)
 		}
-	}
-	job, err := st.GetQueueItem(ctx, qid)
-	if err != nil || job.Status != store.QueueFailed {
-		t.Fatalf("unblocking changed failed attempt: %v, %v", job, err)
 	}
 }
 

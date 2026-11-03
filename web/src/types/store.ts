@@ -309,7 +309,7 @@ export interface DecisionBody {
  */
 export interface BlocklistEntry {
   /**
-   * Title is filled when grouping the stored blocks by release.
+   * Title and release aliases are retained independently of queue history.
    */
   title?: string;
   id: number /* int64 */;

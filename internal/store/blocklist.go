@@ -4,13 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/georgysavva/scany/v2/sqlscan"
+
+	"github.com/h-wb/sento/internal/apperr"
 )
 
 // A release can be known by its download ID, listing key and feed GUID.
-// Queue snapshots retain those relationships even after a failed attempt.
+// Active blocks retain those relationships even after queue history is pruned.
 type releaseIdentity struct{ protocol, key string }
 type releaseAliases map[releaseIdentity]releaseIdentity
 
@@ -27,46 +31,86 @@ func (a releaseAliases) root(id releaseIdentity) releaseIdentity {
 }
 
 func (s *Store) loadReleaseBlocks(ctx context.Context, tx *sql.Tx) ([]BlocklistEntry, releaseAliases, map[releaseIdentity]string, error) {
-	var entries []BlocklistEntry
-	if err := sqlscan.Select(ctx, tx, &entries, `SELECT id, protocol, key, COALESCE(reason,'') AS reason, created_at FROM blocklist ORDER BY id DESC`); err != nil {
+	var rows []struct {
+		BlocklistEntry
+		Aliases JSONText `db:"aliases_json"`
+	}
+	if err := sqlscan.Select(ctx, tx, &rows, `SELECT id, protocol, key, COALESCE(reason,'') AS reason, created_at, title, aliases_json FROM blocklist ORDER BY id DESC`); err != nil {
 		return nil, nil, nil, err
 	}
 	aliases := releaseAliases{}
 	titles := map[releaseIdentity]string{}
-	if len(entries) == 0 {
-		return entries, aliases, titles, nil
-	}
-	var jobs []struct {
-		Protocol   string
-		ExternalID string
-		ReleaseKey string
-		Snapshot   JSONText `db:"snapshot_json"`
-		Title      string
-	}
-	if err := sqlscan.Select(ctx, tx, &jobs, `SELECT protocol, external_id, release_key, snapshot_json, title FROM queue_items ORDER BY id DESC`); err != nil {
-		return nil, nil, nil, err
-	}
-	for _, job := range jobs {
-		var snapshot struct {
-			GUID string `json:"guid"`
+	var entries []BlocklistEntry
+	for _, row := range rows {
+		entries = append(entries, row.BlocklistEntry)
+		var keys []string
+		if err := json.Unmarshal(row.Aliases, &keys); err != nil {
+			return nil, nil, nil, fmt.Errorf("reading aliases for block %d: %w", row.ID, err)
 		}
-		_ = json.Unmarshal(job.Snapshot, &snapshot)
-		var first releaseIdentity
-		for _, key := range []string{job.ExternalID, job.ReleaseKey, snapshot.GUID} {
+		first := releaseIdentity{row.Protocol, row.Key}
+		for _, key := range append(keys, row.Key) {
 			if key == "" {
 				continue
 			}
-			id := releaseIdentity{job.Protocol, key}
-			if first.key == "" {
-				first = id
-			}
+			id := releaseIdentity{row.Protocol, key}
 			aliases[aliases.root(id)] = aliases.root(first)
-			if _, ok := titles[id]; !ok {
-				titles[id] = job.Title
-			}
+		}
+	}
+	for _, row := range rows {
+		root := aliases.root(releaseIdentity{row.Protocol, row.Key})
+		if titles[root] == "" {
+			titles[root] = row.Title
 		}
 	}
 	return entries, aliases, titles, nil
+}
+
+// AddReleaseBlocklist stores all known names of a release atomically. Its
+// aliases and title live with the blocks, not with disposable queue history.
+func (s *Store) AddReleaseBlocklist(ctx context.Context, protocol string, keys []string, title, reason string) error {
+	keys = slices.DeleteFunc(slices.Clone(keys), func(key string) bool { return key == "" })
+	if len(keys) == 0 {
+		return apperr.Invalidf("this release has no identity to block")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, aliases, titles, err := s.loadReleaseBlocks(ctx, tx)
+	if err != nil {
+		return err
+	}
+	selected := map[releaseIdentity]bool{}
+	for _, key := range keys {
+		root := aliases.root(releaseIdentity{protocol, key})
+		selected[root] = true
+		if title == "" {
+			title = titles[root]
+		}
+	}
+	// Preserve aliases learned during earlier attempts, including keys
+	// connected through an identifier shared with the current attempt.
+	keys = nil
+	for id := range aliases {
+		if selected[aliases.root(id)] {
+			keys = append(keys, id.key)
+		}
+	}
+	slices.Sort(keys)
+	raw, err := json.Marshal(keys)
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		if _, err := tx.ExecContext(ctx, s.q(`
+			INSERT INTO blocklist (protocol, key, reason, title, aliases_json) VALUES (?,?,?,?,?)
+			ON CONFLICT(protocol, key) DO UPDATE SET reason=excluded.reason, title=excluded.title, aliases_json=excluded.aliases_json`),
+			protocol, key, reason, title, string(raw)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // ListBlockedReleases groups aliases into one row per release. It returns

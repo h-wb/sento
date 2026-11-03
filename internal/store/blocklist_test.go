@@ -10,8 +10,11 @@ import (
 )
 
 func TestUnblockReleaseAliases(t *testing.T) {
-	for _, selection := range []string{"id", "keys"} {
-		t.Run(selection, func(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		byID, prune bool
+	}{{"id", true, false}, {"keys", false, false}, {"id-after-pruning", true, true}, {"keys-after-pruning", false, true}} {
+		t.Run(tc.name, func(t *testing.T) {
 			conn, dialect := dbtest.Open(t)
 			s := New(conn, dialect)
 			ctx := context.Background()
@@ -36,14 +39,21 @@ func TestUnblockReleaseAliases(t *testing.T) {
 				if i == 0 {
 					failed = id
 				}
-			}
-			for _, key := range []string{"hash", "listing", "feed-guid", "other-listing", "unrelated"} {
-				if err := s.AddBlocklist(ctx, "torrent", key, "blocked manually"); err != nil {
+				if err := s.AddReleaseBlocklist(ctx, "torrent", []string{"hash", listing, "feed-guid"}, "Release title", "blocked manually"); err != nil {
 					t.Fatal(err)
 				}
 			}
+			if err := s.AddBlocklist(ctx, "torrent", "unrelated", "blocked manually"); err != nil {
+				t.Fatal(err)
+			}
 			if err := s.AddBlocklist(ctx, "source", "hash", "HTTP 404"); err != nil {
 				t.Fatal(err)
+			}
+			if tc.prune {
+				if n, err := s.PruneFinishedQueue(ctx, 0); err != nil || n != 2 {
+					t.Fatalf("pruned %d jobs, %v", n, err)
+				}
+				s = New(conn, dialect)
 			}
 			releases, err := s.ListBlockedReleases(ctx)
 			if err != nil || len(releases) != 3 {
@@ -66,7 +76,7 @@ func TestUnblockReleaseAliases(t *testing.T) {
 			if len(before) != 6 {
 				t.Fatal("stale selection partially unblocked releases")
 			}
-			if selection == "id" {
+			if tc.byID {
 				err = s.DeleteBlocklist(ctx, releaseID)
 			} else {
 				err = s.UnblockReleases(ctx, nil, "torrent", []string{"feed-guid"})
@@ -79,7 +89,11 @@ func TestUnblockReleaseAliases(t *testing.T) {
 				t.Fatalf("remaining blocks = %v, %v", blocked, err)
 			}
 			job, err := s.GetQueueItem(ctx, failed)
-			if err != nil || job.Status != QueueFailed || job.Error != "old download failure" {
+			if tc.prune {
+				if !errors.Is(err, ErrNotFound) {
+					t.Fatalf("pruned attempt reappeared: %v, %v", job, err)
+				}
+			} else if err != nil || job.Status != QueueFailed || job.Error != "old download failure" {
 				t.Fatalf("changed historical attempt: %v, %v", job, err)
 			}
 		})

@@ -65,6 +65,11 @@ page or filter. Search results rejected by the blocklist also offer
 Unblocking removes all known blocked identifiers of the chosen release;
 it leaves previous attempts, files and reservations unchanged. Releases
 become eligible for normal searches and automatic acquisition again.
+Blocks retain their title and protocol-scoped aliases independently of queue
+history, so housekeeping cannot split a release into separate blocks.
+Upgrades recover existing aliases from retained queue history; blocks with
+no remaining identity evidence stay separate. New blocks save their full
+alias group atomically, including relationships learned by earlier attempts.
 
 An archive-range read failure is not evidence of permanent damage; Activity
 labels it as an archive read error and retains the queue's actual retry or
