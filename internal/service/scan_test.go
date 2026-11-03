@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -88,5 +89,71 @@ func TestScanSeriesFolder(t *testing.T) {
 	lowest, err := sc.LowestOwnedChapters(ctx, seriesID)
 	if err != nil || lowest[chapters.ID] != 118000 {
 		t.Errorf("lowest owned chapter: want 118000, got %v (%v)", lowest, err)
+	}
+}
+
+func TestResolutionScoresReleasesAndScannedFiles(t *testing.T) {
+	t.Parallel()
+	_, st, sid, _, _, _ := modelFixture(t)
+	ctx := context.Background()
+	if err := NewProfiles(st).EnsureDefaults(ctx); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := st.ListProfiles(ctx)
+	if err != nil || len(profiles) != 1 {
+		t.Fatalf("default profile: %+v, %v", profiles, err)
+	}
+	formats, err := st.ListFormats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prof := &profiles[0]
+	dir := t.TempDir()
+	cases := []struct {
+		name       string
+		resolution int
+		revision   int
+		score      int
+	}{
+		{"ONE PIECE v01 (Digital) (danke-Empire) (1920px).cbz", 1920, 0, 275},
+		{"ONE PIECE v02 (Digital) (danke-Empire) (1800px-Repack).cbz", 1800, 2, 275},
+		{"ONE PIECE v03 (Digital) (danke-Empire).cbz", 0, 0, 250},
+	}
+	for _, tc := range cases {
+		candidate := ReleaseCandidate{Title: tc.name, Protocol: "torrent", Parse: parse.Parse(tc.name, parse.ChannelTorrent)}
+		candidate.evalFormats(prof, formats)
+		if candidate.FormatScore != tc.score {
+			t.Errorf("%s: release score = %d, want %d; formats: %+v", tc.name, candidate.FormatScore, tc.score, candidate.Formats)
+		}
+		writeCBZ(t, filepath.Join(dir, tc.name), tc.name)
+	}
+	res, err := NewScanner(st, dir).ScanSeriesFolder(ctx, sid, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Scanned != len(cases) || res.Linked != len(cases) {
+		t.Fatalf("scan: %+v", res)
+	}
+	files, err := st.ListFiles(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, file := range files {
+				if filepath.Base(file.Path) != tc.name {
+					continue
+				}
+				facts := file.Facts
+				if facts.Resolution != tc.resolution || facts.Group != "danke-Empire" || facts.Revision != tc.revision {
+					t.Errorf("persisted facts: %+v", facts)
+				}
+				if j := assetJudgement(facts, prof, formats); j.Score != tc.score {
+					t.Errorf("file score = %d, want %d; formats: %+v", j.Score, tc.score, j.Matched)
+				}
+				return
+			}
+			t.Fatal("scanned file missing")
+		})
 	}
 }

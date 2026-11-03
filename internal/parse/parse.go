@@ -50,7 +50,9 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 			res.fold(h, sg.text)
 			// Mixed segments can contain both tags and explicit numbering. Bare
 			// numbers in metadata (years, resolution, 3-in-1) are not book numbers.
-			if h.year == nil && h.yearRange == nil && h.version == 0 {
+			// A resolution's Repack revision still permits explicit book
+			// numbers in the same segment ("v01 Digital 1800px-Repack").
+			if h.year == nil && h.yearRange == nil && (h.version == 0 || h.quality.Resolution > 0) {
 				ex := extractNumbers(sg.text, res)
 				res.Volumes = append(res.Volumes, ex.volumes...)
 				res.Chapters = append(res.Chapters, ex.chapters...)

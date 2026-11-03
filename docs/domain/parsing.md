@@ -81,6 +81,16 @@ assumes this boring representation.
    numbers + year range → whole-series pack, flagged `CompleteInferred`:
    the search funnel shows it but rejects it as `rejected.pack_unverified`), confidence scoring.
 
+Resolution tags are classified before group election: `1800px`, `1920px`,
+`x3200` and `2K` populate the resolution quality fact (`2K` = 2048 pixels;
+integer K tags use multiples of 1024). A `-Repack` suffix on a resolution
+token, such as `(1800px-Repack)`, also sets revision 2 without replacing a
+higher explicit revision. The highest stated resolution wins. These tags
+never become the release group or book numbers, so `(danke-Empire)` before
+them remains the group. Search scoring and imported file facts use this
+resolution for custom formats, including High Resolution (at least 1600).
+Names without resolution tags keep an unknown resolution (0).
+
 ## Anchored parsing (`anchor.go`)
 
 Sento usually knows which series it's searching: `ParseAnchored` finds
