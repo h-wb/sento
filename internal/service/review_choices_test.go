@@ -491,6 +491,37 @@ func TestReviewChoicesSurvivesSchedulerTicks(t *testing.T) {
 	}
 }
 
+func TestReviewChoicesDefaultsToOneIncomingCopyPerBook(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, _, books, version := factsClaimsFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	im := NewImporter(st, nil, root, nil)
+	req := ReviewPlanRequest{VersionID: version.ID}
+	for _, name := range []string{"ONE PIECE v01 (Digital).cbz", "ONE PIECE v01 (Digital) [LuCaZ].cbz", "ONE PIECE v02 (Digital).cbz"} {
+		fid := waitingScoredFile(t, st, sid, root, name, "")
+		req.Files = append(req.Files, ReviewFileRequest{FileID: fid})
+	}
+	plan, err := lib.PreviewReviewChoices(ctx, sid, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, f := range plan.Files {
+		if len(f.Books) != 1 || f.Books[0].UseIncoming != (i != 1) {
+			t.Fatalf("duplicate incoming default at %d: %+v", i, f)
+		}
+	}
+	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+		t.Fatalf("duplicate blocked unrelated imports: %v", err)
+	}
+	for i, fileIndex := range []int{0, 2} {
+		owners, err := st.BookOwners(ctx, version.ID, books[i].ID)
+		if err != nil || len(owners) != 1 || owners[0].FileID != req.Files[fileIndex].FileID {
+			t.Fatalf("wrong incoming selection: %+v %v", owners, err)
+		}
+	}
+}
+
 func TestReviewChoicesPolicyRefusalsAndUnknownFacts(t *testing.T) {
 	t.Parallel()
 	lib, st, sid, col, books, v := factsClaimsFixture(t)

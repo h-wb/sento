@@ -523,6 +523,11 @@ export interface PlanBook {
   availability: string;
 }
 export interface PlanPick {
+  /**
+   * Explicit consent for replacement if this download needs file review.
+   * Generated plans leave this empty, including automatic upgrades.
+   */
+  requestedReplacements?: BookRef[];
   key: string;
   books: BookRef[];
   additionalBooks: number /* int */;

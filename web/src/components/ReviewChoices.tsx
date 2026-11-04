@@ -3,7 +3,7 @@ import { Alert, Badge, Button, Card, Checkbox, Group, Pagination, Select, Stack,
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import { notify } from '../ui'
-import type { FileScore, ReviewPlan, ReviewPlanRequest, ReviewFileChoice, ReviewFileOutcome } from '../types/service'
+import type { FileScore, ReviewBookPlan, ReviewPlan, ReviewPlanRequest, ReviewFileChoice, ReviewFileOutcome } from '../types/service'
 import { QueryFeedback } from './QueryFeedback'
 import { fileName } from './editionText'
 
@@ -13,6 +13,24 @@ type Props = {
   applied: () => Promise<void>
   onDirtyChange?: (dirty: boolean) => void
   onBusyChange?: (busy: boolean) => void
+}
+
+const bookKey = (b: { versionId?: number; bookId?: number }) => `${b.versionId}:${b.bookId}`
+
+function initialChoices(plan: ReviewPlan, request: ReviewPlanRequest, missingOnly = false): ReviewFileChoice[] {
+  const selected = new Set<string>()
+  return plan.files.map((f, i) => {
+    const disposition = (f.reason && request.files[i].books === null) || (f.books.length > 0 && f.books.every((b) => !!b.reason || !b.incoming.factsKnown)) ? 'later' : 'keep'
+    return {
+      fileId: f.fileId, disposition,
+      use: f.books.filter((b) => {
+        const wanted = missingOnly ? !b.reason && b.incoming.factsKnown && !b.owners.some((o) => o.present) : b.useIncoming
+        if (!wanted || f.reason || disposition === 'later' || selected.has(bookKey(b.book))) return false
+        selected.add(bookKey(b.book))
+        return true
+      }).map((b) => b.book),
+    }
+  })
 }
 
 function Score({ value }: { value: FileScore }) {
@@ -44,11 +62,7 @@ export function ReviewChoices(props: Props) {
 }
 
 function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan, refresh }: Props & { plan: ReviewPlan; refresh: () => Promise<unknown> }) {
-  const defaults: ReviewFileChoice[] = plan.files.map((f, i) => ({
-    fileId: f.fileId,
-    use: f.books.filter((b) => b.useIncoming && !f.reason).map((b) => b.book),
-    disposition: (f.reason && request.files[i].books === null) || (f.books.length > 0 && f.books.every((b) => !!b.reason || !b.incoming.factsKnown)) ? 'later' : 'keep',
-  }))
+  const defaults = initialChoices(plan, request)
   const [choices, setChoices] = useState(defaults)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -58,10 +72,14 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
   const dirty = JSON.stringify(choices) !== JSON.stringify(defaults)
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
   useEffect(() => { onBusyChange?.(busy) }, [busy, onBusyChange])
-  const key = (b: { versionId?: number; bookId?: number }) => `${b.versionId}:${b.bookId}`
-  const using = (i: number, b: { versionId?: number; bookId?: number }) => choices[i].use.some((v) => key(v) === key(b))
+  const using = (i: number, b: { versionId?: number; bookId?: number }) => choices[i].use.some((v) => bookKey(v) === bookKey(b))
   const update = (i: number, change: Partial<ReviewFileChoice>) =>
     setChoices((v) => v.map((c, j) => i === j ? { ...c, ...change } : c))
+  const selectBook = (i: number, b: ReviewBookPlan, checked: boolean) => setChoices((before) => before.map((c, j) => {
+    const use = c.use.filter((v) => bookKey(v) !== bookKey(b.book))
+    if (i === j) return { ...c, use: checked ? [...use, b.book] : use, disposition: 'keep' }
+    return checked ? { ...c, use } : c
+  }))
   let imports = 0, replacements = 0, kept = 0
   plan.files.forEach((f, i) => {
     if (choices[i].disposition === 'later') return
@@ -108,10 +126,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
     <Stack gap="sm">
       <Text size="sm">Choose which copies to use. Existing copies stay selected unless you explicitly choose a replacement.</Text>
       {plan.files.length > 1 && <Group gap="xs">
-        <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setChoices(plan.files.map((f) => ({
-          fileId: f.fileId, disposition: f.reason ? 'later' : 'keep',
-          use: f.books.filter((b) => !b.reason && b.incoming.factsKnown && !b.owners.some((o) => o.present)).map((b) => b.book),
-        })))}>Import missing; keep existing</Button>
+        <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setChoices(initialChoices(plan, request, true))}>Import missing; keep existing</Button>
         <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setChoices((v) => v.map((c, i) =>
           !c.use.length && !plan.files[i].trashReason ? { ...c, disposition: 'trash' } : c,
         ))}>Trash unused incoming files</Button>
@@ -125,16 +140,14 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
             <Text size="xs" c="dimmed">{[f.source, f.group].filter(Boolean).join(' · ') || 'Source/group unknown'}</Text>
             {f.reason && <Text size="xs" c="orange">{f.reason}</Text>}
             {f.books.map((b) => (
-              <Stack key={key(b.book)} gap={4}>
+              <Stack key={bookKey(b.book)} gap={4}>
                 <Checkbox
                   label={b.owners.some((o) => o.present) ? `Use incoming instead for ${b.label}` : `Import ${b.label}`}
                   checked={using(i, b.book)}
                   disabled={busy || !!b.reason || !!f.reason || choices[i].disposition === 'later'}
-                  onChange={(event) => update(i, {
-                    use: event.currentTarget.checked ? [...choices[i].use, b.book] : choices[i].use.filter((v) => key(v) !== key(b.book)),
-                    disposition: 'keep',
-                  })}
+                  onChange={(event) => selectBook(i, b, event.currentTarget.checked)}
                 />
+                {plan.files.some((_, j) => i !== j && using(j, b.book)) && <Text size="xs" c="dimmed">Another incoming archive is selected for this book. Select this copy to switch.</Text>}
                 <Score value={b.incoming} />
                 {b.owners.map((o) => (
                   <div key={o.fileId}>

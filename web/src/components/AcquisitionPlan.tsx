@@ -60,6 +60,7 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
   // choice can be undone where it was made.
   const [listed, setListed] = useState(() => plan.picks.map((p) => p.key))
   const [selected, setSelected] = useState(() => new Set(plan.picks.map((p) => p.key)))
+  const [replacements, setReplacements] = useState(() => new Set<string>())
   const [browsing, setBrowsing] = useState(false)
   // A book picked on the shelf narrows the release list to what holds it.
   const [focus, setFocus] = useState<PlanBook | null>(null)
@@ -89,7 +90,9 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
     return [{ c, on, books }]
   })
   const picks: PlanPick[] = rows.filter((r) => r.books.length > 0)
-    .map((r) => ({ key: r.c.key, books: r.books, additionalBooks: Math.max(0, r.c.representedBooks - r.books.length) }))
+    .map((r) => ({ key: r.c.key, books: r.books, additionalBooks: Math.max(0, r.c.representedBooks - r.books.length),
+      requestedReplacements: r.books.filter((b) => replacements.has(`${r.c.key}/${bookKey(b)}`)),
+    }))
 
   const sizes = [...content.values()]
   const size = sizes.reduce((sum, n) => sum + n, 0)
@@ -249,6 +252,20 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
                       {books.length > 0 && books.length * 2 < c.representedBooks && (
                         <Text size="xs" c="orange">Mostly books you don’t need, so it is only downloaded because you chose it.</Text>
                       )}
+                      {books.filter((b) => ['owned', 'upgrade_eligible', 'unsatisfactory'].includes(known.get(bookKey(b))?.ownership ?? '')).map((b) => {
+                        const key = `${c.key}/${bookKey(b)}`
+                        return <Checkbox key={key} size="xs" mt={6} disabled={locked} checked={replacements.has(key)}
+                          label={`Replace existing ${noun} ${named([b])} during file review`}
+                          onChange={(event) => {
+                            const checked = event.currentTarget.checked
+                            setReplacements((before) => {
+                              const next = new Set(before)
+                              if (checked) next.add(key)
+                              else next.delete(key)
+                              return next
+                            })
+                          }} />
+                      })}
                       {outcome && outcome.status !== 'queued' && (
                         <Text size="xs" c={outcome.status === 'failed' ? 'red' : 'dimmed'} style={{ overflowWrap: 'anywhere' }}>{outcome.message}</Text>
                       )}

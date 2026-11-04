@@ -4,6 +4,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   Group,
   Loader,
   Modal,
@@ -132,6 +133,7 @@ function Inner({
   const [result, setResult] = useState<StreamResult | null>(null)
   // Edition-wide searches cover the wanted books unless widened to all.
   const [allBooks, setAllBooks] = useState(false)
+  const [replaceOnReview, setReplaceOnReview] = useState(false)
   // Search buttons land on Search; a quiet row click lands on Files when
   // there's a file to look at.
   const [tab, setTab] = useState<string | null>(
@@ -271,6 +273,7 @@ function Inner({
         grabSiteId: c.siteId,
         grabVersionId: c.versionId,
         force,
+        ...(replaceOnReview ? { requestedReplacements: (c.coverage ?? []).filter((b) => b.versionId === sel.versionId && b.bookId === sel.bookId) } : {}),
         scope: searchScope(allBooks),
       })
       onChanged()
@@ -367,6 +370,9 @@ function Inner({
 
           <Tabs.Panel value="search" pt={editionWide ? 0 : 'sm'}>
             <Stack gap="sm">
+              {!editionWide && sel.fileIds.length > 0 && <Checkbox size="sm" disabled={busy}
+                label="Replace the existing copy if this download needs file review"
+                checked={replaceOnReview} onChange={(event) => setReplaceOnReview(event.currentTarget.checked)} />}
               {!result && !searching && (
                 <Button
                   size="xs"

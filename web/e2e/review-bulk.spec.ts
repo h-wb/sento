@@ -118,6 +118,53 @@ test('a release pack maps by one card choice and leaves unreadable files for rev
   ] })
 })
 
+for (const preset of [false, true]) {
+  test(`duplicate incoming books keep distinct imports usable with ${preset ? 'the missing-books preset' : 'an explicit copy switch'}`, async ({ page }) => {
+    const book = (n: number) => ({ versionId: 10, bookId: 20 + n, editionId: 30, ledger: 'volume', number: n * 100 })
+    let submitted: { choices: { fileId: number; use: typeof firstBook[] }[] } | undefined
+    const firstBook = book(1)
+    await page.route('**/api/v1/activity?seriesId=*', (route) => route.fulfill({ json: activityFixture([], {}, packFiles) }))
+    await page.route('**/api/v1/series/901/', (route) => route.fulfill({ json: {
+      series: { id: 901, title: 'One Piece' },
+      editions: [{ id: 30, seriesId: 901, editionName: 'Standard Edition', language: 'en', type: 'volume' }],
+    } }))
+    await page.route('**/api/v1/series/901/versions', (route) => route.fulfill({ json: [
+      { id: 10, editionId: 30, name: 'Default', isDefault: true, monitored: true, profileId: 0 },
+    ] }))
+    // Even a cached preview that proposes both copies must remain usable.
+    await page.route('**/api/v1/series/901/review/choices/preview', (route) => route.fulfill({ json: {
+      token: 'duplicate-pack', files: [
+        reviewFile(301, [reviewBook(firstBook, 'volume 1')]),
+        reviewFile(302, [reviewBook(firstBook, 'volume 1')]),
+        reviewFile(303, [reviewBook(book(2), 'volume 2')]),
+      ],
+    } }))
+    await page.route('**/api/v1/series/901/review/choices', (route) => {
+      submitted = route.request().postDataJSON()
+      return route.fulfill({ json: [301, 302, 303].map((fileId) => ({ fileId, status: 'kept', note: '' })) })
+    })
+    await page.goto('/queue')
+    await page.getByRole('button', { name: 'Match whole release', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Match whole release', exact: true })
+    const copies = dialog.getByRole('checkbox', { name: 'Import volume 1', exact: true })
+    await expect(copies.nth(0)).toBeChecked()
+    await expect(copies.nth(1)).not.toBeChecked()
+    await expect(dialog.getByRole('checkbox', { name: 'Import volume 2', exact: true })).toBeChecked()
+    await copies.nth(1).check()
+    await expect(copies.nth(0)).not.toBeChecked()
+    await expect(copies.nth(1)).toBeChecked()
+    if (preset) {
+      await dialog.getByRole('button', { name: 'Import missing; keep existing', exact: true }).click()
+      await expect(copies.nth(0)).toBeChecked()
+      await expect(copies.nth(1)).not.toBeChecked()
+    }
+    await expect(dialog.getByText('Import 2 · Keep existing 0 · Replace 0 · Trash 0', { exact: true })).toBeVisible()
+    await dialog.getByRole('button', { name: 'Apply choices', exact: true }).click()
+    await expect(dialog).toBeHidden()
+    expect(submitted?.choices.map((c) => c.use.map((b) => b.bookId))).toEqual(preset ? [[21], [], [22]] : [[], [21], [22]])
+  })
+}
+
 test('large packs use bounded requests for preview, match and decline', async ({ page }) => {
   const files = Array.from({ length: 501 }, (_, n) => ({
     ...packFiles[0], id: `file-${n + 1000}`, itemId: n + 1000, title: `Volume ${n + 1}.cbz`,

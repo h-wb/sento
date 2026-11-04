@@ -104,6 +104,7 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 		return nil, "", nil, err
 	}
 	out := &ReviewPlan{Files: []ReviewFilePlan{}}
+	selected := map[string]bool{}
 	digests, seen := map[int64]string{}, map[int64]bool{}
 	for _, input := range req.Files {
 		f, ok := p.files[input.FileID]
@@ -211,6 +212,12 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 				b.UseIncoming = b.Reason == "" && slices.ContainsFunc(cov, func(a store.AssetCoverage) bool {
 					return a.FileID == f.ID && a.VersionID == ref.VersionID && a.BookID == ref.BookID
 				})
+			}
+			// Several incoming archives may contain the same book. Choose at
+			// most one by default; every other archive remains available.
+			b.UseIncoming = b.UseIncoming && row.Reason == "" && !selected[key]
+			if b.UseIncoming {
+				selected[key] = true
 			}
 			row.Books = append(row.Books, b)
 		}
