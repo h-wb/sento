@@ -27,5 +27,3 @@ tools:
   aqua:sharkdp/fd: v10.5.0
   # renovate: datasource=github-releases depName=BurntSushi/ripgrep
   aqua:BurntSushi/ripgrep: 15.2.0
-comments:
-  dashboard: false
