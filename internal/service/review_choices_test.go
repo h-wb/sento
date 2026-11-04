@@ -43,6 +43,84 @@ func waitingScoredFile(t *testing.T, st *store.Store, sid int64, dir, name, key 
 	return fid
 }
 
+func TestReviewChoicesRejectsChangedBytesBeforePreview(t *testing.T) {
+	for _, reviewed := range []bool{false, true} {
+		t.Run(strconv.FormatBool(reviewed), func(t *testing.T) {
+			t.Parallel()
+			lib, st, sid, col, books, version := factsClaimsFixture(t)
+			ctx := context.Background()
+			root := t.TempDir()
+			fid := waitingScoredFile(t, st, sid, root, "unmatched.cbz", "")
+			req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{modelRef(col, books[0], version)}}}}
+			if reviewed {
+				plan, err := lib.PreviewReviewChoices(ctx, sid, req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "keep"}}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := st.ListFiles(ctx, sid)
+			if err != nil || len(before) != 1 {
+				t.Fatalf("before change: %+v %v", before, err)
+			}
+			if err = os.WriteFile(before[0].Path, []byte("different unreviewed archive bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = lib.PreviewReviewChoices(ctx, sid, req); !errors.Is(err, apperr.ErrConflict) || !strings.Contains(err.Error(), "rescan") {
+				t.Fatalf("changed bytes accepted in preview: %v", err)
+			}
+			// Even a caller bypassing preview cannot replace the fingerprint
+			// while retaining the prior contents and facts.
+			revision, err := st.ReviewRevision(ctx, sid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			digest, err := fileHash(before[0].Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = st.CommitFileReviews(ctx, sid, revision, []store.FileReviewWrite{{FileID: fid, Facts: before[0].Facts, Hash: digest, Contents: req.Files[0].Books, Disposition: "keep"}})
+			if !errors.Is(err, apperr.ErrConflict) {
+				t.Fatalf("transaction renewed old evidence for new bytes: %v", err)
+			}
+			after, err := st.ListFiles(ctx, sid)
+			if err != nil || len(after) != 1 || after[0].Hash != before[0].Hash || after[0].NeedsReview != before[0].NeedsReview {
+				t.Fatalf("rejected review changed saved evidence: %+v %v", after, err)
+			}
+		})
+	}
+}
+
+func TestReviewChoicesExplainsDeselectedPinTrashBlocker(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, col, books, version := factsClaimsFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	fid := waitingScoredFile(t, st, sid, root, "unmatched.cbz", "")
+	ref := modelRef(col, books[0], version)
+	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{ref}}}}
+	plan, err := lib.PreviewReviewChoices(ctx, sid, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "keep"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.PinCoverage(ctx, sid, store.AssetCoverage{FileID: fid, VersionID: version.ID, BookID: ref.BookID, Pinned: true}); err != nil {
+		t.Fatal(err)
+	}
+	cov, err := st.Coverage(ctx, sid)
+	if err != nil || len(cov) != 0 {
+		t.Fatalf("fixture must have only a deselected pin: %+v %v", cov, err)
+	}
+	plan, err = lib.PreviewReviewChoices(ctx, sid, req)
+	if err != nil || !strings.Contains(plan.Files[0].TrashReason, "Unpin") {
+		t.Fatalf("preview did not explain pin protection: %+v %v", plan, err)
+	}
+}
+
 func TestReviewChoicesKeepsExistingVolumeAndTrashesPackDuplicate(t *testing.T) {
 	t.Parallel()
 	lib, st, sid, col, books, version := factsClaimsFixture(t)

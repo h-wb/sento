@@ -156,7 +156,16 @@ func TestReviewTrashRejectsChangedBytesAtEveryStage(t *testing.T) {
 				t.Fatalf("a later pass retried an invalid choice: %v", err)
 			}
 			if stage == "before journal" || stage == "after journal" {
-				req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: f.ID, Books: []store.BookRef{}}}}
+				// Different bytes must be rescanned to discard the old evidence
+				// before a new keep choice can cancel the former trash intent.
+				if _, err := NewScanner(st, im.libraryRoot).ScanSeriesFolder(ctx, f.SeriesID, filepath.Dir(f.Path)); err != nil {
+					t.Fatal(err)
+				}
+				files, err := st.ListFiles(ctx, f.SeriesID)
+				if err != nil || len(files) != 1 {
+					t.Fatalf("rescan changed archive: %+v %v", files, err)
+				}
+				req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: files[0].ID, Books: []store.BookRef{}}}}
 				plan, _, _, err := reviewChoices(ctx, st, f.SeriesID, req)
 				if err != nil {
 					t.Fatal(err)

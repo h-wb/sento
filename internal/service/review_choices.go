@@ -103,6 +103,10 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 	if err != nil {
 		return nil, "", nil, err
 	}
+	pins, err := st.PinnedFiles(ctx, sid)
+	if err != nil {
+		return nil, "", nil, err
+	}
 	out := &ReviewPlan{Files: []ReviewFilePlan{}}
 	selected := map[string]bool{}
 	digests, seen := map[int64]string{}, map[int64]bool{}
@@ -121,9 +125,13 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 			if err != nil {
 				return nil, "", nil, fmt.Errorf("read incoming archive: %w", err)
 			}
-			evidence := p.files[f.ID]
-			evidence.Hash = digests[f.ID]
-			p.files[f.ID] = evidence
+			if f.Hash != "" && f.Hash != digests[f.ID] {
+				return nil, "", nil, apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
+			}
+			// Legacy files may have no fingerprint yet. A known fingerprint
+			// must match the evidence, never be renewed by confirmation.
+			f.Hash = digests[f.ID]
+			p.files[f.ID] = f
 		}
 		refs := input.Books
 		if refs == nil {
@@ -225,6 +233,9 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 			if a.FileID == f.ID && (a.Pinned || !keys[store.BookKey(a.VersionID, a.BookID)]) {
 				row.TrashReason = "This archive is selected by another book or version, or pinned"
 			}
+		}
+		if slices.Contains(pins, f.ID) {
+			row.TrashReason = "Unpin this archive before moving it to trash"
 		}
 		out.Files = append(out.Files, row)
 	}

@@ -160,7 +160,13 @@ Selecting one switches that book away from any other incoming copy without
 changing other books in a shared archive. **Import missing; keep existing** uses
 the same one-copy rule, so duplicate files cannot block unrelated imports.
 The summary counts each distinct book/version once, including an existing copy
-kept across several rejected duplicates.
+kept across several rejected duplicates and books still missing because no copy
+is selected. Files left for later are counted separately. Replacement labels
+identify which incoming archive will supply the book.
+
+A live archive whose fingerprint differs from its recorded evidence must be
+rescanned before review. A fresh preview cannot confirm old contents or facts
+against different bytes; rescan discards the old evidence and matches it anew.
 
 For an unused incoming archive, **Keep unused file** confirms/resolves the review while retaining its bytes and content knowledge; **Move incoming file to trash** records rejection and requests recoverable cleanup directly, without first accepting ownership. **Leave for later** leaves the review unresolved. **Apply choices** summarizes imports, existing copies kept, explicit replacements, and trash moves. A multi-book archive stays intact when it supplies any selected book; skipping one book never removes pages, and an archive selected elsewhere or pinned cannot be trashed. Restoring a skipped duplicate preserves its confirmed contents and does not adopt it as the selected copy.
 

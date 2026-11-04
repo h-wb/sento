@@ -80,15 +80,14 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
     if (i === j) return { ...c, use: checked ? [...use, b.book] : use, disposition: 'keep' }
     return checked ? { ...c, use } : c
   }))
-  let imports = 0, replacements = 0, kept = 0
+  let imports = 0, replacements = 0, kept = 0, missing = 0
   const outcomes = new Map<string, { incoming: boolean; existing: boolean }>()
   plan.files.forEach((f, i) => {
-    if (choices[i].disposition === 'later') return
     f.books.forEach((b) => {
       const key = bookKey(b.book)
       const before = outcomes.get(key)
       outcomes.set(key, {
-        incoming: !!before?.incoming || using(i, b.book),
+        incoming: !!before?.incoming || (choices[i].disposition !== 'later' && using(i, b.book)),
         existing: !!before?.existing || b.owners.some((o) => o.present),
       })
     })
@@ -98,8 +97,10 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
       if (b.existing) replacements++
       else imports++
     } else if (b.existing) kept++
+    else missing++
   })
   const trash = choices.filter((c) => c.disposition === 'trash').length
+  const later = choices.filter((c) => c.disposition === 'later').length
   const apply = async () => {
     setBusy(true)
     setError('')
@@ -116,7 +117,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
         notify.err('Choices saved. Some file operations still need attention; trash moves will retry automatically.')
         return
       }
-      notify.ok(`Imported ${imports}; kept existing ${kept}; replaced ${replacements}; moved ${trash} to trash`)
+      notify.ok(`Imported ${imports}; kept existing ${kept}; replaced ${replacements}; moved ${trash} to trash; still missing ${missing}; left for later ${later}`)
       await applied()
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setBusy(false) }
@@ -161,7 +162,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
                 {b.owners.map((o) => (
                   <div key={o.fileId}>
                     <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
-                      {outcomes.get(bookKey(b.book))?.incoming ? 'Replace' : 'Keep existing'}: {fileName(o.path)}{!o.present && ' (missing)'}
+                      {using(i, b.book) ? 'Replace' : outcomes.get(bookKey(b.book))?.incoming ? 'Replaced by another incoming archive' : 'Keep existing'}: {fileName(o.path)}{!o.present && ' (missing)'}
                       {[o.source, o.group].filter(Boolean).length > 0 && ` · ${[o.source, o.group].filter(Boolean).join(' · ')}`}
                       {o.pinned && <Badge size="xs" ml={4}>Pinned</Badge>}
                     </Text>
@@ -190,7 +191,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
         )
       })}
       {plan.files.length > 25 && <Pagination total={Math.ceil(plan.files.length / 25)} value={page} onChange={setPage} size="sm" />}
-      <Text size="sm" fw={500} role="status">Import {imports} · Keep existing {kept} · Replace {replacements} · Trash {trash}</Text>
+      <Text size="sm" fw={500} role="status">Import {imports} · Keep existing {kept} · Replace {replacements} · Trash {trash} · Still missing {missing} · Left for later {later}</Text>
       {trash > 0 && <Text size="xs" c="dimmed">Only the selected incoming archives move to recoverable trash for 30 days. Download-client payloads stay in place.</Text>}
       {error && <Alert color="red">{error}<Button size="xs" variant="subtle" onClick={() => void refresh()}>Refresh preview</Button></Alert>}
       <Button loading={busy} disabled={choices.every((c) => c.disposition === 'later')} onClick={() => void apply()}>Apply choices</Button>

@@ -144,6 +144,13 @@ func (s *Store) CommitFileReviews(ctx context.Context, sid int64, revision strin
 }
 
 func (s *Store) writeFileReview(ctx context.Context, tx *sql.Tx, sid int64, w FileReviewWrite) error {
+	var hash string
+	if err := tx.QueryRowContext(ctx, s.q(`SELECT COALESCE(hash,'') FROM files WHERE id=? AND series_id=?`), w.FileID, sid).Scan(&hash); err != nil {
+		return err
+	}
+	if hash != "" && hash != w.Hash {
+		return apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
+	}
 	if err := s.rejectTrashEdit(ctx, tx, w.FileID); err != nil {
 		return err
 	}

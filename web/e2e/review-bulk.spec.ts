@@ -112,7 +112,7 @@ test('a release pack maps by one card choice and leaves unreadable files for rev
   expect(matched).toBeUndefined()
   await dialog.getByRole('button', { name: 'Apply choices' }).click()
   await expect(dialog).toBeHidden()
-  await expect(page.getByText('Imported 2; kept existing 0; replaced 0; moved 0 to trash', { exact: true })).toBeVisible()
+  await expect(page.getByText('Imported 2; kept existing 0; replaced 0; moved 0 to trash; still missing 0; left for later 1', { exact: true })).toBeVisible()
   expect(matched).toMatchObject({ request: { versionId: 10 }, choices: [
     { fileId: 301, disposition: 'keep' }, { fileId: 302, disposition: 'keep' }, { fileId: 303, disposition: 'later' },
   ] })
@@ -153,7 +153,7 @@ for (const [preset, existing] of [[false, false], [false, true], [true, false], 
     const copies = dialog.getByRole('checkbox', { name: existing ? 'Use incoming instead for volume 1' : 'Import volume 1', exact: true })
     if (existing) {
       await expect(copies.nth(0)).not.toBeChecked()
-      await expect(dialog.getByText('Import 1 · Keep existing 1 · Replace 0 · Trash 0', { exact: true })).toBeVisible()
+      await expect(dialog.getByText('Import 1 · Keep existing 1 · Replace 0 · Trash 0 · Still missing 0 · Left for later 0', { exact: true })).toBeVisible()
     } else await expect(copies.nth(0)).toBeChecked()
     await expect(copies.nth(1)).not.toBeChecked()
     await expect(dialog.getByRole('checkbox', { name: 'Import volume 2', exact: true })).toBeChecked()
@@ -166,12 +166,52 @@ for (const [preset, existing] of [[false, false], [false, true], [true, false], 
       else await expect(copies.nth(0)).toBeChecked()
       await expect(copies.nth(1)).not.toBeChecked()
     }
-    const summary = existing ? `Import 1 · Keep existing ${preset ? 1 : 0} · Replace ${preset ? 0 : 1} · Trash 0` : 'Import 2 · Keep existing 0 · Replace 0 · Trash 0'
+    const summary = existing ? `Import 1 · Keep existing ${preset ? 1 : 0} · Replace ${preset ? 0 : 1} · Trash 0 · Still missing 0 · Left for later 0` : 'Import 2 · Keep existing 0 · Replace 0 · Trash 0 · Still missing 0 · Left for later 0'
     await expect(dialog.getByText(summary, { exact: true })).toBeVisible()
-    if (existing && !preset) await expect(dialog.getByText('Keep existing: Existing volume 1.cbz', { exact: false })).toHaveCount(0)
+    if (existing && !preset) {
+      await expect(dialog.getByText('Keep existing: Existing volume 1.cbz', { exact: false })).toHaveCount(0)
+      await expect(dialog.getByText('Replace: Existing volume 1.cbz', { exact: false })).toHaveCount(1)
+      await expect(dialog.getByText('Replaced by another incoming archive: Existing volume 1.cbz', { exact: false })).toHaveCount(1)
+    }
     await dialog.getByRole('button', { name: 'Apply choices', exact: true }).click()
     await expect(dialog).toBeHidden()
     expect(submitted?.choices.map((c) => c.use.map((b) => b.bookId))).toEqual(preset ? [existing ? [] : [21], [], [22]] : [[], [21], [22]])
+  })
+}
+
+for (const unknownFacts of [false, true]) {
+  test(`missing summary deduplicates ${unknownFacts ? 'unknown-facts' : 'policy-refused'} books and distinguishes files left for later`, async ({ page }) => {
+    const ref = { versionId: 10, bookId: 21, editionId: 30, ledger: 'volume', number: 100 }
+    const blockedBook = {
+      ...reviewBook(ref, 'volume 1'), useIncoming: false,
+      incoming: { ...reviewScore, factsKnown: !unknownFacts },
+      reason: unknownFacts ? '' : 'Required group does not match',
+    }
+    await page.route('**/api/v1/activity?seriesId=*', (route) => route.fulfill({ json: activityFixture([], {}, packFiles) }))
+    await page.route('**/api/v1/series/901/', (route) => route.fulfill({ json: {
+      series: { id: 901, title: 'One Piece' },
+      editions: [{ id: 30, seriesId: 901, editionName: 'Standard Edition', language: 'en', type: 'volume' }],
+    } }))
+    await page.route('**/api/v1/series/901/versions', (route) => route.fulfill({ json: [
+      { id: 10, editionId: 30, name: 'Default', isDefault: true, monitored: true, profileId: 0 },
+    ] }))
+    await page.route('**/api/v1/series/901/review/choices/preview', (route) => route.fulfill({ json: {
+      token: 'missing-pack', files: [
+        reviewFile(301, [blockedBook]), reviewFile(302, [blockedBook]),
+        reviewFile(303, [reviewBook({ ...ref, bookId: 22, number: 200 }, 'volume 2')]),
+      ],
+    } }))
+    await page.goto('/queue')
+    await page.getByRole('button', { name: 'Match whole release', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Match whole release', exact: true })
+    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 0 · Replace 0 · Trash 0 · Still missing 1 · Left for later 2')
+    await dialog.getByRole('combobox', { name: 'After review: Volume 301.cbz', exact: true }).click()
+    await page.getByRole('option', { name: 'Keep unused file', exact: true }).click()
+    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 0 · Replace 0 · Trash 0 · Still missing 1 · Left for later 1')
+    if (unknownFacts) {
+      await dialog.getByRole('checkbox', { name: 'Import volume 1', exact: true }).nth(0).check()
+      await expect(dialog.getByRole('status')).toHaveText('Import 2 · Keep existing 0 · Replace 0 · Trash 0 · Still missing 0 · Left for later 1')
+    }
   })
 }
 
@@ -215,7 +255,7 @@ test('large packs use bounded requests for preview, match and decline', async ({
   await page.getByRole('option', { name: 'en · Standard Edition' }).click()
   await dialog.getByRole('button', { name: 'Apply choices' }).click()
   await expect(dialog).toBeHidden()
-  await expect(page.getByText('Imported 500; kept existing 0; replaced 0; moved 0 to trash', { exact: true })).toBeVisible()
+  await expect(page.getByText('Imported 500; kept existing 0; replaced 0; moved 0 to trash; still missing 0; left for later 0', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Decline all (501)' }).click()
   const confirmation = page.getByRole('dialog', { name: 'Decline all 501 files?' })
   await confirmation.getByRole('button', { name: 'Mark 501 reviewed and unmapped' }).click()
