@@ -273,6 +273,11 @@ func (im *Importer) RestoreTrashedFile(ctx context.Context, sid, fid int64) erro
 	}
 	trashInfo, trashErr := os.Lstat(f.TrashPath)
 	originalInfo, originalErr := os.Lstat(f.Path)
+	if trashErr == nil {
+		if err = checkFileTrashDirectory(filepath.Dir(f.TrashPath)); err != nil {
+			return err
+		}
+	}
 	switch {
 	case trashErr == nil && originalErr == nil && os.SameFile(trashInfo, originalInfo):
 		// A crash between link and unlink left both names for the same archive.
@@ -370,6 +375,9 @@ func (im *Importer) purgeTrashedFile(ctx context.Context, sid, fid int64) error 
 	} else if trashErr != nil {
 		return trashErr
 	} else {
+		if err = checkFileTrashDirectory(filepath.Dir(f.TrashPath)); err != nil {
+			return err
+		}
 		if originalErr == nil && os.SameFile(trashInfo, originalInfo) {
 			return apperr.Conflictf("original file still exists; restore the interrupted move first")
 		}

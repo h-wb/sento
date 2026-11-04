@@ -192,4 +192,10 @@ func TestReviewTrashRecoveryRejectsSubstitutedDirectory(t *testing.T) {
 	if err != nil || !entry.Pending {
 		t.Fatalf("unsafe recovery marked a move complete: %+v %v", entry, err)
 	}
+	if err = im.RestoreTrashedFile(context.Background(), f.SeriesID, f.ID); err == nil {
+		t.Fatal("restore followed a substituted trash directory")
+	}
+	if _, err = os.Stat(f.Path); err != nil {
+		t.Fatalf("unsafe restore removed the sole original archive: %v", err)
+	}
 }
