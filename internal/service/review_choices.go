@@ -345,7 +345,7 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 	for _, w := range writes {
 		result := ReviewFileOutcome{FileID: w.FileID, Status: "kept"}
 		if w.Disposition == "trash" {
-			if err = im.trashFile(ctx, sid, CleanupFile{FileID: w.FileID, Path: p.files[w.FileID].Path, Reason: "Unused incoming file rejected in review"}, 30); err != nil {
+			if err = im.trashFile(ctx, sid, CleanupFile{FileID: w.FileID, Path: p.files[w.FileID].Path, Reason: "Unused incoming file rejected in review"}, 30, w.Hash); err != nil {
 				result.Status, result.Note = "trash_pending", err.Error()
 			} else {
 				result.Status = "trashed"
@@ -373,24 +373,6 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 		out = append(out, ReviewFileOutcome{Status: "settlement_pending", Note: "Choices saved; finishing the download still needs attention: " + err.Error()})
 	}
 	return out, nil
-}
-
-// The choice is recorded before any filesystem operation, so a failed move or
-// interrupted apply can resume on the next queue pass without accepting coverage.
-func (im *Importer) finishReviewTrash(ctx context.Context) {
-	files, err := im.store.PendingReviewTrash(ctx)
-	if err != nil {
-		return
-	}
-	for _, f := range files {
-		if f.ReviewAction != "trash" {
-			continue
-		}
-		if _, err = im.store.GetFileTrash(ctx, f.ID); err == nil {
-			continue
-		}
-		_ = im.trashFile(ctx, f.SeriesID, CleanupFile{FileID: f.ID, Path: f.Path, Reason: "Unused incoming file rejected in review"}, 30)
-	}
 }
 
 // Legacy accept/mapping clients get the same keep-existing default. Automated

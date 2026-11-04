@@ -10,6 +10,7 @@ import (
 // TrashedFile retains the original file identity and mappings until expiry.
 // Path is its original library path, reserved until restore or permanent deletion.
 type TrashedFile struct {
+	Pending    bool   `json:"pending"`
 	FileID     int64  `json:"fileId"`
 	SeriesID   int64  `json:"seriesId"`
 	Path       string `json:"path"`
@@ -20,7 +21,7 @@ type TrashedFile struct {
 	PurgeAfter string `json:"purgeAfter"`
 }
 
-const trashColumns = `f.id AS file_id,f.series_id,f.path,f.size,t.trash_path,t.digest,t.trashed_at,t.purge_after`
+const trashColumns = `f.id AS file_id,f.series_id,f.path,f.size,t.trash_path,t.digest,t.trashed_at,t.purge_after,(f.review_action='trash') AS pending`
 
 func (s *Store) ListFileTrash(ctx context.Context, sid int64) ([]TrashedFile, error) {
 	return list[TrashedFile](ctx, s, `SELECT `+trashColumns+` FROM file_trash t JOIN files f ON f.id=t.file_id WHERE (?=0 OR f.series_id=?) ORDER BY t.trashed_at DESC,f.id`, sid, sid)
@@ -101,7 +102,7 @@ func (s *Store) RestoreFileRecord(ctx context.Context, fid int64) error {
 	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM file_trash WHERE file_id=?`), fid); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET presence='present',presence_error='',checked_at=?,review_action=CASE WHEN review_action='trash' THEN 'keep' ELSE review_action END WHERE id=?`), utcNow(), fid); err != nil {
+	if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET presence='present',presence_error='',checked_at=?,review_action=CASE WHEN review_action IN('trash','trashed') THEN 'keep' ELSE review_action END WHERE id=?`), utcNow(), fid); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -186,7 +186,7 @@ func (im *Importer) CleanupFiles(ctx context.Context, sid, eid int64, ids []int6
 			result.Skipped = append(result.Skipped, CleanupSkipped{id, reason})
 			continue
 		}
-		if err = im.trashFile(ctx, sid, f, days); err != nil {
+		if err = im.trashFile(ctx, sid, f, days, ""); err != nil {
 			result.Skipped = append(result.Skipped, CleanupSkipped{id, err.Error()})
 			continue
 		}
@@ -195,7 +195,7 @@ func (im *Importer) CleanupFiles(ctx context.Context, sid, eid int64, ids []int6
 	return result, nil
 }
 
-func (im *Importer) trashFile(ctx context.Context, sid int64, f CleanupFile, days int) error {
+func (im *Importer) trashFile(ctx context.Context, sid int64, f CleanupFile, days int, expectedDigest string) error {
 	info, err := os.Lstat(f.Path)
 	if err != nil {
 		return err
@@ -203,24 +203,21 @@ func (im *Importer) trashFile(ctx context.Context, sid int64, f CleanupFile, day
 	if !info.Mode().IsRegular() {
 		return apperr.Conflictf("only regular archive files can be moved to trash")
 	}
-	dir := filepath.Join(filepath.Dir(f.Path), fileTrashDir, strconv.FormatInt(f.FileID, 10))
-	if err = os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	for _, p := range []string{filepath.Dir(dir), dir} {
-		st, e := os.Lstat(p)
-		if e != nil {
-			return e
-		}
-		if !st.IsDir() || st.Mode()&os.ModeSymlink != 0 {
-			return apperr.Conflictf("trash folder must be a regular directory")
-		}
-	}
-	dest := filepath.Join(dir, filepath.Base(f.Path))
 	digest, err := fileHash(f.Path)
 	if err != nil {
 		return err
 	}
+	if expectedDigest != "" && digest != expectedDigest {
+		return im.reopenChangedReviewTrash(ctx, f.FileID)
+	}
+	dir := filepath.Join(filepath.Dir(f.Path), fileTrashDir, strconv.FormatInt(f.FileID, 10))
+	if err = os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err = checkFileTrashDirectory(dir); err != nil {
+		return err
+	}
+	dest := filepath.Join(dir, filepath.Base(f.Path))
 	now := time.Now().UTC()
 	format := "2006-01-02 15:04:05"
 	if err = im.store.BeginFileTrash(ctx, sid, f.FileID, f.Path, dest, digest, now.Format(format), now.AddDate(0, 0, days).Format(format)); err != nil {
@@ -233,7 +230,23 @@ func (im *Importer) trashFile(ctx context.Context, sid int64, f CleanupFile, day
 		}
 		return err
 	}
+	if err = im.store.CompleteReviewTrash(ctx, f.FileID); err != nil {
+		return err
+	}
 	_ = im.store.AddDecision(ctx, sid, store.DecisionBody{Event: "file_trashed", Title: filepath.Base(f.Path), Note: fmt.Sprintf("Recoverable for %d days. %s", days, f.Reason)})
+	return nil
+}
+
+func checkFileTrashDirectory(dir string) error {
+	for _, p := range []string{filepath.Dir(dir), dir} {
+		st, e := os.Lstat(p)
+		if e != nil {
+			return e
+		}
+		if !st.IsDir() || st.Mode()&os.ModeSymlink != 0 {
+			return apperr.Conflictf("trash folder must be a regular directory")
+		}
+	}
 	return nil
 }
 
@@ -340,6 +353,9 @@ func (im *Importer) purgeTrashedFile(ctx context.Context, sid, fid int64) error 
 	if f.SeriesID != sid {
 		return store.ErrNotFound
 	}
+	if f.Pending {
+		return apperr.Conflictf("finish or restore the pending trash move before deleting its retained archive")
+	}
 	trashInfo, trashErr := os.Lstat(f.TrashPath)
 	originalInfo, originalErr := os.Lstat(f.Path)
 	if errors.Is(trashErr, fs.ErrNotExist) {
@@ -356,6 +372,16 @@ func (im *Importer) purgeTrashedFile(ctx context.Context, sid, fid int64) error 
 	} else {
 		if originalErr == nil && os.SameFile(trashInfo, originalInfo) {
 			return apperr.Conflictf("original file still exists; restore the interrupted move first")
+		}
+		if !trashInfo.Mode().IsRegular() {
+			return apperr.Conflictf("trash entry is not a regular archive")
+		}
+		digest, e := fileHash(f.TrashPath)
+		if e != nil {
+			return e
+		}
+		if digest != f.Digest {
+			return apperr.Conflictf("retained archive changed; review its bytes before deleting it")
 		}
 		if err = os.Remove(f.TrashPath); err != nil {
 			return err

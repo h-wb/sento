@@ -245,6 +245,7 @@ export interface FileReviewWrite {
  * Path is its original library path, reserved until restore or permanent deletion.
  */
 export interface TrashedFile {
+  pending: boolean;
   fileId: number /* int64 */;
   seriesId: number /* int64 */;
   path: string;

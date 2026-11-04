@@ -171,7 +171,7 @@ func editionText(e *Edition) string {
 func (s *Store) reviewRows(ctx context.Context, sid int64) ([]ReviewItem, error) {
 	return list[ReviewItem](ctx, s, `
  SELECT 'file-'||CAST(f.id AS TEXT) AS id,'file' AS kind,f.series_id,s.title AS series_title,f.id AS item_id,f.path AS title,
- CASE WHEN f.review_action='trash' THEN 'Moving this rejected incoming file to trash is pending; the move will retry automatically' WHEN f.presence='unavailable' THEN 'Storage unavailable: '||f.presence_error WHEN f.presence='unknown' THEN 'File presence has not been checked' ELSE 'Confirm the edition and books in this file' END AS detail, f.presence AS status
+ CASE WHEN f.review_action='trash' AND f.needs_review=TRUE THEN 'Archive contents changed; review this file again before moving it to trash' WHEN f.review_action='trash' THEN 'Moving this rejected incoming file to trash is pending; the move will retry automatically' WHEN f.presence='unavailable' THEN 'Storage unavailable: '||f.presence_error WHEN f.presence='unknown' THEN 'File presence has not been checked' ELSE 'Confirm the edition and books in this file' END AS detail, f.presence AS status
  FROM files f JOIN series s ON s.id=f.series_id WHERE (?=0 OR s.id=?) AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=f.id) AND (f.review_action='trash' OR f.needs_review=TRUE OR f.presence IN('unavailable','unknown') OR EXISTS(SELECT 1 FROM asset_contents c WHERE c.file_id=f.id AND c.verified=FALSE))
  UNION ALL
  SELECT 'queue-'||CAST(q.id AS TEXT),'download',q.series_id,s.title,q.id,q.title,COALESCE(q.error,''),q.status

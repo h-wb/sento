@@ -81,14 +81,23 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
     return checked ? { ...c, use } : c
   }))
   let imports = 0, replacements = 0, kept = 0
+  const outcomes = new Map<string, { incoming: boolean; existing: boolean }>()
   plan.files.forEach((f, i) => {
     if (choices[i].disposition === 'later') return
     f.books.forEach((b) => {
-      if (using(i, b.book)) {
-        if (b.owners.some((o) => o.present)) replacements++
-        else imports++
-      } else if (b.owners.some((o) => o.present)) kept++
+      const key = bookKey(b.book)
+      const before = outcomes.get(key)
+      outcomes.set(key, {
+        incoming: !!before?.incoming || using(i, b.book),
+        existing: !!before?.existing || b.owners.some((o) => o.present),
+      })
     })
+  })
+  outcomes.forEach((b) => {
+    if (b.incoming) {
+      if (b.existing) replacements++
+      else imports++
+    } else if (b.existing) kept++
   })
   const trash = choices.filter((c) => c.disposition === 'trash').length
   const apply = async () => {
@@ -152,7 +161,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
                 {b.owners.map((o) => (
                   <div key={o.fileId}>
                     <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
-                      {using(i, b.book) ? 'Replace' : 'Keep existing'}: {fileName(o.path)}{!o.present && ' (missing)'}
+                      {outcomes.get(bookKey(b.book))?.incoming ? 'Replace' : 'Keep existing'}: {fileName(o.path)}{!o.present && ' (missing)'}
                       {[o.source, o.group].filter(Boolean).length > 0 && ` · ${[o.source, o.group].filter(Boolean).join(' · ')}`}
                       {o.pinned && <Badge size="xs" ml={4}>Pinned</Badge>}
                     </Text>

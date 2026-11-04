@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { activityFixture } from './activity-fixtures'
-import { reviewBook, reviewFile } from './review-choice-fixtures'
+import { reviewBook, reviewFile, reviewScore } from './review-choice-fixtures'
 import type { ReviewItem } from '../src/types/store'
 
 // A pack's file questions arrive grouped by release, with the pack-level
@@ -118,11 +118,15 @@ test('a release pack maps by one card choice and leaves unreadable files for rev
   ] })
 })
 
-for (const preset of [false, true]) {
-  test(`duplicate incoming books keep distinct imports usable with ${preset ? 'the missing-books preset' : 'an explicit copy switch'}`, async ({ page }) => {
+for (const [preset, existing] of [[false, false], [false, true], [true, false], [true, true]]) {
+  test(`duplicate incoming books ${existing ? 'with an existing copy' : 'without an existing copy'} remain usable with ${preset ? 'the missing-books preset' : 'an explicit copy switch'}`, async ({ page }) => {
     const book = (n: number) => ({ versionId: 10, bookId: 20 + n, editionId: 30, ledger: 'volume', number: n * 100 })
     let submitted: { choices: { fileId: number; use: typeof firstBook[] }[] } | undefined
     const firstBook = book(1)
+    const duplicate = () => ({
+      ...reviewBook(firstBook, 'volume 1'), useIncoming: !existing,
+      owners: existing ? [{ fileId: 900, path: '/library/Existing volume 1.cbz', group: 'Old group', source: 'source', pinned: false, present: true, score: reviewScore }] : [],
+    })
     await page.route('**/api/v1/activity?seriesId=*', (route) => route.fulfill({ json: activityFixture([], {}, packFiles) }))
     await page.route('**/api/v1/series/901/', (route) => route.fulfill({ json: {
       series: { id: 901, title: 'One Piece' },
@@ -134,8 +138,8 @@ for (const preset of [false, true]) {
     // Even a cached preview that proposes both copies must remain usable.
     await page.route('**/api/v1/series/901/review/choices/preview', (route) => route.fulfill({ json: {
       token: 'duplicate-pack', files: [
-        reviewFile(301, [reviewBook(firstBook, 'volume 1')]),
-        reviewFile(302, [reviewBook(firstBook, 'volume 1')]),
+        reviewFile(301, [duplicate()]),
+        reviewFile(302, [duplicate()]),
         reviewFile(303, [reviewBook(book(2), 'volume 2')]),
       ],
     } }))
@@ -146,8 +150,11 @@ for (const preset of [false, true]) {
     await page.goto('/queue')
     await page.getByRole('button', { name: 'Match whole release', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Match whole release', exact: true })
-    const copies = dialog.getByRole('checkbox', { name: 'Import volume 1', exact: true })
-    await expect(copies.nth(0)).toBeChecked()
+    const copies = dialog.getByRole('checkbox', { name: existing ? 'Use incoming instead for volume 1' : 'Import volume 1', exact: true })
+    if (existing) {
+      await expect(copies.nth(0)).not.toBeChecked()
+      await expect(dialog.getByText('Import 1 · Keep existing 1 · Replace 0 · Trash 0', { exact: true })).toBeVisible()
+    } else await expect(copies.nth(0)).toBeChecked()
     await expect(copies.nth(1)).not.toBeChecked()
     await expect(dialog.getByRole('checkbox', { name: 'Import volume 2', exact: true })).toBeChecked()
     await copies.nth(1).check()
@@ -155,13 +162,16 @@ for (const preset of [false, true]) {
     await expect(copies.nth(1)).toBeChecked()
     if (preset) {
       await dialog.getByRole('button', { name: 'Import missing; keep existing', exact: true }).click()
-      await expect(copies.nth(0)).toBeChecked()
+      if (existing) await expect(copies.nth(0)).not.toBeChecked()
+      else await expect(copies.nth(0)).toBeChecked()
       await expect(copies.nth(1)).not.toBeChecked()
     }
-    await expect(dialog.getByText('Import 2 · Keep existing 0 · Replace 0 · Trash 0', { exact: true })).toBeVisible()
+    const summary = existing ? `Import 1 · Keep existing ${preset ? 1 : 0} · Replace ${preset ? 0 : 1} · Trash 0` : 'Import 2 · Keep existing 0 · Replace 0 · Trash 0'
+    await expect(dialog.getByText(summary, { exact: true })).toBeVisible()
+    if (existing && !preset) await expect(dialog.getByText('Keep existing: Existing volume 1.cbz', { exact: false })).toHaveCount(0)
     await dialog.getByRole('button', { name: 'Apply choices', exact: true }).click()
     await expect(dialog).toBeHidden()
-    expect(submitted?.choices.map((c) => c.use.map((b) => b.bookId))).toEqual(preset ? [[21], [], [22]] : [[], [21], [22]])
+    expect(submitted?.choices.map((c) => c.use.map((b) => b.bookId))).toEqual(preset ? [existing ? [] : [21], [], [22]] : [[], [21], [22]])
   })
 }
 

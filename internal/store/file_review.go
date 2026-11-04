@@ -229,5 +229,27 @@ func (s *Store) writeFileReview(ctx context.Context, tx *sql.Tx, sid int64, w Fi
 }
 
 func (s *Store) PendingReviewTrash(ctx context.Context) ([]File, error) {
-	return list[File](ctx, s, `SELECT `+fileColumns+` FROM files WHERE review_action='trash' AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=files.id) ORDER BY id LIMIT 500`)
+	return list[File](ctx, s, `SELECT `+fileColumns+` FROM files WHERE review_action='trash' AND needs_review=FALSE ORDER BY id LIMIT 500`)
+}
+
+func (s *Store) CompleteReviewTrash(ctx context.Context, fid int64) error {
+	_, err := s.db.ExecContext(ctx, s.q(`UPDATE files SET review_action='trashed' WHERE id=? AND review_action='trash' AND EXISTS(SELECT 1 FROM file_trash WHERE file_id=files.id)`), fid)
+	return err
+}
+
+// The caller has verified that no archive exists at the journal's destination.
+// Reopen the changed original for review without renewing consent for its bytes.
+func (s *Store) ReopenReviewTrash(ctx context.Context, fid int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM file_trash WHERE file_id=?`), fid); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=TRUE WHERE id=? AND review_action='trash'`), fid); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

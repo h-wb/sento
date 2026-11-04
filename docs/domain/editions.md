@@ -159,6 +159,8 @@ copy in the preview is selected by default. Other incoming copies stay unused.
 Selecting one switches that book away from any other incoming copy without
 changing other books in a shared archive. **Import missing; keep existing** uses
 the same one-copy rule, so duplicate files cannot block unrelated imports.
+The summary counts each distinct book/version once, including an existing copy
+kept across several rejected duplicates.
 
 For an unused incoming archive, **Keep unused file** confirms/resolves the review while retaining its bytes and content knowledge; **Move incoming file to trash** records rejection and requests recoverable cleanup directly, without first accepting ownership. **Leave for later** leaves the review unresolved. **Apply choices** summarizes imports, existing copies kept, explicit replacements, and trash moves. A multi-book archive stays intact when it supplies any selected book; skipping one book never removes pages, and an archive selected elsewhere or pinned cannot be trashed. Restoring a skipped duplicate preserves its confirmed contents and does not adopt it as the selected copy.
 
@@ -198,6 +200,13 @@ and other hardlinks remain intact; selected archive sizes do not promise
 immediate disk-space savings. Only regular files are moved, without overwriting
 another path or rewriting archive bytes. A journal retains interrupted moves
 for recovery.
+
+Review trash retries validate the saved archive fingerprint and resume moves
+interrupted before journaling, between linking and unlinking, or before recording
+completion. A changed original returns to review without moving its new bytes;
+completed moves leave the retry batch. Pending moves remain restorable and their
+deletion is paused. Retained archives whose fingerprint changes are protected
+from both manual and expired-trash deletion until the discrepancy is resolved.
 
 A missing trash entry is purged from the database only while its storage folder
 is accessible. Unavailable storage retains the journal and mappings for recovery.
