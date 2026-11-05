@@ -221,7 +221,9 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 			if !b.Incoming.FactsKnown {
 				b.UseIncoming = false
 			}
-			if f.ReviewAction != "" && !f.NeedsReview {
+			// Editing confirmed contents is not consent to adopt a copy that
+			// was deselected, including files reviewed before review_action.
+			if !f.NeedsReview {
 				b.UseIncoming = b.Reason == "" && slices.ContainsFunc(cov, func(a store.AssetCoverage) bool {
 					return a.FileID == f.ID && a.VersionID == ref.VersionID && a.BookID == ref.BookID
 				})

@@ -39,7 +39,8 @@ export function MappingEditor({
       editions.find((c) => c.id === versions.find((t) => t.id === a.versionId)?.editionId)
         ?.type ?? 'volume',
   }))
-  // Confirmed contents remain editable even when this copy is unused.
+  // This draft confirms intrinsic contents, not selected ownership. Keep
+  // unused contents visible; ReviewChoices preserves the saved selections.
   const confirmed = (value.contentBooks ?? []).flatMap((b) => {
     const t = versions.find((t) => t.editionId === b.editionId && t.isDefault)
     return t && !mapped.some((a) => a.bookId === b.bookId) ? [{ ...b, versionId: t.id }] : []

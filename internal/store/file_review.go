@@ -102,6 +102,19 @@ func (s *Store) CommitFileReviews(ctx context.Context, sid int64, revision strin
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// Inherited policy lives on the series itself. Lock it before editions
+	// (the same order as catalog refresh) so direct profile/path updates cannot
+	// change the decision snapshot between its revision check and commit.
+	query := `SELECT id FROM series WHERE id=?`
+	if s.pg {
+		query += ` FOR UPDATE`
+	} else if _, err = tx.ExecContext(ctx, s.q(`UPDATE series SET id=id WHERE id=?`), sid); err != nil {
+		return err
+	}
+	var lockedID int64
+	if err = tx.QueryRowContext(ctx, s.q(query), sid).Scan(&lockedID); err != nil {
+		return err
+	}
 	rows, err := tx.QueryContext(ctx, s.q(`SELECT id FROM editions WHERE series_id=? ORDER BY id`), sid)
 	if err != nil {
 		return err

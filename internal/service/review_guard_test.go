@@ -119,3 +119,46 @@ func TestReviewChoicesRevalidatesLiveFilesInsideCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestReviewChoicesFactEditPreservesLegacyDeselection(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, col, books, version := factsClaimsFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	fid := waitingScoredFile(t, st, sid, root, "ONE PIECE v01-02 (Digital).cbz", "")
+	refs := []store.BookRef{modelRef(col, books[0], version), modelRef(col, books[1], version)}
+	// Legacy mapping/upgrade paths confirmed contents and deselected copies
+	// before files.review_action existed. Preserve that state on fact edits.
+	if err := st.MapFile(ctx, sid, fid, refs); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeselectBook(ctx, fid, version.ID, refs[1].BookID); err != nil {
+		t.Fatal(err)
+	}
+	files, err := st.ListFiles(ctx, sid)
+	if err != nil || len(files) != 1 || files[0].NeedsReview || files[0].ReviewAction != "" {
+		t.Fatalf("legacy fixture: %+v %v", files, err)
+	}
+	group := "Corrected group"
+	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: refs, Group: &group}}}
+	plan, err := lib.PreviewReviewChoices(ctx, sid, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.Files[0].Books[0].UseIncoming || plan.Files[0].Books[1].UseIncoming || plan.Files[0].Books[1].CurrentSelected {
+		t.Fatalf("editor reselected confirmed but unused contents: %+v", plan.Files[0])
+	}
+	if _, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+		t.Fatal(err)
+	}
+	for i, ref := range refs {
+		owners, e := st.BookOwners(ctx, version.ID, ref.BookID)
+		if e != nil || (i == 0 && (len(owners) != 1 || owners[0].FileID != fid)) || (i == 1 && len(owners) != 0) {
+			t.Fatalf("fact-only edit changed book %d's selection: %+v %v", ref.BookID, owners, e)
+		}
+	}
+	files, err = st.ListFiles(ctx, sid)
+	if err != nil || len(files) != 1 || len(files[0].ContentBooks) != 2 || files[0].Facts.Group != group {
+		t.Fatalf("fact correction lost confirmed contents: %+v %v", files, err)
+	}
+}

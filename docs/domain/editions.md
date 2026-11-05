@@ -168,6 +168,9 @@ Editing a file that already supplies a book shows **Keep this copy**. Retaining
 that selection counts as keeping an existing copy; clearing its last selection
 without choosing another copy counts the book as missing. The import-missing
 preset preserves current selections, including those of files in the batch.
+Opening confirmed contents in the editor does not select unused copies. This
+also applies to files reviewed before explicit keep/trash decisions existed;
+saving a fact correction preserves their selected and deselected mappings.
 
 A live archive whose fingerprint differs from its recorded evidence must be
 rescanned before review. A fresh preview cannot confirm old contents or facts
@@ -175,6 +178,8 @@ against different bytes; rescan discards the old evidence and matches it anew.
 Apply checks live fingerprints again after acquiring the transaction's decision
 locks and before writing any choices, so bytes changed during a lock wait reject
 the entire batch.
+The transaction locks the series before its editions, keeping inherited series
+policy stable through commit as well as version, profile and global settings.
 
 An archive currently selected by any book or version is protected from review
 trash, including when that mapping appears in the same request. Clearing or
@@ -230,6 +235,8 @@ from both manual and expired-trash deletion until the discrepancy is resolved.
 Recovery pages through pending intents by file ID, advancing past failed moves
 so a blocked batch cannot prevent later archives from being recovered. Each new
 queue pass retries earlier failures.
+Failures to load a pending page are logged with the cursor and database error
+and leave the intents available for the next pass.
 
 A missing trash entry is purged from the database only while its storage folder
 is accessible. Unavailable storage retains the journal and mappings for recovery.

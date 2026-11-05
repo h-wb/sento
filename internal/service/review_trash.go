@@ -18,7 +18,11 @@ func (im *Importer) finishReviewTrash(ctx context.Context) {
 	var afterID int64
 	for ctx.Err() == nil {
 		files, err := im.store.PendingReviewTrash(ctx, afterID)
-		if err != nil || len(files) == 0 {
+		if err != nil {
+			slog.Warn("review trash recovery listing pending files failed", "afterFile", afterID, "error", err)
+			return
+		}
+		if len(files) == 0 {
 			return
 		}
 		for _, f := range files {
