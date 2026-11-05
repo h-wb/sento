@@ -690,6 +690,7 @@ export interface ReviewBookPlan {
   incoming: FileScore;
   owners: ReviewCopy[];
   useIncoming: boolean;
+  currentSelected: boolean;
   requestedReplacement: boolean;
   reason: string;
 }

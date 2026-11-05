@@ -24,7 +24,7 @@ function initialChoices(plan: ReviewPlan, request: ReviewPlanRequest, missingOnl
     return {
       fileId: f.fileId, disposition,
       use: f.books.filter((b) => {
-        const wanted = missingOnly ? !b.reason && b.incoming.factsKnown && !b.owners.some((o) => o.present) : b.useIncoming
+        const wanted = missingOnly ? !b.reason && b.incoming.factsKnown && (b.currentSelected || !b.owners.some((o) => o.present)) : b.useIncoming
         if (!wanted || f.reason || disposition === 'later' || selected.has(bookKey(b.book))) return false
         selected.add(bookKey(b.book))
         return true
@@ -81,22 +81,26 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
     return checked ? { ...c, use } : c
   }))
   let imports = 0, replacements = 0, kept = 0, missing = 0
-  const outcomes = new Map<string, { incoming: boolean; existing: boolean }>()
+  const outcomes = new Map<string, { current: Set<number>; chosen: Set<number>; reviewed: Set<number> }>()
   plan.files.forEach((f, i) => {
     f.books.forEach((b) => {
       const key = bookKey(b.book)
-      const before = outcomes.get(key)
-      outcomes.set(key, {
-        incoming: !!before?.incoming || (choices[i].disposition !== 'later' && using(i, b.book)),
-        existing: !!before?.existing || b.owners.some((o) => o.present),
-      })
+      const outcome = outcomes.get(key) ?? { current: new Set<number>(), chosen: new Set<number>(), reviewed: new Set<number>() }
+      if (b.currentSelected) outcome.current.add(f.fileId)
+      b.owners.filter((o) => o.present).forEach((o) => outcome.current.add(o.fileId))
+      if (choices[i].disposition !== 'later') {
+        outcome.reviewed.add(f.fileId)
+        if (using(i, b.book)) outcome.chosen.add(f.fileId)
+      }
+      outcomes.set(key, outcome)
     })
   })
   outcomes.forEach((b) => {
-    if (b.incoming) {
-      if (b.existing) replacements++
+    if (b.chosen.size) {
+      if ([...b.chosen].some((id) => b.current.has(id))) kept++
+      else if (b.current.size) replacements++
       else imports++
-    } else if (b.existing) kept++
+    } else if ([...b.current].some((id) => !b.reviewed.has(id))) kept++
     else missing++
   })
   const trash = choices.filter((c) => c.disposition === 'trash').length
@@ -152,7 +156,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
             {f.books.map((b) => (
               <Stack key={bookKey(b.book)} gap={4}>
                 <Checkbox
-                  label={b.owners.some((o) => o.present) ? `Use incoming instead for ${b.label}` : `Import ${b.label}`}
+                  label={b.currentSelected ? `Keep this copy for ${b.label}` : b.owners.some((o) => o.present) ? `Use incoming instead for ${b.label}` : `Import ${b.label}`}
                   checked={using(i, b.book)}
                   disabled={busy || !!b.reason || !!f.reason || choices[i].disposition === 'later'}
                   onChange={(event) => selectBook(i, b, event.currentTarget.checked)}
@@ -162,7 +166,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
                 {b.owners.map((o) => (
                   <div key={o.fileId}>
                     <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
-                      {using(i, b.book) ? 'Replace' : outcomes.get(bookKey(b.book))?.incoming ? 'Replaced by another incoming archive' : 'Keep existing'}: {fileName(o.path)}{!o.present && ' (missing)'}
+                      {using(i, b.book) ? 'Replace' : outcomes.get(bookKey(b.book))?.chosen.size && !outcomes.get(bookKey(b.book))?.chosen.has(o.fileId) ? 'Replaced by another incoming archive' : 'Keep existing'}: {fileName(o.path)}{!o.present && ' (missing)'}
                       {[o.source, o.group].filter(Boolean).length > 0 && ` · ${[o.source, o.group].filter(Boolean).join(' · ')}`}
                       {o.pinned && <Badge size="xs" ml={4}>Pinned</Badge>}
                     </Text>

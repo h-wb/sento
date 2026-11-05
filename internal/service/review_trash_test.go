@@ -29,7 +29,7 @@ func pendingReviewTrash(t *testing.T) (*Importer, *store.Store, store.File) {
 		t.Fatal(err)
 	}
 	// Simulate interruption immediately after the review transaction commits.
-	if err = st.CommitFileReviews(ctx, sid, revision, []store.FileReviewWrite{{FileID: fid, Facts: f.Facts, Hash: f.Hash, Reset: true, Disposition: "trash"}}); err != nil {
+	if err = st.CommitFileReviews(ctx, sid, revision, []store.FileReviewWrite{{FileID: fid, Facts: f.Facts, Hash: f.Hash, Reset: true, Disposition: "trash"}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	return NewImporter(st, nil, root, nil), st, f
@@ -46,6 +46,75 @@ func journalReviewTrash(t *testing.T, st *store.Store, f store.File) string {
 		t.Fatal(err)
 	}
 	return dest
+}
+
+func TestReviewTrashRecoversBeyondBlockedFirstBatch(t *testing.T) {
+	t.Parallel()
+	_, st, sid, _, _, _ := factsClaimsFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	var writes []store.FileReviewWrite
+	// Fill an entire batch with inaccessible originals. A later healthy move
+	// must still run, and the failures must remain retryable next pass.
+	for i := range 500 {
+		fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: filepath.Join(root, "missing-"+strconv.Itoa(i)+".cbz"), Hash: "saved", NeedsReview: true}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writes = append(writes, store.FileReviewWrite{FileID: fid, Hash: "saved", Disposition: "trash"})
+	}
+	revision, err := st.ReviewRevision(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.CommitFileReviews(ctx, sid, revision, writes, nil); err != nil {
+		t.Fatal(err)
+	}
+	fid := waitingScoredFile(t, st, sid, root, "healthy.cbz", "")
+	files, err := st.ListFiles(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var healthy store.File
+	for _, f := range files {
+		if f.ID == fid {
+			healthy = f
+		}
+	}
+	revision, err = st.ReviewRevision(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.CommitFileReviews(ctx, sid, revision, []store.FileReviewWrite{{FileID: fid, Facts: healthy.Facts, Hash: healthy.Hash, Disposition: "trash"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(healthy.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	im := NewImporter(st, nil, root, nil)
+	im.finishReviewTrash(ctx)
+	entry, err := st.GetFileTrash(ctx, fid)
+	if err != nil || entry.Pending {
+		t.Fatalf("blocked first batch starved healthy move: %+v %v", entry, err)
+	}
+	if after, e := os.ReadFile(entry.TrashPath); e != nil || string(after) != string(before) {
+		t.Fatalf("recovered archive changed: %v", e)
+	}
+	pending, err := st.PendingReviewTrash(ctx, 0)
+	if err != nil || len(pending) != 500 {
+		t.Fatalf("blocked intents lost retryability: %d %v", len(pending), err)
+	}
+	// Bring one previously inaccessible original back. Recovery starts from
+	// the beginning on the next pass rather than forgetting the failed batch.
+	if err = os.WriteFile(pending[0].Path, []byte("changed archive needs fresh review"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	im.finishReviewTrash(ctx)
+	pending, err = st.PendingReviewTrash(ctx, 0)
+	if err != nil || len(pending) != 499 {
+		t.Fatalf("earlier failure was not retried: %d %v", len(pending), err)
+	}
 }
 
 func TestReviewTrashRecoversEveryInterruptedMoveStage(t *testing.T) {
@@ -84,7 +153,7 @@ func TestReviewTrashRecoversEveryInterruptedMoveStage(t *testing.T) {
 			if _, err = os.Lstat(f.Path); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("original name remains after recovery: %v", err)
 			}
-			pending, err := st.PendingReviewTrash(ctx)
+			pending, err := st.PendingReviewTrash(ctx, 0)
 			if err != nil || len(pending) != 0 {
 				t.Fatalf("completed moves would fill future retry batches: %+v %v", pending, err)
 			}

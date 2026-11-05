@@ -43,6 +43,7 @@ type ReviewBookPlan struct {
 	Incoming             FileScore     `json:"incoming"`
 	Owners               []ReviewCopy  `json:"owners"`
 	UseIncoming          bool          `json:"useIncoming"`
+	CurrentSelected      bool          `json:"currentSelected"`
 	RequestedReplacement bool          `json:"requestedReplacement"`
 	Reason               string        `json:"reason"`
 }
@@ -186,7 +187,11 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 			b := ReviewBookPlan{Book: ref, Label: col.Type + " " + book.SequenceStr, Owners: []ReviewCopy{}, Incoming: judgeMappedFile(*col, prof, p.profiles.Formats, f, store.AssetCoverage{Evidence: "manual"})}
 			b.Reason = b.Incoming.Reason
 			for _, a := range cov {
-				if a.VersionID != ref.VersionID || a.BookID != ref.BookID || a.FileID == f.ID {
+				if a.VersionID != ref.VersionID || a.BookID != ref.BookID {
+					continue
+				}
+				if a.FileID == f.ID {
+					b.CurrentSelected = f.Presence == "present"
 					continue
 				}
 				owner := p.files[a.FileID]
@@ -203,7 +208,7 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 				_ = json.Unmarshal(job.Snapshot, &snap)
 				b.RequestedReplacement = slices.ContainsFunc(snap.RequestedReplacements, func(v store.BookRef) bool { return v.VersionID == ref.VersionID && v.BookID == ref.BookID })
 			}
-			b.UseIncoming = b.Reason == "" && (!slices.ContainsFunc(b.Owners, func(o ReviewCopy) bool { return o.Present }) || b.RequestedReplacement)
+			b.UseIncoming = b.Reason == "" && (b.CurrentSelected || !slices.ContainsFunc(b.Owners, func(o ReviewCopy) bool { return o.Present }) || b.RequestedReplacement)
 			slices.SortFunc(b.Owners, func(a, b ReviewCopy) int {
 				if a.FileID < b.FileID {
 					return -1
@@ -230,8 +235,8 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 			row.Books = append(row.Books, b)
 		}
 		for _, a := range cov {
-			if a.FileID == f.ID && (a.Pinned || !keys[store.BookKey(a.VersionID, a.BookID)]) {
-				row.TrashReason = "This archive is selected by another book or version, or pinned"
+			if a.FileID == f.ID {
+				row.TrashReason = "This archive is currently selected by a book or version; keep it instead of moving it to trash"
 			}
 		}
 		if slices.Contains(pins, f.ID) {
@@ -350,7 +355,9 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 		}
 		writes = append(writes, w)
 	}
-	if err = im.store.CommitFileReviews(ctx, sid, revision, writes); err != nil {
+	if err = im.store.CommitFileReviews(ctx, sid, revision, writes, func() error {
+		return validateReviewFiles(ctx, writes, p.files)
+	}); err != nil {
 		return nil, err
 	}
 	for _, w := range writes {
@@ -384,6 +391,24 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 		out = append(out, ReviewFileOutcome{Status: "settlement_pending", Note: "Choices saved; finishing the download still needs attention: " + err.Error()})
 	}
 	return out, nil
+}
+
+// Re-read live fingerprints under the commit's decision locks, after any wait
+// for another writer. The store keeps filesystem knowledge in the service.
+func validateReviewFiles(ctx context.Context, writes []store.FileReviewWrite, files map[int64]store.File) error {
+	for _, w := range writes {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		digest, err := fileHash(files[w.FileID].Path)
+		if err != nil {
+			return err
+		}
+		if digest != w.Hash {
+			return apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
+		}
+	}
+	return nil
 }
 
 // Legacy accept/mapping clients get the same keep-existing default. Automated

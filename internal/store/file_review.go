@@ -94,7 +94,9 @@ type FileReviewWrite struct {
 	Disposition  string
 }
 
-func (s *Store) CommitFileReviews(ctx context.Context, sid int64, revision string, writes []FileReviewWrite) error {
+// validate checks external evidence after acquiring the decision locks and
+// before changing any rows. It must not access the store while its tx is open.
+func (s *Store) CommitFileReviews(ctx context.Context, sid int64, revision string, writes []FileReviewWrite, validate func() error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -134,6 +136,24 @@ func (s *Store) CommitFileReviews(ctx context.Context, sid int64, revision strin
 	}
 	if revision != fresh {
 		return apperr.Conflictf("review changed; refresh the preview before applying choices")
+	}
+	// Check protection against the original selections across the whole batch.
+	// An earlier write must not deselect an owner to make a later trash safe.
+	for _, w := range writes {
+		if w.Disposition == "trash" {
+			uses, e := s.reviewFileUses(ctx, tx, w.FileID)
+			if e != nil {
+				return e
+			}
+			if uses > 0 {
+				return apperr.Conflictf("this archive is currently selected; keep it instead of moving it to trash")
+			}
+		}
+	}
+	if validate != nil {
+		if err = validate(); err != nil {
+			return err
+		}
 	}
 	for _, w := range writes {
 		if err = s.writeFileReview(ctx, tx, sid, w); err != nil {
@@ -216,10 +236,8 @@ func (s *Store) writeFileReview(ctx context.Context, tx *sql.Tx, sid int64, w Fi
 			return err
 		}
 	}
-	var uses int
-	if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM asset_contents c JOIN books b ON b.id=c.book_id JOIN versions v ON v.edition_id=b.edition_id
- LEFT JOIN asset_coverage a ON a.file_id=c.file_id AND a.version_id=v.id AND a.book_id=c.book_id
- WHERE c.file_id=? AND (COALESCE(a.selected,TRUE)=TRUE OR COALESCE(a.pinned,FALSE)=TRUE)`), w.FileID).Scan(&uses); err != nil {
+	uses, err := s.reviewFileUses(ctx, tx, w.FileID)
+	if err != nil {
 		return err
 	}
 	if w.Disposition == "trash" {
@@ -235,8 +253,16 @@ func (s *Store) writeFileReview(ctx context.Context, tx *sql.Tx, sid int64, w Fi
 	return err
 }
 
-func (s *Store) PendingReviewTrash(ctx context.Context) ([]File, error) {
-	return list[File](ctx, s, `SELECT `+fileColumns+` FROM files WHERE review_action='trash' AND needs_review=FALSE ORDER BY id LIMIT 500`)
+func (s *Store) reviewFileUses(ctx context.Context, tx *sql.Tx, fid int64) (int, error) {
+	var uses int
+	err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM asset_contents c JOIN books b ON b.id=c.book_id JOIN versions v ON v.edition_id=b.edition_id
+ LEFT JOIN asset_coverage a ON a.file_id=c.file_id AND a.version_id=v.id AND a.book_id=c.book_id
+ WHERE c.file_id=? AND (COALESCE(a.selected,TRUE)=TRUE OR COALESCE(a.pinned,FALSE)=TRUE)`), fid).Scan(&uses)
+	return uses, err
+}
+
+func (s *Store) PendingReviewTrash(ctx context.Context, afterID int64) ([]File, error) {
+	return list[File](ctx, s, `SELECT `+fileColumns+` FROM files WHERE review_action='trash' AND needs_review=FALSE AND id>? ORDER BY id LIMIT 500`, afterID)
 }
 
 func (s *Store) CompleteReviewTrash(ctx context.Context, fid int64) error {

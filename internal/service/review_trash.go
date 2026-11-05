@@ -15,13 +15,20 @@ import (
 // A committed choice may be interrupted before journaling, linking, unlinking,
 // or recording completion. Every stage retains the reviewed fingerprint.
 func (im *Importer) finishReviewTrash(ctx context.Context) {
-	files, err := im.store.PendingReviewTrash(ctx)
-	if err != nil {
-		return
-	}
-	for _, f := range files {
-		if err = im.resumeReviewTrash(ctx, f); err != nil {
-			slog.Warn("review trash recovery pending", "file", f.ID, "error", err)
+	var afterID int64
+	for ctx.Err() == nil {
+		files, err := im.store.PendingReviewTrash(ctx, afterID)
+		if err != nil || len(files) == 0 {
+			return
+		}
+		for _, f := range files {
+			if ctx.Err() != nil {
+				return
+			}
+			afterID = f.ID
+			if err = im.resumeReviewTrash(ctx, f); err != nil {
+				slog.Warn("review trash recovery pending", "file", f.ID, "error", err)
+			}
 		}
 	}
 }

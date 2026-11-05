@@ -81,7 +81,7 @@ func TestReviewChoicesRejectsChangedBytesBeforePreview(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = st.CommitFileReviews(ctx, sid, revision, []store.FileReviewWrite{{FileID: fid, Facts: before[0].Facts, Hash: digest, Contents: req.Files[0].Books, Disposition: "keep"}})
+			err = st.CommitFileReviews(ctx, sid, revision, []store.FileReviewWrite{{FileID: fid, Facts: before[0].Facts, Hash: digest, Contents: req.Files[0].Books, Disposition: "keep"}}, nil)
 			if !errors.Is(err, apperr.ErrConflict) {
 				t.Fatalf("transaction renewed old evidence for new bytes: %v", err)
 			}

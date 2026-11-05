@@ -164,9 +164,23 @@ kept across several rejected duplicates and books still missing because no copy
 is selected. Files left for later are counted separately. Replacement labels
 identify which incoming archive will supply the book.
 
+Editing a file that already supplies a book shows **Keep this copy**. Retaining
+that selection counts as keeping an existing copy; clearing its last selection
+without choosing another copy counts the book as missing. The import-missing
+preset preserves current selections, including those of files in the batch.
+
 A live archive whose fingerprint differs from its recorded evidence must be
 rescanned before review. A fresh preview cannot confirm old contents or facts
 against different bytes; rescan discards the old evidence and matches it anew.
+Apply checks live fingerprints again after acquiring the transaction's decision
+locks and before writing any choices, so bytes changed during a lock wait reject
+the entire batch.
+
+An archive currently selected by any book or version is protected from review
+trash, including when that mapping appears in the same request. Clearing or
+replacing its selection in the batch does not bypass this protection. Review
+trash is for unused archives; previously selected copies can be kept and then
+reassessed for cleanup after their selection changes are saved.
 
 For an unused incoming archive, **Keep unused file** confirms/resolves the review while retaining its bytes and content knowledge; **Move incoming file to trash** records rejection and requests recoverable cleanup directly, without first accepting ownership. **Leave for later** leaves the review unresolved. **Apply choices** summarizes imports, existing copies kept, explicit replacements, and trash moves. A multi-book archive stays intact when it supplies any selected book; skipping one book never removes pages, and an archive selected elsewhere or pinned cannot be trashed. Restoring a skipped duplicate preserves its confirmed contents and does not adopt it as the selected copy.
 
@@ -213,6 +227,9 @@ completion. A changed original returns to review without moving its new bytes;
 completed moves leave the retry batch. Pending moves remain restorable and their
 deletion is paused. Retained archives whose fingerprint changes are protected
 from both manual and expired-trash deletion until the discrepancy is resolved.
+Recovery pages through pending intents by file ID, advancing past failed moves
+so a blocked batch cannot prevent later archives from being recovered. Each new
+queue pass retries earlier failures.
 
 A missing trash entry is purged from the database only while its storage folder
 is accessible. Unavailable storage retains the journal and mappings for recovery.
