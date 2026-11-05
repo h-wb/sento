@@ -20,11 +20,11 @@ const bookKey = (b: { versionId?: number; bookId?: number }) => `${b.versionId}:
 function initialChoices(plan: ReviewPlan, request: ReviewPlanRequest, missingOnly = false): ReviewFileChoice[] {
   const selected = new Set<string>()
   return plan.files.map((f, i) => {
-    const disposition = (f.reason && request.files[i].books === null) || (f.books.length > 0 && f.books.every((b) => !!b.reason || !b.incoming.factsKnown)) ? 'later' : 'keep'
+    const disposition = (f.reason && request.files[i].books === null) || (f.books.length > 0 && f.books.every((b) => !b.currentSelected && (!!b.reason || !b.incoming.factsKnown))) ? 'later' : 'keep'
     return {
       fileId: f.fileId, disposition,
       use: f.books.filter((b) => {
-        const wanted = missingOnly ? !b.reason && b.incoming.factsKnown && (b.currentSelected || !b.owners.some((o) => o.present)) : b.useIncoming
+        const wanted = missingOnly ? b.currentSelected || (!b.reason && b.incoming.factsKnown && !b.owners.some((o) => o.present)) : b.useIncoming
         if (!wanted || f.reason || disposition === 'later' || selected.has(bookKey(b.book))) return false
         selected.add(bookKey(b.book))
         return true
@@ -103,6 +103,10 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
     } else if ([...b.current].some((id) => !b.reviewed.has(id))) kept++
     else missing++
   })
+  const replacementChosen = (book: ReviewBookPlan['book']) => {
+    const outcome = outcomes.get(bookKey(book))
+    return !!outcome && [...outcome.chosen].some((id) => !outcome.current.has(id))
+  }
   const trash = choices.filter((c) => c.disposition === 'trash').length
   const later = choices.filter((c) => c.disposition === 'later').length
   const apply = async () => {
@@ -158,7 +162,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
                 <Checkbox
                   label={b.currentSelected ? `Keep this copy for ${b.label}` : b.owners.some((o) => o.present) ? `Use incoming instead for ${b.label}` : `Import ${b.label}`}
                   checked={using(i, b.book)}
-                  disabled={busy || !!b.reason || !!f.reason || choices[i].disposition === 'later'}
+                  disabled={busy || (!!b.reason && !b.currentSelected) || !!f.reason || choices[i].disposition === 'later'}
                   onChange={(event) => selectBook(i, b, event.currentTarget.checked)}
                 />
                 {plan.files.some((_, j) => i !== j && using(j, b.book)) && <Text size="xs" c="dimmed">Another incoming archive is selected for this book. Select this copy to switch.</Text>}
@@ -166,7 +170,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
                 {b.owners.map((o) => (
                   <div key={o.fileId}>
                     <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
-                      {using(i, b.book) ? 'Replace' : outcomes.get(bookKey(b.book))?.chosen.size && !outcomes.get(bookKey(b.book))?.chosen.has(o.fileId) ? 'Replaced by another incoming archive' : 'Keep existing'}: {fileName(o.path)}{!o.present && ' (missing)'}
+                      {using(i, b.book) && !b.currentSelected ? 'Replace' : replacementChosen(b.book) ? 'Replaced by another incoming archive' : 'Keep existing'}: {fileName(o.path)}{!o.present && ' (missing)'}
                       {[o.source, o.group].filter(Boolean).length > 0 && ` · ${[o.source, o.group].filter(Boolean).join(' · ')}`}
                       {o.pinned && <Badge size="xs" ml={4}>Pinned</Badge>}
                     </Text>
@@ -175,6 +179,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
                 ))}
                 {b.requestedReplacement && <Text size="xs" c="blue">Replacement requested when this download was selected.</Text>}
                 {b.reason && <Text size="xs" c="orange">{b.reason}</Text>}
+                {b.currentSelected && b.reason && <Text size="xs" c="dimmed">Keeping this selection preserves existing ownership without replacing another copy.</Text>}
               </Stack>
             ))}
             <Select

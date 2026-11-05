@@ -162,3 +162,88 @@ func TestReviewChoicesFactEditPreservesLegacyDeselection(t *testing.T) {
 		t.Fatalf("fact correction lost confirmed contents: %+v %v", files, err)
 	}
 }
+
+func TestReviewChoicesFactRefusalRetainsOwnersWithoutAdoptingUnusedContents(t *testing.T) {
+	for _, pinned := range []bool{false, true} {
+		name := "another owner"
+		if pinned {
+			name = "another pinned owner"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			lib, st, sid, col, books, version := factsClaimsFixture(t)
+			ctx := context.Background()
+			root := t.TempDir()
+			fid := waitingScoredFile(t, st, sid, root, "legacy.cbz", "")
+			refs := []store.BookRef{modelRef(col, books[0], version), modelRef(col, books[1], version)}
+			if err := st.MapFile(ctx, sid, fid, refs); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.DeselectBook(ctx, fid, version.ID, refs[1].BookID); err != nil {
+				t.Fatal(err)
+			}
+			other := waitingScoredFile(t, st, sid, root, "other.cbz", "")
+			if err := st.MapFile(ctx, sid, other, refs[:1]); err != nil {
+				t.Fatal(err)
+			}
+			if pinned {
+				if err := st.PinCoverage(ctx, sid, store.AssetCoverage{FileID: other, VersionID: version.ID, BookID: refs[0].BookID, Pinned: true}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			prof, err := st.GetProfile(ctx, version.ProfileID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prof.MinFormatScore = 250
+			if err = st.UpdateProfile(ctx, *prof); err != nil {
+				t.Fatal(err)
+			}
+			group := "Corrected group"
+			req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: refs, Group: &group}}}
+			plan, err := lib.PreviewReviewChoices(ctx, sid, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.Files[0].Books[0].Incoming.Reason == "" || !plan.Files[0].Books[0].UseIncoming || plan.Files[0].Books[1].UseIncoming {
+				t.Fatalf("fact refusal changed saved selections: %+v", plan.Files[0])
+			}
+			im := NewImporter(st, nil, root, nil)
+			bad := reviewDefaults(plan)
+			bad[0].Use = append(bad[0].Use, plan.Files[0].Books[1].Book)
+			if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: bad}); !errors.Is(err, apperr.ErrConflict) {
+				t.Fatalf("refused file could adopt unused contents: %v", err)
+			}
+			if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+				t.Fatalf("could not retain refused selected copy: %v", err)
+			}
+			owners, err := st.BookOwners(ctx, version.ID, refs[0].BookID)
+			if err != nil || len(owners) != 2 || owners[0].FileID != fid || owners[1].FileID != other || owners[1].Pinned != pinned {
+				t.Fatalf("retention displaced another owner: %+v %v", owners, err)
+			}
+			unused, err := st.BookOwners(ctx, version.ID, refs[1].BookID)
+			if err != nil || len(unused) != 0 {
+				t.Fatalf("fact correction adopted unused contents: %+v %v", unused, err)
+			}
+			files, err := st.ListFiles(ctx, sid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, f := range files {
+				if f.ID == fid && f.Facts.Group != group {
+					t.Fatal("retaining refused mapping did not save corrected facts")
+				}
+			}
+			// Legacy mapping clients must get the same retention rule and
+			// must not report another unchanged owner as replaced.
+			result, err := im.ApplySafeFileMapping(ctx, sid, fid, refs, false)
+			if err != nil || len(result.Replaced) != 0 || len(result.Kept) != 1 {
+				t.Fatalf("legacy mapping did not retain ownership: %+v %v", result, err)
+			}
+			owners, err = st.BookOwners(ctx, version.ID, refs[0].BookID)
+			if err != nil || len(owners) != 2 {
+				t.Fatalf("legacy mapping cleared a refused owner: %+v %v", owners, err)
+			}
+		})
+	}
+}

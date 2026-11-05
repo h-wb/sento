@@ -191,7 +191,7 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 					continue
 				}
 				if a.FileID == f.ID {
-					b.CurrentSelected = f.Presence == "present"
+					b.CurrentSelected = f.Presence == "present" && !f.NeedsReview
 					continue
 				}
 				owner := p.files[a.FileID]
@@ -224,9 +224,7 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 			// Editing confirmed contents is not consent to adopt a copy that
 			// was deselected, including files reviewed before review_action.
 			if !f.NeedsReview {
-				b.UseIncoming = b.Reason == "" && slices.ContainsFunc(cov, func(a store.AssetCoverage) bool {
-					return a.FileID == f.ID && a.VersionID == ref.VersionID && a.BookID == ref.BookID
-				})
+				b.UseIncoming = b.CurrentSelected
 			}
 			// Several incoming archives may contain the same book. Choose at
 			// most one by default; every other archive remains available.
@@ -332,7 +330,8 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 			if !slices.Contains(choice.Use, b.Book) {
 				continue
 			}
-			if b.Reason != "" {
+			retaining := !f.NeedsReview && b.CurrentSelected
+			if b.Reason != "" && !retaining {
 				return nil, apperr.Conflictf("cannot use %s: %s", b.Label, b.Reason)
 			}
 			if row.Reason != "" {
@@ -344,6 +343,11 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 			}
 			used[key] = true
 			w.Selected = append(w.Selected, b.Book)
+			if retaining {
+				// A fact correction retains this mapping, including a copy
+				// now refused by policy. It cannot displace another owner.
+				continue
+			}
 			for _, owner := range b.Owners {
 				w.Replacements = append(w.Replacements, store.AssetCoverage{FileID: owner.FileID, VersionID: b.Book.VersionID, BookID: b.Book.BookID})
 				displaced[owner.FileID] = true
@@ -427,12 +431,12 @@ func (im *Importer) ApplySafeFileMapping(ctx context.Context, sid, fid int64, re
 	choice := ReviewFileChoice{FileID: fid, Disposition: "keep", Use: []store.BookRef{}}
 	result := &FileMappingResult{}
 	for _, b := range plan.Files[0].Books {
-		use := b.Reason == "" && (len(b.Owners) == 0 || b.RequestedReplacement || replace)
+		use := b.CurrentSelected || (b.Reason == "" && (len(b.Owners) == 0 || b.RequestedReplacement || replace))
 		if use {
 			choice.Use = append(choice.Use, b.Book)
 		}
 		for _, o := range b.Owners {
-			if use {
+			if use && !b.CurrentSelected {
 				result.Replaced = append(result.Replaced, Replacement{FileID: o.FileID, Path: o.Path, BookID: b.Book.BookID, VersionID: b.Book.VersionID, FromScore: o.Score.Score, ToScore: b.Incoming.Score})
 			} else {
 				result.Kept = append(result.Kept, KeptClaim{BookID: b.Book.BookID, VersionID: b.Book.VersionID, HolderFileID: o.FileID, HolderPath: o.Path, HolderScore: o.Score.Score, Score: b.Incoming.Score})

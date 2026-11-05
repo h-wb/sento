@@ -171,6 +171,9 @@ preset preserves current selections, including those of files in the batch.
 Opening confirmed contents in the editor does not select unused copies. This
 also applies to files reviewed before explicit keep/trash decisions existed;
 saving a fact correction preserves their selected and deselected mappings.
+Corrected facts that fail the current profile do not remove an existing
+selection. Keeping that mapping leaves other owners and pins intact; the refusal
+still blocks adopting unused contents or replacing a different copy.
 
 A live archive whose fingerprint differs from its recorded evidence must be
 rescanned before review. A fresh preview cannot confirm old contents or facts

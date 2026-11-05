@@ -179,46 +179,49 @@ for (const [preset, existing] of [[false, false], [false, true], [true, false], 
   })
 }
 
-test('editing an existing copy counts retention, deselection and replacement correctly', async ({ page }) => {
-  const ref = { versionId: 10, bookId: 21, editionId: 30, ledger: 'volume', number: 100 }
-  await page.route('**/api/v1/activity?seriesId=*', (route) => route.fulfill({ json: activityFixture([], {}, packFiles) }))
-  await page.route('**/api/v1/series/901/', (route) => route.fulfill({ json: {
-    series: { id: 901, title: 'One Piece' },
-    editions: [{ id: 30, seriesId: 901, editionName: 'Standard Edition', language: 'en', type: 'volume' }],
-  } }))
-  await page.route('**/api/v1/series/901/versions', (route) => route.fulfill({ json: [
-    { id: 10, editionId: 30, name: 'Default', isDefault: true, monitored: true, profileId: 0 },
-  ] }))
-  await page.route('**/api/v1/series/901/review/choices/preview', (route) => route.fulfill({ json: {
-    token: 'selected-copy', files: [
-      { ...reviewFile(301, [{ ...reviewBook(ref, 'volume 1'), currentSelected: true }]), trashReason: 'This archive is currently selected by a book or version; keep it instead of moving it to trash' },
-      reviewFile(302, [{ ...reviewBook(ref, 'volume 1'), useIncoming: false, owners: [
-        { fileId: 301, path: '/library/Volume 301.cbz', group: '1r0n', source: 'torrent', pinned: false, present: true, score: reviewScore },
-      ] }]),
-      reviewFile(303, [reviewBook({ ...ref, bookId: 22, number: 200 }, 'volume 2')]),
-    ],
-  } }))
-  await page.goto('/queue')
-  await page.getByRole('button', { name: 'Match whole release', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Match whole release', exact: true })
-  const current = dialog.getByRole('checkbox', { name: 'Keep this copy for volume 1', exact: true })
-  const incoming = dialog.getByRole('checkbox', { name: 'Use incoming instead for volume 1', exact: true })
-  await expect(current).toBeChecked()
-  await expect(incoming).not.toBeChecked()
-  await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 1 · Replace 0 · Trash 0 · Still missing 0 · Left for later 0')
-  await dialog.getByRole('button', { name: 'Import missing; keep existing', exact: true }).click()
-  await expect(current).toBeChecked()
-  await current.uncheck()
-  await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 0 · Replace 0 · Trash 0 · Still missing 1 · Left for later 0')
-  await incoming.check()
-  await expect(current).not.toBeChecked()
-  await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 0 · Replace 1 · Trash 0 · Still missing 0 · Left for later 0')
-  await incoming.uncheck()
-  await dialog.getByRole('combobox', { name: 'After review: Volume 301.cbz', exact: true }).click()
-  await expect(page.getByRole('option', { name: 'Move incoming file to trash', exact: true })).toHaveAttribute('data-combobox-disabled', 'true')
-  await page.getByRole('option', { name: 'Leave for later', exact: true }).click()
-  await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 1 · Replace 0 · Trash 0 · Still missing 0 · Left for later 1')
-})
+for (const refused of [false, true]) {
+  test(`editing an existing ${refused ? 'profile-refused ' : ''}copy counts retention, deselection and replacement correctly`, async ({ page }) => {
+    const ref = { versionId: 10, bookId: 21, editionId: 30, ledger: 'volume', number: 100 }
+    await page.route('**/api/v1/activity?seriesId=*', (route) => route.fulfill({ json: activityFixture([], {}, packFiles) }))
+    await page.route('**/api/v1/series/901/', (route) => route.fulfill({ json: {
+      series: { id: 901, title: 'One Piece' },
+      editions: [{ id: 30, seriesId: 901, editionName: 'Standard Edition', language: 'en', type: 'volume' }],
+    } }))
+    await page.route('**/api/v1/series/901/versions', (route) => route.fulfill({ json: [
+      { id: 10, editionId: 30, name: 'Default', isDefault: true, monitored: true, profileId: 0 },
+    ] }))
+    await page.route('**/api/v1/series/901/review/choices/preview', (route) => route.fulfill({ json: {
+      token: 'selected-copy', files: [
+        { ...reviewFile(301, [{ ...reviewBook(ref, 'volume 1'), currentSelected: true, reason: refused ? 'Score is below the required minimum' : '' }]), trashReason: 'This archive is currently selected by a book or version; keep it instead of moving it to trash' },
+        reviewFile(302, [{ ...reviewBook(ref, 'volume 1'), useIncoming: false, owners: [
+          { fileId: 301, path: '/library/Volume 301.cbz', group: '1r0n', source: 'torrent', pinned: false, present: true, score: reviewScore },
+        ] }]),
+        reviewFile(303, [reviewBook({ ...ref, bookId: 22, number: 200 }, 'volume 2')]),
+      ],
+    } }))
+    await page.goto('/queue')
+    await page.getByRole('button', { name: 'Match whole release', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Match whole release', exact: true })
+    const current = dialog.getByRole('checkbox', { name: 'Keep this copy for volume 1', exact: true })
+    const incoming = dialog.getByRole('checkbox', { name: 'Use incoming instead for volume 1', exact: true })
+    await expect(current).toBeChecked()
+    await expect(current).toBeEnabled()
+    await expect(incoming).not.toBeChecked()
+    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 1 · Replace 0 · Trash 0 · Still missing 0 · Left for later 0')
+    await dialog.getByRole('button', { name: 'Import missing; keep existing', exact: true }).click()
+    await expect(current).toBeChecked()
+    await current.uncheck()
+    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 0 · Replace 0 · Trash 0 · Still missing 1 · Left for later 0')
+    await incoming.check()
+    await expect(current).not.toBeChecked()
+    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 0 · Replace 1 · Trash 0 · Still missing 0 · Left for later 0')
+    await incoming.uncheck()
+    await dialog.getByRole('combobox', { name: 'After review: Volume 301.cbz', exact: true }).click()
+    await expect(page.getByRole('option', { name: 'Move incoming file to trash', exact: true })).toHaveAttribute('data-combobox-disabled', 'true')
+    await page.getByRole('option', { name: 'Leave for later', exact: true }).click()
+    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 1 · Replace 0 · Trash 0 · Still missing 0 · Left for later 1')
+  })
+}
 
 for (const unknownFacts of [false, true]) {
   test(`missing summary deduplicates ${unknownFacts ? 'unknown-facts' : 'policy-refused'} books and distinguishes files left for later`, async ({ page }) => {
