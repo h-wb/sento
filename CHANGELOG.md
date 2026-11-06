@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/h-wb/sento/compare/v0.3.0...v0.4.0) (2026-11-06)
+
+
+### Features
+
+* **files:** show current profile scores and format breakdowns ([#30](https://github.com/h-wb/sento/issues/30)) ([eef8ae7](https://github.com/h-wb/sento/commit/eef8ae78714d3db8e20ca6934be9ac41b8ab4c57))
+
+
+### Bug Fixes
+
+* **review:** preserve existing copies when reviewing packs ([#33](https://github.com/h-wb/sento/issues/33)) ([7f16e9f](https://github.com/h-wb/sento/commit/7f16e9f9fe7857314b5d1898c194c454bb2bc339))
+* **review:** remove unsupported Kritika comment setting ([#34](https://github.com/h-wb/sento/issues/34)) ([8b211e3](https://github.com/h-wb/sento/commit/8b211e3bfc7e3a74b86eb64c6a032863c948025c))
+
 ## [0.3.0](https://github.com/h-wb/sento/compare/v0.2.0...v0.3.0) (2026-11-03)
 
 
