@@ -8,7 +8,7 @@ for (const width of [390, 1280]) {
     const { id } = await added.json()
     try {
       await page.setViewportSize({ width, height: 844 })
-      let submitted: { picks: { key: string; books: { bookId: number }[] }[] } | undefined
+      let submitted: { picks: { key: string; books: { bookId: number }[]; requestedReplacements?: { bookId: number }[] }[] } | undefined
       await page.route(`**/api/v1/series/${id}/search`, async (route) => {
         const body = route.request().postDataJSON()
         if (body.picks) {
@@ -24,7 +24,7 @@ for (const width of [390, 1280]) {
         const plan = { searchedAt: new Date().toISOString(), complete: false, picks: [
           { key: 'pack-a', books: [ref(1), ref(2)], additionalBooks: 0 },
           { key: 'pack-b', books: [ref(3)], additionalBooks: 1 },
-        ], books: [1, 2, 3, 4].map((n) => ({ book: ref(n), label: String(n), ownership: 'missing', availability: n === 4 ? 'unknown' : 'available' })), size: 209715200, unknownSizes: 0 }
+        ], books: [1, 2, 3, 4].map((n) => ({ book: ref(n), label: String(n), ownership: n === 2 ? 'unsatisfactory' : 'missing', availability: n === 4 ? 'unknown' : 'available' })), size: 209715200, unknownSizes: 0 }
         return route.fulfill({ contentType: 'application/x-ndjson', body: [
           { type: 'sites', searched: ['torrent/Example indexer'] },
           { type: 'batch', candidates, queries: ['deterministic diaries', 'journal deterministe'], sites: ['torrent/Example indexer'] },
@@ -40,6 +40,9 @@ for (const width of [390, 1280]) {
       await expect(plan.getByText('Will download · 3')).toBeVisible()
       await expect(plan.getByText('Not checked · 1')).toBeVisible()
       await expect(plan.getByText(/Pack also holds 1 book/)).toBeVisible()
+      const replacement = plan.getByRole('checkbox', { name: 'Replace existing volume 2 during file review', exact: true })
+      await expect(replacement).not.toBeChecked()
+      if (width === 390) await replacement.check()
       // An unticked release stays where it was, so the choice can be undone.
       const packB = plan.getByRole('checkbox', { name: 'Include Pack B', exact: true })
       await packB.uncheck()
@@ -62,6 +65,7 @@ for (const width of [390, 1280]) {
       await expect(plan.getByText(/Release no longer meets the profile/)).toBeVisible()
       await expect(plan.getByRole('link', { name: 'Follow in Activity' })).toBeVisible()
       expect(submitted?.picks.map((p) => p.books.map((b) => b.bookId))).toEqual([[1, 2], [3]])
+      expect(submitted?.picks.map((p) => (p.requestedReplacements ?? []).map((b) => b.bookId))).toEqual(width === 390 ? [[2], []] : [[], []])
     } finally { await request.delete(`/api/v1/series/${id}/`) }
   })
 }

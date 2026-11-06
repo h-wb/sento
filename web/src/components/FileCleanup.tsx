@@ -234,7 +234,7 @@ export default function FileCleanup({
                         {f.path.split('/').pop()}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        {fmtSize(f.size)} · Expires {fmtWhen(f.purgeAfter)}
+                        {fmtSize(f.size)} · {f.pending ? 'Trash move pending; deletion is paused' : `Expires ${fmtWhen(f.purgeAfter)}`}
                       </Text>
                       <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
                         {f.path}
@@ -253,7 +253,7 @@ export default function FileCleanup({
                         size="compact-xs"
                         color="red"
                         variant="subtle"
-                        disabled={busy}
+                        disabled={busy || f.pending}
                         onClick={() =>
                           confirm({
                             title: 'Permanently delete this file?',

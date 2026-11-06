@@ -97,6 +97,7 @@ export interface UnblockBody {
  * SearchBody is POST /series/{id}/search.
  */
 export interface SearchBody {
+  requestedReplacements?: any /* store.BookRef */[];
   picks?: PlanPick[];
   grabSiteId?: string;
   grabProvider?: string;

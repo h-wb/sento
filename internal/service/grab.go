@@ -76,6 +76,7 @@ func (s *SearchService) SubmitPlan(ctx context.Context, seriesID int64, ledger s
 					outcome.Message = "The approved books no longer need this release; search again."
 					break
 				}
+				c.RequestedReplacements = pick.RequestedReplacements
 				qid, err := s.grabClaims(ctx, seriesID, ledger, c, claims, false)
 				if err != nil {
 					outcome.Message = err.Error()
@@ -129,6 +130,17 @@ func (s *SearchService) grabClaims(ctx context.Context, seriesID int64, searchLe
 
 	if err := s.retire(ctx, c.replaces, slots); err != nil {
 		return 0, err
+	}
+	// Only a person's explicit choice grants replacement intent in review.
+	// Owned or policy-driven claims and surplus pack contents do not grant it.
+	requested := c.RequestedReplacements
+	c.RequestedReplacements = nil
+	if !scheduled(ctx) {
+		for _, ref := range slots {
+			if slices.ContainsFunc(requested, func(b store.BookRef) bool { return refKey(b) == refKey(ref) }) {
+				c.RequestedReplacements = append(c.RequestedReplacements, ref)
+			}
+		}
 	}
 	snapshot, _ := json.Marshal(c)
 	qid, created, err := s.store.ReserveQueue(ctx, store.QueueItem{SeriesID: seriesID, Protocol: c.Protocol, ProviderID: c.Provider, ReleaseKey: c.cand.ExternalKey(), DownloadClient: client, Title: c.Title, Snapshot: snapshot}, slots)

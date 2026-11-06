@@ -523,6 +523,11 @@ export interface PlanBook {
   availability: string;
 }
 export interface PlanPick {
+  /**
+   * Explicit consent for replacement if this download needs file review.
+   * Generated plans leave this empty, including automatic upgrades.
+   */
+  requestedReplacements?: BookRef[];
   key: string;
   books: BookRef[];
   additionalBooks: number /* int */;
@@ -655,6 +660,74 @@ export interface ReleaseFileMatch {
 }
 
 //////////
+// source: review_choices.go
+
+export interface ReviewFileRequest {
+  fileId: number /* int64 */;
+  /**
+   * Nil asks the resolver; an explicit list confirms these contents.
+   */
+  books: BookRef[] | null;
+  language?: string;
+  group?: string;
+}
+export interface ReviewPlanRequest {
+  versionId?: number /* int64 */;
+  files: ReviewFileRequest[];
+}
+export interface ReviewCopy {
+  fileId: number /* int64 */;
+  path: string;
+  group: string;
+  source: string;
+  pinned: boolean;
+  present: boolean;
+  score: FileScore;
+}
+export interface ReviewBookPlan {
+  book: BookRef;
+  label: string;
+  incoming: FileScore;
+  owners: ReviewCopy[];
+  useIncoming: boolean;
+  currentSelected: boolean;
+  requestedReplacement: boolean;
+  reason: string;
+}
+export interface ReviewFilePlan {
+  fileId: number /* int64 */;
+  path: string;
+  group: string;
+  source: string;
+  books: ReviewBookPlan[];
+  reason: string;
+  trashReason: string;
+}
+export interface ReviewPlan {
+  token: string;
+  files: ReviewFilePlan[];
+}
+export interface ReviewFileChoice {
+  fileId: number /* int64 */;
+  use: BookRef[];
+  /**
+   * keep retains unused bytes; trash journals a recoverable move; later
+   * leaves the file and its review untouched.
+   */
+  disposition: string;
+}
+export interface ReviewApplyRequest {
+  request: ReviewPlanRequest;
+  token: string;
+  choices: ReviewFileChoice[];
+}
+export interface ReviewFileOutcome {
+  fileId: number /* int64 */;
+  status: string;
+  note: string;
+}
+
+//////////
 // source: review_proposals.go
 
 
@@ -745,6 +818,7 @@ export interface ReleaseCandidate {
    */
   indexerPriority?: number /* int */;
   versionId?: number /* int64 */;
+  requestedReplacements?: BookRef[];
   coverage?: BookRef[];
   profileId?: number /* int64 */;
   guid: string;
@@ -867,6 +941,7 @@ export interface KeptClaim {
  * it left to their current holder.
  */
 export interface FileMappingResult {
+  notes?: string[];
   replaced?: Replacement[];
   kept?: KeptClaim[];
 }

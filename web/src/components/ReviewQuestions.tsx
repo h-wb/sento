@@ -6,8 +6,7 @@ import { api } from '../api'
 import type { Edition, ReviewItem } from '../types/store'
 import { CatalogLink } from './CatalogLink'
 import { fileName } from './editionText'
-import { FileReviewDialog } from './FileReviewDialog'
-import { ReleaseMatchDialog } from './ReleaseMatchDialog'
+import { useReviewDialogs } from './reviewDialogs'
 import { useConfirmAction } from './ConfirmAction'
 import { notify } from '../ui'
 
@@ -61,8 +60,7 @@ export default function ReviewQuestions({
   const qc = useQueryClient()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [fileReview, setFileReview] = useState<ReviewItem | null>(null)
-  const [match, setMatch] = useState<{ seriesID: number; title: string; files: ReviewItem[] } | null>(null)
+  const dialogs = useReviewDialogs()
   const [link, setLink] = useState<{ item: ReviewItem; editions: Edition[] } | null>(null)
   const { confirm, confirmation } = useConfirmAction()
   const run = async (fn: () => Promise<unknown>) => {
@@ -206,7 +204,7 @@ export default function ReviewQuestions({
             </Button>
           )}
           {i.kind === 'file' && (
-            <Button size="xs" variant="default" onClick={() => setFileReview(i)}>
+            <Button size="xs" variant="default" onClick={() => dialogs.file(i)}>
               Review file
             </Button>
           )}
@@ -355,7 +353,7 @@ export default function ReviewQuestions({
               busy={busy}
               onDecline={() => decline(pack)}
               onMatch={() =>
-                setMatch({ seriesID: i.seriesId, title, files: pack })
+                dialogs.release({ seriesID: i.seriesId, title, files: pack })
               }
             />
             {pack.map(itemRow)}
@@ -377,15 +375,6 @@ export default function ReviewQuestions({
             ])
           }}
           close={() => setLink(null)}
-        />
-      )}
-      {fileReview && <FileReviewDialog item={fileReview} close={() => setFileReview(null)} />}
-      {match && (
-        <ReleaseMatchDialog
-          seriesID={match.seriesID}
-          title={match.title}
-          files={match.files}
-          close={() => setMatch(null)}
         />
       )}
       {confirmation}

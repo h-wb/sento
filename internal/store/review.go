@@ -109,13 +109,21 @@ func (s *Store) DeclineFiles(ctx context.Context, seriesID int64, fileIDs []int6
 			res.Skipped = append(res.Skipped, ReviewSkip{fid, "File is no longer waiting for review"})
 			continue
 		}
+		var protected int
+		if err = tx.QueryRowContext(ctx, s.q(`SELECT (SELECT COUNT(*) FROM asset_coverage WHERE file_id=? AND pinned=TRUE)+(SELECT COUNT(*) FROM asset_contents WHERE file_id=? AND verified=TRUE)`), fid, fid).Scan(&protected); err != nil {
+			return nil, err
+		}
+		if protected > 0 {
+			res.Skipped = append(res.Skipped, ReviewSkip{fid, "This archive already has confirmed contents or pins; review its selections individually"})
+			continue
+		}
 		if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_coverage WHERE file_id=?`), fid); err != nil {
 			return nil, err
 		}
 		if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_contents WHERE file_id=?`), fid); err != nil {
 			return nil, err
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=FALSE,unrequested=TRUE WHERE id=?`), fid); err != nil {
+		if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=FALSE,unrequested=TRUE,review_action='keep' WHERE id=?`), fid); err != nil {
 			return nil, err
 		}
 		res.Resolved = append(res.Resolved, fid)
@@ -163,8 +171,8 @@ func editionText(e *Edition) string {
 func (s *Store) reviewRows(ctx context.Context, sid int64) ([]ReviewItem, error) {
 	return list[ReviewItem](ctx, s, `
  SELECT 'file-'||CAST(f.id AS TEXT) AS id,'file' AS kind,f.series_id,s.title AS series_title,f.id AS item_id,f.path AS title,
- CASE WHEN f.presence='unavailable' THEN 'Storage unavailable: '||f.presence_error WHEN f.presence='unknown' THEN 'File presence has not been checked' ELSE 'Confirm the edition and books in this file' END AS detail, f.presence AS status
- FROM files f JOIN series s ON s.id=f.series_id WHERE (?=0 OR s.id=?) AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=f.id) AND (f.needs_review=TRUE OR f.presence IN('unavailable','unknown') OR EXISTS(SELECT 1 FROM asset_contents c WHERE c.file_id=f.id AND c.verified=FALSE))
+ CASE WHEN f.review_action='trash' AND f.needs_review=TRUE THEN 'Archive contents changed; review this file again before moving it to trash' WHEN f.review_action='trash' THEN 'Moving this rejected incoming file to trash is pending; the move will retry automatically' WHEN f.presence='unavailable' THEN 'Storage unavailable: '||f.presence_error WHEN f.presence='unknown' THEN 'File presence has not been checked' ELSE 'Confirm the edition and books in this file' END AS detail, f.presence AS status
+ FROM files f JOIN series s ON s.id=f.series_id WHERE (?=0 OR s.id=?) AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=f.id) AND (f.review_action='trash' OR f.needs_review=TRUE OR f.presence IN('unavailable','unknown') OR EXISTS(SELECT 1 FROM asset_contents c WHERE c.file_id=f.id AND c.verified=FALSE))
  UNION ALL
  SELECT 'queue-'||CAST(q.id AS TEXT),'download',q.series_id,s.title,q.id,q.title,COALESCE(q.error,''),q.status
  FROM queue_items q JOIN series s ON s.id=q.series_id WHERE (?=0 OR s.id=?) AND q.status IN('needs_review','dispatch_unknown','failed','retry_wait')

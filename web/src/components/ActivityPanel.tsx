@@ -43,6 +43,10 @@ import {
 } from './activityModel'
 import { DownloadActivityRow, type DownloadActions } from './DownloadActivityRow'
 import ReviewQuestions from './ReviewQuestions'
+import { FileReviewDialog } from './FileReviewDialog'
+import { ReleaseMatchDialog } from './ReleaseMatchDialog'
+import { ReviewDialogsContext, type ReleaseReview } from './reviewDialogs'
+import type { ReviewItem } from '../types/store'
 import { SeriesHistory } from './SeriesHistory'
 import classes from './Activity.module.css'
 
@@ -358,6 +362,10 @@ export default function ActivityPanel({
   const [blockedOpen, setBlockedOpen] = useState(false)
   const [recovery, setRecovery] = useState<{ seriesID: number; sel: BookSelection } | null>(null)
   const [attach, setAttach] = useState<ActivityDownload | null>(null)
+  // An answered row can disappear on the next poll. Keep its editor and
+  // saved-file receipt mounted until the person dismisses the dialog.
+  const [fileReview, setFileReview] = useState<ReviewItem | null>(null)
+  const [releaseReview, setReleaseReview] = useState<ReleaseReview | null>(null)
   const [remoteID, setRemoteID] = useState('')
   const { confirm, confirmation } = useConfirmAction()
   const refresh = async () => {
@@ -476,7 +484,7 @@ export default function ActivityPanel({
       : filter === 'history'
         ? history.length
         : progress.length
-  return (
+  const content = (
     <Tabs value={filter} onChange={setFilter} keepMounted={false}>
       <Stack gap="md">
         <Tabs.List className={classes.tabsList}>
@@ -682,5 +690,15 @@ export default function ActivityPanel({
         )}
       </Stack>
     </Tabs>
+  )
+  return (
+    <ReviewDialogsContext.Provider value={{ file: setFileReview, release: setReleaseReview }}>
+      {content}
+      {fileReview && <FileReviewDialog item={fileReview} close={() => setFileReview(null)} />}
+      {releaseReview && <ReleaseMatchDialog
+        seriesID={releaseReview.seriesID} title={releaseReview.title} files={releaseReview.files}
+        close={() => setReleaseReview(null)}
+      />}
+    </ReviewDialogsContext.Provider>
   )
 }

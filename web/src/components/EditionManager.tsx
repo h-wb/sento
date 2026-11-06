@@ -25,7 +25,6 @@ import {
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, fmtSize } from '../api'
-import { notify } from '../ui'
 import type {
   Edition,
   CollectedVersion,
@@ -464,7 +463,7 @@ export default function EditionManager({
           {(() => {
             const review = (f: SeriesFile) =>
               f.needsReview ||
-              f.unrequested ||
+              (f.unrequested && !f.reviewAction) ||
               coverage.data?.some((a) => a.fileId === f.id && !a.verified)
             const list = files
               .filter((f) => f.path.toLowerCase().includes(fileFilter.toLowerCase()))
@@ -487,7 +486,7 @@ export default function EditionManager({
                       </Text>
                       <Text size="xs" c={review(f) ? 'yellow' : 'dimmed'}>
                         {[
-                          review(f) ? 'Needs review' : 'Confirmed coverage',
+                          f.reviewAction === 'trash' ? 'Trash pending' : review(f) ? 'Needs review' : f.unrequested ? 'Unused, reviewed' : 'Confirmed coverage',
                           f.facts?.language || 'Language unknown',
                           f.facts?.group,
                           f.provenance,
@@ -622,18 +621,8 @@ export default function EditionManager({
           versions={allVersions}
           existing={coverage.data?.filter((a) => a.fileId === file.id) ?? []}
           books={allBooks}
-          files={files}
           editions={editions}
-          save={async (books, replace) => {
-            const result = await api.mapFile(seriesID, file.id, books, replace)
-            if (result?.replaced?.length)
-              notify.ok(`Replaced ${result.replaced.map((r) => `“${r.path.split('/').pop()}”`).join(', ')}`)
-            if (result?.kept?.length)
-              notify.ok(
-                `Kept by the current holder: ${result.kept
-                  .map((k) => `“${k.holderPath.split('/').pop()}”`)
-                  .join(', ')}`,
-              )
+          applied={async () => {
             await changed()
             setFile(null)
           }}

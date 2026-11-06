@@ -1,7 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import type { ReviewItem } from '../types/store'
-import { notify } from '../ui'
 import { EditorModal } from './EditorModal'
 import { MappingEditor } from './MappingEditor'
 import { QueryFeedback } from './QueryFeedback'
@@ -34,7 +33,7 @@ export function FileReviewDialog({ item, close }: { item: ReviewItem; close: () 
         />
       </EditorModal>
     )
-  const { detail, file, files, versions, coverage, books } = query.data
+  const { detail, file, versions, coverage, books } = query.data
   return (
     <MappingEditor
       seriesID={item.seriesId}
@@ -43,21 +42,9 @@ export function FileReviewDialog({ item, close }: { item: ReviewItem; close: () 
       versions={versions}
       existing={coverage.filter((c) => c.fileId === file.id)}
       books={Object.values(books).flat()}
-      files={files}
       proposal={item.proposal}
       hint={item.hint}
-      save={async (refs, replace) => {
-        const result = await api.mapFile(item.seriesId, file.id, refs, replace)
-        if (result?.replaced?.length)
-          notify.ok(
-            `Replaced ${result.replaced.map((r) => `“${r.path.split('/').pop()}”`).join(', ')}`,
-          )
-        if (result?.kept?.length)
-          notify.ok(
-            `Kept by the current holder: ${result.kept
-              .map((k) => `“${k.holderPath.split('/').pop()}” (score ${k.holderScore} > ${k.score})`)
-              .join(', ')}`,
-          )
+      applied={async () => {
         await Promise.all(
           ['activity', 'review', 'queue', 'series'].map((key) =>
             qc.invalidateQueries({ queryKey: [key] }),

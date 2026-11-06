@@ -139,10 +139,11 @@ Installation does not overwrite an occupied path with different bytes. Existing 
 
 Scans consider paused editions too, check parsed language and edition evidence, and leave ambiguous archives for review. Unmatched downloaded archives are retained in the review area. Partial imports record verified files and hold the job in `needs_review` until unresolved coverage is reviewed. Books already verified and accepted remain owned while the rest of the batch waits for review; an active transfer still shows pending. Activity reports the imported count and unmatched books separately, and its replacement search selects unmatched books without downloading verified ones again; saving the mapping of its last waiting file imports the job, releases its reservations (planned books no accepted file held are wanted again and searched for within the next queue pass) and records "imported after review" in History.
 
-Review proposes what a waiting file holds when its own name resolves it, read against every edition of the series, collected or not (D16). A number with no volume or chapter marker ("Kagurabachi 067") takes its kind from the download it came in — the volumes or chapters the release names, or the kind of books it was grabbed for — and stays unread outside a download. An unnumbered pack vouches for the planned kind only while every number its files carry is a book of it: a pack numbered past the planned edition (200 chapter files against 15 volumes) is another numbering, and none of its files is proposed onto it; a number zero-padded to three or more digits ("001") is written the chapter way and never read as a volume. A name not all of whose numbers resolve to books of the edition proposes nothing, rather than a subset of them. A name without the series title ("Volume_01.cbz") is only proposed inside a download of the series. Among editions holding the books, the collected one wins; still several, or a number shared by two books, and nothing is proposed. Within that edition, a proposal selects a collected version only when exactly one profile accepts the file, and names that profile when several versions exist. Refused files and overlapping profiles require an explicit choice instead of silently using the default version. Proposals are computed when review is read and recorded only on Accept (one, or all at once); Review file opens the mapping pre-filled. File questions group by the release they arrived in, and a group carries the pack-level answers: **Decline all** marks every file of the pack reviewed and unmapped in one transaction (a confirmation lists what will be marked; files that no longer wait are skipped, never overwritten), and **Match whole release** applies one chosen card to the pack, mapping each file by its own numbers through the same upgrade path as one file's review. Files whose numbers do not resolve — an unreadable name, the other ledger, numbers the edition does not hold, a number two books share — are left for individual review rather than guessed. Retrying a fully reviewed payload completes from its recorded files without fetching it again. Partial retries preserve already confirmed bytes and mappings. Confirming or editing a file mapping also organizes that file using the current import naming and metadata settings, moving it out of the review folder. Other series files are left alone. A failed move preserves the mapping and reports that organization still needs to finish.
+Review proposes what a waiting file holds when its own name resolves it, read against every edition of the series, collected or not (D16). A number with no volume or chapter marker ("Kagurabachi 067") takes its kind from the download it came in — the volumes or chapters the release names, or the kind of books it was grabbed for — and stays unread outside a download. An unnumbered pack vouches for the planned kind only while every number its files carry is a book of it: a pack numbered past the planned edition (200 chapter files against 15 volumes) is another numbering, and none of its files is proposed onto it; a number zero-padded to three or more digits ("001") is written the chapter way and never read as a volume. A name not all of whose numbers resolve to books of the edition proposes nothing, rather than a subset of them. A name without the series title ("Volume_01.cbz") is only proposed inside a download of the series. Among editions holding the books, the collected one wins; still several, or a number shared by two books, and nothing is proposed. Within that edition, a proposal selects a collected version only when exactly one profile accepts the file, and names that profile when several versions exist. Refused files and overlapping profiles require an explicit choice instead of silently using the default version. Proposals are computed when review is read and recorded only on Accept (one, or all at once); Review file opens the confirmed/proposed contents pre-filled. Confirming those contents and selecting the archive that supplies a collected book are separate choices. File questions group by the release they arrived in, and a group carries the pack-level answers: **Decline all** marks every file of the pack reviewed and unmapped in one transaction (a confirmation lists what will be marked; files that no longer wait are skipped, never overwritten), and **Match whole release** previews one chosen card (or the proposed editions) across the pack, resolving each file by its own numbers and offering the same explicit per-book copy choices as single-file review. Files whose numbers do not resolve — an unreadable name, the other ledger, numbers the edition does not hold, a number two books share — are left for individual review rather than guessed. Retrying a fully reviewed payload completes from its recorded files without fetching it again. Partial retries preserve already confirmed bytes and mappings. Confirming or editing a file mapping also organizes that file using the current import naming and metadata settings, moving it out of the review folder. Other series files are left alone. A failed move preserves the mapping and reports that organization still needs to finish.
 
 Bulk-match preview and submission use the same service resolver, including book
-kind and duplicate-number checks. Both endpoints of each named range must be
+kind and duplicate-number checks. Pack choices are applied in batches of at most
+500 files, with 25 archives shown per page; any remaining batch stays in Review. Both endpoints of each named range must be
 books of the edition; a range extending past it stays for review instead of
 being clipped. Submission rechecks current review state and serializes file
 mutations with import, cleanup and organization. Large packs use bounded batches;
@@ -150,6 +151,48 @@ each decline batch is transactional.
 
 Partial-import counts identify files from that download. An existing copy from
 another release does not count as imported by the unfinished job.
+
+**Review copy choices** default to importing confidently identified, allowed missing books and keeping existing selected copies for overlaps, even when the incoming archive scores higher. A recorded replacement explicitly requested when grabbing a release remains preselected and is labeled in review; ordinary pack contents never imply that intent. Each book shows incoming and existing source/group evidence, current-profile scores and their format breakdowns. Unknown facts require an explicit choice, policy refusals block selection, and pins must be removed before replacing a protected copy. **Use incoming instead** selects a replacement for that book/version; it is independent of confirming the archive's contents. Existing copies used by another book/version remain selected and in place.
+
+When several incoming archives contain the same book/version, the first eligible
+copy in the preview is selected by default. Other incoming copies stay unused.
+Selecting one switches that book away from any other incoming copy without
+changing other books in a shared archive. **Import missing; keep existing** uses
+the same one-copy rule, so duplicate files cannot block unrelated imports.
+The summary counts each distinct book/version once, including an existing copy
+kept across several rejected duplicates and books still missing because no copy
+is selected. Files left for later are counted separately. Replacement labels
+identify which incoming archive will supply the book.
+
+Editing a file that already supplies a book shows **Keep this copy**. Retaining
+that selection counts as keeping an existing copy; clearing its last selection
+without choosing another copy counts the book as missing. The import-missing
+preset preserves current selections, including those of files in the batch.
+Opening confirmed contents in the editor does not select unused copies. This
+also applies to files reviewed before explicit keep/trash decisions existed;
+saving a fact correction preserves their selected and deselected mappings.
+Corrected facts that fail the current profile do not remove an existing
+selection. Keeping that mapping leaves other owners and pins intact; the refusal
+still blocks adopting unused contents or replacing a different copy.
+
+A live archive whose fingerprint differs from its recorded evidence must be
+rescanned before review. A fresh preview cannot confirm old contents or facts
+against different bytes; rescan discards the old evidence and matches it anew.
+Apply checks live fingerprints again after acquiring the transaction's decision
+locks and before writing any choices, so bytes changed during a lock wait reject
+the entire batch.
+The transaction locks the series before its editions, keeping inherited series
+policy stable through commit as well as version, profile and global settings.
+
+An archive currently selected by any book or version is protected from review
+trash, including when that mapping appears in the same request. Clearing or
+replacing its selection in the batch does not bypass this protection. Review
+trash is for unused archives; previously selected copies can be kept and then
+reassessed for cleanup after their selection changes are saved.
+
+For an unused incoming archive, **Keep unused file** confirms/resolves the review while retaining its bytes and content knowledge; **Move incoming file to trash** records rejection and requests recoverable cleanup directly, without first accepting ownership. **Leave for later** leaves the review unresolved. **Apply choices** summarizes imports, existing copies kept, explicit replacements, and trash moves. A multi-book archive stays intact when it supplies any selected book; skipping one book never removes pages, and an archive selected elsewhere or pinned cannot be trashed. Restoring a skipped duplicate preserves its confirmed contents and does not adopt it as the selected copy.
+
+Review previews bind the file fingerprints, facts, current selections/pins, edition/book identities and profile settings. Apply rereads the evidence and checks the revision under the edition mutation locks (and configuration locks on PostgreSQL); a changed decision context requires a fresh preview before any mapping changes. Facts, verified contents and explicit selections commit together across the chosen batch. Filesystem work follows that commit and reports per-file results. A durable `files.review_action` records keep/trash decisions for the file's fingerprint, including an unused or trashed archive. The trash journal makes moves recoverable; failed pending moves remain visible and retry on queue passes. The download-client payload is untouched. Identical retry payloads and rescans preserve reviewed selections and skips instead of reopening or automatically accepting the duplicate. Changed bytes require review again. Download settlement counts files from the release separately from books already held by other releases, reports **Kept existing** for those books, and releases reservations when every actual question is answered.
 
 File review can map an archive to several books and versions. Editing one version's mappings preserves the others. Clearing coverage keeps the file without claiming ownership. Coverage pins survive edits to retained mappings. Removing a version preserves intrinsic content knowledge and files; deleting a pinned file requires unpinning first. Duplicate-edition merges require unique book matches and preserve version policies, pins, coverage, and paths. Pending downloads block destructive identity changes.
 
@@ -185,6 +228,18 @@ and other hardlinks remain intact; selected archive sizes do not promise
 immediate disk-space savings. Only regular files are moved, without overwriting
 another path or rewriting archive bytes. A journal retains interrupted moves
 for recovery.
+
+Review trash retries validate the saved archive fingerprint and resume moves
+interrupted before journaling, between linking and unlinking, or before recording
+completion. A changed original returns to review without moving its new bytes;
+completed moves leave the retry batch. Pending moves remain restorable and their
+deletion is paused. Retained archives whose fingerprint changes are protected
+from both manual and expired-trash deletion until the discrepancy is resolved.
+Recovery pages through pending intents by file ID, advancing past failed moves
+so a blocked batch cannot prevent later archives from being recovered. Each new
+queue pass retries earlier failures.
+Failures to load a pending page are logged with the cursor and database error
+and leave the intents available for the next pass.
 
 A missing trash entry is purged from the database only while its storage folder
 is accessible. Unavailable storage retains the journal and mappings for recovery.

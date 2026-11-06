@@ -1,8 +1,6 @@
 package server
 
 import (
-	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -281,18 +279,9 @@ func (s *Server) handleRemapFile(w http.ResponseWriter, r *http.Request) {
 	}
 	// Mapping the file may displace bettered owners (upgrade path); the
 	// response says which, so the UI can report the replacement.
-	mapping, err := s.importer.ApplyUpgrades(r.Context(), id, fid, body.Books, body.Replace)
+	mapping, err := s.importer.ApplySafeFileMapping(r.Context(), id, fid, body.Books, body.Replace)
 	if err != nil {
 		writeErr(w, err)
-		return
-	}
-	organizeErr := s.importer.OrganizeReviewedFile(r.Context(), id, fid)
-	// The mapping is saved either way; a job it completes is closed now.
-	if err := s.importer.SettleReviewedJobs(r.Context(), id); err != nil {
-		slog.Warn("settling reviewed jobs failed", "series", id, "error", err)
-	}
-	if organizeErr != nil {
-		writeErr(w, fmt.Errorf("mapping saved, but organizing the file failed: %w", organizeErr))
 		return
 	}
 	writeJSON(w, http.StatusOK, mapping)

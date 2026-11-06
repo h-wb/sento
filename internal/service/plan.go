@@ -29,9 +29,12 @@ type PlanBook struct {
 }
 
 type PlanPick struct {
-	Key             string          `json:"key"`
-	Books           []store.BookRef `json:"books"`
-	AdditionalBooks int             `json:"additionalBooks"`
+	// Explicit consent for replacement if this download needs file review.
+	// Generated plans leave this empty, including automatic upgrades.
+	RequestedReplacements []store.BookRef `json:"requestedReplacements,omitempty"`
+	Key                   string          `json:"key"`
+	Books                 []store.BookRef `json:"books"`
+	AdditionalBooks       int             `json:"additionalBooks"`
 }
 
 type PlanOutcome struct {

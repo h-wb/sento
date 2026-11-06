@@ -84,3 +84,16 @@ replacement search: it excludes the original release, leaves its files and
 job intact until another release is selected, and does not reacquire books
 already accepted from the partial import. Retry times interpret stored UTC
 timestamps consistently with the other Activity dates.
+
+Reviewing an overlapping pack preserves the existing selected archive unless
+replacement was explicitly requested in the acquisition snapshot or chosen in
+review. The download plan offers an unchecked replacement choice for each
+selected book with an existing copy; single-book search offers the same choice.
+Only that explicit consent is saved, limited to the job's approved books.
+An existing owner, an ordinary download selection, or surplus pack contents do
+not establish replacement intent. Generated and scheduled plans leave it unset.
+Automated imports continue to apply the acquisition plan and
+configured upgrade policy. Review separately confirms archive contents, chooses
+each collected book's supplying copy, and retains or trashes unused incoming
+archives. See [review and file ownership](editions.md) for preview validation,
+recoverable trash, and durable skip behavior.

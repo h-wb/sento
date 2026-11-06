@@ -12,7 +12,8 @@ import (
 )
 
 type File struct {
-	ContentBooks  []BookRef  `json:"-" db:"-"` // intrinsic contents, without version selections
+	ReviewAction  string     `json:"reviewAction,omitempty"`
+	ContentBooks  []BookRef  `json:"contentBooks,omitempty" db:"-"` // intrinsic contents, without version selections
 	Claims        AssetFacts `json:"claims" db:"claims_json"`
 	Presence      string     `json:"presence"`
 	PresenceError string     `json:"presenceError"`
@@ -77,8 +78,8 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 		return 0, apperr.Conflictf("restore or empty this path's trash entry before importing it again")
 	}
 	var oldID int64
-	var oldHash, oldFacts string
-	oldErr := tx.QueryRowContext(ctx, s.q(`SELECT id,COALESCE(hash,''),facts_json FROM files WHERE path=? AND series_id=?`), f.Path, f.SeriesID).Scan(&oldID, &oldHash, &oldFacts)
+	var oldHash, oldFacts, oldReview string
+	oldErr := tx.QueryRowContext(ctx, s.q(`SELECT id,COALESCE(hash,''),facts_json,review_action FROM files WHERE path=? AND series_id=?`), f.Path, f.SeriesID).Scan(&oldID, &oldHash, &oldFacts, &oldReview)
 	if oldErr != nil && !errors.Is(oldErr, sql.ErrNoRows) {
 		return 0, oldErr
 	}
@@ -92,7 +93,7 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM asset_contents WHERE file_id=? AND evidence='manual'`), oldID).Scan(&manual); err != nil {
 			return 0, err
 		}
-		if manual > 0 {
+		if manual > 0 || oldReview != "" {
 			// A retry or scan must not undo a person's verified contents or corrections.
 			_, err = tx.ExecContext(ctx, s.q(`UPDATE files SET presence=?,presence_error='',checked_at=? WHERE id=?`), presence, utcNow(), oldID)
 			if err != nil {
@@ -129,7 +130,7 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 			provenance = excluded.provenance,
 			unrequested = excluded.unrequested,
 			needs_review = excluded.needs_review,
- facts_json=excluded.facts_json,claims_json=excluded.claims_json,hash=excluded.hash,presence=excluded.presence,checked_at=excluded.checked_at
+ facts_json=excluded.facts_json,claims_json=excluded.claims_json,hash=excluded.hash,presence=excluded.presence,checked_at=excluded.checked_at,review_action=''
 		WHERE files.series_id = excluded.series_id
 		RETURNING id`),
 		f.SeriesID, f.Path, f.Size, string(parseJSON), f.Provenance, f.Unrequested, f.NeedsReview, string(factsJSON), string(claimsJSON), f.Hash, presence, utcNow()).Scan(&fileID); err != nil {
@@ -168,9 +169,37 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 }
 
 func (s *Store) ListFiles(ctx context.Context, seriesID int64) ([]File, error) {
-	return list[File](ctx, s, `
-		SELECT id, series_id, path, size, provenance, unrequested, added_at,needs_review,COALESCE(hash,'') AS hash,facts_json,claims_json,presence,presence_error,checked_at
+	files, err := list[File](ctx, s, `
+		SELECT `+fileColumns+`
 		FROM files WHERE series_id = ? AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=files.id) ORDER BY path`, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	refs, err := list[fileBook](ctx, s, `SELECT c.file_id,c.book_id,b.edition_id,e.type AS ledger,b.sequence_num AS number FROM asset_contents c JOIN books b ON b.id=c.book_id JOIN editions e ON e.id=b.edition_id WHERE e.series_id=? AND c.verified=TRUE ORDER BY c.file_id,c.book_id`, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	byFile := map[int64][]BookRef{}
+	for _, r := range refs {
+		byFile[r.FileID] = append(byFile[r.FileID], BookRef{BookID: r.BookID, EditionID: r.EditionID, Ledger: r.Ledger, Number: r.Number})
+	}
+	for i := range files {
+		files[i].ContentBooks = byFile[files[i].ID]
+	}
+	return files, nil
+}
+
+type fileBook struct {
+	FileID, BookID, EditionID, Number int64
+	Ledger                            string
+}
+
+const fileColumns = `id,series_id,path,size,provenance,unrequested,added_at,needs_review,COALESCE(hash,'') AS hash,facts_json,claims_json,presence,presence_error,checked_at,review_action`
+
+// RecordedFiles includes trash so rejected files remain accounted for in retries
+// and download settlement, without counting them as library ownership.
+func (s *Store) RecordedFiles(ctx context.Context, seriesID int64) ([]File, error) {
+	return list[File](ctx, s, `SELECT `+fileColumns+` FROM files WHERE (?=0 OR series_id=?) ORDER BY id`, seriesID, seriesID)
 }
 
 // ForgetFile drops what is recorded about a file whose bytes were replaced

@@ -152,6 +152,109 @@ func TestPlanSubmissionRechecksOwnershipAndUsesClaims(t *testing.T) {
 	}
 }
 
+func TestAcquisitionRecordsOnlyExplicitReviewReplacements(t *testing.T) {
+	for _, mode := range []string{"automatic", "ordinary pick", "explicit pick", "scheduled explicit pick", "explicit grab"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			lib, st, sid, edition, books, version := factsClaimsFixture(t)
+			ctx := context.Background()
+			old := addFactFile(t, st, sid, edition, books[0], version, "old.cbz", store.AssetFacts{FactsKnown: true}, store.AssetFacts{})
+			prof, err := st.GetProfile(ctx, version.ProfileID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prof.UpgradesEnabled, prof.MinFormatScore = false, 100
+			if err = st.UpdateProfile(ctx, *prof); err != nil {
+				t.Fatal(err)
+			}
+			if status := bookStatus(t, lib, sid, version, books[0]); status.State != StateUnsatisfactory {
+				t.Fatalf("expected an owned but unsatisfactory book: %+v", status)
+			}
+			if mode == "automatic" || mode == "scheduled explicit pick" {
+				ctx = Scheduled(ctx)
+			}
+			prov := &payloadProvider{}
+			svc := NewSearchService(st, provider.NewRegistry(prov))
+			scope := &SearchScope{VersionID: version.ID, All: true}
+			run, err := svc.prepare(ctx, sid, "volume", scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw := provider.Candidate{Provider: prov.ID(), Protocol: "torrent", SiteID: "1", Title: "ONE PIECE v01-v03 (Digital) [English] [LuCaZ]", Torrent: &provider.TorrentRef{GUID: "pack", InfoHash: "pack", Seeders: 20, Size: 300 << 20}}
+			candidates, _ := svc.process(run, []provider.Candidate{raw})
+			if len(candidates) != 1 || len(candidates[0].Rejections) != 0 {
+				t.Fatalf("pack unavailable: %+v", candidates)
+			}
+			ref := modelRef(edition, books[0], version)
+			claims := []store.BookRef{ref, modelRef(edition, books[1], version)}
+			// Extra, duplicate and foreign-version refs cannot expand consent
+			// beyond the books actually approved for this job.
+			foreign := ref
+			foreign.VersionID++
+			requested := []store.BookRef{ref, ref, modelRef(edition, books[2], version), foreign}
+			var qid int64
+			switch mode {
+			case "automatic":
+				queued := svc.GrabBest(ctx, sid, "volume", candidates)
+				if len(queued) != 1 {
+					t.Fatalf("automatic plan: %v", queued)
+				}
+				qid = queued[0]
+			case "explicit grab":
+				c := candidates[0]
+				c.Coverage, c.RequestedReplacements = claims, requested
+				qid, err = svc.Grab(ctx, sid, "volume", c, false)
+			default:
+				pick := PlanPick{Key: candidates[0].Key, Books: claims}
+				if mode != "ordinary pick" {
+					pick.RequestedReplacements = requested
+				}
+				out := svc.SubmitPlan(ctx, sid, "volume", scope, candidates, []PlanPick{pick})
+				if len(out) != 1 || out[0].Status != "queued" {
+					t.Fatalf("plan submission: %+v", out)
+				}
+				qid = out[0].QueueID
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			job, err := st.GetQueueItem(ctx, qid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var snap ReleaseCandidate
+			if err = json.Unmarshal(job.Snapshot, &snap); err != nil {
+				t.Fatal(err)
+			}
+			explicit := mode == "explicit pick" || mode == "explicit grab"
+			if explicit && (len(snap.RequestedReplacements) != 1 || snap.RequestedReplacements[0] != ref) || !explicit && len(snap.RequestedReplacements) != 0 {
+				t.Fatalf("incorrect replacement consent: %+v", snap.RequestedReplacements)
+			}
+			root := t.TempDir()
+			fid := waitingScoredFile(t, st, sid, root, "ONE PIECE v01 (Digital).cbz", job.ReleaseKey)
+			req := ReviewPlanRequest{VersionID: version.ID, Files: []ReviewFileRequest{{FileID: fid}}}
+			plan, err := lib.PreviewReviewChoices(ctx, sid, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b := plan.Files[0].Books[0]
+			if b.RequestedReplacement != explicit || b.UseIncoming != explicit {
+				t.Fatalf("review did not respect the explicit choice: %+v", b)
+			}
+			if !explicit {
+				im := NewImporter(st, nil, root, nil)
+				if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+					t.Fatal(err)
+				}
+				owners, err := st.BookOwners(ctx, version.ID, ref.BookID)
+				if err != nil || len(owners) != 1 || owners[0].FileID != old {
+					t.Fatalf("policy-driven acquisition displaced the old copy in review: %+v %v", owners, err)
+				}
+			}
+		})
+	}
+}
+
 // A replacement search sees the stalled job's books as wanted, rules out the
 // job's own release, and keeps the job until a replacement claims its books.
 func TestReplacementKeepsOldDownloadUntilPicked(t *testing.T) {

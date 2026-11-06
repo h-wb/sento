@@ -407,7 +407,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, apperr.Conflictf("several releases share this identifier; select a specific provider and copy"))
 			return
 		}
-		qid, err := s.search.Grab(r.Context(), id, body.Ledger, matches[0], body.Force)
+		selected := matches[0]
+		selected.RequestedReplacements = body.RequestedReplacements
+		qid, err := s.search.Grab(r.Context(), id, body.Ledger, selected, body.Force)
 		if err != nil {
 			writeErr(w, err)
 			return

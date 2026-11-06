@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/store"
@@ -53,13 +54,11 @@ type ReleaseFileMatch struct {
 
 // MatchReleaseFiles applies one edition choice to a whole pack: every file
 // is mapped by its own parsed numbers onto the chosen collected version,
-// through the same upgrade path as one file's review, and organized like a
-// confirmed import. Files whose numbers do not resolve — an unreadable
+// keeping existing copies unless a replacement was explicitly requested.
+// Files whose numbers do not resolve — an unreadable
 // name, the other ledger, numbers the edition does not hold, a number two
 // books share — are left for individual review rather than guessed.
 func (im *Importer) MatchReleaseFiles(ctx context.Context, seriesID, versionID int64, fileIDs []int64) ([]ReleaseFileMatch, error) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
 	out, err := releaseFileMatches(ctx, im.store, seriesID, versionID, fileIDs)
 	if err != nil {
 		return nil, err
@@ -69,17 +68,12 @@ func (im *Importer) MatchReleaseFiles(ctx context.Context, seriesID, versionID i
 		if len(m.Books) == 0 {
 			continue
 		}
-		if _, err = im.applyUpgrades(ctx, seriesID, m.FileID, m.Books, false); err != nil {
+		var result *FileMappingResult
+		if result, err = im.ApplySafeFileMapping(ctx, seriesID, m.FileID, m.Books, false); err != nil {
 			m.Books, m.Label, m.Note = []store.BookRef{}, "", err.Error()
 			continue
 		}
-		// A failed move preserves the mapping and is reported per file.
-		if err = im.organizeReviewedFile(ctx, seriesID, m.FileID); err != nil {
-			m.Note = fmt.Sprintf("mapping saved, but organizing the file failed: %v", err)
-		}
-	}
-	if err = im.SettleReviewedJobs(ctx, seriesID); err != nil {
-		slog.Warn("settling reviewed jobs failed", "series", seriesID, "error", err)
+		m.Note = strings.Join(result.Notes, "; ")
 	}
 	return out, nil
 }
