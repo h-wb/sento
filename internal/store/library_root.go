@@ -14,9 +14,8 @@ const libraryRootKey = "library_root"
 
 // ReconcileLibraryRoot records the initial root, or rewrites library paths
 // when it changes. Call only at startup, before other database users start.
-// previous is used only to bootstrap a database without a recorded root.
 // check validates the physical destinations before any references are changed.
-func (s *Store) ReconcileLibraryRoot(ctx context.Context, root, previous string, check func(string) error) error {
+func (s *Store) ReconcileLibraryRoot(ctx context.Context, root string, check func(string) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -24,7 +23,7 @@ func (s *Store) ReconcileLibraryRoot(ctx context.Context, root, previous string,
 	defer func() { _ = tx.Rollback() }()
 	var raw []byte
 	err = tx.QueryRowContext(ctx, s.q(`SELECT value_json FROM settings WHERE key=?`), libraryRootKey).Scan(&raw)
-	old := previous
+	var old string
 	switch {
 	case err == nil:
 		if err := json.Unmarshal(raw, &old); err != nil || old == "" {

@@ -11,7 +11,7 @@ import (
 
 // PrepareLibraryRoot runs before the server or scheduler starts. Relocation
 // changes references only: the operator moves the files while Sento is stopped.
-func PrepareLibraryRoot(ctx context.Context, st *store.Store, root, previous string) error {
+func PrepareLibraryRoot(ctx context.Context, st *store.Store, root string) error {
 	if root == "" {
 		return fmt.Errorf("library path is empty")
 	}
@@ -19,13 +19,7 @@ func PrepareLibraryRoot(ctx context.Context, st *store.Store, root, previous str
 	if err != nil {
 		return err
 	}
-	if previous != "" {
-		previous, err = filepath.Abs(previous)
-		if err != nil {
-			return err
-		}
-	}
-	return st.ReconcileLibraryRoot(ctx, root, previous, func(path string) error {
+	return st.ReconcileLibraryRoot(ctx, root, func(path string) error {
 		info, err := os.Stat(path)
 		if err != nil {
 			return fmt.Errorf("relocated file %q is unavailable: %w", path, err)

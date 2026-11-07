@@ -62,7 +62,7 @@ func run(configPath string) error {
 	}
 
 	st := store.New(database, string(dialect))
-	if err := service.PrepareLibraryRoot(context.Background(), st, cfg.Library.Path, cfg.Library.PreviousPath); err != nil {
+	if err := service.PrepareLibraryRoot(context.Background(), st, cfg.Library.Path); err != nil {
 		return fmt.Errorf("prepare library root: %w", err)
 	}
 	if err := service.NewProfiles(st).EnsureDefaults(context.Background()); err != nil {

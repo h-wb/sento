@@ -58,7 +58,6 @@ The image looks for `/config/config.yml`. These are the common variables;
 | `SENTO_DB_PATH` | SQLite database path |
 | `SENTO_DB_URL` | PostgreSQL connection URL; takes precedence over SQLite |
 | `SENTO_LIBRARY_PATH` | Library root |
-| `SENTO_LIBRARY_PREVIOUS_PATH` | Previous library root on the first relocation from an older version |
 | `SENTO_DOWNLOADS_DIR` | Source download staging |
 | `SENTO_STATIC_DIR` | Built web UI directory (already set in the image) |
 | `SENTO_PATH_MAPPINGS` | Comma-separated `remote=local` torrent paths |
@@ -73,31 +72,29 @@ does not protect routes; do not rely on it for authentication.
 
 ## Moving the library
 
-Stop every Sento instance and back up the database before moving library
-files or changing their container mount paths. Move the complete tree,
+Start the updated Sento once with its current library path so it records
+the root. Then stop every Sento instance and back up the database before
+moving library files or changing their container mount paths. Move the complete tree,
 including `review/` and `.sento-trash/`, then set `SENTO_LIBRARY_PATH` to the
 new root as seen inside the Sento container. Sento remembers its root and
 rewrites stored series, chapter, file, trash and root-folder paths at startup,
 before the API and background tasks start. This updates references; it does
 not move files on disk.
 
-For the first move after upgrading from a version that did not remember its
-root, also set `SENTO_LIBRARY_PREVIOUS_PATH` (YAML: `library.previous_path`)
-to the old path. For example, after moving `/library/Managed/Volumes` and
-`/library/Managed/Chapters` up one level, use:
+For example, after moving `/library/Managed/Volumes` and
+`/library/Managed/Chapters` up one level, change the root to:
 
 ```yaml
 environment:
   SENTO_LIBRARY_PATH: /library
-  SENTO_LIBRARY_PREVIOUS_PATH: /library/Managed
 ```
 
 Every relocated live archive and trash archive must exist at its destination
 and be a regular file. Records already marked missing keep that state; empty
 series folders need not exist. Validation errors or database path collisions
 abort startup and roll back all path changes. Restore the files/configuration
-and retry. After success, remove `SENTO_LIBRARY_PREVIOUS_PATH`; retaining it
-does not repeat the rewrite. Later root changes use the recorded root.
+and retry. The new root is recorded in the same transaction, so restarting
+does not repeat the rewrite.
 Only paths inside the old root are rewritten. Torrent payload paths, source
 download staging, and series adopted outside it remain unchanged. Update
 reader library paths and other applications' mount/configuration separately.

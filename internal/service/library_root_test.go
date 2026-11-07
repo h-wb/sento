@@ -22,14 +22,17 @@ func TestPrepareLibraryRootChecksMovedFiles(t *testing.T) {
 	if _, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: src, Size: 1, Provenance: "scan"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := PrepareLibraryRoot(ctx, st, root, old); err == nil {
+	if err := PrepareLibraryRoot(ctx, st, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := PrepareLibraryRoot(ctx, st, root); err == nil {
 		t.Fatal("accepted a move before the file arrived")
 	}
 	dest := filepath.Join(root, "book.cbz")
 	if err := os.Mkdir(dest, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := PrepareLibraryRoot(ctx, st, root, old); err == nil {
+	if err := PrepareLibraryRoot(ctx, st, root); err == nil {
 		t.Fatal("accepted a directory as an archive")
 	}
 	if err := os.Remove(dest); err != nil {
@@ -38,7 +41,7 @@ func TestPrepareLibraryRootChecksMovedFiles(t *testing.T) {
 	if err := os.Rename(src, dest); err != nil {
 		t.Fatal(err)
 	}
-	if err := PrepareLibraryRoot(ctx, st, root, old); err != nil {
+	if err := PrepareLibraryRoot(ctx, st, root); err != nil {
 		t.Fatal(err)
 	}
 	files, _ := st.ListFiles(ctx, sid)
@@ -71,7 +74,7 @@ func TestPrepareLibraryRootNormalizesLegacyRelativePaths(t *testing.T) {
 	if _, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: src, Size: 1, Provenance: "scan"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := PrepareLibraryRoot(ctx, st, relative, ""); err != nil {
+	if err := PrepareLibraryRoot(ctx, st, relative); err != nil {
 		t.Fatal(err)
 	}
 	series, _ := st.GetSeries(ctx, sid)

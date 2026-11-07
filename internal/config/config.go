@@ -25,9 +25,6 @@ type Config struct {
 
 type Library struct {
 	Path string `yaml:"path"`
-	// PreviousPath bootstraps relocation on the first upgrade from a
-	// version that did not record its library root.
-	PreviousPath string `yaml:"previous_path"`
 	// PathMappings translate download-client paths to local ones
 	// ("remote=local"), for setups where qBittorrent runs on another
 	// machine whose storage is mounted here (Sonarr's remote path
@@ -136,7 +133,6 @@ func applyEnv(c *Config) {
 	str("SENTO_DB_PATH", &c.Database.Path)
 	str("SENTO_DB_URL", &c.Database.URL)
 	str("SENTO_LIBRARY_PATH", &c.Library.Path)
-	str("SENTO_LIBRARY_PREVIOUS_PATH", &c.Library.PreviousPath)
 	str("SENTO_DOWNLOADS_DIR", &c.Downloads.Dir)
 	if v, ok := os.LookupEnv("SENTO_DOWNLOADS_PAGE_CONCURRENCY"); ok {
 		if n, err := strconv.Atoi(v); err == nil {
