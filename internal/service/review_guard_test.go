@@ -97,7 +97,7 @@ func TestReviewChoicesRevalidatesLiveFilesInsideCommit(t *testing.T) {
 		if e := os.WriteFile(p.files[writes[1].FileID].Path, []byte("unreviewed replacement bytes"), 0o600); e != nil {
 			return e
 		}
-		return validateReviewFiles(ctx, writes, p.files)
+		return validateReviewFiles(ctx, writes, p.files, p.stats)
 	})
 	if !validated || !errors.Is(err, apperr.ErrConflict) {
 		t.Fatalf("live bytes were not checked during commit: called=%v err=%v", validated, err)
@@ -117,6 +117,51 @@ func TestReviewChoicesRevalidatesLiveFilesInsideCommit(t *testing.T) {
 	}
 	if _, err = os.Stat(filepath.Join(root, "first.cbz")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReviewChoicesRejectsArchiveSwappedInsideCommit(t *testing.T) {
+	t.Parallel()
+	_, st, sid, col, books, version := factsClaimsFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	fid := waitingScoredFile(t, st, sid, root, "first.cbz", "")
+	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{modelRef(col, books[0], version)}}}}
+	plan, revision, p, err := reviewChoices(ctx, st, sid, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := p.files[fid]
+	refs := []store.BookRef{plan.Files[0].Books[0].Book}
+	writes := []store.FileReviewWrite{{FileID: fid, Facts: f.Facts, Hash: f.Hash, Contents: refs, Selected: refs, Disposition: "keep"}}
+	err = st.CommitFileReviews(ctx, sid, revision, writes, func() error {
+		// A rename over the reviewed path, keeping its size and timestamps,
+		// still leaves another file at that path.
+		info, e := os.Stat(f.Path)
+		if e != nil {
+			return e
+		}
+		raw, e := os.ReadFile(f.Path)
+		if e != nil {
+			return e
+		}
+		swap := filepath.Join(root, "swap.cbz")
+		if e = os.WriteFile(swap, raw, 0o600); e != nil {
+			return e
+		}
+		if e = os.Chtimes(swap, info.ModTime(), info.ModTime()); e != nil {
+			return e
+		}
+		if e = os.Rename(swap, f.Path); e != nil {
+			return e
+		}
+		return validateReviewFiles(ctx, writes, p.files, p.stats)
+	})
+	if !errors.Is(err, apperr.ErrConflict) {
+		t.Fatalf("swapped archive passed the commit check: %v", err)
+	}
+	if cov, e := st.Coverage(ctx, sid); e != nil || len(cov) != 0 {
+		t.Fatalf("rejected review assigned ownership: %+v %v", cov, e)
 	}
 }
 

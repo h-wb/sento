@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 
@@ -108,6 +109,7 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 	if err != nil {
 		return nil, "", nil, err
 	}
+	p.stats = map[int64]os.FileInfo{}
 	out := &ReviewPlan{Files: []ReviewFilePlan{}}
 	selected := map[string]bool{}
 	digests, seen := map[int64]string{}, map[int64]bool{}
@@ -122,6 +124,11 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 		if f.Presence != "present" {
 			row.Reason, row.TrashReason = "Recheck file storage before applying choices", "Recheck file storage before moving this archive"
 		} else {
+			// Stat before hashing, so a write during or after the hash shows
+			// up when the commit compares the archive with this snapshot.
+			if p.stats[f.ID], err = os.Stat(f.Path); err != nil {
+				return nil, "", nil, fmt.Errorf("read incoming archive: %w", err)
+			}
 			digests[f.ID], err = fileHash(f.Path)
 			if err != nil {
 				return nil, "", nil, fmt.Errorf("read incoming archive: %w", err)
@@ -317,14 +324,10 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 		if f.Presence != "present" {
 			return nil, apperr.Conflictf("recheck file storage before applying choices")
 		}
-		w := store.FileReviewWrite{FileID: f.ID, Facts: reviewCorrectedFacts(f.Facts, input), Reset: input.Books != nil, Disposition: choice.Disposition}
-		w.Hash, err = fileHash(f.Path)
-		if err != nil {
-			return nil, err
-		}
-		if w.Hash != f.Hash {
-			return nil, apperr.Conflictf("archive contents changed; refresh the preview")
-		}
+		// reviewChoices has just fingerprinted the live archive under im.mu
+		// and matched it with the recorded evidence; the commit checks that
+		// the archive is still the one it read.
+		w := store.FileReviewWrite{FileID: f.ID, Facts: reviewCorrectedFacts(f.Facts, input), Hash: f.Hash, Reset: input.Books != nil, Disposition: choice.Disposition}
 		for _, b := range row.Books {
 			w.Contents = append(w.Contents, b.Book)
 			if !slices.Contains(choice.Use, b.Book) {
@@ -362,7 +365,7 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 		writes = append(writes, w)
 	}
 	if err = im.store.CommitFileReviews(ctx, sid, revision, writes, func() error {
-		return validateReviewFiles(ctx, writes, p.files)
+		return validateReviewFiles(ctx, writes, p.files, p.stats)
 	}); err != nil {
 		return nil, err
 	}
@@ -399,18 +402,22 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 	return out, nil
 }
 
-// Re-read live fingerprints under the commit's decision locks, after any wait
-// for another writer. The store keeps filesystem knowledge in the service.
-func validateReviewFiles(ctx context.Context, writes []store.FileReviewWrite, files map[int64]store.File) error {
+// Under the commit's decision locks, after any wait for another writer,
+// confirm each archive is the one the preview fingerprinted: the same file,
+// size and modification time. Fingerprinting again here would hold the
+// series' write locks while every page of the batch is decompressed. The
+// store keeps filesystem knowledge in the service.
+func validateReviewFiles(ctx context.Context, writes []store.FileReviewWrite, files map[int64]store.File, seen map[int64]os.FileInfo) error {
 	for _, w := range writes {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		digest, err := fileHash(files[w.FileID].Path)
+		live, err := os.Stat(files[w.FileID].Path)
 		if err != nil {
 			return err
 		}
-		if digest != w.Hash {
+		read, ok := seen[w.FileID]
+		if !ok || !os.SameFile(read, live) || read.Size() != live.Size() || !read.ModTime().Equal(live.ModTime()) {
 			return apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
 		}
 	}

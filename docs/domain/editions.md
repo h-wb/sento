@@ -178,9 +178,12 @@ still blocks adopting unused contents or replacing a different copy.
 A live archive whose fingerprint differs from its recorded evidence must be
 rescanned before review. A fresh preview cannot confirm old contents or facts
 against different bytes; rescan discards the old evidence and matches it anew.
-Apply checks live fingerprints again after acquiring the transaction's decision
-locks and before writing any choices, so bytes changed during a lock wait reject
-the entire batch.
+Apply fingerprints each live archive once, before the transaction. After
+acquiring the decision locks and before writing any choices, it checks that
+each path still holds the same file, size and modification time, so an archive
+changed or replaced during a lock wait rejects the entire batch. A rewrite in
+place that keeps the size and restores the timestamp is not detected there;
+trash moves fingerprint the archive again before moving it.
 The transaction locks the series before its editions, keeping inherited series
 policy stable through commit as well as version, profile and global settings.
 
