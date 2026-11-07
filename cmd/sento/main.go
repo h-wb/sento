@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -41,6 +42,13 @@ func run(configPath string) error {
 	if err != nil {
 		return err
 	}
+	if cfg.Library.Path == "" {
+		return fmt.Errorf("library path is empty")
+	}
+	cfg.Library.Path, err = filepath.Abs(cfg.Library.Path)
+	if err != nil {
+		return err
+	}
 
 	database, dialect, err := db.Open(cfg.Database.URL, cfg.Database.Path)
 	if err != nil {
@@ -54,6 +62,9 @@ func run(configPath string) error {
 	}
 
 	st := store.New(database, string(dialect))
+	if err := service.PrepareLibraryRoot(context.Background(), st, cfg.Library.Path, cfg.Library.PreviousPath); err != nil {
+		return fmt.Errorf("prepare library root: %w", err)
+	}
 	if err := service.NewProfiles(st).EnsureDefaults(context.Background()); err != nil {
 		return fmt.Errorf("seed release profiles: %w", err)
 	}
