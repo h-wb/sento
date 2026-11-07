@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/h-wb/sento/internal/store"
 )
@@ -235,7 +236,7 @@ func TestReviewTrashRejectsChangedBytesAtEveryStage(t *testing.T) {
 					t.Fatalf("rescan changed archive: %+v %v", files, err)
 				}
 				req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: files[0].ID, Books: []store.BookRef{}}}}
-				plan, _, _, err := reviewChoices(ctx, st, f.SeriesID, req, false)
+				plan, _, _, err := reviewChoices(ctx, st, f.SeriesID, req, time.Time{})
 				if err != nil {
 					t.Fatal(err)
 				}

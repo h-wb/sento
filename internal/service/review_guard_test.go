@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/store"
@@ -79,7 +80,7 @@ func TestReviewChoicesRevalidatesLiveFilesInsideCommit(t *testing.T) {
 		fid := waitingScoredFile(t, st, sid, root, name, "")
 		req.Files = append(req.Files, ReviewFileRequest{FileID: fid, Books: []store.BookRef{modelRef(col, books[i], version)}})
 	}
-	plan, revision, p, err := reviewChoices(ctx, st, sid, req, true)
+	plan, revision, p, err := reviewChoices(ctx, st, sid, req, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,7 @@ func TestReviewChoicesRejectsArchiveChangedInsideCommit(t *testing.T) {
 			fid := waitingScoredFile(t, st, sid, t.TempDir(), "first.cbz", "")
 			settleArchives(t)
 			req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{modelRef(col, books[0], version)}}}}
-			plan, revision, p, err := reviewChoices(ctx, st, sid, req, true)
+			plan, revision, p, err := reviewChoices(ctx, st, sid, req, time.Time{})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -85,16 +86,18 @@ type ReviewFileOutcome struct {
 }
 
 func (l *Library) PreviewReviewChoices(ctx context.Context, sid int64, req ReviewPlanRequest) (*ReviewPlan, error) {
-	p, _, _, err := reviewChoices(ctx, l.store, sid, req, false)
+	p, _, _, err := reviewChoices(ctx, l.store, sid, req, time.Time{})
 	return p, err
 }
 
 // reviewChoices fingerprints an archive unless its trusted stat signature
 // shows it unchanged since a fingerprint matched its recorded hash. That is
-// the signature recorded with the hash, or, when bound, the one an earlier
-// preview read: the caller then requires this plan's token to equal that
-// preview's, and the token covers each signature.
-func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPlanRequest, bound bool) (*ReviewPlan, string, *proposer, error) {
+// the signature recorded with the hash, or, when bound to an earlier preview
+// read at since, the one that preview read: the caller then requires this
+// plan's token to equal that preview's, and the token covers each signature.
+// Signatures are trusted relative to the preview's time, so an unchanged
+// archive whose timestamps settle in between keeps its token.
+func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPlanRequest, since time.Time) (*ReviewPlan, string, *proposer, error) {
 	if len(req.Files) == 0 || len(req.Files) > 500 {
 		return nil, "", nil, apperr.Invalidf("select between 1 and 500 files")
 	}
@@ -115,6 +118,10 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 		return nil, "", nil, err
 	}
 	p.stats = map[int64]string{}
+	bound := !since.IsZero()
+	if !bound {
+		since = time.Now()
+	}
 	out := &ReviewPlan{Files: []ReviewFilePlan{}}
 	selected := map[string]bool{}
 	digests, seen := map[int64]string{}, map[int64]bool{}
@@ -131,12 +138,11 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 		} else {
 			// Stat before hashing, so a write during or after the hash
 			// changes the signature the commit compares.
-			now := time.Now()
 			info, e := statArchive(f.Path)
 			if e != nil {
 				return nil, "", nil, fmt.Errorf("read incoming archive: %w", e)
 			}
-			sig := trustedSignature(info, now)
+			sig := trustedSignature(info, since)
 			p.stats[f.ID] = sig
 			if f.Hash != "" && sig != "" && (sig == f.HashStat || bound) {
 				digests[f.ID] = f.Hash
@@ -271,13 +277,23 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 	if fresh != revision {
 		return nil, "", nil, apperr.Conflictf("review changed; refresh the preview")
 	}
-	raw, err := json.Marshal([]any{revision, req, out, digests, p.stats})
+	raw, err := json.Marshal([]any{revision, req, out, digests, p.stats, since.UnixNano()})
 	if err != nil {
 		return nil, "", nil, err
 	}
 	hash := sha256.Sum256(raw)
-	out.Token = hex.EncodeToString(hash[:])
+	out.Token = strconv.FormatInt(since.UnixNano(), 10) + "." + hex.EncodeToString(hash[:])
 	return out, revision, p, nil
+}
+
+// reviewTokenTime is the time the preview that issued token read its archives.
+func reviewTokenTime(token string) (time.Time, bool) {
+	at, _, ok := strings.Cut(token, ".")
+	nanos, err := strconv.ParseInt(at, 10, 64)
+	if !ok || err != nil || nanos <= 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(0, nanos), true
 }
 
 func reviewCorrectedFacts(f store.AssetFacts, input ReviewFileRequest) store.AssetFacts {
@@ -307,11 +323,15 @@ func reviewSource(f store.File) string {
 func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req ReviewApplyRequest) ([]ReviewFileOutcome, error) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
-	plan, revision, p, err := reviewChoices(ctx, im.store, sid, req.Request, true)
+	since, ok := reviewTokenTime(req.Token)
+	if !ok {
+		return nil, apperr.Conflictf("review changed; refresh the preview before applying choices")
+	}
+	plan, revision, p, err := reviewChoices(ctx, im.store, sid, req.Request, since)
 	if err != nil {
 		return nil, err
 	}
-	if req.Token == "" || req.Token != plan.Token {
+	if req.Token != plan.Token {
 		return nil, apperr.Conflictf("review changed; refresh the preview before applying choices")
 	}
 	if len(req.Choices) != len(plan.Files) {
@@ -453,7 +473,7 @@ func (im *Importer) ApplySafeFileMapping(ctx context.Context, sid, fid int64, re
 		refs = []store.BookRef{}
 	}
 	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: refs}}}
-	plan, _, _, err := reviewChoices(ctx, im.store, sid, req, false)
+	plan, _, _, err := reviewChoices(ctx, im.store, sid, req, time.Time{})
 	if err != nil {
 		return nil, err
 	}
