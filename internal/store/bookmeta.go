@@ -29,5 +29,5 @@ func (s *Store) CatalogPayloads(ctx context.Context, seriesID, bookID int64) (se
 // SetFileLocation records where a library file now lives after it was
 // renamed or rewritten, with its new size and content fingerprint.
 func (s *Store) SetFileLocation(ctx context.Context, fileID int64, path string, size int64, hash string) error {
-	return s.touch(ctx, `UPDATE files SET path=?, size=?, hash=?, modified_at=? WHERE id=?`, path, size, hash, utcNow(), fileID)
+	return s.touch(ctx, `UPDATE files SET path=?, size=?, hash=?, hash_stat='', modified_at=? WHERE id=?`, path, size, hash, utcNow(), fileID)
 }

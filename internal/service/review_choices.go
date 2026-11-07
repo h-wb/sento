@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/store"
@@ -85,11 +85,16 @@ type ReviewFileOutcome struct {
 }
 
 func (l *Library) PreviewReviewChoices(ctx context.Context, sid int64, req ReviewPlanRequest) (*ReviewPlan, error) {
-	p, _, _, err := reviewChoices(ctx, l.store, sid, req)
+	p, _, _, err := reviewChoices(ctx, l.store, sid, req, false)
 	return p, err
 }
 
-func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPlanRequest) (*ReviewPlan, string, *proposer, error) {
+// reviewChoices fingerprints an archive unless its trusted stat signature
+// shows it unchanged since a fingerprint matched its recorded hash. That is
+// the signature recorded with the hash, or, when bound, the one an earlier
+// preview read: the caller then requires this plan's token to equal that
+// preview's, and the token covers each signature.
+func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPlanRequest, bound bool) (*ReviewPlan, string, *proposer, error) {
 	if len(req.Files) == 0 || len(req.Files) > 500 {
 		return nil, "", nil, apperr.Invalidf("select between 1 and 500 files")
 	}
@@ -109,7 +114,7 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 	if err != nil {
 		return nil, "", nil, err
 	}
-	p.stats = map[int64]os.FileInfo{}
+	p.stats = map[int64]string{}
 	out := &ReviewPlan{Files: []ReviewFilePlan{}}
 	selected := map[string]bool{}
 	digests, seen := map[int64]string{}, map[int64]bool{}
@@ -124,17 +129,25 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 		if f.Presence != "present" {
 			row.Reason, row.TrashReason = "Recheck file storage before applying choices", "Recheck file storage before moving this archive"
 		} else {
-			// Stat before hashing, so a write during or after the hash shows
-			// up when the commit compares the archive with this snapshot.
-			if p.stats[f.ID], err = os.Stat(f.Path); err != nil {
-				return nil, "", nil, fmt.Errorf("read incoming archive: %w", err)
+			// Stat before hashing, so a write during or after the hash
+			// changes the signature the commit compares.
+			now := time.Now()
+			info, e := statArchive(f.Path)
+			if e != nil {
+				return nil, "", nil, fmt.Errorf("read incoming archive: %w", e)
 			}
-			digests[f.ID], err = fileHash(f.Path)
-			if err != nil {
-				return nil, "", nil, fmt.Errorf("read incoming archive: %w", err)
-			}
-			if f.Hash != "" && f.Hash != digests[f.ID] {
-				return nil, "", nil, apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
+			sig := trustedSignature(info, now)
+			p.stats[f.ID] = sig
+			if f.Hash != "" && sig != "" && (sig == f.HashStat || bound) {
+				digests[f.ID] = f.Hash
+			} else {
+				digests[f.ID], err = fileHash(f.Path)
+				if err != nil {
+					return nil, "", nil, fmt.Errorf("read incoming archive: %w", err)
+				}
+				if f.Hash != "" && f.Hash != digests[f.ID] {
+					return nil, "", nil, apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
+				}
 			}
 			// Legacy files may have no fingerprint yet. A known fingerprint
 			// must match the evidence, never be renewed by confirmation.
@@ -258,7 +271,7 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 	if fresh != revision {
 		return nil, "", nil, apperr.Conflictf("review changed; refresh the preview")
 	}
-	raw, err := json.Marshal([]any{revision, req, out, digests})
+	raw, err := json.Marshal([]any{revision, req, out, digests, p.stats})
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -294,7 +307,7 @@ func reviewSource(f store.File) string {
 func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req ReviewApplyRequest) ([]ReviewFileOutcome, error) {
 	im.mu.Lock()
 	defer im.mu.Unlock()
-	plan, revision, p, err := reviewChoices(ctx, im.store, sid, req.Request)
+	plan, revision, p, err := reviewChoices(ctx, im.store, sid, req.Request, true)
 	if err != nil {
 		return nil, err
 	}
@@ -324,10 +337,9 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 		if f.Presence != "present" {
 			return nil, apperr.Conflictf("recheck file storage before applying choices")
 		}
-		// reviewChoices has just fingerprinted the live archive under im.mu
-		// and matched it with the recorded evidence; the commit checks that
-		// the archive is still the one it read.
-		w := store.FileReviewWrite{FileID: f.ID, Facts: reviewCorrectedFacts(f.Facts, input), Hash: f.Hash, Reset: input.Books != nil, Disposition: choice.Disposition}
+		// reviewChoices has just matched the live archive with the recorded
+		// evidence under im.mu; the commit checks it is still that archive.
+		w := store.FileReviewWrite{FileID: f.ID, Facts: reviewCorrectedFacts(f.Facts, input), Hash: f.Hash, HashStat: p.stats[f.ID], Reset: input.Books != nil, Disposition: choice.Disposition}
 		for _, b := range row.Books {
 			w.Contents = append(w.Contents, b.Book)
 			if !slices.Contains(choice.Use, b.Book) {
@@ -365,7 +377,7 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 		writes = append(writes, w)
 	}
 	if err = im.store.CommitFileReviews(ctx, sid, revision, writes, func() error {
-		return validateReviewFiles(ctx, writes, p.files, p.stats)
+		return validateReviewFiles(ctx, writes, p.files)
 	}); err != nil {
 		return nil, err
 	}
@@ -403,29 +415,23 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 }
 
 // Under the commit's decision locks, after any wait for another writer,
-// confirm each archive is the one the preview fingerprinted: the same file,
-// size, modification and change time. Fingerprinting again here would hold
-// the series' write locks while every page of the batch is decompressed, so
-// that only happens where the platform reports no change time. The store
-// keeps filesystem knowledge in the service.
-func validateReviewFiles(ctx context.Context, writes []store.FileReviewWrite, files map[int64]store.File, seen map[int64]os.FileInfo) error {
-	changed := apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
+// confirm each archive is still the one apply matched: by its stat signature,
+// or by fingerprint when that was not trusted. Fingerprinting every archive
+// here would hold the series' write locks while each page is decompressed.
+// The store keeps filesystem knowledge in the service.
+func validateReviewFiles(ctx context.Context, writes []store.FileReviewWrite, files map[int64]store.File) error {
 	for _, w := range writes {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		path := files[w.FileID].Path
-		live, err := os.Stat(path)
-		if err != nil {
-			return err
-		}
-		read, ok := seen[w.FileID]
-		if !ok || !os.SameFile(read, live) || read.Size() != live.Size() || !read.ModTime().Equal(live.ModTime()) {
-			return changed
-		}
-		if before, known := changeTime(read); known {
-			if after, _ := changeTime(live); !before.Equal(after) {
-				return changed
+		if w.HashStat != "" {
+			info, err := statArchive(path)
+			if err != nil {
+				return err
+			}
+			if statSignature(info) != w.HashStat {
+				return apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
 			}
 			continue
 		}
@@ -434,7 +440,7 @@ func validateReviewFiles(ctx context.Context, writes []store.FileReviewWrite, fi
 			return err
 		}
 		if digest != w.Hash {
-			return changed
+			return apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
 		}
 	}
 	return nil
@@ -447,7 +453,7 @@ func (im *Importer) ApplySafeFileMapping(ctx context.Context, sid, fid int64, re
 		refs = []store.BookRef{}
 	}
 	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: refs}}}
-	plan, _, _, err := reviewChoices(ctx, im.store, sid, req)
+	plan, _, _, err := reviewChoices(ctx, im.store, sid, req, false)
 	if err != nil {
 		return nil, err
 	}

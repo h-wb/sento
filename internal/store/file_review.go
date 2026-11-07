@@ -97,6 +97,7 @@ type FileReviewWrite struct {
 	FileID       int64
 	Facts        AssetFacts
 	Hash         string
+	HashStat     string // the archive's stat signature when Hash was confirmed; empty if unknown
 	Reset        bool
 	Contents     []BookRef
 	Selected     []BookRef
@@ -272,7 +273,7 @@ func (s *Store) writeFileReview(ctx context.Context, tx *sql.Tx, sid int64, w Fi
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, s.q(`UPDATE files SET facts_json=?,hash=?,needs_review=FALSE,unrequested=?,review_action=? WHERE id=? AND series_id=?`), string(raw), w.Hash, uses == 0, w.Disposition, w.FileID, sid)
+	_, err = tx.ExecContext(ctx, s.q(`UPDATE files SET facts_json=?,hash=?,hash_stat=?,needs_review=FALSE,unrequested=?,review_action=? WHERE id=? AND series_id=?`), string(raw), w.Hash, w.HashStat, uses == 0, w.Disposition, w.FileID, sid)
 	return err
 }
 

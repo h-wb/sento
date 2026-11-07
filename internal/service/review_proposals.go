@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -59,7 +58,7 @@ type proposer struct {
 	jobs     map[string]store.QueueItem // by release key
 	parses   map[int64]parse.Result     // each file's own name, parsed once
 	packs    map[string][]parse.Range   // a download's bare numbers, by release key
-	stats    map[int64]os.FileInfo      // review: each archive as it was fingerprinted
+	stats    map[int64]string           // review: each archive's trusted stat signature
 }
 
 // newProposer reads everything one series' proposals are read against, for

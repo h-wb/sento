@@ -90,3 +90,57 @@ func TestReviewRevisionIgnoresRefreshStampsAndQueueProgress(t *testing.T) {
 		t.Fatalf("title change kept the preview: %v", e)
 	}
 }
+
+func TestFileHashStatFollowsItsFingerprint(t *testing.T) {
+	t.Parallel()
+	conn, dialect := dbtest.Open(t)
+	s := New(conn, dialect)
+	ctx := context.Background()
+	var sid int64
+	if err := conn.QueryRowContext(ctx, `INSERT INTO series (mangabaka_id,title,sort_title,raw_json) VALUES (999993,'Stat','stat','{}') RETURNING id`).Scan(&sid); err != nil {
+		t.Fatal(err)
+	}
+	fid, err := s.AddFile(ctx, File{SeriesID: sid, Path: "/library/a.cbz", Hash: "one", HashStat: "sig-one", Presence: "present"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat := func() string {
+		t.Helper()
+		var v string
+		if e := conn.QueryRowContext(ctx, s.q(`SELECT hash_stat FROM files WHERE id=?`), fid).Scan(&v); e != nil {
+			t.Fatal(e)
+		}
+		return v
+	}
+	steps := []struct {
+		name string
+		run  func() error
+		want string
+	}{
+		{"insert", func() error { return nil }, "sig-one"},
+		{"facts with the same fingerprint", func() error { return s.SetAssetFacts(ctx, fid, AssetFacts{}, "one") }, "sig-one"},
+		{"signature for another fingerprint", func() error { return s.SetFileHashStat(ctx, fid, "two", "sig-two") }, "sig-one"},
+		{"facts with a new fingerprint", func() error { return s.SetAssetFacts(ctx, fid, AssetFacts{}, "two") }, ""},
+		{"signature for the fingerprint", func() error { return s.SetFileHashStat(ctx, fid, "two", "sig-two") }, "sig-two"},
+		{"move", func() error { return s.SetFileLocation(ctx, fid, "/library/b.cbz", 1, "two") }, ""},
+	}
+	for _, step := range steps {
+		if err = step.run(); err != nil {
+			t.Fatalf("%s: %v", step.name, err)
+		}
+		if got := stat(); got != step.want {
+			t.Fatalf("%s: hash_stat=%q, want %q", step.name, got, step.want)
+		}
+	}
+	revision, err := s.ReviewRevision(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := FileReviewWrite{FileID: fid, Hash: "two", HashStat: "sig-review", Disposition: "keep"}
+	if err = s.CommitFileReviews(ctx, sid, revision, []FileReviewWrite{write}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := stat(); got != "sig-review" {
+		t.Fatalf("review commit: hash_stat=%q", got)
+	}
+}

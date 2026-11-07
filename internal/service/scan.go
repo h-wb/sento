@@ -211,18 +211,27 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 
 // replaced reports whether a known file now holds different pages. Reading
 // every archive on every scan would be slow, so the fingerprint is only
-// recomputed when the file looks touched: its size differs from the
-// record, or it was modified after it was last checked. Sento's own
-// retagging trips this too and is told apart by the fingerprint, which
-// ignores metadata.
+// recomputed when the file looks touched: its stat signature differs from the
+// one recorded with its fingerprint. A file without one looks touched when
+// its size differs from the record or it was modified after it was last
+// checked. Sento's own retagging trips this too and is told apart by the
+// fingerprint, which ignores metadata.
 func (sc *Scanner) replaced(ctx context.Context, f store.File, d fs.DirEntry) (bool, error) {
 	info, err := d.Info()
 	if err != nil || f.Hash == "" || !mediafile.IsArchive(f.Path) {
 		return false, nil
 	}
-	touched := info.Size() != f.Size
-	if checked, e := time.Parse("2006-01-02 15:04:05", f.CheckedAt); e == nil && info.ModTime().UTC().After(checked) {
-		touched = true
+	now := time.Now()
+	live, err := statArchive(f.Path)
+	if err != nil {
+		return false, nil // unreadable right now: presence checks report it
+	}
+	touched := statSignature(live) != f.HashStat
+	if f.HashStat == "" {
+		touched = info.Size() != f.Size
+		if checked, e := time.Parse("2006-01-02 15:04:05", f.CheckedAt); e == nil && info.ModTime().UTC().After(checked) {
+			touched = true
+		}
 	}
 	if !touched {
 		return false, nil
@@ -235,9 +244,11 @@ func (sc *Scanner) replaced(ctx context.Context, f store.File, d fs.DirEntry) (b
 		return true, nil
 	}
 	if info.Size() != f.Size {
-		return false, sc.store.SetFileSize(ctx, f.ID, info.Size())
+		if err = sc.store.SetFileSize(ctx, f.ID, info.Size()); err != nil {
+			return false, err
+		}
 	}
-	return false, nil
+	return false, sc.store.SetFileHashStat(ctx, f.ID, f.Hash, trustedSignature(live, now))
 }
 
 // linksFor maps a parsed file onto book links: a volume file to the routed

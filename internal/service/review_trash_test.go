@@ -235,7 +235,7 @@ func TestReviewTrashRejectsChangedBytesAtEveryStage(t *testing.T) {
 					t.Fatalf("rescan changed archive: %+v %v", files, err)
 				}
 				req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: files[0].ID, Books: []store.BookRef{}}}}
-				plan, _, _, err := reviewChoices(ctx, st, f.SeriesID, req)
+				plan, _, _, err := reviewChoices(ctx, st, f.SeriesID, req, false)
 				if err != nil {
 					t.Fatal(err)
 				}

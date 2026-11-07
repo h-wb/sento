@@ -217,6 +217,10 @@ export interface FileScore {
 }
 
 //////////
+// source: filestat.go
+
+
+//////////
 // source: grab.go
 
 

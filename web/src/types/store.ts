@@ -230,6 +230,7 @@ export interface FileReviewWrite {
   FileID: number /* int64 */;
   Facts: AssetFacts;
   Hash: string;
+  HashStat: string; // the archive's stat signature when Hash was confirmed; empty if unknown
   Reset: boolean;
   Contents: BookRef[];
   Selected: BookRef[];

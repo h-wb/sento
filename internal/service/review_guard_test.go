@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/store"
@@ -80,7 +79,7 @@ func TestReviewChoicesRevalidatesLiveFilesInsideCommit(t *testing.T) {
 		fid := waitingScoredFile(t, st, sid, root, name, "")
 		req.Files = append(req.Files, ReviewFileRequest{FileID: fid, Books: []store.BookRef{modelRef(col, books[i], version)}})
 	}
-	plan, revision, p, err := reviewChoices(ctx, st, sid, req)
+	plan, revision, p, err := reviewChoices(ctx, st, sid, req, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +97,7 @@ func TestReviewChoicesRevalidatesLiveFilesInsideCommit(t *testing.T) {
 		if e := os.WriteFile(p.files[writes[1].FileID].Path, []byte("unreviewed replacement bytes"), 0o600); e != nil {
 			return e
 		}
-		return validateReviewFiles(ctx, writes, p.files, p.stats)
+		return validateReviewFiles(ctx, writes, p.files)
 	})
 	if !validated || !errors.Is(err, apperr.ErrConflict) {
 		t.Fatalf("live bytes were not checked during commit: called=%v err=%v", validated, err)
@@ -122,56 +121,27 @@ func TestReviewChoicesRevalidatesLiveFilesInsideCommit(t *testing.T) {
 }
 
 func TestReviewChoicesRejectsArchiveChangedInsideCommit(t *testing.T) {
-	// Each change keeps the archive's size and restores its mtime.
-	for name, change := range map[string]func(path string) error{
-		"swapped by rename": func(path string) error {
-			raw, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			swap := path + ".swap"
-			if err = os.WriteFile(swap, raw, 0o600); err != nil {
-				return err
-			}
-			return os.Rename(swap, path)
-		},
-		"rewritten in place": func(path string) error {
-			f, err := os.OpenFile(path, os.O_WRONLY, 0)
-			if err != nil {
-				return err
-			}
-			if _, err = f.WriteAt([]byte("x"), 1); err != nil {
-				_ = f.Close()
-				return err
-			}
-			return f.Close()
-		},
-	} {
+	for name, change := range archiveChanges {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			_, st, sid, col, books, version := factsClaimsFixture(t)
 			ctx := context.Background()
 			fid := waitingScoredFile(t, st, sid, t.TempDir(), "first.cbz", "")
+			settleArchives(t)
 			req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{modelRef(col, books[0], version)}}}}
-			plan, revision, p, err := reviewChoices(ctx, st, sid, req)
+			plan, revision, p, err := reviewChoices(ctx, st, sid, req, true)
 			if err != nil {
 				t.Fatal(err)
 			}
 			f := p.files[fid]
+			if p.stats[fid] == "" {
+				t.Fatal("settled archive has no trusted stat signature")
+			}
 			refs := []store.BookRef{plan.Files[0].Books[0].Book}
-			writes := []store.FileReviewWrite{{FileID: fid, Facts: f.Facts, Hash: f.Hash, Contents: refs, Selected: refs, Disposition: "keep"}}
+			writes := []store.FileReviewWrite{{FileID: fid, Facts: f.Facts, Hash: f.Hash, HashStat: p.stats[fid], Contents: refs, Selected: refs, Disposition: "keep"}}
 			err = st.CommitFileReviews(ctx, sid, revision, writes, func() error {
-				// File timestamps follow the kernel's coarse clock; let it
-				// tick past the preview's stat before changing the archive.
-				time.Sleep(20 * time.Millisecond)
-				mtime := p.stats[fid].ModTime()
-				if e := change(f.Path); e != nil {
-					return e
-				}
-				if e := os.Chtimes(f.Path, mtime, mtime); e != nil {
-					return e
-				}
-				return validateReviewFiles(ctx, writes, p.files, p.stats)
+				changeKeepingTimes(t, f.Path, change)
+				return validateReviewFiles(ctx, writes, p.files)
 			})
 			if !errors.Is(err, apperr.ErrConflict) {
 				t.Fatalf("changed archive passed the commit check: %v", err)
