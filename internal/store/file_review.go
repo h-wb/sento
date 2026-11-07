@@ -33,13 +33,17 @@ func (s *Store) reviewRevision(ctx context.Context, db reviewQuerier, sid int64)
 		`SELECT c.* FROM asset_contents c JOIN files f ON f.id=c.file_id WHERE f.series_id=? ORDER BY c.file_id,c.book_id`,
 		`SELECT a.* FROM asset_coverage a JOIN files f ON f.id=a.file_id WHERE f.series_id=? ORDER BY a.file_id,a.version_id,a.book_id`,
 		`SELECT t.* FROM file_trash t JOIN files f ON f.id=t.file_id WHERE f.series_id=? ORDER BY t.file_id`,
-		`SELECT id,status,books_json,snapshot_json,release_key,external_id FROM queue_items WHERE series_id=? ORDER BY id`,
+		// A download's progress through the queue is not review evidence; its
+		// files, books and requested replacements are.
+		`SELECT id,books_json,snapshot_json,release_key,external_id FROM queue_items WHERE series_id=? ORDER BY id`,
 		`SELECT * FROM profiles ORDER BY id`,
 		`SELECT * FROM custom_formats ORDER BY id`,
 		// Scheduler timestamps and connection bookkeeping do not change a
 		// review decision. Only inherited policy and file placement do.
 		`SELECT * FROM settings WHERE key IN('default_profile_id','media') ORDER BY key`,
 	}
+	// A metadata refresh stamps the series even when nothing it read changed.
+	skip := map[string]bool{"refreshed_at": true}
 	for _, query := range queries {
 		if err := json.NewEncoder(h).Encode(query); err != nil {
 			return "", err
@@ -67,7 +71,13 @@ func (s *Store) reviewRevision(ctx context.Context, db reviewQuerier, sid int64)
 				_ = rows.Close()
 				return "", err
 			}
-			if err = json.NewEncoder(h).Encode(values); err != nil {
+			kept := values[:0]
+			for i, v := range values {
+				if !skip[columns[i]] {
+					kept = append(kept, v)
+				}
+			}
+			if err = json.NewEncoder(h).Encode(kept); err != nil {
 				_ = rows.Close()
 				return "", err
 			}
@@ -87,6 +97,7 @@ type FileReviewWrite struct {
 	FileID       int64
 	Facts        AssetFacts
 	Hash         string
+	HashStat     string // the archive's stat signature when Hash was confirmed; empty if unknown
 	Reset        bool
 	Contents     []BookRef
 	Selected     []BookRef
@@ -262,7 +273,7 @@ func (s *Store) writeFileReview(ctx context.Context, tx *sql.Tx, sid int64, w Fi
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, s.q(`UPDATE files SET facts_json=?,hash=?,needs_review=FALSE,unrequested=?,review_action=? WHERE id=? AND series_id=?`), string(raw), w.Hash, uses == 0, w.Disposition, w.FileID, sid)
+	_, err = tx.ExecContext(ctx, s.q(`UPDATE files SET facts_json=?,hash=?,hash_stat=?,needs_review=FALSE,unrequested=?,review_action=? WHERE id=? AND series_id=?`), string(raw), w.Hash, w.HashStat, uses == 0, w.Disposition, w.FileID, sid)
 	return err
 }
 

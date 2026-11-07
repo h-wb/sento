@@ -178,9 +178,26 @@ still blocks adopting unused contents or replacing a different copy.
 A live archive whose fingerprint differs from its recorded evidence must be
 rescanned before review. A fresh preview cannot confirm old contents or facts
 against different bytes; rescan discards the old evidence and matches it anew.
-Apply checks live fingerprints again after acquiring the transaction's decision
-locks and before writing any choices, so bytes changed during a lock wait reject
-the entire batch.
+Fingerprinting an archive decompresses every page, so Sento records the
+archive's **stat signature** (device, inode, size, modification time and inode
+change time) with the fingerprint it read under it, and reads the archive again
+only when the live signature differs. Userspace cannot set the change time, so
+a rewrite that restores the modification time still changes the signature. As
+with git's index, a signature is trusted only once the archive's timestamps are
+two seconds older than the stat, so a later write cannot share a coarse
+filesystem timestamp. The signature is read through an open file, which makes
+NFS revalidate cached attributes. Platforms without inode metadata always
+fingerprint.
+
+A preview fingerprints an archive unless its recorded signature still matches.
+Its token covers each signature, so apply reuses the preview's fingerprint
+while the archive keeps that signature; a change in between rejects the token.
+After acquiring the decision locks and before writing any choices, apply
+compares the live signatures again (or fingerprints an archive whose signature
+was not trusted), so an archive changed or replaced during a lock wait rejects
+the entire batch. The commit records the signature with the confirmed
+fingerprint. Library scans use the same rule; a file without a signature falls
+back to its size and modification time.
 The transaction locks the series before its editions, keeping inherited series
 policy stable through commit as well as version, profile and global settings.
 

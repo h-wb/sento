@@ -226,7 +226,8 @@ func (s *Store) SetAssetFacts(ctx context.Context, id int64, f AssetFacts, hash 
 	if err != nil {
 		return err
 	}
-	return s.touch(ctx, `UPDATE files SET facts_json=?,hash=? WHERE id=?`, string(raw), hash, id)
+	// A different fingerprint was not read from the archive the signature describes.
+	return s.touch(ctx, `UPDATE files SET facts_json=?,hash_stat=CASE WHEN COALESCE(hash,'')=? THEN hash_stat ELSE '' END,hash=? WHERE id=?`, string(raw), hash, hash, id)
 }
 
 // Explicit review replaces a file's mappings atomically. It does not rewrite

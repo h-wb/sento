@@ -21,6 +21,7 @@ type File struct {
 	Facts         AssetFacts `json:"facts" db:"facts_json"`
 	NeedsReview   bool       `json:"needsReview"`
 	Hash          string     `json:"hash,omitempty"`
+	HashStat      string     `json:"-"` // stat signature of the archive Hash was read from
 	ID            int64      `json:"id"`
 	SeriesID      int64      `json:"seriesId"`
 	Path          string     `json:"path"`
@@ -121,8 +122,8 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 
 	var fileID int64
 	if err := tx.QueryRowContext(ctx, s.q(`
-		INSERT INTO files (series_id, path, size, parse_json, provenance, unrequested,needs_review,facts_json,claims_json,hash,presence,checked_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+		INSERT INTO files (series_id, path, size, parse_json, provenance, unrequested,needs_review,facts_json,claims_json,hash,hash_stat,presence,checked_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(path) DO UPDATE SET
 			series_id = excluded.series_id,
 			size = excluded.size,
@@ -130,10 +131,10 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 			provenance = excluded.provenance,
 			unrequested = excluded.unrequested,
 			needs_review = excluded.needs_review,
- facts_json=excluded.facts_json,claims_json=excluded.claims_json,hash=excluded.hash,presence=excluded.presence,checked_at=excluded.checked_at,review_action=''
+ facts_json=excluded.facts_json,claims_json=excluded.claims_json,hash=excluded.hash,hash_stat=excluded.hash_stat,presence=excluded.presence,checked_at=excluded.checked_at,review_action=''
 		WHERE files.series_id = excluded.series_id
 		RETURNING id`),
-		f.SeriesID, f.Path, f.Size, string(parseJSON), f.Provenance, f.Unrequested, f.NeedsReview, string(factsJSON), string(claimsJSON), f.Hash, presence, utcNow()).Scan(&fileID); err != nil {
+		f.SeriesID, f.Path, f.Size, string(parseJSON), f.Provenance, f.Unrequested, f.NeedsReview, string(factsJSON), string(claimsJSON), f.Hash, f.HashStat, presence, utcNow()).Scan(&fileID); err != nil {
 		return 0, err
 	}
 	for _, l := range links {
@@ -194,7 +195,7 @@ type fileBook struct {
 	Ledger                            string
 }
 
-const fileColumns = `id,series_id,path,size,provenance,unrequested,added_at,needs_review,COALESCE(hash,'') AS hash,facts_json,claims_json,presence,presence_error,checked_at,review_action`
+const fileColumns = `id,series_id,path,size,provenance,unrequested,added_at,needs_review,COALESCE(hash,'') AS hash,hash_stat,facts_json,claims_json,presence,presence_error,checked_at,review_action`
 
 // RecordedFiles includes trash so rejected files remain accounted for in retries
 // and download settlement, without counting them as library ownership.
@@ -214,6 +215,13 @@ func (s *Store) ForgetFile(ctx context.Context, id int64) error {
 // pages changing (retagged metadata).
 func (s *Store) SetFileSize(ctx context.Context, id, size int64) error {
 	_, err := s.db.ExecContext(ctx, s.q(`UPDATE files SET size = ? WHERE id = ?`), size, id)
+	return err
+}
+
+// SetFileHashStat records the stat signature taken before a fingerprint
+// matched the file's recorded hash. A changed hash leaves the row alone.
+func (s *Store) SetFileHashStat(ctx context.Context, id int64, hash, stat string) error {
+	_, err := s.db.ExecContext(ctx, s.q(`UPDATE files SET hash_stat = ? WHERE id = ? AND hash = ?`), stat, id, hash)
 	return err
 }
 

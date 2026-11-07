@@ -79,7 +79,7 @@ func TestReviewChoicesRevalidatesLiveFilesInsideCommit(t *testing.T) {
 		fid := waitingScoredFile(t, st, sid, root, name, "")
 		req.Files = append(req.Files, ReviewFileRequest{FileID: fid, Books: []store.BookRef{modelRef(col, books[i], version)}})
 	}
-	plan, revision, p, err := reviewChoices(ctx, st, sid, req)
+	plan, revision, p, err := reviewChoices(ctx, st, sid, req, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,6 +117,39 @@ func TestReviewChoicesRevalidatesLiveFilesInsideCommit(t *testing.T) {
 	}
 	if _, err = os.Stat(filepath.Join(root, "first.cbz")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReviewChoicesRejectsArchiveChangedInsideCommit(t *testing.T) {
+	for name, change := range archiveChanges {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, st, sid, col, books, version := factsClaimsFixture(t)
+			ctx := context.Background()
+			fid := waitingScoredFile(t, st, sid, t.TempDir(), "first.cbz", "")
+			settleArchives(t)
+			req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{modelRef(col, books[0], version)}}}}
+			plan, revision, p, err := reviewChoices(ctx, st, sid, req, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f := p.files[fid]
+			if p.stats[fid] == "" {
+				t.Fatal("settled archive has no trusted stat signature")
+			}
+			refs := []store.BookRef{plan.Files[0].Books[0].Book}
+			writes := []store.FileReviewWrite{{FileID: fid, Facts: f.Facts, Hash: f.Hash, HashStat: p.stats[fid], Contents: refs, Selected: refs, Disposition: "keep"}}
+			err = st.CommitFileReviews(ctx, sid, revision, writes, func() error {
+				changeKeepingTimes(t, f.Path, change)
+				return validateReviewFiles(ctx, writes, p.files)
+			})
+			if !errors.Is(err, apperr.ErrConflict) {
+				t.Fatalf("changed archive passed the commit check: %v", err)
+			}
+			if cov, e := st.Coverage(ctx, sid); e != nil || len(cov) != 0 {
+				t.Fatalf("rejected review assigned ownership: %+v %v", cov, e)
+			}
+		})
 	}
 }
 
