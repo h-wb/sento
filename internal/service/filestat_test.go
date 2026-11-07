@@ -234,14 +234,17 @@ func TestScanTrustsRecordedSignature(t *testing.T) {
 // apply see a different review.
 func TestApplyReviewChoicesAcceptsArchiveSettledSincePreview(t *testing.T) {
 	t.Parallel()
-	lib, st, sid, col, books, version := factsClaimsFixture(t)
+	_, st, sid, col, books, version := factsClaimsFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
 	fid := waitingScoredFile(t, st, sid, root, "first.cbz", "")
 	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{modelRef(col, books[0], version)}}}}
-	plan, err := lib.PreviewReviewChoices(ctx, sid, req)
+	plan, _, p, err := reviewChoices(ctx, st, sid, req, time.Time{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if p.stats[fid] != "" {
+		t.Fatal("preview must capture an archive inside the stat trust window")
 	}
 	settleArchives(t)
 	choice := ReviewFileChoice{FileID: fid, Disposition: "keep", Use: []store.BookRef{plan.Files[0].Books[0].Book}}
