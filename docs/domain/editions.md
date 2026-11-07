@@ -133,6 +133,11 @@ the same profile-aware selection as upgrades, including hard refusals.
 
 A series has a folder for its volumes (`series.path`) and, when chapters are kept apart, one for its chapters (`series.chapter_path`). Optional top folders per type (`volumesRoot`, `chaptersRoot`) put the type above the series: `Volumes/<series>/…` and `Chapters/<series>/…`; equal values (both empty by default) keep one folder per series. A series keeps its own folder name when re-rooted, and one adopted from outside the library root is never moved. Scans cover both folders, and storage availability is judged per folder, so an unreachable chapter tree does not block volumes. The `{type}` token puts the split inside the series instead (`<series>/Volumes/…`).
 
+Changing the library root itself is a separate startup operation: after the
+operator moves the tree, Sento validates destination archives and rewrites all
+library path references and its recorded root in one database transaction.
+Paths outside the old root stay unchanged. See [moving the library](../installation.md#moving-the-library).
+
 Folder layout inside a series folder is a template (`bookFolder`): by edition (`Standard Edition [en]`, the default, with `(version)` for additional copies), flat, by internal id (`editions/42/versions/81`), or custom. The fingerprint enters a file name only when configured or when a different book already holds the path.
 
 Installation does not overwrite an occupied path with different bytes. Existing library paths are preserved. A pack stays **one archive** with several coverage links. Identical bytes from one job may satisfy several confirmed versions through the same asset. Different releases remain separate assets.

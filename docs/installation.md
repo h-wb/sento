@@ -70,6 +70,35 @@ and `SENTO_EXTENSIONS_REPOS` stay in force and are read-only in the UI when
 supplied by the environment. The `SENTO_API_KEY` configuration field currently
 does not protect routes; do not rely on it for authentication.
 
+## Moving the library
+
+Start the updated Sento once with its current library path so it records
+the root. Then stop every Sento instance and back up the database before
+moving library files or changing their container mount paths. Move the complete tree,
+including `review/` and `.sento-trash/`, then set `SENTO_LIBRARY_PATH` to the
+new root as seen inside the Sento container. Sento remembers its root and
+rewrites stored series, chapter, file, trash and root-folder paths at startup,
+before the API and background tasks start. This updates references; it does
+not move files on disk.
+
+For example, after moving `/library/Managed/Volumes` and
+`/library/Managed/Chapters` up one level, change the root to:
+
+```yaml
+environment:
+  SENTO_LIBRARY_PATH: /library
+```
+
+Every relocated live archive and trash archive must exist at its destination
+and be a regular file. Records already marked missing keep that state; empty
+series folders need not exist. Validation errors or database path collisions
+abort startup and roll back all path changes. Restore the files/configuration
+and retry. The new root is recorded in the same transaction, so restarting
+does not repeat the rewrite.
+Only paths inside the old root are rewritten. Torrent payload paths, source
+download staging, and series adopted outside it remain unchanged. Update
+reader library paths and other applications' mount/configuration separately.
+
 ## Empty indexer searches
 
 A successful connection test checks that the indexer answers, not that its

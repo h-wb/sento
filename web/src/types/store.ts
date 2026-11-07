@@ -371,6 +371,10 @@ export interface Indexer {
 }
 
 //////////
+// source: library_root.go
+
+
+//////////
 // source: presence.go
 
 export interface AssetContent {
