@@ -21,7 +21,7 @@ gradle = "9.9.0"
 golangci-lint = "2.15.0"
 actionlint = "1.7.12"
 shellcheck = "0.11.0" # actionlint runs it over every `run:` script
-pitchfork = "2.33.0" # supervises the [daemons] dev stack
+pitchfork = "2.33.1" # supervises the [daemons] dev stack
 "go:golang.org/x/tools/gopls" = "latest"
 
 [env]
