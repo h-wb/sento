@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/store"
@@ -120,48 +121,65 @@ func TestReviewChoicesRevalidatesLiveFilesInsideCommit(t *testing.T) {
 	}
 }
 
-func TestReviewChoicesRejectsArchiveSwappedInsideCommit(t *testing.T) {
-	t.Parallel()
-	_, st, sid, col, books, version := factsClaimsFixture(t)
-	ctx := context.Background()
-	root := t.TempDir()
-	fid := waitingScoredFile(t, st, sid, root, "first.cbz", "")
-	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{modelRef(col, books[0], version)}}}}
-	plan, revision, p, err := reviewChoices(ctx, st, sid, req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f := p.files[fid]
-	refs := []store.BookRef{plan.Files[0].Books[0].Book}
-	writes := []store.FileReviewWrite{{FileID: fid, Facts: f.Facts, Hash: f.Hash, Contents: refs, Selected: refs, Disposition: "keep"}}
-	err = st.CommitFileReviews(ctx, sid, revision, writes, func() error {
-		// A rename over the reviewed path, keeping its size and timestamps,
-		// still leaves another file at that path.
-		info, e := os.Stat(f.Path)
-		if e != nil {
-			return e
-		}
-		raw, e := os.ReadFile(f.Path)
-		if e != nil {
-			return e
-		}
-		swap := filepath.Join(root, "swap.cbz")
-		if e = os.WriteFile(swap, raw, 0o600); e != nil {
-			return e
-		}
-		if e = os.Chtimes(swap, info.ModTime(), info.ModTime()); e != nil {
-			return e
-		}
-		if e = os.Rename(swap, f.Path); e != nil {
-			return e
-		}
-		return validateReviewFiles(ctx, writes, p.files, p.stats)
-	})
-	if !errors.Is(err, apperr.ErrConflict) {
-		t.Fatalf("swapped archive passed the commit check: %v", err)
-	}
-	if cov, e := st.Coverage(ctx, sid); e != nil || len(cov) != 0 {
-		t.Fatalf("rejected review assigned ownership: %+v %v", cov, e)
+func TestReviewChoicesRejectsArchiveChangedInsideCommit(t *testing.T) {
+	// Each change keeps the archive's size and restores its mtime.
+	for name, change := range map[string]func(path string) error{
+		"swapped by rename": func(path string) error {
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			swap := path + ".swap"
+			if err = os.WriteFile(swap, raw, 0o600); err != nil {
+				return err
+			}
+			return os.Rename(swap, path)
+		},
+		"rewritten in place": func(path string) error {
+			f, err := os.OpenFile(path, os.O_WRONLY, 0)
+			if err != nil {
+				return err
+			}
+			if _, err = f.WriteAt([]byte("x"), 1); err != nil {
+				_ = f.Close()
+				return err
+			}
+			return f.Close()
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, st, sid, col, books, version := factsClaimsFixture(t)
+			ctx := context.Background()
+			fid := waitingScoredFile(t, st, sid, t.TempDir(), "first.cbz", "")
+			req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{modelRef(col, books[0], version)}}}}
+			plan, revision, p, err := reviewChoices(ctx, st, sid, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f := p.files[fid]
+			refs := []store.BookRef{plan.Files[0].Books[0].Book}
+			writes := []store.FileReviewWrite{{FileID: fid, Facts: f.Facts, Hash: f.Hash, Contents: refs, Selected: refs, Disposition: "keep"}}
+			err = st.CommitFileReviews(ctx, sid, revision, writes, func() error {
+				// File timestamps follow the kernel's coarse clock; let it
+				// tick past the preview's stat before changing the archive.
+				time.Sleep(20 * time.Millisecond)
+				mtime := p.stats[fid].ModTime()
+				if e := change(f.Path); e != nil {
+					return e
+				}
+				if e := os.Chtimes(f.Path, mtime, mtime); e != nil {
+					return e
+				}
+				return validateReviewFiles(ctx, writes, p.files, p.stats)
+			})
+			if !errors.Is(err, apperr.ErrConflict) {
+				t.Fatalf("changed archive passed the commit check: %v", err)
+			}
+			if cov, e := st.Coverage(ctx, sid); e != nil || len(cov) != 0 {
+				t.Fatalf("rejected review assigned ownership: %+v %v", cov, e)
+			}
+		})
 	}
 }
 

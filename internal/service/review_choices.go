@@ -404,21 +404,37 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 
 // Under the commit's decision locks, after any wait for another writer,
 // confirm each archive is the one the preview fingerprinted: the same file,
-// size and modification time. Fingerprinting again here would hold the
-// series' write locks while every page of the batch is decompressed. The
-// store keeps filesystem knowledge in the service.
+// size, modification and change time. Fingerprinting again here would hold
+// the series' write locks while every page of the batch is decompressed, so
+// that only happens where the platform reports no change time. The store
+// keeps filesystem knowledge in the service.
 func validateReviewFiles(ctx context.Context, writes []store.FileReviewWrite, files map[int64]store.File, seen map[int64]os.FileInfo) error {
+	changed := apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
 	for _, w := range writes {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		live, err := os.Stat(files[w.FileID].Path)
+		path := files[w.FileID].Path
+		live, err := os.Stat(path)
 		if err != nil {
 			return err
 		}
 		read, ok := seen[w.FileID]
 		if !ok || !os.SameFile(read, live) || read.Size() != live.Size() || !read.ModTime().Equal(live.ModTime()) {
-			return apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
+			return changed
+		}
+		if before, known := changeTime(read); known {
+			if after, _ := changeTime(live); !before.Equal(after) {
+				return changed
+			}
+			continue
+		}
+		digest, err := fileHash(path)
+		if err != nil {
+			return err
+		}
+		if digest != w.Hash {
+			return changed
 		}
 	}
 	return nil
