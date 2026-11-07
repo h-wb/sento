@@ -1,0 +1,4 @@
+# Host-managed private config Paseo copies into new worktrees (Paseo >= 0.15).
+# Only gitignored files are copied, and existing ones are never overwritten.
+/mise.local.toml
+/fnox.toml
