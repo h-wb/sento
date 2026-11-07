@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/h-wb/sento/compare/v0.4.1...v0.5.0) (2026-11-07)
+
+
+### Features
+
+* **library:** relocate stored paths when the library root changes ([#46](https://github.com/h-wb/sento/issues/46)) ([804cfa6](https://github.com/h-wb/sento/commit/804cfa6f51f80bea8c031e5b7284e1d6b76fbe3b))
+
+
+### Bug Fixes
+
+* **deps:** update go dependencies ([#40](https://github.com/h-wb/sento/issues/40)) ([f06c1e9](https://github.com/h-wb/sento/commit/f06c1e94a38ce7f7d92f3f905ec631938534950a))
+* **review:** keep signature trust stable between preview and apply ([#44](https://github.com/h-wb/sento/issues/44)) ([3ad1bff](https://github.com/h-wb/sento/commit/3ad1bff59abf717315e769cdd907136ac3829bed))
+
 ## [0.4.1](https://github.com/h-wb/sento/compare/v0.4.0...v0.4.1) (2026-11-07)
 
 
