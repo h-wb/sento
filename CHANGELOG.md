@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/h-wb/sento/compare/v0.4.0...v0.4.1) (2026-11-07)
+
+
+### Performance Improvements
+
+* **files:** fingerprint archives only when their stat signature changes ([#36](https://github.com/h-wb/sento/issues/36)) ([53e6e2f](https://github.com/h-wb/sento/commit/53e6e2f67758c50a3e7a6f0e0cdb20d23be91203))
+
 ## [0.4.0](https://github.com/h-wb/sento/compare/v0.3.0...v0.4.0) (2026-11-06)
 
 
