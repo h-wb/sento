@@ -228,3 +228,24 @@ func TestScanTrustsRecordedSignature(t *testing.T) {
 		t.Fatalf("rewritten archive not replaced: %v %v", replaced, e)
 	}
 }
+
+// An archive written just before its preview has no trusted signature yet.
+// It becomes trusted as time passes without changing, which must not make
+// apply see a different review.
+func TestApplyReviewChoicesAcceptsArchiveSettledSincePreview(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, col, books, version := factsClaimsFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	fid := waitingScoredFile(t, st, sid, root, "first.cbz", "")
+	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{modelRef(col, books[0], version)}}}}
+	plan, err := lib.PreviewReviewChoices(ctx, sid, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settleArchives(t)
+	choice := ReviewFileChoice{FileID: fid, Disposition: "keep", Use: []store.BookRef{plan.Files[0].Books[0].Book}}
+	if _, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
+		t.Fatalf("apply rejected an unchanged archive: %v", err)
+	}
+}

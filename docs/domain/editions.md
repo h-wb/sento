@@ -190,8 +190,11 @@ NFS revalidate cached attributes. Platforms without inode metadata always
 fingerprint.
 
 A preview fingerprints an archive unless its recorded signature still matches.
-Its token covers each signature, so apply reuses the preview's fingerprint
-while the archive keeps that signature; a change in between rejects the token.
+Its token covers each signature and the preview's time, so apply reuses the
+preview's fingerprint while the archive keeps that signature; a change in
+between rejects the token. Apply judges each signature against the preview's
+time, not its own, so an unchanged archive that settles in between keeps its
+token.
 After acquiring the decision locks and before writing any choices, apply
 compares the live signatures again (or fingerprints an archive whose signature
 was not trusted), so an archive changed or replaced during a lock wait rejects
