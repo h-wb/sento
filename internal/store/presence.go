@@ -29,7 +29,7 @@ func (s *Store) CheckFilePresence(ctx context.Context, seriesID int64) error {
 			root = series.ChapterPath
 		}
 		if root == "" || !strings.HasPrefix(f.Path, root+string(filepath.Separator)) {
-			root = filepath.Dir(f.Path)
+			root = series.siblingFolder(f.Path)
 		}
 		rootErr, ok := roots[root]
 		if !ok {
@@ -59,6 +59,27 @@ func (s *Store) CheckFilePresence(ctx context.Context, seriesID int64) error {
 // chapter folder. False when chapters share the series folder.
 func (sr *Series) InChapterFolder(path string) bool {
 	return sr.ChapterPath != "" && strings.HasPrefix(path, sr.ChapterPath+string(filepath.Separator))
+}
+
+// siblingFolder is the top folder holding path beside the series' own
+// folders (an edition or version folder), so a book folder nested in it
+// answers to it as one under the series folder does. A path elsewhere
+// answers to its own folder.
+func (sr *Series) siblingFolder(path string) string {
+	for _, own := range []string{sr.Path, sr.ChapterPath} {
+		if own == "" {
+			continue
+		}
+		parent := filepath.Dir(own)
+		rel, err := filepath.Rel(parent, path)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		if top, rest, nested := strings.Cut(rel, string(filepath.Separator)); nested && rest != "" {
+			return filepath.Join(parent, top)
+		}
+	}
+	return filepath.Dir(path)
 }
 
 type AssetContent struct {

@@ -40,6 +40,10 @@ func TestCheckFilePresenceEditionFolders(t *testing.T) {
 	insert(vol)
 	insert(filepath.Join(editionDir, "HUNTER v02.cbz"))  // not on disk
 	insert(filepath.Join(chapterDir, "HUNTER c001.cbz")) // chapter root unreadable
+	nested := filepath.Join(editionDir, "(Colored)", "HUNTER v03.cbz")
+	insert(nested) // its book folder is gone, the edition folder is not
+	offline := filepath.Join(root, "HUNTER [mangabaka-677] [Deluxe][en]", "(Colored)", "HUNTER v01.cbz")
+	insert(offline) // the whole edition folder is gone
 	if err := s.CheckFilePresence(ctx, sid); err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +65,12 @@ func TestCheckFilePresenceEditionFolders(t *testing.T) {
 	}
 	if got[filepath.Join(editionDir, "HUNTER v02.cbz")] != "missing" {
 		t.Errorf("absent book in the edition folder: %q, want missing", got[filepath.Join(editionDir, "HUNTER v02.cbz")])
+	}
+	if got[nested] != "missing" {
+		t.Errorf("book under a removed book folder of a healthy edition folder: %q, want missing", got[nested])
+	}
+	if got[offline] != "unavailable" {
+		t.Errorf("book under a removed edition folder: %q, want unavailable", got[offline])
 	}
 	if got[filepath.Join(chapterDir, "HUNTER c001.cbz")] != "unavailable" {
 		t.Errorf("book under the unreadable chapter folder: %q, want unavailable", got[filepath.Join(chapterDir, "HUNTER c001.cbz")])
