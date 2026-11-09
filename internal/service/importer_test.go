@@ -201,7 +201,7 @@ func TestImportTorrentPayloadIsIdempotent(t *testing.T) {
 			t.Errorf("%s entries = %v", rel, names)
 		}
 		if info == nil || info.Series != "ONE PIECE" || info.LanguageISO != "en" || info.PageCount != "2" ||
-			(info.Volume != "1" && info.Volume != "2") || info.Number != info.Volume ||
+			(info.Volume != "1" && info.Volume != "2") || info.Number != "" ||
 			!strings.Contains(info.Notes, "sento:v1") || !strings.Contains(info.Notes, `release:"ONE PIECE v01-v02"`) {
 			t.Errorf("%s ComicInfo = %+v", rel, info)
 		}

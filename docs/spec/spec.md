@@ -272,7 +272,10 @@ Names may use configured title, number, language, edition, group, and version to
 Written into each CBZ on import (merged if present, Sento fields win,
 original preserved as `ComicInfo.orig.xml` once):
 
-- `Series`, `Title`, `Number` (chapter) / `Volume`, `Count` (final_volume
+- `Series`, `Title`, `Number` (chapter) / `Volume` (a volume book carries
+  `Volume` only — both would make a metadata-filing reader list it twice —
+  and numbering is always Sento's to say, a source's own guess does not
+  survive the merge), `Count` (final_volume
   when series completed), `LanguageISO`, `Writer`/`Penciller` (authors/
   artists), `Summary`, `Genre`, `Web` (mangabaka URL), `AgeRating` (from
   content_rating), `Notes` = `mangabaka:{seriesId}

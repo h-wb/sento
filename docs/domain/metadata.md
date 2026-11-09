@@ -21,7 +21,7 @@ elements they do not know.
 | Series | `Series`, `Web`; `Notes` `mangabaka:` | `Nausicaä of the Valley of the Wind` |
 | Edition, a numbering | `Format`: what its name says it is, as `parse.ReadEdition` reads it; nothing for a standard edition. `Notes` `edition:` and, for a catalog edition, `mb-edition:` | `Deluxe`, `Box Set`, `Full Color` |
 | Language | `LanguageISO` | `en` |
-| Book | `Volume`/`Number` for one book, `Title` for several; `Notes` `ledger:`, `books:`, `work:` | `Volumes 1–3` |
+| Book | `Volume` for a volume book, `Number` for a chapter — never both, and a reader that files by ComicInfo lists the book once; `Title` for several; `Notes` `ledger:`, `books:`, `work:` | `Volumes 1–3` |
 | Published material | `Publisher`: the edition's publisher | `VIZ Media` |
 | Fan translation | `Translator`: the group; no `Publisher` | `Some Scans` |
 | Group | `ScanInformation` | `1r0n` |
