@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/h-wb/sento/internal/apperr"
+	"github.com/h-wb/sento/internal/db/dbtest"
+	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -267,5 +270,111 @@ func TestReleaseMatchPreviewUsesBookIdentityAndRevalidatesOnSave(t *testing.T) {
 	contents, err := st.Contents(ctx, sid)
 	if err != nil || len(contents) != 1 || contents[0].BookID != bonusID || contents[0].FileID != extra {
 		t.Fatalf("preview changed contents or submission guessed: %+v %v", contents, err)
+	}
+}
+
+// A pack whose files the import claimed on a card whose profile refuses
+// them (waiting, unconfirmed) can be matched in bulk onto another collected
+// version of the same edition — a colored pack onto a Colored card. Files
+// with claims a person confirmed are still left for individual review.
+func TestMatchReleaseRemapsImportClaimsToAnotherVersion(t *testing.T) {
+	t.Parallel()
+	conn, dialect := dbtest.Open(t)
+	st := store.New(conn, dialect)
+	lib := NewLibrary(st, testProvider())
+	ctx := context.Background()
+	sid, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cols, _ := st.ListEditions(ctx, sid)
+	var standard store.Edition
+	for _, e := range cols {
+		if e.EditionName == "Standard Edition" && e.Type == "volume" {
+			standard = e
+		}
+	}
+	books, _ := st.ListBooks(ctx, standard.ID)
+	versions, _ := st.ListVersions(ctx, sid)
+	var version store.CollectedVersion
+	for _, v := range versions {
+		if v.EditionID == standard.ID && v.IsDefault {
+			version = v
+		}
+	}
+	root := t.TempDir()
+	im := NewImporter(st, nil, root, nil)
+
+	colored, err := st.AddFormat(ctx, profile.Format{Name: "Colored", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "colored"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bw, err := st.AddProfile(ctx, profile.Profile{Name: "Black and white", MinFormatScore: profile.MinScoreOff, Refused: []int64{colored}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	version.ProfileID = bw
+	if _, err := lib.SaveVersion(ctx, sid, version); err != nil {
+		t.Fatal(err)
+	}
+	colorProfID, err := st.AddProfile(ctx, profile.Profile{Name: "Colored", MinFormatScore: profile.MinScoreOff, Required: []int64{colored}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	card := store.CollectedVersion{EditionID: standard.ID, Name: "Colored", Monitored: true, ProfileID: colorProfID}
+	cardID, err := lib.SaveVersion(ctx, sid, card)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card.ID = cardID
+
+	// The pack's files: claimed by the import on the default card, waiting.
+	claimedFile := func(name string, b store.Book) int64 {
+		t.Helper()
+		path := filepath.Join(root, name)
+		writeCBZ(t, path, name)
+		fid, err := st.AddFile(ctx, store.File{
+			SeriesID: sid, Path: path, NeedsReview: true, Presence: "present",
+			Facts: store.AssetFacts{Title: name, FactsKnown: true, Flags: map[string]bool{"colored": true}, ReleaseKey: "pack"},
+		}, nil, []store.BookLink{{Ledger: "volume", EditionID: standard.ID, Number: b.SequenceNum, VersionID: version.ID, BookID: b.ID}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fid
+	}
+	ids := []int64{claimedFile("ONE PIECE v01 (Colored).cbz", books[0]), claimedFile("ONE PIECE v02 (Colored).cbz", books[1])}
+	// A file whose claim a person confirmed is not bulk-mappable.
+	owned := ownedModelFile(t, st, sid, standard, books[2], version)
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`UPDATE files SET needs_review=TRUE WHERE id=%d; UPDATE asset_contents SET evidence='manual' WHERE file_id=%d`, owned, owned)); err != nil {
+		t.Fatal(err)
+	}
+	ids = append(ids, owned)
+
+	matches, err := im.MatchReleaseFiles(ctx, sid, card.ID, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, m := range matches[:2] {
+		if len(m.Books) != 1 || m.Books[0].VersionID != card.ID || m.Note != "" {
+			t.Errorf("file %d: %+v, want mapped onto the Colored card", ids[i], m)
+		}
+	}
+	if len(matches[2].Books) != 0 || !strings.Contains(matches[2].Note, "already claims books") {
+		t.Errorf("confirmed file: %+v, want it left for individual review", matches[2])
+	}
+	cv, err := st.Coverage(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	onCard := 0
+	for _, a := range cv {
+		if a.FileID == ids[0] || a.FileID == ids[1] {
+			if a.VersionID == card.ID {
+				onCard++
+			}
+		}
+	}
+	if onCard != 2 {
+		t.Fatalf("%d coverage rows on the Colored card, want 2: %+v", onCard, cv)
 	}
 }
