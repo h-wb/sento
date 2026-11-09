@@ -252,6 +252,7 @@ func (s *Server) handleUpdateEdition(w http.ResponseWriter, r *http.Request) {
 	if err := s.library.UpdateEdition(r.Context(), id, cid, service.EditionUpdate{
 		Monitored: body.Monitored,
 		CutoffNum: body.CutoffNum, Language: body.Language,
+		OwnSeries: body.OwnSeries,
 	}); err != nil {
 		writeErr(w, err)
 		return

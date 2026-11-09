@@ -415,6 +415,7 @@ export interface EditionUpdate {
   Monitored?: boolean;
   CutoffNum?: number /* int64 */;
   Language?: string;
+  OwnSeries?: boolean;
 }
 
 //////////

@@ -596,6 +596,46 @@ func TestFileInfoNamesVersion(t *testing.T) {
 	}
 }
 
+// An edition marked as its own series names itself in ComicInfo, and a
+// collected version of it composes after the edition's name.
+func TestFileInfoNamesOwnSeriesEdition(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	lib, st, sid, c, ws, version := modelFixture(t)
+	colored, err := st.AddProfile(ctx, profile.Profile{Name: "Colored", FormatScores: map[int64]int{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := lib.SaveVersion(ctx, sid, store.CollectedVersion{EditionID: c.ID, Monitored: true, ProfileID: colored})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondV, err := st.GetVersion(ctx, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	series, err := st.GetSeries(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetEditionOwnSeries(ctx, sid, c.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	im := NewImporter(st, nil, t.TempDir(), nil)
+	if info := im.fileInfo(ctx, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE Standard Edition" {
+		t.Fatalf("own-series edition Series = %q, want %q", info.Series, "ONE PIECE Standard Edition")
+	}
+	if info := im.fileInfo(ctx, series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Standard Edition Colored" {
+		t.Fatalf("own-series edition's version Series = %q, want %q", info.Series, "ONE PIECE Standard Edition Colored")
+	}
+	if err := st.SetEditionOwnSeries(ctx, sid, c.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if info := im.fileInfo(ctx, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" {
+		t.Fatalf("unmarked edition Series = %q, want %q", info.Series, "ONE PIECE")
+	}
+}
+
 // With the edition in the series folder template, organising moves an
 // edition's books out of the series folder into the edition's own folder,
 // flat, and a scan still finds them there.
