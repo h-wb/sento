@@ -195,6 +195,13 @@ whole-series pack, `IsComplete` unless `(ongoing)`.
 kept in `Edition.Names` for descriptor matching against MangaBaka
 collections (resolver R6).
 
+A color word in a delimited segment claims color only as the whole tag —
+`(Colored)`, `(FULL COLOR)`, a color edition's own name — or inside the
+`Digital Colored Comics` imprint (`(FULL COLOR Digital Colored Comics)`). A
+group name that merely contains the word (`(Colored Council)`) is the group
+(§5.8), not a color claim. In free text the words claim color wherever they
+appear (publisher imprints sit mid-name).
+
 ### 5.5 Quality / provenance tags
 `(Digital)` `(Scanlated)` `(Scan)` `(c2c)` `[Premium]` `(Webtoon)`
 `(2048px)` `(x3200)` `(HQ)/(LQ)` `(F)`/`(f)` = fixed → `Version`

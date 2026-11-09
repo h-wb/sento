@@ -79,6 +79,56 @@ var spelled = map[string]string{"two": "2", "three": "3", "four": "4"}
 
 var colorPhrases = []string{"digital colored comics", "full color", "full colour", "colored", "coloured", "color", "colour"}
 
+// segmentColorClaim reports whether one delimited segment's text claims
+// color: the whole segment is a color tag ("(Colored)", "(FULL COLOR)", a
+// color edition's own name) or it carries the "Digital Colored Comics"
+// imprint ("(FULL COLOR Digital Colored Comics)"). A group name that merely
+// contains the word — "(Colored Council)" — is the group (§5.8), not a
+// color claim.
+func segmentColorClaim(lower string) bool {
+	t := strings.TrimSpace(lower)
+	for _, phrases := range [][]string{colorPhrases, colorEditionPhrases} {
+		for _, p := range phrases {
+			if t == p {
+				return true
+			}
+		}
+	}
+	return len(wordIndexes(t, "digital colored comics")) > 0
+}
+
+// maskGroupColor blanks color words inside bracketed segments that do not
+// themselves claim color (segmentColorClaim), so ReadEdition's whole-name
+// scan does not read a group name as a color claim. Free text is untouched:
+// imprints like "Digital Colored Comics" appear there mid-name and still
+// claim color. Masking replaces bytes with spaces, keeping every index.
+func maskGroupColor(name string) string {
+	b := []byte(name)
+	for i := 0; i < len(b); i++ {
+		close, ok := delimPairs[b[i]]
+		if !ok {
+			continue
+		}
+		j := strings.IndexByte(string(b[i+1:]), close)
+		if j < 0 {
+			continue
+		}
+		inner := string(b[i+1 : i+1+j])
+		lower := strings.ToLower(inner)
+		if len(lower) == len(inner) && !segmentColorClaim(lower) {
+			for _, p := range colorPhrases {
+				for _, at := range wordIndexes(lower, p) {
+					for k := 0; k < len(p); k++ {
+						b[i+1+at+k] = ' '
+					}
+				}
+			}
+		}
+		i += j + 1
+	}
+	return string(b)
+}
+
 var boxPhrases = []string{"box set", "boxset", "box edition"}
 
 // colorEditionPhrases name a color edition. "Digital Colored Comics" says
@@ -97,9 +147,11 @@ var plainEditions = map[string]bool{
 // optional ordinal ("35th Anniversary").
 var reEditionName = regexp.MustCompile(`(?i)(?:\b(\d+(?:st|nd|rd|th))\s+)?([\p{L}\d'’-]+)\s+edition\b`)
 
-// ReadEdition reads what a name says about its numbering.
+// ReadEdition reads what a name says about its numbering. Color words inside
+// a group-named bracketed segment are masked (maskGroupColor): the group is
+// metadata, not a claim.
 func ReadEdition(name string) EditionClaim {
-	lower := strings.ToLower(name)
+	lower := strings.ToLower(maskGroupColor(name))
 	var c EditionClaim
 	type span struct{ from, to int }
 	var spans []span

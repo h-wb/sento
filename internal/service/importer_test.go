@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -1018,7 +1019,9 @@ func TestRequeuedReviewJobReimportsOnlyUnrecordedPackFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := conn.ExecContext(ctx, `UPDATE queue_items SET release_key='rel-1', provider_id='torrent' WHERE id=?`, qid); err != nil {
+	// Inline the id: this goes straight to the driver, bypassing the
+	// store's ?→$N rebind, so a placeholder would fail on PostgreSQL.
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`UPDATE queue_items SET release_key='rel-1', provider_id='torrent' WHERE id=%d`, qid)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := im.ProcessQueue(ctx); err != nil {
