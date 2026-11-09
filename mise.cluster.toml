@@ -1,13 +1,11 @@
 [secrets.fnox]
 profile = "cluster"
 
-# In-cluster service endpoints.
 [env]
 SENTO_QBITTORRENT_URL = "http://qbittorrent-vpn.downloads.svc.cluster.local:8080"
 SENTO_QBITTORRENT_CATEGORY = "sento-test"
 SENTO_PROWLARR_URL = "http://prowlarr.downloads.svc.cluster.local"
 
-# Grants on this task attach only here: no overlay, no Proton Pass session.
 [tasks."run:watch"]
 description = "Rebuild and restart the backend on Go changes (for supervised services)"
 secrets = ["SENTO_QBITTORRENT_USERNAME", "SENTO_QBITTORRENT_PASSWORD", "SENTO_PROWLARR_API_KEY"]

@@ -150,7 +150,6 @@ run = "go run ./cmd/sento"
 
 [tasks."run:watch"]
 description = "Rebuild and restart the backend on Go changes (for supervised services)"
-# Secret grants and the fnox map live only in the cluster overlay.
 run = "bash scripts/watch-api.sh"
 
 [tasks.test]

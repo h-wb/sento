@@ -1,4 +1,3 @@
-# Proton Pass references only (no secret values), safe to commit.
 [providers.protonpass]
 type = "proton-pass"
 vault = "Automation General"
