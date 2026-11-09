@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/h-wb/sento/compare/v0.5.0...v0.6.0) (2026-11-09)
+
+
+### Features
+
+* **library:** bulk organize all series with dry-run preview (Sonarr-style mass rename) ([#55](https://github.com/h-wb/sento/issues/55)) ([10ce918](https://github.com/h-wb/sento/commit/10ce918dc1a44b54eb8b531a839c0816a37f8860))
+* **library:** per-edition top-level series folders ([#53](https://github.com/h-wb/sento/issues/53)) ([677cd88](https://github.com/h-wb/sento/commit/677cd88a476e31ab460e31cd6464ca8d74066f15))
+
 ## [0.5.0](https://github.com/h-wb/sento/compare/v0.4.1...v0.5.0) (2026-11-07)
 
 
