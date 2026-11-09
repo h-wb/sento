@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/h-wb/sento/internal/db/dbtest"
 	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/provider"
@@ -942,5 +943,120 @@ func TestPackImportMixedReviewAndCleanFiles(t *testing.T) {
 	}
 	if byReview[true] != 1 || byReview[false] != 1 {
 		t.Fatalf("want one file in review and one imported: %+v", fs)
+	}
+}
+
+// "Retry now" on a job parked in review re-runs the import: files of the
+// release already recorded — waiting in review or reviewed — are skipped by
+// fingerprint, so they are not duplicated, and only payload archives that
+// were never recorded (a pack cut short by an older import) are imported.
+func TestRequeuedReviewJobReimportsOnlyUnrecordedPackFiles(t *testing.T) {
+	t.Parallel()
+	conn, dialect := dbtest.Open(t)
+	st := store.New(conn, dialect)
+	lib := NewLibrary(st, testProvider())
+	ctx := context.Background()
+	sid, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cols, _ := st.ListEditions(ctx, sid)
+	var c store.Edition
+	for _, e := range cols {
+		if e.EditionName == "Standard Edition" && e.Type == "volume" {
+			c = e
+		}
+	}
+	ws, _ := st.ListBooks(ctx, c.ID)
+	versions, _ := st.ListVersions(ctx, sid)
+	var version store.CollectedVersion
+	for _, v := range versions {
+		if v.EditionID == c.ID && v.IsDefault {
+			version = v
+		}
+	}
+	scan, err := st.AddFormat(ctx, profile.Format{Name: "Scan", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "scan"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := st.AddProfile(ctx, profile.Profile{Name: "Digital only", MinFormatScore: profile.MinScoreOff, Refused: []int64{scan}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	version.ProfileID = pid
+	if _, err := lib.SaveVersion(ctx, sid, version); err != nil {
+		t.Fatal(err)
+	}
+	book := func(n int64) store.Book {
+		for _, w := range ws {
+			if w.SequenceNum == n {
+				return w
+			}
+		}
+		t.Fatalf("no book %d", n)
+		return store.Book{}
+	}
+	slots := []store.BookRef{modelRef(c, book(100), version), modelRef(c, book(200), version), modelRef(c, book(300), version)}
+	raw, _ := json.Marshal(slots)
+
+	downloads := t.TempDir()
+	folder := "ONE PIECE v01-v03 (Scan)"
+	if err := os.MkdirAll(filepath.Join(downloads, folder), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, n := range []string{"01", "02", "03"} {
+		name := "ONE PIECE v" + n + " (Scan).cbz"
+		writeCBZ(t, filepath.Join(downloads, folder, name), name)
+		files = append(files, folder+"/"+name)
+	}
+	im := NewImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), t.TempDir(), nil)
+	qid, err := st.AddQueueItem(ctx, store.QueueItem{
+		SeriesID: sid, Protocol: provider.ProtocolTorrent, ExternalID: "hash1",
+		Title: "ONE PIECE v01-v03 (Scan)", Books: raw, Status: store.QueueQueued,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, `UPDATE queue_items SET release_key='rel-1', provider_id='torrent' WHERE id=?`, qid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := im.ProcessQueue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	job, _ := st.GetQueueItem(ctx, qid)
+	fs, _ := st.ListFiles(ctx, sid)
+	if job.Status != store.QueueNeedsReview || len(fs) != 3 {
+		t.Fatalf("pass 1: status=%s files=%d, want needs_review with 3 files", job.Status, len(fs))
+	}
+	// The pre-fix failure mode: only the first pack file was ever recorded.
+	kept := fs[0].ID
+	for _, f := range fs[1:] {
+		if err := st.ForgetFile(ctx, f.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// "Retry now" re-queues the parked job; the next pass re-imports.
+	if err := st.ResumeQueue(ctx, qid, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := im.ProcessQueue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fs, _ = st.ListFiles(ctx, sid)
+	if len(fs) != 3 {
+		t.Fatalf("after retry: %d file rows, want 3 (no duplicates): %+v", len(fs), fs)
+	}
+	seenKept := false
+	for _, f := range fs {
+		if f.ID == kept {
+			seenKept = true
+		}
+		if !f.NeedsReview {
+			t.Errorf("file %d not waiting in review", f.ID)
+		}
+	}
+	if !seenKept {
+		t.Fatal("the already-recorded file row was not preserved")
 	}
 }
