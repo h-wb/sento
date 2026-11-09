@@ -117,9 +117,11 @@ func (im *Importer) fileInfo(ctx context.Context, series *store.Series, slots []
 	number := mediafile.RenderPlainNum(first.Number)
 	completed := series.Status == "completed"
 	if first.Ledger == "volume" {
-		// Number too: a merge would otherwise keep whatever the source's
-		// own ComicInfo guessed (often a year mis-parse).
-		info.Volume, info.Number = number, number
+		// Volume only: a Number beside it makes readers that file by
+		// ComicInfo (Kavita) list the volume twice, once as their volume
+		// chapter and once as the numbered chapter. Merge clears whatever
+		// Number the source guessed.
+		info.Volume = number
 		if completed && series.FinalVolume > 0 {
 			info.Count = strconv.Itoa(series.FinalVolume)
 		}

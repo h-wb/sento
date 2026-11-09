@@ -65,14 +65,18 @@ func ParseComicInfo(data []byte) (*ComicInfo, error) {
 
 // Merge overlays Sento's fields onto an existing ComicInfo: Sento wins
 // where it has a value, existing values survive elsewhere (spec.md §11.3).
+// Numbering Sento always says, including "no number": a source's own
+// guess (often a year mis-parse) must not survive a volume's absent
+// Number or a chapter's absent Volume.
 func Merge(existing, sento ComicInfo) ComicInfo {
 	out := existing
+	out.Number, out.Volume = sento.Number, sento.Volume
 	for _, f := range []struct {
 		dst *string
 		v   string
 	}{
 		{&out.Title, sento.Title}, {&out.Series, sento.Series}, {&out.LocalizedSeries, sento.LocalizedSeries},
-		{&out.Number, sento.Number}, {&out.Count, sento.Count}, {&out.Volume, sento.Volume},
+		{&out.Count, sento.Count},
 		{&out.Summary, sento.Summary}, {&out.Notes, sento.Notes},
 		{&out.Year, sento.Year}, {&out.Month, sento.Month}, {&out.Day, sento.Day},
 		{&out.Writer, sento.Writer}, {&out.Penciller, sento.Penciller}, {&out.Translator, sento.Translator},
