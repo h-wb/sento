@@ -457,16 +457,16 @@ func TestEditionFolders(t *testing.T) {
 			{1, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][en]"),
 			{2, 0}: filepath.Join(root, "Volumes", name+" [Digital Colored Comics][en]"),
 			{3, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][fr]"),
-			// Same name and language as edition 3: told apart, the newer renamed.
-			{4, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][fr] (edition 4)"),
+			// Same render as edition 3: the folder is shared.
+			{4, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][fr]"),
 			{5, 0}: filepath.Join(root, "Chapters", name+" [Standard Edition][en]"),
 		}},
 		{"one folder per edition and version", perVersion, "", map[folderKey]string{
 			{1, 0}:  filepath.Join(root, "Volumes", name+" [Standard Edition][en]"),
 			{1, 10}: filepath.Join(root, "Volumes", name+" [Standard Edition][en]"), // the default version keeps the edition's
 			{1, 11}: filepath.Join(root, "Volumes", name+" [Standard Edition][en] (Colored)"),
-			// Same name as version 11: told apart, the newer renamed.
-			{1, 12}: filepath.Join(root, "Volumes", name+" [Standard Edition][en] (Colored) (version 12)"),
+			// Same render as version 11: the folder is shared.
+			{1, 12}: filepath.Join(root, "Volumes", name+" [Standard Edition][en] (Colored)"),
 			{2, 0}:  filepath.Join(root, "Volumes", name+" [Digital Colored Comics][en]"),
 			{5, 13}: filepath.Join(root, "Chapters", name+" [Standard Edition][en] (Colored)"),
 		}},
@@ -491,11 +491,33 @@ func TestEditionFolders(t *testing.T) {
 			}
 		}
 	}
-	if err := ValidateMediaSettings(func() MediaSettings { m := perVersion; m.SeriesFolder = "{Series Title} ({version})"; return m }()); err == nil {
-		t.Error("a version token without an edition token was accepted")
+	// Grouping is by rendered name, so a version token needs no edition
+	// token: the default version renders like the series, a named one
+	// gets a sibling folder.
+	if err := ValidateMediaSettings(func() MediaSettings { m := perVersion; m.SeriesFolder = "{Series Title} ({version})"; return m }()); err != nil {
+		t.Errorf("a version token without an edition token was rejected: %v", err)
 	}
 	if err := ValidateMediaSettings(perVersion); err != nil {
 		t.Errorf("a version token beside an edition token was rejected: %v", err)
+	}
+
+	// Folders group by the name in readers: {Reader Series} renders the
+	// presented Series field, so a copy with its own name gets a sibling.
+	byReader := DefaultMediaSettings()
+	byReader.SeriesFolder = "{Reader Series} [mangabaka-{seriesId}]"
+	fanTL := std
+	fanTL.ID = 6
+	fanTL.EditionName = "Fan Translation"
+	fanTL.ReaderFields = store.ReaderFields{"series": "{Series Title} {edition} {version}"}
+	got = editionFolders(root, series(""), byReader, append(slices.Clone(editions), fanTL), colored)
+	if got[folderKey{1, 0}] != filepath.Join(root, name) {
+		t.Errorf("the default copy stays in the series folder, got %q", got[folderKey{1, 0}])
+	}
+	if want := filepath.Join(root, "ONE PIECE Fan Translation [mangabaka-377]"); got[folderKey{6, 0}] != want {
+		t.Errorf("own-name edition in %q, want %q", got[folderKey{6, 0}], want)
+	}
+	if want := filepath.Join(root, "ONE PIECE Colored [mangabaka-377]"); got[folderKey{1, 11}] != want {
+		t.Errorf("colored version in %q, want %q", got[folderKey{1, 11}], want)
 	}
 }
 

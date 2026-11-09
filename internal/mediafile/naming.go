@@ -41,6 +41,9 @@ type NameTokens struct {
 	Group      string
 	ISBN       string
 	Year       int
+	// ReaderSeries is the copy's presented Series field (the name readers
+	// file it under), so folder and file templates can use {Reader Series}.
+	ReaderSeries string
 	// Folder-layout tokens: what tells two copies of a book apart.
 	Publisher string
 	Medium    string
@@ -89,6 +92,8 @@ func render(template string, t NameTokens, sanitize func(string) string) string 
 			return slug(t.SeriesTitle)
 		case "seriesid":
 			return fmt.Sprintf("%d", t.SeriesID)
+		case "reader series":
+			return sanitize(t.ReaderSeries)
 		case "volume":
 			return renderSpan(t.Volume, t.VolumeEnd, pad)
 		case "chapter":

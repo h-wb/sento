@@ -153,6 +153,7 @@ func TestUpdateEditionReaderFields(t *testing.T) {
 	for _, bad := range []map[string]string{
 		{"series": "{Series Title} v{volume}"},
 		{"series": "{group}"},
+		{"series": "{Reader Series}"}, // the presented name cannot name itself
 		{"summary": "{Series Title}"},
 	} {
 		if err := patch(bad); !errors.Is(err, apperr.ErrInvalid) {

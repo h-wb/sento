@@ -39,6 +39,7 @@ const tokens: [string, string][] = [
   ['{type}', 'Volumes or Chapters (folders)'],
   ['{version}', 'profile of an edition collected with several, empty for its first card (folders)'],
   ['{editionId} {versionId}', 'internal ids that never change (folders)'],
+  ['{Reader Series}', 'the name in readers (ComicInfo Series), e.g. ONE PIECE Colored — folders and file names'],
 ]
 
 // The ComicInfo fields readers file and group a copy by; the backend's
@@ -48,7 +49,7 @@ const readerFields: { key: string; label: string; description: string }[] = [
     key: 'series',
     label: 'Series name in readers',
     description:
-      'Written into each book, so Kavita, Komga and other readers file it under this series. {version} is empty for an edition’s first card. An edition can set its own name in Edit edition.',
+      'Written into each book, so Kavita, Komga and other readers file it under this series. {version} is empty for an edition’s first card. An edition can set its own name in Edit edition. Also usable as {Reader Series} in folder and file names below.',
   },
   {
     key: 'seriesGroup',
@@ -60,6 +61,7 @@ const readerFields: { key: string; label: string; description: string }[] = [
 // Folder layout presets; the templates mirror the backend's constants.
 const seriesFolderDefault = '{Series Title} [mangabaka-{seriesId}]'
 const seriesFolderByEdition = '{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}] ({version})'
+const seriesFolderByReader = '{Reader Series} [mangabaka-{seriesId}]'
 const layouts: { value: string; label: string; template: string; seriesFolder?: string }[] = [
   { value: 'edition', label: 'By edition — Standard Edition [en]', template: '{edition} [{lang}] ({version})' },
   {
@@ -67,6 +69,12 @@ const layouts: { value: string; label: string; template: string; seriesFolder?: 
     label: 'One series folder per edition and version — ONE PIECE [Standard Edition][en] (Colored)',
     template: '',
     seriesFolder: seriesFolderByEdition,
+  },
+  {
+    value: 'readerFolders',
+    label: 'One folder per name in readers — ONE PIECE [mangabaka-377] beside ONE PIECE Colored [mangabaka-377]',
+    template: '',
+    seriesFolder: seriesFolderByReader,
   },
   { value: 'type', label: 'By type, then edition — Volumes/Standard Edition [en]', template: '{type}/{edition} [{lang}] ({version})' },
   { value: 'flat', label: 'Flat — everything in the series folder', template: '' },

@@ -85,13 +85,14 @@ func TestMediaSettingsPreviewEditionFolders(t *testing.T) {
 func TestValidateEditionFolderTemplates(t *testing.T) {
 	t.Parallel()
 	for template, ok := range map[string]bool{
-		SeriesFolderByEdition:                   true,
-		"{Series Title} [{editionId}]":          true,
-		"{Series Title} [{lang}]":               false, // two English editions would share it
-		"{Series Title} ({version})":            false,
-		"{edition} [{lang}]":                    false, // every series would share it
-		"{Series Title} [mangabaka-{seriesId}]": true,
-		"{Series Title} {type} [{edition}]":     true,
+		SeriesFolderByEdition:                    true,
+		"{Series Title} [{editionId}]":           true,
+		"{Series Title} [{lang}]":                true, // same-lang editions share it: folders group by rendered name
+		"{Series Title} ({version})":             true, // the default version renders like the series, a named one gets a sibling
+		"{Reader Series} [mangabaka-{seriesId}]": true,
+		"{edition} [{lang}]":                     false, // renders empty for the series itself: every series would share it
+		"{Series Title} [mangabaka-{seriesId}]":  true,
+		"{Series Title} {type} [{edition}]":      true,
 	} {
 		m := DefaultMediaSettings()
 		m.SeriesFolder = template

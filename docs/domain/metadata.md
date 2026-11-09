@@ -48,6 +48,11 @@ rewrites the files. A template names a copy, not one book, so it cannot use
 are written exactly — a source's own `Series` never survives — and a
 rescan never reads them back for identity; adoption goes through `Notes`.
 
+`Series` is also a naming token, `{Reader Series}`, for folder and file
+templates (spec §11.2): Komga, which files by folders, and Kavita, which
+files by ComicInfo, then see the same name. Copies that render the same
+series folder share it.
+
 **Published or fan-made.** A file is a fan translation when it came from an
 extension source (a scanlator delivered it) and the release does not name a
 publisher or platform (the `official` flag). Everything else is taken to be

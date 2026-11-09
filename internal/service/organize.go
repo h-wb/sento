@@ -110,21 +110,18 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	}
 
 	// Every folder the series' books may sit in: its own, plus one per
-	// edition — and per collected version, when the series folder
-	// template names versions — when the template names the edition.
+	// copy whose rendered series folder differs from the series'.
 	volumeTrees, chapterTrees := []string{volumesDir}, []string{chaptersDir}
-	if editionAware(ms.SeriesFolder) {
-		folders := editionFolders(im.libraryRoot, series, ms, editions, versions)
-		for _, e := range editions {
-			for k, dir := range folders {
-				if k.EditionID != e.ID {
-					continue
-				}
-				if e.Type == "chapter" {
-					chapterTrees = append(chapterTrees, dir)
-				} else {
-					volumeTrees = append(volumeTrees, dir)
-				}
+	folders := editionFolders(im.libraryRoot, series, ms, editions, versions)
+	for _, e := range editions {
+		for k, dir := range folders {
+			if k.EditionID != e.ID {
+				continue
+			}
+			if e.Type == "chapter" {
+				chapterTrees = append(chapterTrees, dir)
+			} else {
+				volumeTrees = append(volumeTrees, dir)
 			}
 		}
 	}

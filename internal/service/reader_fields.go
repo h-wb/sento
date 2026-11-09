@@ -13,9 +13,11 @@ import (
 // for every book of an edition's version, so it cannot use them.
 var bookTokens = []string{"volume", "chapter", "group", "isbn"}
 
-// copyTokens are what a copy's presented fields render with: its series,
-// its edition and, beside the edition's default version, the version.
-func copyTokens(series *store.Series, e store.Edition, v *store.CollectedVersion) mediafile.NameTokens {
+// baseCopyTokens are what a copy's presented fields render with: its
+// series, its edition and, beside the edition's default version, the
+// version. They do not include the presented names themselves, so a
+// presented-field template cannot name {Reader Series}.
+func baseCopyTokens(series *store.Series, e store.Edition, v *store.CollectedVersion) mediafile.NameTokens {
 	t := editionTokens(series, e)
 	if v != nil {
 		t.VersionID = v.ID
@@ -23,6 +25,15 @@ func copyTokens(series *store.Series, e store.Edition, v *store.CollectedVersion
 			t.Version = v.Name
 		}
 	}
+	return t
+}
+
+// copyTokens are what a copy's paths render with: the base tokens plus its
+// reader series name, so {Reader Series} in a folder or file template is
+// the same name readers file the copy under.
+func copyTokens(ms MediaSettings, series *store.Series, e store.Edition, v *store.CollectedVersion) mediafile.NameTokens {
+	t := baseCopyTokens(series, e, v)
+	t.ReaderSeries = readerValues(ms, series, e, v)["series"]
 	return t
 }
 
@@ -42,7 +53,7 @@ func readerTemplate(f mediafile.PresentedField, ms MediaSettings, e store.Editio
 // renders empty for it falls back to the field's default, so a copy always
 // has a series name.
 func readerValues(ms MediaSettings, series *store.Series, e store.Edition, v *store.CollectedVersion) map[string]string {
-	tokens := copyTokens(series, e, v)
+	tokens := baseCopyTokens(series, e, v)
 	out := map[string]string{}
 	for _, f := range mediafile.PresentedFields {
 		value := mediafile.RenderText(readerTemplate(f, ms, e), tokens)
@@ -80,7 +91,7 @@ func validateReaderFields(fields map[string]string, series *store.Series, e stor
 				return apperr.Invalidf("the %s in readers holds for every book, so it cannot use {%s}", f.Label, t)
 			}
 		}
-		if mediafile.RenderText(template, copyTokens(series, e, v)) == "" {
+		if mediafile.RenderText(template, baseCopyTokens(series, e, v)) == "" {
 			return apperr.Invalidf("the %s in readers renders empty", f.Label)
 		}
 	}

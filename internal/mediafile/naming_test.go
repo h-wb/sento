@@ -83,3 +83,11 @@ func TestRenderTextKeepsPunctuation(t *testing.T) {
 		t.Fatalf("Render = %q", got)
 	}
 }
+
+// {Reader Series} renders the presented series name in a path.
+func TestRenderReaderSeries(t *testing.T) {
+	tokens := NameTokens{SeriesTitle: "ONE PIECE", SeriesID: 377, ReaderSeries: "ONE PIECE Colored", Volume: -1, Chapter: -1}
+	if got := Render("{Reader Series} [mangabaka-{seriesId}]", tokens); got != "ONE PIECE Colored [mangabaka-377]" {
+		t.Fatalf("Render = %q", got)
+	}
+}
