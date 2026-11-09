@@ -22,13 +22,16 @@ type File struct {
 	NeedsReview   bool       `json:"needsReview"`
 	Hash          string     `json:"hash,omitempty"`
 	HashStat      string     `json:"-"` // stat signature of the archive Hash was read from
-	ID            int64      `json:"id"`
-	SeriesID      int64      `json:"seriesId"`
-	Path          string     `json:"path"`
-	Size          int64      `json:"size"`
-	Provenance    string     `json:"provenance"`
-	Unrequested   bool       `json:"unrequested"`
-	AddedAt       string     `json:"addedAt"`
+	// ParserVersion is the parse.Version that derived the filename-sourced
+	// facts; a scan re-reads the name when the parser has moved on.
+	ParserVersion int64  `json:"-"`
+	ID            int64  `json:"id"`
+	SeriesID      int64  `json:"seriesId"`
+	Path          string `json:"path"`
+	Size          int64  `json:"size"`
+	Provenance    string `json:"provenance"`
+	Unrequested   bool   `json:"unrequested"`
+	AddedAt       string `json:"addedAt"`
 }
 
 type BookLink struct {
@@ -96,7 +99,7 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 		}
 		if manual > 0 || oldReview != "" {
 			// A retry or scan must not undo a person's verified contents or corrections.
-			_, err = tx.ExecContext(ctx, s.q(`UPDATE files SET presence=?,presence_error='',checked_at=? WHERE id=?`), presence, utcNow(), oldID)
+			_, err = tx.ExecContext(ctx, s.q(`UPDATE files SET presence=?,presence_error='',checked_at=?,parser_version=? WHERE id=?`), presence, utcNow(), f.ParserVersion, oldID)
 			if err != nil {
 				return 0, err
 			}
@@ -122,11 +125,12 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 
 	var fileID int64
 	if err := tx.QueryRowContext(ctx, s.q(`
-		INSERT INTO files (series_id, path, size, parse_json, provenance, unrequested,needs_review,facts_json,claims_json,hash,hash_stat,presence,checked_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+		INSERT INTO files (series_id, path, size, parse_json, provenance, unrequested,needs_review,facts_json,claims_json,hash,hash_stat,parser_version,presence,checked_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(path) DO UPDATE SET
 			series_id = excluded.series_id,
 			size = excluded.size,
+			parser_version = excluded.parser_version,
 			parse_json = excluded.parse_json,
 			provenance = excluded.provenance,
 			unrequested = excluded.unrequested,
@@ -134,7 +138,7 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
  facts_json=excluded.facts_json,claims_json=excluded.claims_json,hash=excluded.hash,hash_stat=excluded.hash_stat,presence=excluded.presence,checked_at=excluded.checked_at,review_action=''
 		WHERE files.series_id = excluded.series_id
 		RETURNING id`),
-		f.SeriesID, f.Path, f.Size, string(parseJSON), f.Provenance, f.Unrequested, f.NeedsReview, string(factsJSON), string(claimsJSON), f.Hash, f.HashStat, presence, utcNow()).Scan(&fileID); err != nil {
+		f.SeriesID, f.Path, f.Size, string(parseJSON), f.Provenance, f.Unrequested, f.NeedsReview, string(factsJSON), string(claimsJSON), f.Hash, f.HashStat, f.ParserVersion, presence, utcNow()).Scan(&fileID); err != nil {
 		return 0, err
 	}
 	for _, l := range links {
@@ -195,7 +199,7 @@ type fileBook struct {
 	Ledger                            string
 }
 
-const fileColumns = `id,series_id,path,size,provenance,unrequested,added_at,needs_review,COALESCE(hash,'') AS hash,hash_stat,facts_json,claims_json,presence,presence_error,checked_at,review_action`
+const fileColumns = `id,series_id,path,size,provenance,unrequested,added_at,needs_review,COALESCE(hash,'') AS hash,hash_stat,parser_version,facts_json,claims_json,presence,presence_error,checked_at,review_action`
 
 // RecordedFiles includes trash so rejected files remain accounted for in retries
 // and download settlement, without counting them as library ownership.

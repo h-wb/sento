@@ -13,6 +13,12 @@ import (
 	"strings"
 )
 
+// Version is the parser revision stamped on files whose filename-derived
+// facts were read from them. Bump it whenever parser output for existing
+// names may change (the corpus locks behavior; this marks facts stale):
+// scans re-read those names when a file's stored version is older.
+const Version = 1
+
 func Parse(name string, ch Channel) Result {
 	res := Result{ContentType: ContentManga, Confidence: 1}
 	cleaned := preClean(name)
