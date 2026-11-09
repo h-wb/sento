@@ -1,7 +1,7 @@
-# Paseo pod overlay, loaded only when MISE_ENV=paseo (set by the host's
-# conf.d/paseo layer; workstations never set it). In-cluster service
-# endpoints — values only, no credentials: those resolve from fnox.toml
-# through the task's secret grants.
+# Cluster access layer, loaded only when MISE_ENV=cluster (set by the host's
+# conf.d/paseo layer on the pods; workstations never set it). In-cluster
+# service endpoints — values only, no credentials: those resolve from
+# fnox.toml through the task's secret grants.
 [env]
 SENTO_QBITTORRENT_URL = "http://qbittorrent-vpn.downloads.svc.cluster.local:8080"
 SENTO_QBITTORRENT_CATEGORY = "sento-test"
@@ -9,7 +9,7 @@ SENTO_PROWLARR_URL = "http://prowlarr.downloads.svc.cluster.local"
 
 # The supervised watcher talks to the real qBittorrent/Prowlarr clients, so it
 # runs with task-scoped secret grants. Defined here (not in the base task) so a
-# dev checkout without this overlay never needs a Proton Pass session; the
+# checkout without this overlay never needs a Proton Pass session; the
 # base command stays identical.
 [tasks."run:watch"]
 description = "Rebuild and restart the backend on Go changes (for supervised services)"

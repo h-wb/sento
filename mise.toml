@@ -33,8 +33,8 @@ pitchfork = "2.33.1" # supervises the [daemons] dev stack
 [env]
 CGO_ENABLED = "0"
 # Dev defaults. Personal overrides go in the gitignored mise.local.toml; the
-# Paseo pods layer the tracked mise.paseo.toml on top (MISE_ENV=paseo) with the
-# in-cluster values — e.g. SENTO_QBITTORRENT_URL, SENTO_PROWLARR_URL.
+# The pods layer the tracked mise.cluster.toml on top (MISE_ENV=cluster) with
+# the in-cluster values — e.g. SENTO_QBITTORRENT_URL, SENTO_PROWLARR_URL.
 SENTO_DB_PATH = "data/sento.db"
 SENTO_LIBRARY_PATH = "data/library"
 # Dev default: sento-extensions sidecar on its default port (mise run extensions:run).
@@ -157,8 +157,9 @@ run = "go run ./cmd/sento"
 
 [tasks."run:watch"]
 description = "Rebuild and restart the backend on Go changes (for supervised services)"
-# The Paseo overlay (mise.paseo.toml) redefines this task with the Qbit/Prowlarr
-# secret grants; a plain dev checkout runs without any Proton Pass session.
+# The cluster overlay (mise.cluster.toml) redefines this task with the
+# Qbit/Prowlarr secret grants; a checkout without it runs without any Proton
+# Pass session.
 run = "bash scripts/watch-api.sh"
 
 [tasks.test]
