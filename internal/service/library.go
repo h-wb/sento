@@ -249,7 +249,7 @@ func (l *Library) UpdateEdition(ctx context.Context, seriesID, editionID int64, 
 			return err
 		}
 	}
-	if u.CutoffNum == nil && u.Language == nil {
+	if u.CutoffNum == nil && u.Language == nil && u.OwnSeries == nil {
 		return nil
 	}
 	col, err := l.store.GetEdition(ctx, editionID)

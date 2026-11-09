@@ -119,3 +119,37 @@ func TestCustomEditions(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A patch that only marks the edition as its own series still applies.
+func TestUpdateEditionOwnSeries(t *testing.T) {
+	t.Parallel()
+	lib, st := setup(t)
+	ctx := context.Background()
+	id, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cols, err := st.ListEditions(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	std := collectionByName(t, cols, "Standard Edition", "en")
+	own := true
+	if err := lib.UpdateEdition(ctx, id, std.ID, EditionUpdate{OwnSeries: &own}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetEdition(ctx, std.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.OwnSeries {
+		t.Fatal("an own-series-only patch did not apply")
+	}
+	own = false
+	if err := lib.UpdateEdition(ctx, id, std.ID, EditionUpdate{OwnSeries: &own}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = st.GetEdition(ctx, std.ID); got.OwnSeries {
+		t.Fatal("the own-series patch did not clear")
+	}
+}
