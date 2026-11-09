@@ -21,12 +21,14 @@ func (s *Store) CheckFilePresence(ctx context.Context, seriesID int64) error {
 	roots := map[string]error{}
 	for _, f := range files {
 		// A file answers to the folder it lives under: an unreachable
-		// chapter folder says nothing about the volumes.
+		// chapter folder says nothing about the volumes, and a book in
+		// an edition or version folder answers to that folder — the
+		// series' own may be gone, nothing lives there anymore.
 		root := series.Path
 		if series.InChapterFolder(f.Path) {
 			root = series.ChapterPath
 		}
-		if root == "" {
+		if root == "" || !strings.HasPrefix(f.Path, root+string(filepath.Separator)) {
 			root = filepath.Dir(f.Path)
 		}
 		rootErr, ok := roots[root]
