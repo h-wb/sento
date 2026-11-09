@@ -55,6 +55,13 @@ classification) → numbers.go (extraction) → parse.go (orchestration);
 anchor.go is the title-aware entry point, num.go the number domain.
 */
 
+/**
+ * Version is the parser revision stamped on files whose filename-derived
+ * facts were read from them. Bump it whenever parser output for existing
+ * names may change (the corpus locks behavior; this marks facts stale):
+ * scans re-read those names when a file's stored version is older.
+ */
+export const Version = 1;
 
 //////////
 // source: result.go
