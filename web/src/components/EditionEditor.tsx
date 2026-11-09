@@ -1,17 +1,40 @@
 import { useState } from 'react'
-import { Alert, Button, Group, Select, Stack, Text, TextInput } from '@mantine/core'
+import {
+  Alert,
+  Button,
+  Divider,
+  Group,
+  Radio,
+  Select,
+  Stack,
+  Text,
+  TextInput,
+} from '@mantine/core'
+import { useDebouncedValue } from '@mantine/hooks'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../api'
 import type { Edition } from '../types/store'
 import { EditionOrigin } from './Origin'
 import { EditorModal } from './EditorModal'
 import { useEditor } from './useEditor'
 import { edited } from './editionText'
 
+// An edition's series name in readers: the library's, its own name after
+// the title, or a template of its own.
+const editionSeriesName = '{Series Title} {edition} {version}'
+type NameChoice = 'library' | 'edition' | 'custom'
+const choiceOf = (template = ''): NameChoice =>
+  !template.trim() ? 'library' : template === editionSeriesName ? 'edition' : 'custom'
+
 export function EditionEditor({
+  seriesID,
   value,
   save,
+  saveReaderFields,
   reset,
   close,
 }: {
+  seriesID: number
   value: Edition
   save: (p: {
     editionName: string
@@ -20,6 +43,7 @@ export function EditionEditor({
     medium: string
     numberingSource: string
   }) => Promise<void>
+  saveReaderFields: (fields: Record<string, string>) => Promise<void>
   reset: () => Promise<void>
   close: () => void
 }) {
@@ -29,9 +53,30 @@ export function EditionEditor({
     value.overrides.includes('publisher') || value.overrides.includes('medium'),
   )
   const edit = useEditor()
+  const savedName = value.readerFields.series ?? ''
+  const [choice, setChoice] = useState(choiceOf(savedName))
+  const [custom, setCustom] = useState(choiceOf(savedName) === 'custom' ? savedName : editionSeriesName)
+  const seriesName = { library: '', edition: editionSeriesName, custom }[choice]
+  const readerFields = { ...value.readerFields, series: seriesName }
+  const nameChanged = seriesName !== savedName
+  // What readers will show for each card of the edition, rendered by the
+  // server as files are.
+  const [previewFields] = useDebouncedValue(readerFields, 300)
+  const names = useQuery({
+    queryKey: ['series', seriesID, 'reader-names', value.id, previewFields],
+    queryFn: () => api.readerNames(seriesID, { editionId: value.id, readerFields: previewFields }),
+    placeholderData: (prev) => prev,
+    retry: false,
+  })
+  const nameError = names.error instanceof Error ? names.error.message : undefined
+  const shown = [
+    ...new Set(
+      (names.data ?? []).filter((n) => n.editionId === value.id).map((n) => n.fields.series),
+    ),
+  ]
   return (
     <EditorModal
-      dirty={JSON.stringify(v) !== JSON.stringify(value)}
+      dirty={JSON.stringify(v) !== JSON.stringify(value) || nameChanged}
       busy={edit.busy}
       onClose={close}
       title={'Edit edition'}
@@ -39,7 +84,10 @@ export function EditionEditor({
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          void edit.run(() => save(v))
+          void edit.run(async () => {
+            if (nameChanged) await saveReaderFields(readerFields)
+            await save(v)
+          })
         }}
       >
         <Stack>
@@ -115,6 +163,35 @@ export function EditionEditor({
               disabled={edit.busy}
               onChange={(source) => set({ ...v, numberingSource: source ?? 'manual' })}
             />
+          )}
+          <Divider label="In readers" labelPosition="left" mt="xs" />
+          <Radio.Group
+            label="Series name"
+            description="The series Kavita, Komga and other readers file this edition under. Give it its own to show it apart from the series’ other editions."
+            value={choice}
+            onChange={(c) => setChoice(c as NameChoice)}
+          >
+            <Stack gap={6} mt={6}>
+              <Radio value="library" label="Same as the library (Settings → Media)" disabled={edit.busy} />
+              <Radio value="edition" label="The series and edition name" disabled={edit.busy} />
+              <Radio value="custom" label="Custom" disabled={edit.busy} />
+            </Stack>
+          </Radio.Group>
+          {choice === 'custom' && (
+            <TextInput
+              aria-label="Custom series name"
+              description="Plain text, or tokens such as {Series Title}, {edition}, {lang} and {version}."
+              value={custom}
+              error={nameError}
+              disabled={edit.busy}
+              onChange={(e) => setCustom(e.currentTarget.value)}
+            />
+          )}
+          {!nameError && shown.length > 0 && (
+            <Text size="xs" c="dimmed">
+              Readers show {shown.map((n) => `“${n}”`).join(' and ')}. Existing files change when
+              you organize them.
+            </Text>
           )}
           {edit.error && <Alert color="red">{edit.error}</Alert>}
           <Group justify="space-between">

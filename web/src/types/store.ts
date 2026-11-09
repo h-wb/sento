@@ -186,10 +186,11 @@ export interface Edition {
   profileId?: number /* int64 */; // 0 = inherit from series
   cutoffNum: number /* int64 */; // chapter editions: skip through this number (exclusive cutoff)
   /**
-   * OwnSeries: the edition names itself in ComicInfo Series, so readers
-   * that group by metadata keep it apart from its siblings.
+   * ReaderFields are the edition's own templates for the ComicInfo
+   * fields readers file it by, keyed by field ("series"); a field it
+   * does not name follows the media settings.
    */
-  ownSeries: boolean;
+  readerFields: ReaderFields;
   /**
    * Overrides names the fields edited by hand, which refreshes leave alone.
    */
@@ -223,6 +224,10 @@ export interface Book {
    */
   copies: number /* int */;
 }
+/**
+ * ReaderFields maps a presented ComicInfo field to its template.
+ */
+export type ReaderFields = { [key: string]: string};
 
 //////////
 // source: file_review.go

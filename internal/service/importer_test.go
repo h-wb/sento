@@ -457,16 +457,16 @@ func TestEditionFolders(t *testing.T) {
 			{1, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][en]"),
 			{2, 0}: filepath.Join(root, "Volumes", name+" [Digital Colored Comics][en]"),
 			{3, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][fr]"),
-			// Same name and language as edition 3: told apart, the newer renamed.
-			{4, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][fr] (edition 4)"),
+			// Same render as edition 3: the folder is shared.
+			{4, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][fr]"),
 			{5, 0}: filepath.Join(root, "Chapters", name+" [Standard Edition][en]"),
 		}},
 		{"one folder per edition and version", perVersion, "", map[folderKey]string{
 			{1, 0}:  filepath.Join(root, "Volumes", name+" [Standard Edition][en]"),
 			{1, 10}: filepath.Join(root, "Volumes", name+" [Standard Edition][en]"), // the default version keeps the edition's
 			{1, 11}: filepath.Join(root, "Volumes", name+" [Standard Edition][en] (Colored)"),
-			// Same name as version 11: told apart, the newer renamed.
-			{1, 12}: filepath.Join(root, "Volumes", name+" [Standard Edition][en] (Colored) (version 12)"),
+			// Same render as version 11: the folder is shared.
+			{1, 12}: filepath.Join(root, "Volumes", name+" [Standard Edition][en] (Colored)"),
 			{2, 0}:  filepath.Join(root, "Volumes", name+" [Digital Colored Comics][en]"),
 			{5, 13}: filepath.Join(root, "Chapters", name+" [Standard Edition][en] (Colored)"),
 		}},
@@ -491,11 +491,33 @@ func TestEditionFolders(t *testing.T) {
 			}
 		}
 	}
-	if err := ValidateMediaSettings(func() MediaSettings { m := perVersion; m.SeriesFolder = "{Series Title} ({version})"; return m }()); err == nil {
-		t.Error("a version token without an edition token was accepted")
+	// Grouping is by rendered name, so a version token needs no edition
+	// token: the default version renders like the series, a named one
+	// gets a sibling folder.
+	if err := ValidateMediaSettings(func() MediaSettings { m := perVersion; m.SeriesFolder = "{Series Title} ({version})"; return m }()); err != nil {
+		t.Errorf("a version token without an edition token was rejected: %v", err)
 	}
 	if err := ValidateMediaSettings(perVersion); err != nil {
 		t.Errorf("a version token beside an edition token was rejected: %v", err)
+	}
+
+	// Folders group by the name in readers: {Reader Series} renders the
+	// presented Series field, so a copy with its own name gets a sibling.
+	byReader := DefaultMediaSettings()
+	byReader.SeriesFolder = "{Reader Series} [mangabaka-{seriesId}]"
+	fanTL := std
+	fanTL.ID = 6
+	fanTL.EditionName = "Fan Translation"
+	fanTL.ReaderFields = store.ReaderFields{"series": "{Series Title} {edition} {version}"}
+	got = editionFolders(root, series(""), byReader, append(slices.Clone(editions), fanTL), colored)
+	if got[folderKey{1, 0}] != filepath.Join(root, name) {
+		t.Errorf("the default copy stays in the series folder, got %q", got[folderKey{1, 0}])
+	}
+	if want := filepath.Join(root, "ONE PIECE Fan Translation [mangabaka-377]"); got[folderKey{6, 0}] != want {
+		t.Errorf("own-name edition in %q, want %q", got[folderKey{6, 0}], want)
+	}
+	if want := filepath.Join(root, "ONE PIECE Colored [mangabaka-377]"); got[folderKey{1, 11}] != want {
+		t.Errorf("colored version in %q, want %q", got[folderKey{1, 11}], want)
 	}
 }
 
@@ -591,17 +613,18 @@ func TestFileInfoNamesVersion(t *testing.T) {
 	}
 	im := NewImporter(st, nil, t.TempDir(), nil)
 	cat := newCatalogCache(st, sid)
-	if info := im.fileInfo(ctx, cat, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" {
-		t.Fatalf("default version Series = %q, want %q", info.Series, "ONE PIECE")
+	ms := DefaultMediaSettings()
+	if info := im.fileInfo(ctx, cat, ms, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" || info.SeriesGroup != "ONE PIECE" {
+		t.Fatalf("default version Series, SeriesGroup = %q, %q, want ONE PIECE for both", info.Series, info.SeriesGroup)
 	}
-	if info := im.fileInfo(ctx, cat, series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Colored" {
-		t.Fatalf("colored version Series = %q, want %q", info.Series, "ONE PIECE Colored")
+	if info := im.fileInfo(ctx, cat, ms, series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Colored" || info.SeriesGroup != "ONE PIECE" {
+		t.Fatalf("colored version Series, SeriesGroup = %q, %q, want %q, %q", info.Series, info.SeriesGroup, "ONE PIECE Colored", "ONE PIECE")
 	}
 }
 
-// An edition marked as its own series names itself in ComicInfo, and a
-// collected version of it composes after the edition's name.
-func TestFileInfoNamesOwnSeriesEdition(t *testing.T) {
+// The series name readers see follows the library template, an edition's
+// own replaces it, and a collected version still renders its name in it.
+func TestFileInfoReaderFieldTemplates(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	lib, st, sid, c, ws, version := modelFixture(t)
@@ -621,23 +644,32 @@ func TestFileInfoNamesOwnSeriesEdition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetEditionOwnSeries(ctx, sid, c.ID, true); err != nil {
-		t.Fatal(err)
-	}
 	im := NewImporter(st, nil, t.TempDir(), nil)
-	// A fresh cache per call: an organize pass snapshots the catalog once,
-	// so the test must not let one snapshot see the flag change.
-	if info := im.fileInfo(ctx, newCatalogCache(st, sid), series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE Standard Edition" {
-		t.Fatalf("own-series edition Series = %q, want %q", info.Series, "ONE PIECE Standard Edition")
+	named := func(ms MediaSettings, v store.CollectedVersion) string {
+		// A fresh cache per call: an organize pass snapshots the catalog
+		// once, so one snapshot must not see the edition change.
+		return im.fileInfo(ctx, newCatalogCache(st, sid), ms, series, []store.BookRef{modelRef(c, ws[1], v)}, tagSource{}).Series
 	}
-	if info := im.fileInfo(ctx, newCatalogCache(st, sid), series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Standard Edition Colored" {
-		t.Fatalf("own-series edition's version Series = %q, want %q", info.Series, "ONE PIECE Standard Edition Colored")
+	ms := DefaultMediaSettings()
+	ms.ReaderFields["series"] = "{Series Title} ({lang})"
+	if got := named(ms, version); got != "ONE PIECE (en)" {
+		t.Fatalf("library template: %q, want %q", got, "ONE PIECE (en)")
 	}
-	if err := st.SetEditionOwnSeries(ctx, sid, c.ID, false); err != nil {
+	if err := st.SetEditionReaderFields(ctx, sid, c.ID, store.ReaderFields{"series": "{Series Title} {edition} {version}"}); err != nil {
 		t.Fatal(err)
 	}
-	if info := im.fileInfo(ctx, newCatalogCache(st, sid), series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" {
-		t.Fatalf("unmarked edition Series = %q, want %q", info.Series, "ONE PIECE")
+	if got := named(ms, version); got != "ONE PIECE Standard Edition" {
+		t.Fatalf("edition template: %q, want %q", got, "ONE PIECE Standard Edition")
+	}
+	if got := named(ms, *secondV); got != "ONE PIECE Standard Edition Colored" {
+		t.Fatalf("edition template, colored version: %q, want %q", got, "ONE PIECE Standard Edition Colored")
+	}
+	// A template that renders nothing for this copy falls back to the default.
+	if err := st.SetEditionReaderFields(ctx, sid, c.ID, store.ReaderFields{"series": "({version})"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := named(DefaultMediaSettings(), version); got != "ONE PIECE" {
+		t.Fatalf("empty render: %q, want %q", got, "ONE PIECE")
 	}
 }
 
@@ -731,7 +763,7 @@ func TestMultiBookFileIsNamedForItsRange(t *testing.T) {
 	if got := im.bookFileName(ctx, cat, ms, series, slots[:1], "", ".cbz"); !strings.Contains(got, "v02") || strings.Contains(got, "-") {
 		t.Errorf("single name = %q", got)
 	}
-	info := im.fileInfo(ctx, cat, series, slots, tagSource{})
+	info := im.fileInfo(ctx, cat, ms, series, slots, tagSource{})
 	if info.Title != "Volumes 1–2" || info.Number != "" {
 		t.Errorf("pack info = %+v", info)
 	}

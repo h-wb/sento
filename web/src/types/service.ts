@@ -415,7 +415,10 @@ export interface EditionUpdate {
   Monitored?: boolean;
   CutoffNum?: number /* int64 */;
   Language?: string;
-  OwnSeries?: boolean;
+  /**
+   * ReaderFields replaces the edition's own reader field templates.
+   */
+  ReaderFields?: { [key: string]: string};
 }
 
 //////////
@@ -457,6 +460,12 @@ export interface MediaSettings {
   renameImports: boolean;
   alwaysCopy: boolean; // copy even when a hardlink would work
   writeComicInfo: boolean;
+  /**
+   * ReaderFields are the templates for the ComicInfo fields readers
+   * file and group a copy by (mediafile.PresentedFields), keyed by
+   * field; an edition may set its own.
+   */
+  readerFields: { [key: string]: string};
 }
 /**
  * "Standard Edition [en]", plus "(Group copy)" for an additional version.
@@ -489,6 +498,16 @@ export const BookFolderByVersion = "";
  * does not already name versions.
  */
 export const BookFolderOnlyVersion = "({version})";
+/**
+ * ReaderPreview is what readers would show for the sample edition, and
+ * for a second card of it collected as "Colored"; Error says why saving
+ * the field's template would be refused.
+ */
+export interface ReaderPreview {
+  first: string;
+  colored: string;
+  error?: string;
+}
 
 //////////
 // source: observations.go
@@ -646,6 +665,27 @@ export interface FormatDoc {
    * Rule is "required" or "refused" when the profile holds releases to it.
    */
   rule?: string;
+}
+
+//////////
+// source: reader_fields.go
+
+/**
+ * CopyReaderNames is what readers show for one collected version of an
+ * edition: each presented field as it renders.
+ */
+export interface CopyReaderNames {
+  editionId: number /* int64 */;
+  versionId: number /* int64 */;
+  fields: { [key: string]: string};
+}
+/**
+ * ReaderNamesRequest previews an edition's own templates before they are
+ * saved. Without one, the names are what is saved.
+ */
+export interface ReaderNamesRequest {
+  editionId?: number /* int64 */;
+  readerFields?: { [key: string]: string};
 }
 
 //////////

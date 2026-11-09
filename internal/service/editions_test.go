@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -120,8 +122,9 @@ func TestCustomEditions(t *testing.T) {
 	}
 }
 
-// A patch that only marks the edition as its own series still applies.
-func TestUpdateEditionOwnSeries(t *testing.T) {
+// A patch that only sets the edition's reader templates applies, keeps
+// only what is set, and refuses what a copy-wide name cannot hold.
+func TestUpdateEditionReaderFields(t *testing.T) {
 	t.Parallel()
 	lib, st := setup(t)
 	ctx := context.Background()
@@ -134,22 +137,33 @@ func TestUpdateEditionOwnSeries(t *testing.T) {
 		t.Fatal(err)
 	}
 	std := collectionByName(t, cols, "Standard Edition", "en")
-	own := true
-	if err := lib.UpdateEdition(ctx, id, std.ID, EditionUpdate{OwnSeries: &own}); err != nil {
+	patch := func(fields map[string]string) error {
+		return lib.UpdateEdition(ctx, id, std.ID, EditionUpdate{ReaderFields: &fields})
+	}
+	if err := patch(map[string]string{"series": "{Series Title} {edition} {version}", "seriesGroup": " "}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := st.GetEdition(ctx, std.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.OwnSeries {
-		t.Fatal("an own-series-only patch did not apply")
+	if len(got.ReaderFields) != 1 || got.ReaderFields["series"] != "{Series Title} {edition} {version}" {
+		t.Fatalf("reader fields = %v", got.ReaderFields)
 	}
-	own = false
-	if err := lib.UpdateEdition(ctx, id, std.ID, EditionUpdate{OwnSeries: &own}); err != nil {
+	for _, bad := range []map[string]string{
+		{"series": "{Series Title} v{volume}"},
+		{"series": "{group}"},
+		{"series": "{Reader Series}"}, // the presented name cannot name itself
+		{"summary": "{Series Title}"},
+	} {
+		if err := patch(bad); !errors.Is(err, apperr.ErrInvalid) {
+			t.Errorf("%v: %v, want invalid", bad, err)
+		}
+	}
+	if err := patch(map[string]string{}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ = st.GetEdition(ctx, std.ID); got.OwnSeries {
-		t.Fatal("the own-series patch did not clear")
+	if got, _ = st.GetEdition(ctx, std.ID); len(got.ReaderFields) != 0 {
+		t.Fatalf("reader fields not cleared: %v", got.ReaderFields)
 	}
 }

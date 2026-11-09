@@ -153,3 +153,59 @@ func TestProfileMovesFromEditionsToCopies(t *testing.T) {
 		t.Errorf("editions still carry a profile: %d %v", left, err)
 	}
 }
+
+// An edition shown as its own series keeps that name in readers when the
+// switch becomes its own series template.
+func TestOwnSeriesBecomesReaderFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "own-series.db")
+	conn, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func(original *sql.DB) { _ = original.Close() }(conn)
+	conn.SetMaxOpenConns(1)
+	if _, err = conn.Exec(`PRAGMA foreign_keys=ON; CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL DEFAULT '')`); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := migrationsFS.ReadDir("migrations/sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		var version int
+		if _, err = fmt.Sscanf(entry.Name(), "%d_", &version); err != nil {
+			t.Fatal(err)
+		}
+		if version >= 34 {
+			continue
+		}
+		body, e := migrationsFS.ReadFile("migrations/sqlite/" + entry.Name())
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, e = conn.Exec(string(body)); e != nil {
+			t.Fatal(entry.Name(), e)
+		}
+		if _, e = conn.Exec(`INSERT INTO schema_migrations(version) VALUES(?)`, version); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if _, err = conn.Exec(`INSERT INTO series(id,mangabaka_id,title,sort_title,raw_json) VALUES(1,123,'Dragon Quest','Dragon Quest','{}');
+ INSERT INTO editions(id,series_id,edition_name,language,type,own_series) VALUES(10,1,'Fan Translation','en','volume',TRUE),(11,1,'Standard Edition','en','volume',FALSE);`); err != nil {
+		t.Fatal(err)
+	}
+	if err = conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	conn, err = openSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	for id, want := range map[int]string{10: `{"series":"{Series Title} {edition} {version}"}`, 11: `{}`} {
+		var got string
+		if err := conn.QueryRow(`SELECT reader_fields_json FROM editions WHERE id=?`, id).Scan(&got); err != nil || got != want {
+			t.Fatalf("edition %d reader fields = %q %v, want %q", id, got, err, want)
+		}
+	}
+}

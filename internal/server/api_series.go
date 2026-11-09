@@ -236,6 +236,22 @@ func (s *Server) handleDeleteEdition(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleReaderNames renders what readers show for each of a series'
+// collected versions, previewing an edition's unsaved templates when the
+// body names them.
+func (s *Server) handleReaderNames(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body service.ReaderNamesRequest
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	names, err := s.library.ReaderNames(r.Context(), id, body)
+	respondList(w, names, err)
+}
+
 func (s *Server) handleUpdateEdition(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
@@ -252,7 +268,7 @@ func (s *Server) handleUpdateEdition(w http.ResponseWriter, r *http.Request) {
 	if err := s.library.UpdateEdition(r.Context(), id, cid, service.EditionUpdate{
 		Monitored: body.Monitored,
 		CutoffNum: body.CutoffNum, Language: body.Language,
-		OwnSeries: body.OwnSeries,
+		ReaderFields: body.ReaderFields,
 	}); err != nil {
 		writeErr(w, err)
 		return

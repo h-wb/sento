@@ -41,7 +41,7 @@ func releaseSource(item store.QueueItem) tagSource {
 // edition: everything a reader needs to file and describe it without
 // Sento, and Sento's Notes line to adopt it back by (docs/domain/metadata.md).
 // The catalog rows come from cat, so a whole-series pass loads them once.
-func (im *Importer) fileInfo(ctx context.Context, cat *catalogCache, series *store.Series, slots []store.BookRef, src tagSource) mediafile.ComicInfo {
+func (im *Importer) fileInfo(ctx context.Context, cat *catalogCache, ms MediaSettings, series *store.Series, slots []store.BookRef, src tagSource) mediafile.ComicInfo {
 	first, last := slotSpan(slots)
 	info := mediafile.ComicInfo{
 		Series:          series.Title,
@@ -77,17 +77,9 @@ func (im *Importer) fileInfo(ctx context.Context, cat *catalogCache, series *sto
 		if !col.Custom {
 			prov.CatalogEdition = col.ProviderEditionID
 		}
-		// Readers that file by ComicInfo rather than folders (Kavita)
-		// keep copies apart only when the series name says which is
-		// which: an edition marked as its own series names itself there.
-		if col.OwnSeries {
-			info.Series = strings.TrimSpace(series.Title + " " + col.EditionName)
-		}
-	}
-	// A collected version beside the default names itself after its
-	// edition: title, then the edition's own name, then the version's.
-	if t, err := cat.version(ctx, first.VersionID); err == nil && !t.IsDefault {
-		info.Series = strings.TrimSpace(info.Series + " " + t.Name)
+		// How readers file and group this copy: the user's templates.
+		version, _ := cat.version(ctx, first.VersionID)
+		presentCopy(&info, ms, series, *col, version)
 	}
 	books := map[int64]*store.Book{}
 	for _, sl := range slots {
@@ -231,11 +223,16 @@ func (im *Importer) bookFileName(ctx context.Context, cat *catalogCache, ms Medi
 		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Group: group,
 		Volume: -1, Chapter: -1, Year: series.Year, VersionID: first.VersionID,
 	}
+	var ver *store.CollectedVersion
+	if t, err := cat.version(ctx, first.VersionID); err == nil {
+		ver = t
+		if !t.IsDefault {
+			tokens.Version = t.Name
+		}
+	}
 	if col, err := cat.edition(ctx, first.EditionID); err == nil {
 		tokens.Edition, tokens.Lang = col.EditionName, col.Language
-	}
-	if t, err := cat.version(ctx, first.VersionID); err == nil && !t.IsDefault {
-		tokens.Version = t.Name
+		tokens.ReaderSeries = readerValues(ms, series, *col, ver)["series"]
 	}
 	tmpl := ms.VolumeFile
 	if first.Ledger == "volume" {
@@ -285,21 +282,16 @@ func titleCase(s string) string {
 }
 
 // bookDir is where a book of the given edition and version lives: in its
-// edition's top folder (the series folder unless the series folder
-// template names the edition), then the configured book folder layout.
+// copy's top folder (the series folder template rendered for it), then
+// the configured book folder layout.
 func (im *Importer) bookDir(ctx context.Context, cat *catalogCache, ms MediaSettings, seriesDir string, series *store.Series, sl store.BookRef) string {
-	if editionAware(ms.SeriesFolder) {
-		if editions, err := cat.editionsAll(ctx); err == nil {
-			var versions []store.CollectedVersion
-			if versionAware(ms.SeriesFolder) {
-				versions, _ = cat.versionsAll(ctx)
-			}
-			folders := editionFolders(im.libraryRoot, series, ms, editions, versions)
-			if dir, ok := folders[folderKey{sl.EditionID, sl.VersionID}]; ok {
-				seriesDir = dir
-			} else if dir, ok := folders[folderKey{sl.EditionID, 0}]; ok {
-				seriesDir = dir
-			}
+	if editions, err := cat.editionsAll(ctx); err == nil {
+		versions, _ := cat.versionsAll(ctx)
+		folders := editionFolders(im.libraryRoot, series, ms, editions, versions)
+		if dir, ok := folders[folderKey{sl.EditionID, sl.VersionID}]; ok {
+			seriesDir = dir
+		} else if dir, ok := folders[folderKey{sl.EditionID, 0}]; ok {
+			seriesDir = dir
 		}
 	}
 	tokens := mediafile.NameTokens{
@@ -310,11 +302,16 @@ func (im *Importer) bookDir(ctx context.Context, cat *catalogCache, ms MediaSett
 	if sl.Ledger == "chapter" {
 		tokens.Type = "Chapters"
 	}
+	var ver *store.CollectedVersion
+	if t, err := cat.version(ctx, sl.VersionID); err == nil {
+		ver = t
+		if !t.IsDefault {
+			tokens.Version = t.Name
+		}
+	}
 	if col, err := cat.edition(ctx, sl.EditionID); err == nil {
 		tokens.Edition, tokens.Lang, tokens.Publisher, tokens.Medium = col.EditionName, col.Language, col.Publisher, col.Medium
-	}
-	if t, err := cat.version(ctx, sl.VersionID); err == nil && !t.IsDefault {
-		tokens.Version = t.Name
+		tokens.ReaderSeries = readerValues(ms, series, *col, ver)["series"]
 	}
 	return filepath.Join(append([]string{seriesDir}, mediafile.RenderFolder(ms.BookFolder, tokens)...)...)
 }

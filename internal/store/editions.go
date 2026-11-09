@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/h-wb/sento/internal/apperr"
@@ -37,9 +38,10 @@ type Edition struct {
 	Split     bool  `json:"split"`
 	ProfileID int64 `json:"profileId,omitempty" db:"profile_id"` // 0 = inherit from series
 	CutoffNum int64 `json:"cutoffNum" db:"cutoff_num"`           // chapter editions: skip through this number (exclusive cutoff)
-	// OwnSeries: the edition names itself in ComicInfo Series, so readers
-	// that group by metadata keep it apart from its siblings.
-	OwnSeries bool `json:"ownSeries" db:"own_series"`
+	// ReaderFields are the edition's own templates for the ComicInfo
+	// fields readers file it by, keyed by field ("series"); a field it
+	// does not name follows the media settings.
+	ReaderFields ReaderFields `json:"readerFields" db:"reader_fields_json"`
 	// Overrides names the fields edited by hand, which refreshes leave alone.
 	Overrides FieldList `json:"overrides" db:"overrides_json" tstype:"string[]"`
 	// Collections are the catalog collections grouped under this edition,
@@ -85,7 +87,7 @@ const editionColumns = `
 	edition_name, language, publisher, medium, type, EXISTS(SELECT 1 FROM versions t WHERE t.edition_id=editions.id AND t.monitored=TRUE) AS monitored,
 	COALESCE(count_main,0) AS count_main, COALESCE(count_extra,0) AS count_extra,
 	COALESCE(count_other,0) AS count_other,
-	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date, custom, split, own_series,
+	COALESCE(start_date,'') AS start_date, COALESCE(end_date,'') AS end_date, custom, split, reader_fields_json,
 	COALESCE(profile_id,0) AS profile_id, COALESCE((SELECT t.cutoff_num FROM versions t WHERE t.edition_id=editions.id AND t.is_default=TRUE),0) AS cutoff_num,sync_state,numbering_source,overrides_json,
 	COALESCE((SELECT MAX(w.sequence_num) FROM books w WHERE w.edition_id=editions.id AND w.count_type='main' AND w.number_known=TRUE),0) AS last_number`
 
@@ -124,8 +126,9 @@ func (s *Store) SetEditionMonitored(ctx context.Context, seriesID, editionID int
 	return nil
 }
 
-// SetEditionOwnSeries marks an edition as its own series in readers.
-func (s *Store) SetEditionOwnSeries(ctx context.Context, seriesID, editionID int64, ownSeries bool) error {
+// SetEditionReaderFields replaces the edition's own reader field
+// templates; none left means it follows the media settings throughout.
+func (s *Store) SetEditionReaderFields(ctx context.Context, seriesID, editionID int64, fields ReaderFields) error {
 	c, err := s.GetEdition(ctx, editionID)
 	if err != nil {
 		return err
@@ -133,7 +136,31 @@ func (s *Store) SetEditionOwnSeries(ctx context.Context, seriesID, editionID int
 	if c.SeriesID != seriesID {
 		return ErrNotFound
 	}
-	return s.touch(ctx, `UPDATE editions SET own_series=? WHERE id=?`, ownSeries, editionID)
+	if fields == nil {
+		fields = ReaderFields{}
+	}
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	return s.touch(ctx, `UPDATE editions SET reader_fields_json=? WHERE id=?`, string(raw), editionID)
+}
+
+// ReaderFields maps a presented ComicInfo field to its template.
+type ReaderFields map[string]string
+
+func (f *ReaderFields) Scan(src any) error {
+	*f = ReaderFields{}
+	switch v := src.(type) {
+	case string:
+		return json.Unmarshal([]byte(v), f)
+	case []byte:
+		return json.Unmarshal(v, f)
+	case nil:
+		return nil
+	default:
+		return fmt.Errorf("cannot scan reader fields from %T", src)
+	}
 }
 
 // AddCustomEdition creates an independent local edition. Volume numbering may

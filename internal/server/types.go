@@ -79,7 +79,9 @@ type EditionPatch struct {
 	Monitored *bool   `json:"monitored"`
 	CutoffNum *int64  `json:"cutoffNum"`
 	Language  *string `json:"language"`
-	OwnSeries *bool   `json:"ownSeries"`
+	// ReaderFields replaces the edition's own reader field templates
+	// (field → template); an empty template follows the media settings.
+	ReaderFields *map[string]string `json:"readerFields"`
 }
 
 // CreateEditionBody is POST /series/{id}/editions — a custom
@@ -158,6 +160,8 @@ type NamingPreview struct {
 	SeriesFolder string `json:"seriesFolder"`
 	VolumeFile   string `json:"volumeFile"`
 	ChapterFile  string `json:"chapterFile"`
+	// Reader is what readers show, per presented ComicInfo field.
+	Reader map[string]service.ReaderPreview `json:"reader"`
 }
 
 // SplitBoxBody is POST /series/{id}/books/{bid}/split: how many volumes

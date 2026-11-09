@@ -73,7 +73,7 @@ packages:
     output_path: "web/src/types/server.ts"
     frontmatter: |
       /* eslint-disable */
-      import type { ScanResult, SearchResult, SearchScope, PlanPick, PlanOutcome, SeriesPublisher } from "./service"
+      import type { ScanResult, SearchResult, SearchScope, PlanPick, PlanOutcome, SeriesPublisher, ReaderPreview } from "./service"
       import type { Edition, Series } from "./store"
       import type { RepoStatus } from "./extensions"
     type_mappings:
@@ -82,6 +82,7 @@ packages:
       service.PlanPick: "PlanPick"
       service.PlanOutcome: "PlanOutcome"
       service.SeriesPublisher: "SeriesPublisher"
+      service.ReaderPreview: "ReaderPreview"
       service.SearchResult: "SearchResult"
       service.ScanResult: "ScanResult"
       store.Series: "Series"

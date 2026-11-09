@@ -110,21 +110,18 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	}
 
 	// Every folder the series' books may sit in: its own, plus one per
-	// edition — and per collected version, when the series folder
-	// template names versions — when the template names the edition.
+	// copy whose rendered series folder differs from the series'.
 	volumeTrees, chapterTrees := []string{volumesDir}, []string{chaptersDir}
-	if editionAware(ms.SeriesFolder) {
-		folders := editionFolders(im.libraryRoot, series, ms, editions, versions)
-		for _, e := range editions {
-			for k, dir := range folders {
-				if k.EditionID != e.ID {
-					continue
-				}
-				if e.Type == "chapter" {
-					chapterTrees = append(chapterTrees, dir)
-				} else {
-					volumeTrees = append(volumeTrees, dir)
-				}
+	folders := editionFolders(im.libraryRoot, series, ms, editions, versions)
+	for _, e := range editions {
+		for k, dir := range folders {
+			if k.EditionID != e.ID {
+				continue
+			}
+			if e.Type == "chapter" {
+				chapterTrees = append(chapterTrees, dir)
+			} else {
+				volumeTrees = append(volumeTrees, dir)
 			}
 		}
 	}
@@ -242,7 +239,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		}
 		group := f.Facts.Group
 		p.name = reHashSuffix.ReplaceAllString(strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path)), "") + ext
-		p.info = im.fileInfo(ctx, cat, series, slots, tagSource{Release: f.Claims.Title, Group: group, Via: f.Facts.Protocol, Site: f.Facts.Site, Flags: f.Facts.Flags})
+		p.info = im.fileInfo(ctx, cat, ms, series, slots, tagSource{Release: f.Claims.Title, Group: group, Via: f.Facts.Protocol, Site: f.Facts.Site, Flags: f.Facts.Flags})
 		if ms.RenameImports {
 			p.name = im.bookFileName(ctx, cat, ms, series, slots, group, ext)
 		}
