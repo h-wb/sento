@@ -41,8 +41,16 @@ const tokens: [string, string][] = [
 ]
 
 // Folder layout presets; the templates mirror the backend's constants.
-const layouts = [
+const seriesFolderDefault = '{Series Title} [mangabaka-{seriesId}]'
+const seriesFolderByEdition = '{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}]'
+const layouts: { value: string; label: string; template: string; seriesFolder?: string }[] = [
   { value: 'edition', label: 'By edition — Standard Edition [en]', template: '{edition} [{lang}] ({version})' },
+  {
+    value: 'editionFolders',
+    label: 'One series folder per edition — ONE PIECE [Standard Edition][en]',
+    template: '({version})',
+    seriesFolder: seriesFolderByEdition,
+  },
   { value: 'type', label: 'By type, then edition — Volumes/Standard Edition [en]', template: '{type}/{edition} [{lang}] ({version})' },
   { value: 'flat', label: 'Flat — everything in the series folder', template: '' },
   { value: 'ids', label: 'By internal id — editions/42/versions/81', template: 'editions/{editionId}/versions/{versionId}' },
@@ -138,12 +146,19 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
           </Group>
           <Select
             label="Folders inside a series"
-            description="How editions, and the cards of an edition collected with several profiles, are separated. Applies to new imports."
+            description="How editions, and the cards of an edition collected with several profiles, are separated. A series folder template naming the edition gives each edition its own top folder, which folder-based readers show as its own series. Applies to new imports."
             allowDeselect={false}
-            value={layouts.find((l) => l.template === form.bookFolder)?.value ?? 'custom'}
+            value={
+              layouts.find(
+                (l) => l.template === form.bookFolder && (!l.seriesFolder || l.seriesFolder === form.seriesFolder),
+              )?.value ?? 'custom'
+            }
             onChange={(v) => {
               const layout = layouts.find((l) => l.value === v)
-              if (layout) set({ bookFolder: layout.template, hashInName: layout.value === 'ids' })
+              if (!layout) return
+              const seriesFolder =
+                layout.seriesFolder ?? (form.seriesFolder === seriesFolderByEdition ? seriesFolderDefault : form.seriesFolder)
+              set({ bookFolder: layout.template, seriesFolder, hashInName: layout.value === 'ids' })
             }}
             data={[...layouts.map(({ value, label }) => ({ value, label })), { value: 'custom', label: 'Custom' }]}
           />

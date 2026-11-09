@@ -414,6 +414,137 @@ func TestSeriesFolders(t *testing.T) {
 	}
 }
 
+func TestEditionFolders(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(string(filepath.Separator), "library")
+	std := store.Edition{ID: 1, EditionName: "Standard Edition", Language: "en", Type: "volume"}
+	color := store.Edition{ID: 2, EditionName: "Digital Colored Comics", Language: "en", Type: "volume"}
+	stdFR := store.Edition{ID: 3, EditionName: "Standard Edition", Language: "fr", Type: "volume", Publisher: "Glénat"}
+	stdKana := store.Edition{ID: 4, EditionName: "Standard Edition", Language: "fr", Type: "volume", Publisher: "Kana"}
+	chapters := store.Edition{ID: 5, EditionName: "Standard Edition", Language: "en", Type: "chapter"}
+	editions := []store.Edition{stdKana, color, std, stdFR, chapters}
+	series := func(path string) *store.Series {
+		return &store.Series{ID: 1, Title: "ONE PIECE", MangaBakaID: 377, Path: path}
+	}
+	perEdition := DefaultMediaSettings()
+	perEdition.SeriesFolder = SeriesFolderByEdition
+	split := perEdition
+	split.VolumesRoot, split.ChaptersRoot = "Volumes", "Chapters"
+	name := "ONE PIECE [mangabaka-377]"
+
+	got := editionFolders(root, series(""), DefaultMediaSettings(), editions)
+	for id, dir := range got {
+		if dir != filepath.Join(root, name) {
+			t.Errorf("without edition tokens, edition %d goes to %q", id, dir)
+		}
+	}
+	for _, tc := range []struct {
+		label string
+		ms    MediaSettings
+		path  string
+		want  map[int64]string
+	}{
+		{"one folder per edition", split, "", map[int64]string{
+			1: filepath.Join(root, "Volumes", name+" [Standard Edition][en]"),
+			2: filepath.Join(root, "Volumes", name+" [Digital Colored Comics][en]"),
+			3: filepath.Join(root, "Volumes", name+" [Standard Edition][fr]"),
+			// Same name and language as edition 3: told apart, the newer renamed.
+			4: filepath.Join(root, "Volumes", name+" [Standard Edition][fr] (edition 4)"),
+			5: filepath.Join(root, "Chapters", name+" [Standard Edition][en]"),
+		}},
+		{"a kept folder name survives", perEdition, filepath.Join(root, "My One Piece"), map[int64]string{
+			1: filepath.Join(root, "My One Piece [Standard Edition][en]"),
+			2: filepath.Join(root, "My One Piece [Digital Colored Comics][en]"),
+			// Volumes and chapters of one edition may share a folder.
+			5: filepath.Join(root, "My One Piece [Standard Edition][en]"),
+		}},
+		{"adopted from outside the library", perEdition, filepath.Join(string(filepath.Separator), "mnt", "OP"), map[int64]string{
+			1: filepath.Join(string(filepath.Separator), "mnt", "OP"),
+			2: filepath.Join(string(filepath.Separator), "mnt", "OP"),
+		}},
+	} {
+		got := editionFolders(root, series(tc.path), tc.ms, editions)
+		for id, want := range tc.want {
+			if got[id] != want {
+				t.Errorf("%s: edition %d in %q, want %q", tc.label, id, got[id], want)
+			}
+		}
+	}
+}
+
+// With the edition in the series folder template, organising moves an
+// edition's books out of the series folder into the edition's own folder,
+// flat, and a scan still finds them there.
+func TestOrganizeMovesBooksIntoEditionFolders(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	lib, st := setup(t)
+	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cols, _ := st.ListEditions(ctx, seriesID)
+	var standard int64
+	for _, c := range cols {
+		if c.EditionName == "Standard Edition" {
+			standard = c.ID
+		}
+	}
+	downloads, library := t.TempDir(), t.TempDir()
+	files := []string{"ONE PIECE v01.cbz", "ONE PIECE v02.cbz"}
+	for _, name := range files {
+		writeCBZ(t, filepath.Join(downloads, name), name)
+	}
+	im := NewImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), library, nil)
+	queueVolumes(t, st, seriesID, standard, "abc123", 100, 200)
+	if n, err := im.ProcessQueue(ctx); err != nil || n != 1 {
+		t.Fatalf("import: %d %v", n, err)
+	}
+
+	ms := DefaultMediaSettings()
+	ms.SeriesFolder, ms.BookFolder, ms.VolumesRoot = SeriesFolderByEdition, BookFolderByVersion, "Volumes"
+	if err := SaveMediaSettings(ctx, st, ms); err != nil {
+		t.Fatal(err)
+	}
+	edition := filepath.Join("Volumes", "ONE PIECE [mangabaka-377] [Standard Edition][en]")
+	plan, err := im.PlanOrganize(ctx, seriesID)
+	if err != nil || len(plan) != 2 {
+		t.Fatalf("plan: %+v %v", plan, err)
+	}
+	for _, c := range plan {
+		if !c.Rename || filepath.Dir(c.To) != edition {
+			t.Fatalf("planned change: %+v", c)
+		}
+	}
+	if res, err := im.Organize(ctx, seriesID, true, true); err != nil || res.Renamed != 2 || len(res.Errors) != 0 {
+		t.Fatalf("organize: %+v %v", res, err)
+	}
+	for _, f := range mustFiles(t, st, seriesID) {
+		if _, err := os.Stat(f.Path); err != nil || filepath.Dir(f.Path) != filepath.Join(library, edition) {
+			t.Errorf("file not flat in its edition folder: %s (%v)", f.Path, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(library, "ONE PIECE [mangabaka-377]")); !os.IsNotExist(err) {
+		t.Error("the old series folder was left behind")
+	}
+	if plan, err = im.PlanOrganize(ctx, seriesID); err != nil || len(plan) != 0 {
+		t.Fatalf("second plan: %+v %v", plan, err)
+	}
+	res, err := NewScanner(st, library).ScanSeriesFolder(ctx, seriesID, "")
+	if err != nil || len(res.Skipped) != 2 {
+		t.Fatalf("scan of the edition folders: %+v %v", res, err)
+	}
+}
+
+func mustFiles(t *testing.T, st *store.Store, seriesID int64) []store.File {
+	t.Helper()
+	files, err := st.ListFiles(context.Background(), seriesID)
+	if err != nil || len(files) == 0 {
+		t.Fatalf("files: %+v %v", files, err)
+	}
+	return files
+}
+
 // An archive holding several books is named and titled for its range,
 // not for the first book in it.
 func TestMultiBookFileIsNamedForItsRange(t *testing.T) {

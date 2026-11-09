@@ -67,14 +67,16 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 	if err != nil {
 		return nil, err
 	}
-	// Default: everywhere the series lives — its folder, plus the separate
-	// chapter folder when chapters are kept apart.
+	// Default: everywhere the series lives — its folder, the separate
+	// chapter folder when chapters are kept apart, and its edition folders.
 	dirs := []string{dir}
-	if dir == "" {
+	def := dir == ""
+	ms := LoadMediaSettings(ctx, sc.store)
+	if def {
 		dir = series.Path
 		dirs = []string{dir}
 		if dir == "" {
-			dir, _ = seriesFolders(sc.libraryRoot, series, LoadMediaSettings(ctx, sc.store))
+			dir, _ = seriesFolders(sc.libraryRoot, series, ms)
 			dirs = []string{dir}
 		}
 		if series.ChapterPath != "" && series.ChapterPath != dir {
@@ -92,6 +94,14 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 	collections, err := sc.store.ListEditions(ctx, seriesID)
 	if err != nil {
 		return nil, err
+	}
+	if def && editionAware(ms.SeriesFolder) {
+		for _, d := range editionFolders(sc.libraryRoot, series, ms, collections) {
+			if !slices.Contains(dirs, d) {
+				dirs = append(dirs, d)
+			}
+		}
+		slices.Sort(dirs[1:])
 	}
 	sh := seriesShelf(collections, series)
 	// Edition evidence determines file contents even when edition is paused.

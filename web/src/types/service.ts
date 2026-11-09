@@ -473,6 +473,14 @@ export const BookFolderByType = "{type}/{edition} [{lang}] ({version})";
  * Stable internal ids: paths never change when an edition is renamed.
  */
 export const BookFolderByID = "editions/{editionId}/versions/{versionId}";
+/**
+ * One top folder per edition, for readers that group by folder.
+ */
+export const SeriesFolderByEdition = "{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}]";
+/**
+ * Its book folder: only an additional version gets a subfolder.
+ */
+export const BookFolderByVersion = "({version})";
 
 //////////
 // source: observations.go

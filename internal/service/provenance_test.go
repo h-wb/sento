@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -145,5 +146,24 @@ func TestImportProposalsReadTaggedFiles(t *testing.T) {
 				t.Errorf("disagreeing tags decided the series: %+v", p)
 			}
 		}
+	}
+}
+
+// Edition folders of a series already in the library are not proposed as
+// new series.
+func TestImportProposalsKnowEditionFolders(t *testing.T) {
+	t.Parallel()
+	lib, _ := setup(t)
+	id, err := lib.AddSeries(context.Background(), AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "ONE PIECE [mangabaka-377] [Standard Edition][en]"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proposals, err := lib.ProposeImports(context.Background(), root)
+	if err != nil || len(proposals) != 1 || proposals[0].ExistingID != id {
+		t.Fatalf("proposals: %+v %v", proposals, err)
 	}
 }
