@@ -30,6 +30,7 @@ import {
   IconChevronUp,
   IconEye,
   IconEyeOff,
+  IconFolders,
   IconLayoutGrid,
   IconLayoutList,
   IconPlus,
@@ -45,6 +46,7 @@ import { fmtWhen, notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { useAddSeries } from '../addSeries'
 import { RemoveSeries } from '../components/RemoveSeries'
+import OrganizeLibrary from '../components/OrganizeLibrary'
 import { QueryFeedback } from '../components/QueryFeedback'
 import classes from './LibraryPage.module.css'
 
@@ -127,6 +129,7 @@ export default function LibraryPage() {
   })
   // The series being removed, once the user asked to.
   const [removing, setRemoving] = useState<number[] | null>(null)
+  const [organizing, setOrganizing] = useState<number[] | null>(null)
 
   const sortTh = (label: string, field: SortField, align: 'left' | 'right' = 'left') => (
     <Table.Th
@@ -439,6 +442,17 @@ export default function LibraryPage() {
                   size="xs"
                   radius="xl"
                   variant="light"
+                  color="gray"
+                  leftSection={<IconFolders size={14} />}
+                  disabled={bulkMonitor.isPending}
+                  onClick={() => setOrganizing(visibleSelected)}
+                >
+                  Organize files
+                </Button>
+                <Button
+                  size="xs"
+                  radius="xl"
+                  variant="light"
                   color="red"
                   leftSection={<IconTrash size={14} />}
                   disabled={bulkMonitor.isPending}
@@ -454,6 +468,7 @@ export default function LibraryPage() {
           )}
         </Transition>
       </Affix>
+      {organizing && <OrganizeLibrary seriesIds={organizing} onClose={() => setOrganizing(null)} />}
       {removing && (
         <RemoveSeries
           ids={removing}

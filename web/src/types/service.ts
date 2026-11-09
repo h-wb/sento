@@ -507,6 +507,61 @@ export interface OrganizeResult {
 }
 
 //////////
+// source: organize_library.go
+
+/**
+ * SeriesOrganizePlan is one series' part of a library-wide organize
+ * preview.
+ */
+export interface SeriesOrganizePlan {
+  seriesId: number /* int64 */;
+  title: string;
+  changes: FileChange[];
+}
+/**
+ * SeriesOrganizeResult is what an organize run did to one series.
+ */
+export interface SeriesOrganizeResult {
+  seriesId: number /* int64 */;
+  title: string;
+  renamed: number /* int */;
+  retagged: number /* int */;
+  errors: string[];
+}
+/**
+ * LibraryOrganizeRequest is which series to organize and which changes
+ * to apply. No series means the whole library.
+ */
+export interface LibraryOrganizeRequest {
+  seriesIds: number /* int64 */[];
+  rename: boolean;
+  retag: boolean;
+}
+/**
+ * LibraryOrganizeStatus is the progress of the current or last
+ * library-wide organize run.
+ */
+export interface LibraryOrganizeStatus {
+  queued: boolean;
+  running: boolean;
+  startedAt?: string; // RFC3339
+  finishedAt?: string; // RFC3339
+  total: number /* int */;
+  done: number /* int */;
+  /**
+   * Current is the series being organized.
+   */
+  current?: string;
+  renamed: number /* int */;
+  retagged: number /* int */;
+  /**
+   * Series lists the series where something was changed or failed.
+   */
+  series: SeriesOrganizeResult[];
+  error?: string;
+}
+
+//////////
 // source: plan.go
 
 /**

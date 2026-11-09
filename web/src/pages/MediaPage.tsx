@@ -19,6 +19,7 @@ import { api, type MediaSettings } from '../api'
 import { notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
+import OrganizeLibrary from '../components/OrganizeLibrary'
 import { useUnsavedChanges } from '../useUnsavedChanges'
 
 // Token reference shown next to the templates ({token:000} pads numbers).
@@ -60,6 +61,7 @@ export default function MediaPage() {
 function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () => void }) {
   const [form, setForm] = useState<MediaSettings>(initial)
   const [saved, setSaved] = useState(false)
+  const [organizing, setOrganizing] = useState(false)
   const set = (patch: Partial<MediaSettings>) => {
     setForm((f) => ({ ...f, ...patch }))
     setSaved(false)
@@ -169,7 +171,8 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
               {preview.data?.chapterPath ?? 'Loading…'}
             </Text>
             <Text size="xs" c="dimmed" mt={6}>
-              Existing files move when you run “Organize files” on a series.
+              Existing files move only when you organize them: on a series, on several from the
+              Library table, or with “Organize existing files” below.
             </Text>
           </div>
           <Switch
@@ -217,7 +220,11 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
                 Reset
               </Button>
             )}
+            <Button variant="default" ml="auto" disabled={dirty} onClick={() => setOrganizing(true)}>
+              Organize existing files
+            </Button>
           </Group>
+          {organizing && <OrganizeLibrary onClose={() => setOrganizing(false)} />}
         </Stack></fieldset>
 
         <Card padding="md"><Accordion variant="default"><Accordion.Item value="tokens"><Accordion.Control>Naming tokens</Accordion.Control><Accordion.Panel>
