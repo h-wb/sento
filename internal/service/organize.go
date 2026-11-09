@@ -98,6 +98,27 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		}
 	}
 
+	// Every folder the series' books may sit in: its own, plus one per
+	// edition when the series folder template names the edition.
+	volumeTrees, chapterTrees := []string{volumesDir}, []string{chaptersDir}
+	if editionAware(ms.SeriesFolder) {
+		folders := editionFolders(im.libraryRoot, series, ms, editions)
+		for _, e := range editions {
+			if e.Type == "chapter" {
+				chapterTrees = append(chapterTrees, folders[e.ID])
+			} else {
+				volumeTrees = append(volumeTrees, folders[e.ID])
+			}
+		}
+	}
+	under := func(p string, dirs []string) bool {
+		for _, d := range dirs {
+			if strings.HasPrefix(p, d+string(filepath.Separator)) {
+				return true
+			}
+		}
+		return false
+	}
 	reviewDirs := []string{filepath.Join(volumesDir, "review"), filepath.Join(chaptersDir, "review")}
 	inReview := func(p string) bool {
 		for _, r := range reviewDirs {
@@ -107,10 +128,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		}
 		return false
 	}
-	insideTree := func(p string) bool {
-		return strings.HasPrefix(p, volumesDir+string(filepath.Separator)) ||
-			strings.HasPrefix(p, chaptersDir+string(filepath.Separator))
-	}
+	insideTree := func(p string) bool { return under(p, volumeTrees) || under(p, chapterTrees) }
 
 	rel := func(p string) string {
 		if r, err := filepath.Rel(im.libraryRoot, p); err == nil && !strings.HasPrefix(r, "..") {
@@ -187,7 +205,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		}
 		if exile {
 			p.dir = reviewDirs[0]
-			if strings.HasPrefix(f.Path, chaptersDir+string(filepath.Separator)) {
+			if under(f.Path, chapterTrees) {
 				p.dir = reviewDirs[1]
 			}
 			p.name = filepath.Base(f.Path)

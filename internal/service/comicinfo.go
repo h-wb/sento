@@ -267,9 +267,17 @@ func titleCase(s string) string {
 	return strings.Join(words, " ")
 }
 
-// bookDir is where a book of the given edition and version lives inside
-// the series folder, per the configured layout.
+// bookDir is where a book of the given edition and version lives: in its
+// edition's top folder (the series folder unless the series folder
+// template names the edition), then the configured book folder layout.
 func (im *Importer) bookDir(ctx context.Context, ms MediaSettings, seriesDir string, series *store.Series, sl store.BookRef) string {
+	if editionAware(ms.SeriesFolder) {
+		if editions, err := im.store.ListEditions(ctx, series.ID); err == nil {
+			if dir, ok := editionFolders(im.libraryRoot, series, ms, editions)[sl.EditionID]; ok {
+				seriesDir = dir
+			}
+		}
+	}
 	tokens := mediafile.NameTokens{
 		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1,
 		Year: series.Year, EditionID: sl.EditionID, VersionID: sl.VersionID,

@@ -42,10 +42,14 @@ func (l *Library) ProposeImports(ctx context.Context, root string) ([]ImportProp
 		return nil, apperr.Invalidf("reading import root: %w", err)
 	}
 	known := map[string]int64{} // series path → id
+	byMangaBaka := map[int64]int64{}
 	if series, err := l.store.ListSeries(ctx); err == nil {
 		for _, s := range series {
 			if s.Path != "" {
 				known[filepath.Clean(s.Path)] = s.ID
+			}
+			if s.MangaBakaID > 0 {
+				byMangaBaka[s.MangaBakaID] = s.ID
 			}
 		}
 	}
@@ -66,7 +70,7 @@ func (l *Library) ProposeImports(ctx context.Context, root string) ([]ImportProp
 		// Files Sento tagged name their series: re-adoption after a
 		// reinstall is exact (§11.4, step 1).
 		if id, title := taggedSeries(dir); id > 0 {
-			p.BestID, p.Confidence = id, 1
+			p.BestID, p.Confidence, p.ExistingID = id, 1, byMangaBaka[id]
 			p.Candidates = []metadata.SeriesRef{{MangaBakaID: id, Title: title}}
 			proposals = append(proposals, p)
 			continue
@@ -75,7 +79,8 @@ func (l *Library) ProposeImports(ctx context.Context, root string) ([]ImportProp
 		// Our own naming embeds the id — definitive match, no lookup.
 		if m := reMangaBakaHint.FindStringSubmatch(e.Name()); m != nil {
 			id, _ := strconv.ParseInt(m[1], 10, 64)
-			p.BestID, p.Confidence = id, 1
+			// An edition folder of a series already here.
+			p.BestID, p.Confidence, p.ExistingID = id, 1, byMangaBaka[id]
 			proposals = append(proposals, p)
 			continue
 		}

@@ -55,3 +55,40 @@ func TestMediaSettingsPreview(t *testing.T) {
 		t.Fatalf("chapterFile preview: %q", p["chapterFile"])
 	}
 }
+
+func TestMediaSettingsPreviewEditionFolders(t *testing.T) {
+	t.Parallel()
+	m := DefaultMediaSettings()
+	m.SeriesFolder, m.BookFolder, m.VolumesRoot = SeriesFolderByEdition, BookFolderByVersion, "Volumes"
+	p := PreviewMediaSettings(m)
+	if p["seriesFolder"] != "ONE PIECE [mangabaka-377] [Standard Edition][en]" {
+		t.Fatalf("seriesFolder preview: %q", p["seriesFolder"])
+	}
+	if p["volumePath"] != "Volumes/ONE PIECE [mangabaka-377] [Standard Edition][en]/ONE PIECE v112 [Standard Edition][en].cbz" {
+		t.Fatalf("volumePath preview: %q", p["volumePath"])
+	}
+	// Tokens a real series folder never gets are not previewed either.
+	m.SeriesFolder = "{Series Title} [{group}]"
+	if p = PreviewMediaSettings(m); p["seriesFolder"] != "ONE PIECE" {
+		t.Fatalf("seriesFolder preview with a book token: %q", p["seriesFolder"])
+	}
+}
+
+func TestValidateEditionFolderTemplates(t *testing.T) {
+	t.Parallel()
+	for template, ok := range map[string]bool{
+		SeriesFolderByEdition:                   true,
+		"{Series Title} [{editionId}]":          true,
+		"{Series Title} [{lang}]":               false, // two English editions would share it
+		"{Series Title} ({version})":            false,
+		"{edition} [{lang}]":                    false, // every series would share it
+		"{Series Title} [mangabaka-{seriesId}]": true,
+		"{Series Title} {type} [{edition}]":     true,
+	} {
+		m := DefaultMediaSettings()
+		m.SeriesFolder = template
+		if err := ValidateMediaSettings(m); (err == nil) != ok {
+			t.Errorf("%q: err = %v, want ok %v", template, err, ok)
+		}
+	}
+}
