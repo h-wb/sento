@@ -12,3 +12,5 @@
 {"in":"Shaman King (KODANSHA) (Digital) [Rillant] {~x4500}","ch":"source","titles":["Shaman King"],"want":{"group":"Rillant"}}
 {"in":"Kiseijuu [Anon-repack]{HD}","ch":"source","titles":["Kiseijuu"],"want":{"group":"Anon-repack"}}
 {"in":"Berserk v01 (Digital) {Asura}","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[1,1]],"group":"Asura"}}
+{"in":"Vagabond v01 (2008) (VIZBIG) (Scan) (HQ) (Colored Council)","ch":"torrent","titles":["Vagabond"],"want":{"anchored":true,"volumes":[[1,1]],"group":"Colored Council","edition":{"colored":false}}}
+{"in":"Berserk v41 (Colored) (Colored Council)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[41,41]],"group":"Colored Council","edition":{"colored":true}}}

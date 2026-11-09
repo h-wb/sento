@@ -28,6 +28,9 @@ func TestReadEdition(t *testing.T) {
 		{"Full Color Edition", nil, "", "Full Color Edition", true, false},
 		// Colored alone is a colorization, not the color edition.
 		{"Dragon Ball v13 (Colored) (Fan)", nil, "", "", true, false},
+		// A group name containing the word is the group, not a color claim.
+		{"Vagabond v01 (Colored Council)", nil, "", "", false, false},
+		{"Berserk v41 (Colored) (Colored Council)", nil, "", "", true, false},
 		{"[ENG] One Piece - Vol. 106 (FULL COLOR Digital Colored Comics)", nil, "", "", true, false},
 		{"Deluxe Box Set Edition", []string{"deluxe"}, "", "Deluxe Edition", false, true},
 		{"Box Set Edition", nil, "", "", false, true},
