@@ -265,7 +265,7 @@ New files use stable IDs and a content hash:
 
 `{series folder}/collections/{edition ID}/versions/{target ID}/{book name} [{sha256}].cbz`
 
-Names may use configured title, number, language, edition, and group tokens. A series folder template with edition tokens places each edition in its own top folder (`{series folder} [{edition}][{lang}]/…`). Existing paths remain intact. Hash-addressed destinations and exclusive installation prevent one release from overwriting another. Filename organization is independent of intrinsic content mappings.
+Names may use configured title, number, language, edition, and group tokens. A series folder template with edition tokens places each edition in its own top folder (`{series folder} [{edition}][{lang}]/…`), and one that also names the version places every collected version of an edition in a sibling top folder (`{series folder} [{edition}][{lang}] ({version})/…`), the default version keeping the edition's. Existing paths remain intact. Hash-addressed destinations and exclusive installation prevent one release from overwriting another. Filename organization is independent of intrinsic content mappings.
 
 ### 11.3 ComicInfo.xml `[default: on]`
 

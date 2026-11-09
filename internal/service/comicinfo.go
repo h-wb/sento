@@ -273,7 +273,14 @@ func titleCase(s string) string {
 func (im *Importer) bookDir(ctx context.Context, ms MediaSettings, seriesDir string, series *store.Series, sl store.BookRef) string {
 	if editionAware(ms.SeriesFolder) {
 		if editions, err := im.store.ListEditions(ctx, series.ID); err == nil {
-			if dir, ok := editionFolders(im.libraryRoot, series, ms, editions)[sl.EditionID]; ok {
+			var versions []store.CollectedVersion
+			if versionAware(ms.SeriesFolder) {
+				versions, _ = im.store.ListVersions(ctx, series.ID)
+			}
+			folders := editionFolders(im.libraryRoot, series, ms, editions, versions)
+			if dir, ok := folders[folderKey{sl.EditionID, sl.VersionID}]; ok {
+				seriesDir = dir
+			} else if dir, ok := folders[folderKey{sl.EditionID, 0}]; ok {
 				seriesDir = dir
 			}
 		}

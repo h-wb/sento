@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/h-wb/sento/internal/mediafile"
+	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -427,48 +428,108 @@ func TestEditionFolders(t *testing.T) {
 		return &store.Series{ID: 1, Title: "ONE PIECE", MangaBakaID: 377, Path: path}
 	}
 	perEdition := DefaultMediaSettings()
-	perEdition.SeriesFolder = SeriesFolderByEdition
+	perEdition.SeriesFolder = "{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}]"
 	split := perEdition
 	split.VolumesRoot, split.ChaptersRoot = "Volumes", "Chapters"
+	perVersion := split
+	perVersion.SeriesFolder = SeriesFolderByEdition // names the version too
 	name := "ONE PIECE [mangabaka-377]"
 
-	got := editionFolders(root, series(""), DefaultMediaSettings(), editions)
-	for id, dir := range got {
+	got := editionFolders(root, series(""), DefaultMediaSettings(), editions, nil)
+	for k, dir := range got {
 		if dir != filepath.Join(root, name) {
-			t.Errorf("without edition tokens, edition %d goes to %q", id, dir)
+			t.Errorf("without edition tokens, edition %d goes to %q", k.EditionID, dir)
 		}
+	}
+	colored := []store.CollectedVersion{
+		{ID: 10, EditionID: 1, Name: "Default", IsDefault: true},
+		{ID: 11, EditionID: 1, Name: "Colored"},
+		{ID: 12, EditionID: 1, Name: "Colored"}, // same name as 11: told apart
+		{ID: 13, EditionID: 5, Name: "Colored"}, // a chapter edition's version
 	}
 	for _, tc := range []struct {
 		label string
 		ms    MediaSettings
 		path  string
-		want  map[int64]string
+		want  map[folderKey]string
 	}{
-		{"one folder per edition", split, "", map[int64]string{
-			1: filepath.Join(root, "Volumes", name+" [Standard Edition][en]"),
-			2: filepath.Join(root, "Volumes", name+" [Digital Colored Comics][en]"),
-			3: filepath.Join(root, "Volumes", name+" [Standard Edition][fr]"),
+		{"one folder per edition", split, "", map[folderKey]string{
+			{1, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][en]"),
+			{2, 0}: filepath.Join(root, "Volumes", name+" [Digital Colored Comics][en]"),
+			{3, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][fr]"),
 			// Same name and language as edition 3: told apart, the newer renamed.
-			4: filepath.Join(root, "Volumes", name+" [Standard Edition][fr] (edition 4)"),
-			5: filepath.Join(root, "Chapters", name+" [Standard Edition][en]"),
+			{4, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][fr] (edition 4)"),
+			{5, 0}: filepath.Join(root, "Chapters", name+" [Standard Edition][en]"),
 		}},
-		{"a kept folder name survives", perEdition, filepath.Join(root, "My One Piece"), map[int64]string{
-			1: filepath.Join(root, "My One Piece [Standard Edition][en]"),
-			2: filepath.Join(root, "My One Piece [Digital Colored Comics][en]"),
+		{"one folder per edition and version", perVersion, "", map[folderKey]string{
+			{1, 0}:  filepath.Join(root, "Volumes", name+" [Standard Edition][en]"),
+			{1, 10}: filepath.Join(root, "Volumes", name+" [Standard Edition][en]"), // the default version keeps the edition's
+			{1, 11}: filepath.Join(root, "Volumes", name+" [Standard Edition][en] (Colored)"),
+			// Same name as version 11: told apart, the newer renamed.
+			{1, 12}: filepath.Join(root, "Volumes", name+" [Standard Edition][en] (Colored) (version 12)"),
+			{2, 0}:  filepath.Join(root, "Volumes", name+" [Digital Colored Comics][en]"),
+			{5, 13}: filepath.Join(root, "Chapters", name+" [Standard Edition][en] (Colored)"),
+		}},
+		{"a kept folder name survives", perEdition, filepath.Join(root, "My One Piece"), map[folderKey]string{
+			{1, 0}: filepath.Join(root, "My One Piece [Standard Edition][en]"),
+			{2, 0}: filepath.Join(root, "My One Piece [Digital Colored Comics][en]"),
 			// Volumes and chapters of one edition may share a folder.
-			5: filepath.Join(root, "My One Piece [Standard Edition][en]"),
+			{5, 0}: filepath.Join(root, "My One Piece [Standard Edition][en]"),
 		}},
-		{"adopted from outside the library", perEdition, filepath.Join(string(filepath.Separator), "mnt", "OP"), map[int64]string{
-			1: filepath.Join(string(filepath.Separator), "mnt", "OP"),
-			2: filepath.Join(string(filepath.Separator), "mnt", "OP"),
+		{"a kept folder name survives with versions", perVersion, filepath.Join(root, "My One Piece"), map[folderKey]string{
+			{1, 11}: filepath.Join(root, "Volumes", "My One Piece [Standard Edition][en] (Colored)"),
+		}},
+		{"adopted from outside the library", perEdition, filepath.Join(string(filepath.Separator), "mnt", "OP"), map[folderKey]string{
+			{1, 0}: filepath.Join(string(filepath.Separator), "mnt", "OP"),
+			{2, 0}: filepath.Join(string(filepath.Separator), "mnt", "OP"),
 		}},
 	} {
-		got := editionFolders(root, series(tc.path), tc.ms, editions)
-		for id, want := range tc.want {
-			if got[id] != want {
-				t.Errorf("%s: edition %d in %q, want %q", tc.label, id, got[id], want)
+		got := editionFolders(root, series(tc.path), tc.ms, editions, colored)
+		for k, want := range tc.want {
+			if got[k] != want {
+				t.Errorf("%s: edition %d version %d in %q, want %q", tc.label, k.EditionID, k.VersionID, got[k], want)
 			}
 		}
+	}
+	if err := ValidateMediaSettings(func() MediaSettings { m := perVersion; m.SeriesFolder = "{Series Title} ({version})"; return m }()); err == nil {
+		t.Error("a version token without an edition token was accepted")
+	}
+	if err := ValidateMediaSettings(perVersion); err != nil {
+		t.Errorf("a version token beside an edition token was rejected: %v", err)
+	}
+}
+
+// A series folder template that names the version puts each collected
+// version's books in a top folder beside its edition's own.
+func TestBookDirNamesVersionFolders(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	lib, st, sid, standard, _, version := modelFixture(t)
+	colored, err := st.AddProfile(ctx, profile.Profile{Name: "Colored", FormatScores: map[int64]int{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := lib.SaveVersion(ctx, sid, store.CollectedVersion{EditionID: standard.ID, Monitored: true, ProfileID: colored})
+	if err != nil {
+		t.Fatal(err)
+	}
+	series, err := st.GetSeries(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	library := t.TempDir()
+	im := NewImporter(st, provider.NewRegistry(&payloadProvider{}), library, nil)
+	ms := DefaultMediaSettings()
+	ms.SeriesFolder, ms.BookFolder, ms.VolumesRoot = SeriesFolderByEdition, BookFolderByVersion, "Volumes"
+	base := filepath.Join(library, "Volumes", "ONE PIECE [mangabaka-377] [Standard Edition][en]")
+	ref := store.BookRef{Ledger: "volume", EditionID: standard.ID, Number: 100}
+	ref.VersionID = version.ID
+	if dir := im.bookDir(ctx, ms, "anywhere", series, ref); dir != base {
+		t.Fatalf("default version in %q, want %q", dir, base)
+	}
+	ref.VersionID = second
+	if dir := im.bookDir(ctx, ms, "anywhere", series, ref); dir != base+" (Colored)" {
+		t.Fatalf("colored version in %q, want %q", dir, base+" (Colored)")
 	}
 }
 
