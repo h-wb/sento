@@ -33,3 +33,7 @@ export interface TaskStatus {
 }
 export interface Scheduler {
 }
+/**
+ * OrganizeLibrary is the slug of the on-demand library organize task.
+ */
+export const OrganizeLibrary = "library-organize";

@@ -9,6 +9,7 @@ import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
 
 function fmtInterval(secs: number): string {
+  if (secs <= 0) return 'on demand'
   if (secs >= 86400) return `${Math.round(secs / 86400)} day${secs >= 2 * 86400 ? 's' : ''}`
   if (secs >= 3600) return `${Math.round(secs / 3600)} hour${secs >= 2 * 3600 ? 's' : ''}`
   return `${Math.round(secs / 60)} minute${secs >= 120 ? 's' : ''}`

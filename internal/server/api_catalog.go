@@ -3,7 +3,10 @@ package server
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/h-wb/sento/internal/scheduler"
+	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -549,6 +552,51 @@ func (s *Server) handleOrganize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// handlePlanOrganizeLibrary previews organizing every series, or those
+// in ?series=1,2,3, listing the series it would change.
+func (s *Server) handlePlanOrganizeLibrary(w http.ResponseWriter, r *http.Request) {
+	var ids []int64
+	if raw := r.URL.Query().Get("series"); raw != "" {
+		for _, part := range strings.Split(raw, ",") {
+			id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid series id: "+part)
+				return
+			}
+			ids = append(ids, id)
+		}
+	}
+	plans, err := s.importer.PlanOrganizeLibrary(r.Context(), ids)
+	respondList(w, plans, err)
+}
+
+// handleOrganizeLibrary starts organizing the library in the background:
+// the run outlives the request and reports through the status endpoint.
+func (s *Server) handleOrganizeLibrary(w http.ResponseWriter, r *http.Request) {
+	if s.sched == nil {
+		writeError(w, http.StatusServiceUnavailable, "no scheduler is running")
+		return
+	}
+	var body service.LibraryOrganizeRequest
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	status, err := s.importer.QueueLibraryOrganize(body)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := s.sched.Run(scheduler.OrganizeLibrary); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, status)
+}
+
+func (s *Server) handleOrganizeLibraryStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.importer.LibraryOrganizeStatus())
 }
 
 func (s *Server) handleCheckFiles(w http.ResponseWriter, r *http.Request) {

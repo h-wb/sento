@@ -336,9 +336,14 @@ func (im *Importer) organize(ctx context.Context, seriesID, fileID int64, rename
 
 func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettings, rename, retag bool) error {
 	src := p.file.Path
-	hash, err := fileHash(src)
-	if err != nil {
-		return err
+	// Re-tagging and moving never change a fingerprint, so the stored one
+	// stands; hashing every page again is the slow part of a library run.
+	hash := p.file.Hash
+	var err error
+	if hash == "" {
+		if hash, err = fileHash(src); err != nil {
+			return err
+		}
 	}
 	// A rewrite without a rename still turns a .cbr into a .cbz.
 	dest := src

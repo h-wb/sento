@@ -49,6 +49,7 @@ type task struct {
 
 	mu      sync.Mutex
 	running bool
+	again   bool // a manual run was asked for during a tick
 	lastRun time.Time
 	lastDur time.Duration
 	lastErr string
@@ -84,6 +85,9 @@ type Scheduler struct {
 	mu  sync.Mutex      // guards ctx and the persisted state document
 	ctx context.Context // the Start context; manual runs stop with it too
 }
+
+// OrganizeLibrary is the slug of the on-demand library organize task.
+const OrganizeLibrary = "library-organize"
 
 // stateKey is the settings document holding each task's last run time
 // (slug → RFC3339), so cadences survive restarts.
@@ -130,6 +134,13 @@ func New(st *store.Store, lib *service.Library, search *service.SearchService,
 				slug: "volume-sweep", name: "Search Wanted Volumes",
 				interval: intervals.VolumeSweep, tick: s.tickVolumes,
 			})
+	}
+	if importer != nil {
+		// On demand only: applies the media settings to existing files.
+		s.tasks = append(s.tasks, &task{
+			slug: OrganizeLibrary, name: "Organize Library Files",
+			tick: importer.RunLibraryOrganize,
+		})
 	}
 	s.tasks = append(s.tasks, &task{
 		slug: "housekeeping", name: "Empty Expired Trash & Prune History",
@@ -212,7 +223,7 @@ func (s *Scheduler) loop(ctx context.Context, t *task) {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
-			s.runTask(ctx, t)
+			s.runTask(ctx, t, false)
 			t.mu.Lock()
 			t.nextRun = time.Now().Add(t.interval)
 			t.mu.Unlock()
@@ -222,21 +233,31 @@ func (s *Scheduler) loop(ctx context.Context, t *task) {
 }
 
 // runTask executes one tick, skipping if the task is already running
-// (manual trigger racing the ticker).
-func (s *Scheduler) runTask(ctx context.Context, t *task) {
+// (manual trigger racing the ticker). A manual run asked for during a tick
+// runs once it finishes, so a request it carries is not lost.
+func (s *Scheduler) runTask(ctx context.Context, t *task, manual bool) {
 	t.mu.Lock()
 	if t.running {
+		t.again = t.again || manual
 		t.mu.Unlock()
 		return
 	}
 	t.running = true
 	t.mu.Unlock()
+	for again := true; again; {
+		again = s.tick(ctx, t)
+	}
+}
 
+// tick runs the task once and reports whether a manual run is waiting.
+func (s *Scheduler) tick(ctx context.Context, t *task) bool {
 	start := time.Now()
 	err := safeTick(ctx, t)
 
 	t.mu.Lock()
-	t.running = false
+	again := t.again && ctx.Err() == nil
+	t.again = false
+	t.running = again
 	t.lastRun = start
 	t.lastDur = time.Since(start)
 	t.lastErr = ""
@@ -251,6 +272,7 @@ func (s *Scheduler) runTask(ctx context.Context, t *task) {
 	} else {
 		slog.Debug("scheduler tick", "loop", t.slug, "took", time.Since(start).Round(time.Millisecond))
 	}
+	return again
 }
 
 // safeTick runs one tick and turns a panic into its error: the loops are
@@ -348,7 +370,7 @@ func (s *Scheduler) Run(slug string) error {
 	}
 	for _, t := range s.tasks {
 		if t.slug == slug {
-			go s.runTask(ctx, t)
+			go s.runTask(ctx, t, true)
 			return nil
 		}
 	}

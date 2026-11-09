@@ -122,6 +122,40 @@ func TestRunPersistsAcrossSchedulers(t *testing.T) {
 	}
 }
 
+// A manual run asked for while the task is mid-tick runs once that tick
+// ends: it may carry a request (a queued library organize) the running
+// tick did not see.
+func TestManualRunDuringTickRunsAfterIt(t *testing.T) {
+	release := make(chan struct{})
+	var runs atomic.Int32
+	s := testScheduler(t, nil, &task{slug: "slow", tick: func(context.Context) error {
+		if runs.Add(1) == 1 {
+			<-release
+		}
+		return nil
+	}})
+	if err := s.Run("slow"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the first tick", func() bool { return runs.Load() == 1 })
+	for range 3 {
+		if err := s.Run("slow"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFor(t, "the requests to be held", func() bool {
+		s.tasks[0].mu.Lock()
+		defer s.tasks[0].mu.Unlock()
+		return s.tasks[0].again
+	})
+	close(release)
+	waitFor(t, "one follow-up run", func() bool { return runs.Load() == 2 && !status(s, "slow").Running })
+	time.Sleep(20 * time.Millisecond)
+	if runs.Load() != 2 {
+		t.Fatalf("runs = %d, want 2", runs.Load())
+	}
+}
+
 // "Crash-isolated" has to include panics: one in a tick goroutine would
 // otherwise kill the whole server.
 func TestPanickingTaskIsContained(t *testing.T) {

@@ -39,6 +39,8 @@ type Importer struct {
 	// next sweep.
 	againMu sync.Mutex
 	again   []SearchTarget
+
+	organizer libraryOrganizer
 }
 
 // searchAgain asks for the job's series to be searched again soon.

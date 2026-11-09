@@ -7,9 +7,12 @@ import type {
   ReviewFileOutcome,
   FileChange,
   HealthReport,
+  LibraryOrganizeRequest,
+  LibraryOrganizeStatus,
   OrganizeResult,
   ReleaseFileMatch,
   RemovedSeries,
+  SeriesOrganizePlan,
   WantedRow,
 } from './types/service'
 import type {
@@ -180,6 +183,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  planOrganizeLibrary: (ids?: number[]) =>
+    request<SeriesOrganizePlan[]>(
+      `/library/organize${ids?.length ? `?series=${ids.join(',')}` : ''}`,
+    ),
+  organizeLibrary: (body: LibraryOrganizeRequest) =>
+    request<LibraryOrganizeStatus>('/library/organize', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  organizeLibraryStatus: () => request<LibraryOrganizeStatus>('/library/organize/status'),
   checkFiles: (id: number) => request<void>(`/series/${id}/check-files`, { method: 'POST' }),
   editionOverview: (id: number) => request<EditionOverview>(`/series/${id}/edition-overview`),
   // Older servers answered this route with a paged object. Say so instead
