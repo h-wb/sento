@@ -24,10 +24,17 @@ shellcheck = "0.11.0" # actionlint runs it over every `run:` script
 pitchfork = "2.33.1" # supervises the [daemons] dev stack
 "go:golang.org/x/tools/gopls" = "latest"
 
+# The fnov secret source: the [secrets] map lives in fnox.toml (references
+# only, no values). `mise x --secrets KEY -- <cmd>` and task `secrets = [...]`
+# grants resolve through the host's pass-cli session — the Paseo pod's scoped
+# token, or the logged-in user on workstations.
+[secrets.fnox]
+
 [env]
 CGO_ENABLED = "0"
-# Dev defaults (override machine-specific values in mise.local.toml,
-# which is gitignored — e.g. SENTO_QBITTORRENT_URL, SENTO_PROWLARR_API_KEY).
+# Dev defaults. Personal overrides go in the gitignored mise.local.toml; the
+# Paseo pods layer the tracked mise.paseo.toml on top (MISE_ENV=paseo) with the
+# in-cluster values — e.g. SENTO_QBITTORRENT_URL, SENTO_PROWLARR_URL.
 SENTO_DB_PATH = "data/sento.db"
 SENTO_LIBRARY_PATH = "data/library"
 # Dev default: sento-extensions sidecar on its default port (mise run extensions:run).
@@ -150,6 +157,7 @@ run = "go run ./cmd/sento"
 
 [tasks."run:watch"]
 description = "Rebuild and restart the backend on Go changes (for supervised services)"
+secrets = ["SENTO_QBITTORRENT_USERNAME", "SENTO_QBITTORRENT_PASSWORD", "SENTO_PROWLARR_API_KEY"]
 run = "bash scripts/watch-api.sh"
 
 [tasks.test]

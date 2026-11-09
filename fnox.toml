@@ -1,0 +1,20 @@
+# fnox secret map for sento. Contains only Proton Pass references (no secret
+# values), so it is safe to commit.
+#
+# mise injects only the keys granted by each task's `secrets = [...]` list;
+# nothing enters the shell. One-off commands: `mise x --secrets KEY -- <cmd>`.
+#
+# One map serves every host: the pods read it through their scoped Proton Pass
+# token, workstations through the logged-in pass-cli session. Items live in
+# the `Automation General` vault.
+[providers.protonpass]
+type = "proton-pass"
+vault = "Automation General"
+agent_reason = "sento fnox"
+
+[secrets]
+SENTO_QBITTORRENT_USERNAME = { provider = "protonpass", value = "pass://Automation General/qBittorrent/username" }
+SENTO_QBITTORRENT_PASSWORD = { provider = "protonpass", value = "pass://Automation General/qBittorrent/password" }
+SENTO_PROWLARR_API_KEY     = { provider = "protonpass", value = "pass://Automation General/Prowlarr/api-key" }
+# Repository-scoped GitHub token: grant explicitly with `mise x --secrets GH_TOKEN -- gh ...`.
+GH_TOKEN = { provider = "protonpass", value = "pass://Automation General/github-sento/password" }
