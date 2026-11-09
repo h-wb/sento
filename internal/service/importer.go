@@ -402,6 +402,10 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	if err != nil {
 		return err
 	}
+	// One archive waiting on a person must not abort the pack: the job is
+	// not re-run once it waits for review, so every file of the payload is
+	// recorded here, and the job is held for review at the end.
+	waiting := 0
 	for _, archive := range archives {
 		if !mediafile.IsArchive(archive.name) {
 			continue
@@ -417,6 +421,10 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 		}
 		covered, e := im.importArchive(ctx, item, ms, series, seriesDir, titles, expected, archive, releaseNamed)
 		if e != nil {
+			if errors.Is(e, errAssetNeedsReview) {
+				waiting++
+				continue
+			}
 			return e
 		}
 		for _, sl := range covered {
@@ -430,6 +438,9 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			return nil
 		}
 		return fmt.Errorf("partial import: verified %d of %d expected books; unmatched files need review", len(linked), len(expected))
+	}
+	if waiting > 0 {
+		return fmt.Errorf("%w (%d %s recorded for review)", errAssetNeedsReview, waiting, plural(waiting, "file"))
 	}
 	return nil
 }

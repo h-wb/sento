@@ -818,3 +818,129 @@ func TestFilesInsideAGrabTrustItsEdition(t *testing.T) {
 		})
 	}
 }
+
+// A pack whose files break the release profile must still record every
+// file for review: one review-flagged archive may not abort the rest of
+// the payload — the job is not re-run once it waits for a person.
+func TestPackImportRecordsEveryFileWhenProfileRefuses(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, c, ws, version := modelFixture(t)
+	ctx := context.Background()
+	scan, err := st.AddFormat(ctx, profile.Format{Name: "Scan", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "scan"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := st.AddProfile(ctx, profile.Profile{Name: "Digital only", MinFormatScore: profile.MinScoreOff, Refused: []int64{scan}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	version.ProfileID = pid
+	if _, err := lib.SaveVersion(ctx, sid, version); err != nil {
+		t.Fatal(err)
+	}
+	book := func(n int64) store.Book {
+		for _, w := range ws {
+			if w.SequenceNum == n {
+				return w
+			}
+		}
+		t.Fatalf("no book %d", n)
+		return store.Book{}
+	}
+	slots := []store.BookRef{modelRef(c, book(100), version), modelRef(c, book(200), version), modelRef(c, book(300), version)}
+	raw, _ := json.Marshal(slots)
+
+	downloads, library := t.TempDir(), t.TempDir()
+	folder := "ONE PIECE v01-v03 (Scan)"
+	if err := os.MkdirAll(filepath.Join(downloads, folder), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, n := range []string{"01", "02", "03"} {
+		name := "ONE PIECE v" + n + " (Scan).cbz"
+		writeCBZ(t, filepath.Join(downloads, folder, name), name)
+		files = append(files, folder+"/"+name)
+	}
+	im := NewImporter(st, nil, library, nil)
+	item := store.QueueItem{SeriesID: sid, Protocol: provider.ProtocolTorrent, ReleaseKey: "pack-key", Title: "ONE PIECE v01-v03 (Scan)", Books: raw}
+	err = im.importFiles(ctx, item, downloads, files)
+	if err == nil {
+		t.Fatal("import of a refused pack should hold for review")
+	}
+	fs, err := st.ListFiles(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fs) != 3 {
+		t.Fatalf("pack import recorded %d files, want all 3 (err %v): %+v", len(fs), err, fs)
+	}
+	for _, f := range fs {
+		if !f.NeedsReview {
+			t.Errorf("%s not flagged for review", f.Path)
+		}
+	}
+	cv, err := st.Coverage(ctx, sid)
+	if err != nil || len(cv) != 3 {
+		t.Fatalf("pack coverage = %+v, %v; want one link per volume", cv, err)
+	}
+}
+
+// A review-flagged file in a pack does not block the pack's other files:
+// the clean ones import and link, the refused one waits in review, and the
+// job reports the partial import either way.
+func TestPackImportMixedReviewAndCleanFiles(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, c, ws, version := modelFixture(t)
+	ctx := context.Background()
+	scan, err := st.AddFormat(ctx, profile.Format{Name: "Scan", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "scan"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := st.AddProfile(ctx, profile.Profile{Name: "Digital only", MinFormatScore: profile.MinScoreOff, Refused: []int64{scan}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	version.ProfileID = pid
+	if _, err := lib.SaveVersion(ctx, sid, version); err != nil {
+		t.Fatal(err)
+	}
+	book := func(n int64) store.Book {
+		for _, w := range ws {
+			if w.SequenceNum == n {
+				return w
+			}
+		}
+		t.Fatalf("no book %d", n)
+		return store.Book{}
+	}
+	slots := []store.BookRef{modelRef(c, book(100), version), modelRef(c, book(200), version)}
+	raw, _ := json.Marshal(slots)
+
+	downloads, library := t.TempDir(), t.TempDir()
+	names := []string{"ONE PIECE v01 (Scan).cbz", "ONE PIECE v02 (Digital).cbz"}
+	var files []string
+	for _, name := range names {
+		writeCBZ(t, filepath.Join(downloads, name), name)
+		files = append(files, name)
+	}
+	im := NewImporter(st, nil, library, nil)
+	item := store.QueueItem{SeriesID: sid, Protocol: provider.ProtocolTorrent, ReleaseKey: "pack-key", Title: "ONE PIECE v01-v02", Books: raw}
+	err = im.importFiles(ctx, item, downloads, files)
+	if err == nil || !strings.Contains(err.Error(), "verified 1 of 2 expected books") {
+		t.Fatalf("import err = %v, want partial import of 1 of 2", err)
+	}
+	fs, err := st.ListFiles(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fs) != 2 {
+		t.Fatalf("pack import recorded %d files, want both: %+v", len(fs), fs)
+	}
+	byReview := map[bool]int{}
+	for _, f := range fs {
+		byReview[f.NeedsReview]++
+	}
+	if byReview[true] != 1 || byReview[false] != 1 {
+		t.Fatalf("want one file in review and one imported: %+v", fs)
+	}
+}

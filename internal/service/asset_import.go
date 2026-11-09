@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +19,12 @@ import (
 // fileHash identifies a book by its pages (mediafile.Fingerprint), so a
 // download and its processed, tagged library copy are the same asset.
 func fileHash(path string) (string, error) { return mediafile.Fingerprint(path) }
+
+// errAssetNeedsReview marks an asset that was recorded but whose observed
+// facts break the requested release profile: the file is in place (exiled
+// to review/) and is waiting for a person. It is a soft outcome — the rest
+// of a pack's files still import, and the job is held for review at the end.
+var errAssetNeedsReview = errors.New("file's observed facts do not meet the requested release profile; confirm its facts in review")
 
 // assetPath is dir/name with an unsafe or overlong name tamed and, when
 // hash is given, " [hash]" before the extension.
@@ -146,7 +153,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		}
 	}
 	if err == nil && review {
-		return fmt.Errorf("file's observed facts do not meet the requested release profile; confirm its facts in review")
+		return errAssetNeedsReview
 	}
 	return err
 }
