@@ -72,3 +72,14 @@ func TestRenderRange(t *testing.T) {
 		t.Errorf("volume range: %q", got)
 	}
 }
+
+// Text for a ComicInfo field keeps what a path cannot hold.
+func TestRenderTextKeepsPunctuation(t *testing.T) {
+	tokens := NameTokens{SeriesTitle: "Dragon Quest: The Adventure of Dai", Edition: "Fan Translation", Volume: -1, Chapter: -1}
+	if got := RenderText("{Series Title} {edition} {version}", tokens); got != "Dragon Quest: The Adventure of Dai Fan Translation" {
+		t.Fatalf("RenderText = %q", got)
+	}
+	if got := Render("{Series Title}", tokens); got != "Dragon Quest The Adventure of Dai" {
+		t.Fatalf("Render = %q", got)
+	}
+}

@@ -66,8 +66,19 @@ func RenderFolder(template string, t NameTokens) []string {
 }
 
 // Render fills a template; empty values collapse their bracket/paren wrapper
-// ("[{group}]" with no group disappears).
+// ("[{group}]" with no group disappears). Values lose the characters a
+// path cannot hold.
 func Render(template string, t NameTokens) string {
+	return render(template, t, sanitize)
+}
+
+// RenderText fills a template for text that is not a path (a ComicInfo
+// field): values are kept as they are, colons and all.
+func RenderText(template string, t NameTokens) string {
+	return render(template, t, strings.TrimSpace)
+}
+
+func render(template string, t NameTokens, sanitize func(string) string) string {
 	out := tokenRe.ReplaceAllStringFunc(template, func(m string) string {
 		sub := tokenRe.FindStringSubmatch(m)
 		name, pad := sub[1], len(sub[2])

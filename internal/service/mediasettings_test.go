@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -13,11 +14,18 @@ func TestMediaSettingsRoundtrip(t *testing.T) {
 
 	// Unset → defaults.
 	got := LoadMediaSettings(ctx, st)
-	if got != DefaultMediaSettings() {
+	if !reflect.DeepEqual(got, DefaultMediaSettings()) {
 		t.Fatalf("want defaults when unset, got %+v", got)
 	}
 	if !got.RenameImports || !got.WriteComicInfo || got.AlwaysCopy {
 		t.Fatalf("bad default flags: %+v", got)
+	}
+	// Settings saved before reader fields existed get their defaults.
+	if err := st.PutSetting(ctx, mediaSettingsKey, []byte(`{"seriesFolder":"{Series Title}","volumeFile":"{Series Title} v{volume}.cbz"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if old := LoadMediaSettings(ctx, st); !reflect.DeepEqual(old.ReaderFields, defaultReaderFields()) {
+		t.Fatalf("older settings: reader fields %v", old.ReaderFields)
 	}
 
 	got.VolumeFile = "{Series Title} - Vol {volume:000}.cbz"
@@ -25,7 +33,7 @@ func TestMediaSettingsRoundtrip(t *testing.T) {
 	if err := SaveMediaSettings(ctx, st, got); err != nil {
 		t.Fatal(err)
 	}
-	if back := LoadMediaSettings(ctx, st); back != got {
+	if back := LoadMediaSettings(ctx, st); !reflect.DeepEqual(back, got) {
 		t.Fatalf("roundtrip lost data: %+v != %+v", back, got)
 	}
 

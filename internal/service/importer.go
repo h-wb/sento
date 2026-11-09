@@ -324,7 +324,7 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	cat := newCatalogCache(im.store, item.SeriesID)
 	src := releaseSource(item)
 	group := src.Group
-	info := im.fileInfo(ctx, cat, series, slots, src)
+	info := im.fileInfo(ctx, cat, ms, series, slots, src)
 	fileName := mediafile.Sanitize(item.Title) + ".cbz"
 	if ms.RenameImports {
 		fileName = im.bookFileName(ctx, cat, ms, series, slots, group, ".cbz")
@@ -538,7 +538,7 @@ func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, ms 
 	if ms.WriteComicInfo {
 		came := releaseSource(item)
 		came.Group = res.Group
-		err = installProcessed(src, dest, hash, im.fileInfo(ctx, cat, series, contents, came))
+		err = installProcessed(src, dest, hash, im.fileInfo(ctx, cat, ms, series, contents, came))
 	} else {
 		err = installAsset(src, dest, hash, ms.AlwaysCopy)
 	}

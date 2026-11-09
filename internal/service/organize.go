@@ -242,7 +242,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		}
 		group := f.Facts.Group
 		p.name = reHashSuffix.ReplaceAllString(strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path)), "") + ext
-		p.info = im.fileInfo(ctx, cat, series, slots, tagSource{Release: f.Claims.Title, Group: group, Via: f.Facts.Protocol, Site: f.Facts.Site, Flags: f.Facts.Flags})
+		p.info = im.fileInfo(ctx, cat, ms, series, slots, tagSource{Release: f.Claims.Title, Group: group, Via: f.Facts.Protocol, Site: f.Facts.Site, Flags: f.Facts.Flags})
 		if ms.RenameImports {
 			p.name = im.bookFileName(ctx, cat, ms, series, slots, group, ext)
 		}

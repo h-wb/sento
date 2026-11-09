@@ -40,6 +40,10 @@ type MediaSettings struct {
 	RenameImports  bool `json:"renameImports"`
 	AlwaysCopy     bool `json:"alwaysCopy"` // copy even when a hardlink would work
 	WriteComicInfo bool `json:"writeComicInfo"`
+	// ReaderFields are the templates for the ComicInfo fields readers
+	// file and group a copy by (mediafile.PresentedFields), keyed by
+	// field; an edition may set its own.
+	ReaderFields map[string]string `json:"readerFields"`
 }
 
 const mediaSettingsKey = "media"
@@ -71,7 +75,16 @@ func DefaultMediaSettings() MediaSettings {
 		ChapterFile: n.ChapterFile, ChapterDir: n.ChapterDir,
 		BookFolder:    BookFolderByEdition,
 		RenameImports: true, WriteComicInfo: true,
+		ReaderFields: defaultReaderFields(),
 	}
+}
+
+func defaultReaderFields() map[string]string {
+	out := map[string]string{}
+	for _, f := range mediafile.PresentedFields {
+		out[f.Key] = f.Default
+	}
+	return out
 }
 
 // Naming adapts the settings to the template renderer's config.
@@ -143,6 +156,9 @@ func ValidateMediaSettings(m MediaSettings) error {
 			return apperr.Invalidf("top folders must be plain folder names inside the library")
 		}
 	}
+	if err := validateReaderFields(m.ReaderFields, &previewSeries, previewVolumes, nil); err != nil {
+		return err
+	}
 	for name, rendered := range PreviewMediaSettings(m) {
 		if name == "bookFolder" || name == "volumePath" || name == "chapterPath" {
 			continue // empty book folder = books directly in the series folder
@@ -193,6 +209,30 @@ func PreviewMediaSettings(m MediaSettings) map[string]string {
 		"volumeFile":   mediafile.Render(m.VolumeFile, volume),
 		"chapterFile":  mediafile.Render(m.ChapterFile, chapter),
 	}
+}
+
+// ReaderPreview is what readers would show for the sample edition, and
+// for a second card of it collected as "Colored"; Error says why saving
+// the field's template would be refused.
+type ReaderPreview struct {
+	First   string `json:"first"`
+	Colored string `json:"colored"`
+	Error   string `json:"error,omitempty"`
+}
+
+// PreviewReaderFields renders each presented field for the sample copies.
+func PreviewReaderFields(m MediaSettings) map[string]ReaderPreview {
+	first := readerValues(m, &previewSeries, previewVolumes, nil)
+	colored := readerValues(m, &previewSeries, previewVolumes, &store.CollectedVersion{ID: 82, Name: "Colored"})
+	out := map[string]ReaderPreview{}
+	for key := range first {
+		p := ReaderPreview{First: first[key], Colored: colored[key]}
+		if err := validateReaderFields(map[string]string{key: m.ReaderFields[key]}, &previewSeries, previewVolumes, nil); err != nil {
+			p.Error = err.Error()
+		}
+		out[key] = p
+	}
+	return out
 }
 
 var reTemplateToken = regexp.MustCompile(`\{([A-Za-z ]+?)(?::0+)?\}`)

@@ -591,17 +591,18 @@ func TestFileInfoNamesVersion(t *testing.T) {
 	}
 	im := NewImporter(st, nil, t.TempDir(), nil)
 	cat := newCatalogCache(st, sid)
-	if info := im.fileInfo(ctx, cat, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" {
-		t.Fatalf("default version Series = %q, want %q", info.Series, "ONE PIECE")
+	ms := DefaultMediaSettings()
+	if info := im.fileInfo(ctx, cat, ms, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" || info.SeriesGroup != "ONE PIECE" {
+		t.Fatalf("default version Series, SeriesGroup = %q, %q, want ONE PIECE for both", info.Series, info.SeriesGroup)
 	}
-	if info := im.fileInfo(ctx, cat, series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Colored" {
-		t.Fatalf("colored version Series = %q, want %q", info.Series, "ONE PIECE Colored")
+	if info := im.fileInfo(ctx, cat, ms, series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Colored" || info.SeriesGroup != "ONE PIECE" {
+		t.Fatalf("colored version Series, SeriesGroup = %q, %q, want %q, %q", info.Series, info.SeriesGroup, "ONE PIECE Colored", "ONE PIECE")
 	}
 }
 
-// An edition marked as its own series names itself in ComicInfo, and a
-// collected version of it composes after the edition's name.
-func TestFileInfoNamesOwnSeriesEdition(t *testing.T) {
+// The series name readers see follows the library template, an edition's
+// own replaces it, and a collected version still renders its name in it.
+func TestFileInfoReaderFieldTemplates(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	lib, st, sid, c, ws, version := modelFixture(t)
@@ -621,23 +622,32 @@ func TestFileInfoNamesOwnSeriesEdition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetEditionOwnSeries(ctx, sid, c.ID, true); err != nil {
-		t.Fatal(err)
-	}
 	im := NewImporter(st, nil, t.TempDir(), nil)
-	// A fresh cache per call: an organize pass snapshots the catalog once,
-	// so the test must not let one snapshot see the flag change.
-	if info := im.fileInfo(ctx, newCatalogCache(st, sid), series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE Standard Edition" {
-		t.Fatalf("own-series edition Series = %q, want %q", info.Series, "ONE PIECE Standard Edition")
+	named := func(ms MediaSettings, v store.CollectedVersion) string {
+		// A fresh cache per call: an organize pass snapshots the catalog
+		// once, so one snapshot must not see the edition change.
+		return im.fileInfo(ctx, newCatalogCache(st, sid), ms, series, []store.BookRef{modelRef(c, ws[1], v)}, tagSource{}).Series
 	}
-	if info := im.fileInfo(ctx, newCatalogCache(st, sid), series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Standard Edition Colored" {
-		t.Fatalf("own-series edition's version Series = %q, want %q", info.Series, "ONE PIECE Standard Edition Colored")
+	ms := DefaultMediaSettings()
+	ms.ReaderFields["series"] = "{Series Title} ({lang})"
+	if got := named(ms, version); got != "ONE PIECE (en)" {
+		t.Fatalf("library template: %q, want %q", got, "ONE PIECE (en)")
 	}
-	if err := st.SetEditionOwnSeries(ctx, sid, c.ID, false); err != nil {
+	if err := st.SetEditionReaderFields(ctx, sid, c.ID, store.ReaderFields{"series": "{Series Title} {edition} {version}"}); err != nil {
 		t.Fatal(err)
 	}
-	if info := im.fileInfo(ctx, newCatalogCache(st, sid), series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" {
-		t.Fatalf("unmarked edition Series = %q, want %q", info.Series, "ONE PIECE")
+	if got := named(ms, version); got != "ONE PIECE Standard Edition" {
+		t.Fatalf("edition template: %q, want %q", got, "ONE PIECE Standard Edition")
+	}
+	if got := named(ms, *secondV); got != "ONE PIECE Standard Edition Colored" {
+		t.Fatalf("edition template, colored version: %q, want %q", got, "ONE PIECE Standard Edition Colored")
+	}
+	// A template that renders nothing for this copy falls back to the default.
+	if err := st.SetEditionReaderFields(ctx, sid, c.ID, store.ReaderFields{"series": "({version})"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := named(DefaultMediaSettings(), version); got != "ONE PIECE" {
+		t.Fatalf("empty render: %q, want %q", got, "ONE PIECE")
 	}
 }
 
@@ -731,7 +741,7 @@ func TestMultiBookFileIsNamedForItsRange(t *testing.T) {
 	if got := im.bookFileName(ctx, cat, ms, series, slots[:1], "", ".cbz"); !strings.Contains(got, "v02") || strings.Contains(got, "-") {
 		t.Errorf("single name = %q", got)
 	}
-	info := im.fileInfo(ctx, cat, series, slots, tagSource{})
+	info := im.fileInfo(ctx, cat, ms, series, slots, tagSource{})
 	if info.Title != "Volumes 1–2" || info.Number != "" {
 		t.Errorf("pack info = %+v", info)
 	}

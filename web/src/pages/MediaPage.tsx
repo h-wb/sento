@@ -41,6 +41,22 @@ const tokens: [string, string][] = [
   ['{editionId} {versionId}', 'internal ids that never change (folders)'],
 ]
 
+// The ComicInfo fields readers file and group a copy by; the backend's
+// mediafile.PresentedFields. The first is shown, the rest on request.
+const readerFields: { key: string; label: string; description: string }[] = [
+  {
+    key: 'series',
+    label: 'Series name in readers',
+    description:
+      'Written into each book, so Kavita, Komga and other readers file it under this series. {version} is empty for an edition’s first card. An edition can set its own name in Edit edition.',
+  },
+  {
+    key: 'seriesGroup',
+    label: 'Series group',
+    description: 'What the copies of a series share, for readers that build collections from it.',
+  },
+]
+
 // Folder layout presets; the templates mirror the backend's constants.
 const seriesFolderDefault = '{Series Title} [mangabaka-{seriesId}]'
 const seriesFolderByEdition = '{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}] ({version})'
@@ -70,6 +86,28 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
   const [form, setForm] = useState<MediaSettings>(initial)
   const [saved, setSaved] = useState(false)
   const [organizing, setOrganizing] = useState(false)
+  const [moreReaderFields, setMoreReaderFields] = useState(false)
+  const setReaderField = (key: string, template: string) =>
+    set({ readerFields: { ...form.readerFields, [key]: template } })
+  // The sample edition, and a second card of it collected as "Colored".
+  const readerPreview = (key: string) => {
+    const sample = preview.data?.reader[key]
+    if (!sample) return undefined
+    return sample.colored !== sample.first
+      ? `${sample.first} · a “Colored” card: ${sample.colored}`
+      : sample.first
+  }
+  const readerInput = (f: (typeof readerFields)[number]) => (
+    <TemplateInput
+      key={f.key}
+      label={f.label}
+      description={f.description}
+      value={form.readerFields[f.key] ?? ''}
+      preview={readerPreview(f.key)}
+      error={preview.data?.reader[f.key]?.error}
+      onChange={(v) => setReaderField(f.key, v)}
+    />
+  )
   const set = (patch: Partial<MediaSettings>) => {
     setForm((f) => ({ ...f, ...patch }))
     setSaved(false)
@@ -106,8 +144,21 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
 
       <div className="settingsLayout">
         <fieldset className="formFields" disabled={save.isPending}><Stack>
-          <Title order={4}>File naming</Title>
+          <Title order={4}>Naming</Title>
           <QueryFeedback error={preview.error} onRetry={() => void preview.refetch()} />
+          {readerInput(readerFields[0])}
+          {moreReaderFields ? (
+            readerFields.slice(1).map(readerInput)
+          ) : (
+            <Button
+              variant="subtle"
+              size="compact-sm"
+              w="fit-content"
+              onClick={() => setMoreReaderFields(true)}
+            >
+              Other reader fields: {readerFields.slice(1).map((f) => f.label).join(', ')}
+            </Button>
+          )}
           <TemplateInput
             label="Series folder"
             value={form.seriesFolder}
@@ -272,21 +323,33 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
 
 function TemplateInput({
   label,
+  description,
   value,
   preview,
+  error,
   onChange,
 }: {
   label: string
+  description?: string
   value: string
   preview?: string
+  error?: string
   onChange: (v: string) => void
 }) {
   return (
     <div>
-      <TextInput label={label} value={value} onChange={(e) => onChange(e.currentTarget.value)} />
-      <Text size="xs" c="dimmed" mt={2} style={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
-        Preview: {preview ?? 'Loading…'}
-      </Text>
+      <TextInput
+        label={label}
+        description={description}
+        value={value}
+        error={error}
+        onChange={(e) => onChange(e.currentTarget.value)}
+      />
+      {!error && (
+        <Text size="xs" c="dimmed" mt={2} style={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
+          Preview: {preview ?? 'Loading…'}
+        </Text>
+      )}
     </div>
   )
 }
