@@ -474,13 +474,20 @@ export const BookFolderByType = "{type}/{edition} [{lang}] ({version})";
  */
 export const BookFolderByID = "editions/{editionId}/versions/{versionId}";
 /**
- * One top folder per edition, for readers that group by folder.
+ * One top folder per edition, and per collected version of one, for
+ * readers that group by folder. The default version renders without
+ * its " ({version})".
  */
-export const SeriesFolderByEdition = "{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}]";
+export const SeriesFolderByEdition = "{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}] ({version})";
 /**
- * Its book folder: only an additional version gets a subfolder.
+ * Its book folder: flat, the version already named in the series folder.
  */
-export const BookFolderByVersion = "({version})";
+export const BookFolderByVersion = "";
+/**
+ * The version split inside one edition folder, when the series folder
+ * does not already name versions.
+ */
+export const BookFolderOnlyVersion = "({version})";
 
 //////////
 // source: observations.go

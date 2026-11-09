@@ -43,13 +43,13 @@ const tokens: [string, string][] = [
 
 // Folder layout presets; the templates mirror the backend's constants.
 const seriesFolderDefault = '{Series Title} [mangabaka-{seriesId}]'
-const seriesFolderByEdition = '{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}]'
+const seriesFolderByEdition = '{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}] ({version})'
 const layouts: { value: string; label: string; template: string; seriesFolder?: string }[] = [
   { value: 'edition', label: 'By edition — Standard Edition [en]', template: '{edition} [{lang}] ({version})' },
   {
     value: 'editionFolders',
-    label: 'One series folder per edition — ONE PIECE [Standard Edition][en]',
-    template: '({version})',
+    label: 'One series folder per edition and version — ONE PIECE [Standard Edition][en] (Colored)',
+    template: '',
     seriesFolder: seriesFolderByEdition,
   },
   { value: 'type', label: 'By type, then edition — Volumes/Standard Edition [en]', template: '{type}/{edition} [{lang}] ({version})' },

@@ -53,10 +53,15 @@ const (
 	BookFolderByType = "{type}/{edition} [{lang}] ({version})"
 	// Stable internal ids: paths never change when an edition is renamed.
 	BookFolderByID = "editions/{editionId}/versions/{versionId}"
-	// One top folder per edition, for readers that group by folder.
-	SeriesFolderByEdition = "{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}]"
-	// Its book folder: only an additional version gets a subfolder.
-	BookFolderByVersion = "({version})"
+	// One top folder per edition, and per collected version of one, for
+	// readers that group by folder. The default version renders without
+	// its " ({version})".
+	SeriesFolderByEdition = "{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}] ({version})"
+	// Its book folder: flat, the version already named in the series folder.
+	BookFolderByVersion = ""
+	// The version split inside one edition folder, when the series folder
+	// does not already name versions.
+	BookFolderOnlyVersion = "({version})"
 )
 
 func DefaultMediaSettings() MediaSettings {
@@ -121,8 +126,8 @@ func ValidateMediaSettings(m MediaSettings) error {
 		return apperr.Invalidf("chapter file template needs a {chapter} token (files would overwrite each other)")
 	}
 	tokens := templateTokens(m.SeriesFolder)
-	if tokens["version"] || tokens["versionid"] {
-		return apperr.Invalidf("series folder template cannot use version tokens; put them in the book folder")
+	if (tokens["version"] || tokens["versionid"]) && !tokens["edition"] && !tokens["editionid"] && !tokens["collectionid"] {
+		return apperr.Invalidf("series folder template cannot use version tokens without {edition} or {editionId}; a version is separated inside its edition")
 	}
 	if editionAware(m.SeriesFolder) && !tokens["edition"] && !tokens["editionid"] && !tokens["collectionid"] {
 		return apperr.Invalidf("series folder template needs {edition} or {editionId} so two editions never share a folder")
@@ -161,7 +166,7 @@ var (
 // promise tokens a real path would drop.
 func PreviewMediaSettings(m MediaSettings) map[string]string {
 	root := string(filepath.Separator) + "library"
-	folders := editionFolders(root, &previewSeries, m, []store.Edition{previewVolumes, previewChapters})
+	folders := editionFolders(root, &previewSeries, m, []store.Edition{previewVolumes, previewChapters}, nil)
 	sample := mediafile.NameTokens{
 		SeriesTitle: "ONE PIECE", SeriesID: 377, Edition: "Standard Edition",
 		Lang: "en", Group: "TCB Scans", Year: 1997,
@@ -174,7 +179,7 @@ func PreviewMediaSettings(m MediaSettings) map[string]string {
 	full := func(e store.Edition, file string) string {
 		tokens := editionTokens(&previewSeries, e)
 		tokens.VersionID = 81
-		parts := append([]string{folders[e.ID]}, mediafile.RenderFolder(m.BookFolder, tokens)...)
+		parts := append([]string{folders[folderKey{e.ID, 0}]}, mediafile.RenderFolder(m.BookFolder, tokens)...)
 		rel, _ := filepath.Rel(root, filepath.Join(append(parts, file)...))
 		return filepath.ToSlash(rel)
 	}
@@ -184,7 +189,7 @@ func PreviewMediaSettings(m MediaSettings) map[string]string {
 		"volumePath":   full(previewVolumes, mediafile.Render(m.VolumeFile, volume)),
 		"chapterPath":  full(previewChapters, mediafile.Render(m.ChapterFile, chapter)),
 		"bookFolder":   strings.Join(mediafile.RenderFolder(m.BookFolder, book), "/"),
-		"seriesFolder": filepath.Base(folders[previewVolumes.ID]),
+		"seriesFolder": filepath.Base(folders[folderKey{previewVolumes.ID, 0}]),
 		"volumeFile":   mediafile.Render(m.VolumeFile, volume),
 		"chapterFile":  mediafile.Render(m.ChapterFile, chapter),
 	}
@@ -213,6 +218,14 @@ func editionAware(template string) bool {
 	return false
 }
 
+// versionAware says the series folder template names the collected
+// version, which gives every version of an edition a top folder beside
+// the edition's own.
+func versionAware(template string) bool {
+	tokens := templateTokens(template)
+	return tokens["version"] || tokens["versionid"]
+}
+
 func seriesTokens(series *store.Series) mediafile.NameTokens {
 	return mediafile.NameTokens{SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1, Year: series.Year}
 }
@@ -228,43 +241,83 @@ func editionTokens(series *store.Series, e store.Edition) mediafile.NameTokens {
 	return t
 }
 
-// editionFolders maps each edition to the top folder its books go in.
-// Without edition tokens in the series folder template that is the
-// series' own folder. With them, each edition gets a sibling folder: the
-// series' folder name plus what the edition adds to the template, so a
-// kept or adopted folder name survives. Two editions of a type that would
-// still meet in one folder are told apart by id, the newer one renamed.
-func editionFolders(libraryRoot string, series *store.Series, ms MediaSettings, editions []store.Edition) map[int64]string {
+// folderKey identifies the top folder a book goes in: its edition, and
+// the collected version when the series folder template names versions.
+// VersionID 0 names the edition's own folder, the one its default
+// version and unversioned books live in.
+type folderKey struct{ EditionID, VersionID int64 }
+
+// editionFolders maps each edition — and each collected version, when
+// the series folder template names versions — to the top folder its
+// books go in. Without edition tokens in the series folder template that
+// is the series' own folder. With them, each edition gets a sibling
+// folder: the series' folder name plus what the edition adds to the
+// template, so a kept or adopted folder name survives. A version token
+// adds one sibling folder per collected version of an edition; the
+// default one keeps the edition's folder, and so does a version whose
+// name renders empty. Two folders of a type that would still meet in one
+// path are told apart by id, the newer one renamed.
+func editionFolders(libraryRoot string, series *store.Series, ms MediaSettings, editions []store.Edition, versions []store.CollectedVersion) map[folderKey]string {
 	volumes, chapters := seriesFolders(libraryRoot, series, ms)
 	aware := editionAware(ms.SeriesFolder)
+	perVersion := versionAware(ms.SeriesFolder)
 	plain := mediafile.Render(ms.SeriesFolder, seriesTokens(series))
 	sorted := slices.Clone(editions)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
-	out := map[int64]string{}
+	ofEdition := map[int64][]store.CollectedVersion{}
+	for _, v := range versions {
+		ofEdition[v.EditionID] = append(ofEdition[v.EditionID], v)
+	}
+	out := map[folderKey]string{}
 	taken := map[string]bool{}
 	for _, e := range sorted {
 		base := volumes
 		if e.Type == "chapter" {
 			base = chapters
 		}
-		out[e.ID] = base
+		out[folderKey{e.ID, 0}] = base
 		if rel, err := filepath.Rel(libraryRoot, base); !aware || err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 			continue // adopted from outside the library: left where it is
 		}
+		dir := base
 		name := mediafile.Render(ms.SeriesFolder, editionTokens(series, e))
-		if name == plain {
+		if name != plain {
+			if rest, ok := strings.CutPrefix(name, plain); ok {
+				name = filepath.Base(base) + rest
+			}
+			dir = filepath.Join(filepath.Dir(base), mediafile.Sanitize(name))
+			key := e.Type + "\x00" + dir
+			if taken[key] {
+				dir = fmt.Sprintf("%s (edition %d)", dir, e.ID)
+			}
+			taken[key] = true
+		}
+		out[folderKey{e.ID, 0}] = dir
+		if !perVersion {
 			continue
 		}
-		if rest, ok := strings.CutPrefix(name, plain); ok {
-			name = filepath.Base(base) + rest
+		for _, v := range ofEdition[e.ID] {
+			out[folderKey{e.ID, v.ID}] = dir
+			if v.IsDefault {
+				continue
+			}
+			tokens := editionTokens(series, e)
+			tokens.Version, tokens.VersionID = v.Name, v.ID
+			vname := mediafile.Render(ms.SeriesFolder, tokens)
+			if vname == name {
+				continue // renders like the edition folder: stays in it
+			}
+			if rest, ok := strings.CutPrefix(vname, plain); ok {
+				vname = filepath.Base(base) + rest
+			}
+			vdir := filepath.Join(filepath.Dir(base), mediafile.Sanitize(vname))
+			vkey := e.Type + "\x00" + vdir
+			if taken[vkey] {
+				vdir = fmt.Sprintf("%s (version %d)", vdir, v.ID)
+			}
+			taken[vkey] = true
+			out[folderKey{e.ID, v.ID}] = vdir
 		}
-		dir := filepath.Join(filepath.Dir(base), mediafile.Sanitize(name))
-		key := e.Type + "\x00" + dir
-		if taken[key] {
-			dir = fmt.Sprintf("%s (edition %d)", dir, e.ID)
-		}
-		taken[key] = true
-		out[e.ID] = dir
 	}
 	return out
 }

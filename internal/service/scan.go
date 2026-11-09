@@ -96,7 +96,11 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 		return nil, err
 	}
 	if def && editionAware(ms.SeriesFolder) {
-		for _, d := range editionFolders(sc.libraryRoot, series, ms, collections) {
+		var versions []store.CollectedVersion
+		if versionAware(ms.SeriesFolder) {
+			versions, _ = sc.store.ListVersions(ctx, seriesID)
+		}
+		for _, d := range editionFolders(sc.libraryRoot, series, ms, collections, versions) {
 			if !slices.Contains(dirs, d) {
 				dirs = append(dirs, d)
 			}
