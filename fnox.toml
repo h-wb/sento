@@ -1,12 +1,4 @@
-# fnox secret map for sento. Contains only Proton Pass references (no secret
-# values), so it is safe to commit.
-#
-# mise injects only the keys granted by each task's `secrets = [...]` list;
-# nothing enters the shell. One-off commands: `mise x --secrets KEY -- <cmd>`.
-#
-# One map serves every host: the pods read it through their scoped Proton Pass
-# token, workstations through the logged-in pass-cli session. Items live in
-# the `Automation General` vault.
+# Proton Pass references only (no secret values), safe to commit.
 [providers.protonpass]
 type = "proton-pass"
 vault = "Automation General"

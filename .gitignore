@@ -30,7 +30,6 @@ mise.local.toml
 codex-session-*.md
 
 # Optional local service credentials
-# fnox.toml is tracked: the secret map holds Proton Pass references only.
 fnox.local.toml
 .env
 .env.local
