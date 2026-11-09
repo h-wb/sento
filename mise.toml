@@ -24,8 +24,6 @@ shellcheck = "0.11.0" # actionlint runs it over every `run:` script
 pitchfork = "2.33.1" # supervises the [daemons] dev stack
 "go:golang.org/x/tools/gopls" = "latest"
 
-[secrets.fnox]
-
 [env]
 CGO_ENABLED = "0"
 # Dev defaults (override machine-specific values in mise.local.toml,
@@ -152,7 +150,7 @@ run = "go run ./cmd/sento"
 
 [tasks."run:watch"]
 description = "Rebuild and restart the backend on Go changes (for supervised services)"
-# Secret grants attach only in the cluster overlay (mise.cluster.toml).
+# Secret grants and the fnox map live only in the cluster overlay.
 run = "bash scripts/watch-api.sh"
 
 [tasks.test]

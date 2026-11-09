@@ -1,4 +1,7 @@
-# Loads only with MISE_ENV=cluster (the pods). In-cluster service endpoints.
+[secrets.fnox]
+profile = "cluster"
+
+# In-cluster service endpoints.
 [env]
 SENTO_QBITTORRENT_URL = "http://qbittorrent-vpn.downloads.svc.cluster.local:8080"
 SENTO_QBITTORRENT_CATEGORY = "sento-test"
