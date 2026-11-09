@@ -60,6 +60,29 @@ func (s *Store) GetBook(ctx context.Context, id int64) (*Book, error) {
 	return get[Book](ctx, s, `SELECT `+bookColumns+` FROM books WHERE id=?`, id)
 }
 
+// ListSeriesBooks returns every book across the series' editions in one
+// query, for passes that touch them all (organize planning over many files).
+func (s *Store) ListSeriesBooks(ctx context.Context, seriesID int64) ([]Book, error) {
+	return list[Book](ctx, s, `SELECT `+bookColumns+` FROM books WHERE edition_id IN(SELECT id FROM editions WHERE series_id=?) ORDER BY edition_id, sequence_num, id`, seriesID)
+}
+
+// BookRawPayloads returns the raw catalog document of each of the series'
+// books, keyed by book id, in one query.
+func (s *Store) BookRawPayloads(ctx context.Context, seriesID int64) (map[int64]string, error) {
+	rows, err := list[struct {
+		ID      int64  `db:"id"`
+		RawJSON string `db:"raw_json"`
+	}](ctx, s, `SELECT id, COALESCE(raw_json,'') AS raw_json FROM books WHERE edition_id IN(SELECT id FROM editions WHERE series_id=?)`, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]string, len(rows))
+	for _, r := range rows {
+		out[r.ID] = r.RawJSON
+	}
+	return out, nil
+}
+
 const bookColumns = `id,edition_id,COALESCE(provider_id,'') AS provider_id,sequence_num,COALESCE(sequence_string,'') AS sequence_string,count_type,COALESCE(release_date,'') AS release_date,COALESCE(isbn,'') AS isbn,COALESCE(pages,0) AS pages,number_known,revision,sync_state,overrides_json,(SELECT COUNT(*) FROM works x WHERE x.book_id=books.id AND x.sync_state='linked') AS copies`
 
 func (s *Store) SaveBook(ctx context.Context, seriesID int64, w Book) (int64, error) {

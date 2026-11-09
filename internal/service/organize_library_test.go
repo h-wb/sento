@@ -11,6 +11,20 @@ import (
 	"github.com/h-wb/sento/internal/provider"
 )
 
+// OrganizeIfIdle answers busy instead of waiting on the importer's mutex:
+// its HTTP request carries no timeout, so queueing behind a running import
+// or organize would hold the connection open.
+func TestOrganizeIfIdleAnswersBusy(t *testing.T) {
+	t.Parallel()
+	_, st := setup(t)
+	im := NewImporter(st, nil, t.TempDir(), nil)
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	if _, err := im.OrganizeIfIdle(context.Background(), 1, true, false); !errors.Is(err, apperr.ErrConflict) {
+		t.Fatalf("busy organize: %v", err)
+	}
+}
+
 // A library run previews and applies the new settings series by series,
 // trusts the stored fingerprints, and has nothing left to do afterwards.
 func TestOrganizeLibrary(t *testing.T) {

@@ -321,12 +321,13 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 
 	// One book, or an archive holding several (a volume's worth of
 	// chapters): named and tagged for what it actually holds.
+	cat := newCatalogCache(im.store, item.SeriesID)
 	src := releaseSource(item)
 	group := src.Group
-	info := im.fileInfo(ctx, series, slots, src)
+	info := im.fileInfo(ctx, cat, series, slots, src)
 	fileName := mediafile.Sanitize(item.Title) + ".cbz"
 	if ms.RenameImports {
-		fileName = im.bookFileName(ctx, ms, series, slots, group, ".cbz")
+		fileName = im.bookFileName(ctx, cat, ms, series, slots, group, ".cbz")
 	}
 	destPath := filepath.Join(seriesDir, fileName)
 
@@ -351,7 +352,7 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	if err != nil {
 		return err
 	}
-	destPath, err = placeAsset(im.bookDir(ctx, ms, seriesDir, series, first), filepath.Base(destPath), hash, ms.HashInName)
+	destPath, err = placeAsset(im.bookDir(ctx, cat, ms, seriesDir, series, first), filepath.Base(destPath), hash, ms.HashInName)
 	if err != nil {
 		return err
 	}
@@ -516,9 +517,10 @@ func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, ms 
 		return nil, err
 	}
 	// A pack stays one asset with several verified coverage links.
+	cat := newCatalogCache(im.store, item.SeriesID)
 	name := filepath.Base(rel)
 	if ms.RenameImports {
-		name = im.bookFileName(ctx, ms, series, contents, res.Group, strings.ToLower(filepath.Ext(rel)))
+		name = im.bookFileName(ctx, cat, ms, series, contents, res.Group, strings.ToLower(filepath.Ext(rel)))
 	}
 	// Identical bytes can serve several confirmed versions. Keep one
 	// archive with all coverage links; different releases get different
@@ -529,14 +531,14 @@ func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, ms 
 	if ms.WriteComicInfo {
 		name = strings.TrimSuffix(name, filepath.Ext(name)) + ".cbz"
 	}
-	dest, err := placeAsset(im.bookDir(ctx, ms, seriesDir, series, covered[0]), name, hash, ms.HashInName)
+	dest, err := placeAsset(im.bookDir(ctx, cat, ms, seriesDir, series, covered[0]), name, hash, ms.HashInName)
 	if err != nil {
 		return nil, err
 	}
 	if ms.WriteComicInfo {
 		came := releaseSource(item)
 		came.Group = res.Group
-		err = installProcessed(src, dest, hash, im.fileInfo(ctx, series, contents, came))
+		err = installProcessed(src, dest, hash, im.fileInfo(ctx, cat, series, contents, came))
 	} else {
 		err = installAsset(src, dest, hash, ms.AlwaysCopy)
 	}

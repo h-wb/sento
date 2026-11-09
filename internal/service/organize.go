@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -54,6 +55,16 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	if err != nil {
 		return nil, nil, ms, err
 	}
+	// The catalog rows a whole-series pass touches are loaded in bulk, so
+	// planning costs a fixed number of queries whatever the file count.
+	// One confirmed file needs a handful of rows; the cache loads those
+	// lazily, per row as before, without fetching the whole series per file.
+	cat := newCatalogCache(im.store, seriesID)
+	if fileID == 0 {
+		if err := cat.preload(ctx); err != nil {
+			return nil, nil, ms, err
+		}
+	}
 	// Computed, not recorded: a preview must not change where the series
 	// is considered to live.
 	volumesDir, chaptersDir := seriesFolders(im.libraryRoot, series, ms)
@@ -65,7 +76,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	if err != nil {
 		return nil, nil, ms, err
 	}
-	versions, err := im.store.ListVersions(ctx, seriesID)
+	versions, err := cat.versionsAll(ctx)
 	if err != nil {
 		return nil, nil, ms, err
 	}
@@ -82,7 +93,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	if err != nil {
 		return nil, nil, ms, err
 	}
-	editions, err := im.store.ListEditions(ctx, seriesID)
+	editions, err := cat.editionsAll(ctx)
 	if err != nil {
 		return nil, nil, ms, err
 	}
@@ -147,6 +158,9 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		if fileID != 0 && f.ID != fileID {
 			continue
 		}
+		if err := ctx.Err(); err != nil {
+			return nil, nil, ms, err
+		}
 		p := filePlan{file: f, FileChange: FileChange{FileID: f.ID, From: rel(f.Path), To: rel(f.Path)}}
 		// The books this file holds, once each, filed under the edition's
 		// default version unless only an additional version claims it.
@@ -161,7 +175,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 			if placed[store.BookKey(c.VersionID, c.BookID)] != f.ID {
 				continue
 			}
-			w, err := im.store.GetBook(ctx, c.BookID)
+			w, err := cat.book(ctx, c.BookID)
 			if err != nil {
 				continue
 			}
@@ -177,7 +191,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 			if seen {
 				continue
 			}
-			col, err := im.store.GetEdition(ctx, w.EditionID)
+			col, err := cat.edition(ctx, w.EditionID)
 			if err != nil {
 				delete(home, c.BookID)
 				continue
@@ -228,15 +242,15 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		}
 		group := f.Facts.Group
 		p.name = reHashSuffix.ReplaceAllString(strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path)), "") + ext
-		p.info = im.fileInfo(ctx, series, slots, tagSource{Release: f.Claims.Title, Group: group, Via: f.Facts.Protocol, Site: f.Facts.Site, Flags: f.Facts.Flags})
+		p.info = im.fileInfo(ctx, cat, series, slots, tagSource{Release: f.Claims.Title, Group: group, Via: f.Facts.Protocol, Site: f.Facts.Site, Flags: f.Facts.Flags})
 		if ms.RenameImports {
-			p.name = im.bookFileName(ctx, ms, series, slots, group, ext)
+			p.name = im.bookFileName(ctx, cat, ms, series, slots, group, ext)
 		}
 		seriesDir := volumesDir
 		if slots[0].Ledger == "chapter" {
 			seriesDir = chaptersDir
 		}
-		p.dir = im.bookDir(ctx, ms, seriesDir, series, slots[0])
+		p.dir = im.bookDir(ctx, cat, ms, seriesDir, series, slots[0])
 
 		plain := assetPath(p.dir, p.name, "")
 		if ms.HashInName && f.Hash != "" {
@@ -281,6 +295,18 @@ func (im *Importer) PlanOrganize(ctx context.Context, seriesID int64) ([]FileCha
 // metadata. One file failing does not stop the others.
 func (im *Importer) Organize(ctx context.Context, seriesID int64, rename, retag bool) (*OrganizeResult, error) {
 	im.mu.Lock()
+	defer im.mu.Unlock()
+	return im.organize(ctx, seriesID, 0, rename, retag)
+}
+
+// OrganizeIfIdle applies Organize only when no import or organize is
+// already running; the HTTP layer prefers it because its request carries
+// no timeout, so waiting on the importer's mutex would hold the connection
+// open for as long as the other run takes.
+func (im *Importer) OrganizeIfIdle(ctx context.Context, seriesID int64, rename, retag bool) (*OrganizeResult, error) {
+	if !im.mu.TryLock() {
+		return nil, apperr.Conflictf("another import or organize is already running; try again once it finishes")
+	}
 	defer im.mu.Unlock()
 	return im.organize(ctx, seriesID, 0, rename, retag)
 }

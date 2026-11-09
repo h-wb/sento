@@ -101,8 +101,6 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Get("/files/trash", s.handleFileTrash)
 			r.Post("/files/trash/{fid}/restore", s.handleRestoreTrash)
 			r.Delete("/files/trash/{fid}", s.handlePurgeTrash)
-			r.Get("/files/organize", s.handlePlanOrganize)
-			r.Post("/files/organize", s.handleOrganize)
 			r.Post("/import", s.handleScanSeries)
 			r.Get("/bindings", s.handleListBindings)
 			r.Post("/bindings", s.handleAddBinding)
