@@ -6,3 +6,12 @@
 SENTO_QBITTORRENT_URL = "http://qbittorrent-vpn.downloads.svc.cluster.local:8080"
 SENTO_QBITTORRENT_CATEGORY = "sento-test"
 SENTO_PROWLARR_URL = "http://prowlarr.downloads.svc.cluster.local"
+
+# The supervised watcher talks to the real qBittorrent/Prowlarr clients, so it
+# runs with task-scoped secret grants. Defined here (not in the base task) so a
+# dev checkout without this overlay never needs a Proton Pass session; the
+# base command stays identical.
+[tasks."run:watch"]
+description = "Rebuild and restart the backend on Go changes (for supervised services)"
+secrets = ["SENTO_QBITTORRENT_USERNAME", "SENTO_QBITTORRENT_PASSWORD", "SENTO_PROWLARR_API_KEY"]
+run = "bash scripts/watch-api.sh"

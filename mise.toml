@@ -157,7 +157,8 @@ run = "go run ./cmd/sento"
 
 [tasks."run:watch"]
 description = "Rebuild and restart the backend on Go changes (for supervised services)"
-secrets = ["SENTO_QBITTORRENT_USERNAME", "SENTO_QBITTORRENT_PASSWORD", "SENTO_PROWLARR_API_KEY"]
+# The Paseo overlay (mise.paseo.toml) redefines this task with the Qbit/Prowlarr
+# secret grants; a plain dev checkout runs without any Proton Pass session.
 run = "bash scripts/watch-api.sh"
 
 [tasks.test]
