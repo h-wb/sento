@@ -118,10 +118,14 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		facts.Digital = actual.Quality.Digital
 		facts.FactsKnown = true
 	}
+	// Stat before hashing, so a write during or after the hash changes the
+	// signature recorded with it. Recording the signature lets review
+	// previews trust the fingerprint instead of re-reading the archive.
 	hash, err := fileHash(path)
 	if err != nil {
 		return err
 	}
+	hashStat := statSignature(fi)
 	review := false
 	profiles, err := NewProfiles(im.store).seriesProfiles(ctx, item.SeriesID)
 	if err != nil {
@@ -140,7 +144,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 	for _, refs := range contents {
 		contentBooks = append(contentBooks, refs...)
 	}
-	fid, err := im.store.AddFile(ctx, store.File{ContentBooks: contentBooks, SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol, Facts: facts, Claims: claims, Hash: hash, NeedsReview: review}, parsed, links)
+	fid, err := im.store.AddFile(ctx, store.File{ContentBooks: contentBooks, SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol, Facts: facts, Claims: claims, Hash: hash, HashStat: hashStat, NeedsReview: review}, parsed, links)
 	if err == nil {
 		// The import claims its books; if a better file already holds one,
 		// this one yields (automatic upgrades only — review can force).
@@ -236,7 +240,8 @@ func (im *Importer) importReviewFile(ctx context.Context, item store.QueueItem, 
 	if err = installAsset(src, dest, hash, copy); err != nil {
 		return err
 	}
-	info, err := os.Stat(dest)
+	// Stat through an open descriptor so NFS revalidates cached attributes.
+	info, err := statArchive(dest)
 	if err != nil {
 		return err
 	}
@@ -253,6 +258,8 @@ func (im *Importer) importReviewFile(ctx context.Context, item store.QueueItem, 
 		facts.Revision = p.Version
 		facts.Digital = p.Quality.Digital
 	}
-	_, err = im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: dest, Size: info.Size(), Provenance: item.Protocol, NeedsReview: true, Unrequested: true, Facts: facts, Claims: claims, Hash: hash}, parsed, nil)
+	// The signature of the installed copy, read after install: a later write
+	// to the shared inode changes it, so review re-reads the archive then.
+	_, err = im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: dest, Size: info.Size(), Provenance: item.Protocol, NeedsReview: true, Unrequested: true, Facts: facts, Claims: claims, Hash: hash, HashStat: statSignature(info)}, parsed, nil)
 	return err
 }

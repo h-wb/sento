@@ -148,7 +148,11 @@ Review proposes what a waiting file holds when its own name resolves it, read ag
 
 Bulk-match preview and submission use the same service resolver, including book
 kind and duplicate-number checks. Pack choices are applied in batches of at most
-500 files, with 25 archives shown per page; any remaining batch stays in Review. Both endpoints of each named range must be
+500 files, with 25 archives shown per page; any remaining batch stays in Review.
+The choice list leads with the running counts (imports, keeps, replacements,
+trash, missing, left for later), and past one page each archive opens as a
+one-line summary of its planned outcome, expanded on demand — a single file or
+a one-page pack opens expanded. Both endpoints of each named range must be
 books of the edition; a range extending past it stays for review instead of
 being clipped. Submission rechecks current review state and serializes file
 mutations with import, cleanup and organization. Large packs use bounded batches;
@@ -199,7 +203,14 @@ Its token covers each signature and the preview's time, so apply reuses the
 preview's fingerprint while the archive keeps that signature; a change in
 between rejects the token. Apply judges each signature against the preview's
 time, not its own, so an unchanged archive that settles in between keeps its
-token.
+token. Imports and scans record the signature with the fingerprint they read,
+and a preview that has to fingerprint an archive records the signature it read
+under the confirmed hash (the same rule a scan applies), so only the first
+preview of an archive — or one whose bytes changed — reads its pages. Review
+preview/apply requests sit outside the global 120 s API timeout like organize,
+because that first read of a large pack runs long by design; each signature
+recorded along the way is kept, so a retry after a disconnect makes progress
+instead of starting over.
 After acquiring the decision locks and before writing any choices, apply
 compares the live signatures again (or fingerprints an archive whose signature
 was not trusted), so an archive changed or replaced during a lock wait rejects
