@@ -14,3 +14,15 @@
 {"in":"Berserk v01 (Digital) {Asura}","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[1,1]],"group":"Asura"}}
 {"in":"Vagabond v01 (2008) (VIZBIG) (Scan) (HQ) (Colored Council)","ch":"torrent","titles":["Vagabond"],"want":{"anchored":true,"volumes":[[1,1]],"group":"Colored Council","edition":{"colored":false}}}
 {"in":"Berserk v41 (Colored) (Colored Council)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[41,41]],"group":"Colored Council","edition":{"colored":true}}}
+{"in":"[Colored Council] Berserk v41","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[41,41]],"group":"Colored Council","edition":{"colored":false},"claim":{"color":false}}}
+{"in":"Berserk v41 {Colored Council}","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[41,41]],"group":"Colored Council","edition":{"colored":false}}}
+{"in":"Berserk v41 (Colored Council) (PZG)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[41,41]],"group":"PZG","edition":{"colored":false},"claim":{"color":false}}}
+{"in":"Berserk v41 (Coloured Scans)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[41,41]],"edition":{"colored":false},"claim":{"color":false},"quality":{"scan":true}}}
+{"in":"Berserk v41 (Full Color Team)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[41,41]],"edition":{"colored":false},"claim":{"color":false}}}
+{"in":"Berserk v41 (COLORED)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[41,41]],"edition":{"colored":true},"claim":{"color":true}}}
+{"in":"Berserk v41 (Full Colour)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[41,41]],"edition":{"colored":true},"claim":{"color":true}}}
+{"in":"Berserk v41 (Digital Colored Comics)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[41,41]],"edition":{"colored":true},"claim":{"color":true}}}
+{"in":"Berserk v41 (Color Edition)","ch":"torrent","titles":["Berserk"],"want":{"volumes":[[41,41]],"claim":{"colorEdition":true}}}
+{"in":"Bleach - Digital Colored Comics v01-74 (2021) (Colored Council)","ch":"torrent","titles":["Bleach"],"want":{"volumes":[[1,74]],"group":"Colored Council","edition":{"colored":true},"claim":{"color":true}}}
+{"in":"Nausicaä v01 (Colored Council)","ch":"torrent","titles":["Nausicaä"],"want":{"volumes":[[1,1]],"group":"Colored Council","edition":{"colored":false}}}
+{"in":"Vagabond v01 (Colored Council)","ch":"torrent","want":{"title":"vagabond","volumes":[[1,1]],"group":"Colored Council","edition":{"colored":false},"claim":{"color":false}}}

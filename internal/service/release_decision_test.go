@@ -479,6 +479,11 @@ func TestEditionRulesOnRealNames(t *testing.T) {
 		// Standard Edition, even where an official color edition exists.
 		{"Dragon Ball", "Dragon Ball v13 (Colored) (Fan Colorization)", dragonBall, dbStandard, fitYes},
 		{"Dragon Ball", "Dragon Ball v13 (Colored) (Fan Colorization)", dragonBall, dbColor, fitUnsure},
+		// A group name containing "colored" is not a color claim: the
+		// release fits the standard edition and does not satisfy the
+		// color edition without saying so itself.
+		{"Dragon Ball", "Dragon Ball v13 (Colored Council)", dragonBall, dbStandard, fitYes},
+		{"Dragon Ball", "Dragon Ball v13 (Colored Council)", dragonBall, dbColor, fitNo},
 		{"20th Century Boys", "20th Century Boys v01-02 (2018) (The Perfect Edition) (Scan-HQ)", boys, boysStandard, fitNo},
 		{"20th Century Boys", "20th Century Boys v01-02 (2018) (The Perfect Edition) (Scan-HQ)", boys, boysPerfect, fitYes},
 		{"Sailor Moon", "Sailor Moon Eternal Edition v01-v04 (Digital) (BlackManta-Empire)", moon, moonStandard, fitNo},

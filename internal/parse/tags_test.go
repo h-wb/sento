@@ -68,6 +68,24 @@ func TestGroupNameIsNotAClaim(t *testing.T) {
 	if !Parse("Bleach - Digital Colored Comics v01-74 (2021) (Colored Council)", ChannelTorrent).Edition.Colored {
 		t.Error("free-text imprint did not claim color")
 	}
+	// Every delimiter and group position behaves the same.
+	for _, in := range []string{
+		"[Colored Council] Berserk v41",
+		"Berserk v41 {Colored Council}",
+		"Berserk v41 (Colored Council) (PZG)",
+		"Nausicaä v01 (Colored Council)",
+		"Berserk v41 (Coloured Scans)",
+	} {
+		if r := Parse(in, ChannelTorrent); r.Edition.Colored || r.Claim.Color {
+			t.Errorf("%q: group segment claimed color (edition=%+v claim=%+v)", in, r.Edition, r.Claim)
+		}
+	}
+	// Standalone color tags still claim, in any case and spelling.
+	for _, in := range []string{"Berserk v41 (COLORED)", "Berserk v41 (Full Colour)", "Berserk v41 (Digital Colored Comics)"} {
+		if r := Parse(in, ChannelTorrent); !r.Edition.Colored || !r.Claim.Color {
+			t.Errorf("%q: color tag did not claim color (edition=%+v claim=%+v)", in, r.Edition, r.Claim)
+		}
+	}
 }
 
 func TestKResolutionBounds(t *testing.T) {
