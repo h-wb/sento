@@ -215,10 +215,13 @@ func (im *Importer) bookFileName(ctx context.Context, ms MediaSettings, series *
 	first, last := slotSpan(slots)
 	tokens := mediafile.NameTokens{
 		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Group: group,
-		Volume: -1, Chapter: -1, Year: series.Year,
+		Volume: -1, Chapter: -1, Year: series.Year, VersionID: first.VersionID,
 	}
 	if col, err := im.store.GetEdition(ctx, first.EditionID); err == nil {
 		tokens.Edition, tokens.Lang = col.EditionName, col.Language
+	}
+	if t, err := im.store.GetVersion(ctx, first.VersionID); err == nil && !t.IsDefault {
+		tokens.Version = t.Name
 	}
 	tmpl := ms.VolumeFile
 	if first.Ledger == "volume" {

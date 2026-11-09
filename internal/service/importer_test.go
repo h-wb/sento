@@ -533,6 +533,38 @@ func TestBookDirNamesVersionFolders(t *testing.T) {
 	}
 }
 
+// A {version} token in the file templates names the version in the file
+// name too, for readers that group series by the parsed file name.
+func TestBookFileNameNamesVersion(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	lib, st, sid, standard, _, version := modelFixture(t)
+	colored, err := st.AddProfile(ctx, profile.Profile{Name: "Colored", FormatScores: map[int64]int{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := lib.SaveVersion(ctx, sid, store.CollectedVersion{EditionID: standard.ID, Monitored: true, ProfileID: colored})
+	if err != nil {
+		t.Fatal(err)
+	}
+	series, err := st.GetSeries(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	im := NewImporter(st, provider.NewRegistry(&payloadProvider{}), t.TempDir(), nil)
+	ms := DefaultMediaSettings()
+	ms.VolumeFile = "{Series Title} {version} v{volume:00} [{edition}][{lang}].cbz"
+	ref := func(vid int64) []store.BookRef {
+		return []store.BookRef{{Ledger: "volume", EditionID: standard.ID, VersionID: vid, Number: 100}}
+	}
+	if name := im.bookFileName(ctx, ms, series, ref(version.ID), "", ".cbz"); name != "ONE PIECE v01 [Standard Edition][en].cbz" {
+		t.Fatalf("default version named %q, want %q", name, "ONE PIECE v01 [Standard Edition][en].cbz")
+	}
+	if name := im.bookFileName(ctx, ms, series, ref(second), "", ".cbz"); name != "ONE PIECE Colored v01 [Standard Edition][en].cbz" {
+		t.Fatalf("colored version named %q, want %q", name, "ONE PIECE Colored v01 [Standard Edition][en].cbz")
+	}
+}
+
 // With the edition in the series folder template, organising moves an
 // edition's books out of the series folder into the edition's own folder,
 // flat, and a scan still finds them there.
