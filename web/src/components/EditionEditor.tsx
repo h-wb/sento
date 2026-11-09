@@ -54,16 +54,16 @@ export function EditionEditor({
   )
   const edit = useEditor()
   const savedName = value.readerFields.series ?? ''
-  const [nameTemplate, setNameTemplate] = useState(savedName)
-  const choice = choiceOf(nameTemplate)
+  const [choice, setChoice] = useState<NameChoice>(choiceOf(savedName))
+  const [custom, setCustom] = useState(choiceOf(savedName) === 'custom' ? savedName : '')
   // "Same as the library" sends an empty template (the backend inherits);
   // the input shows the library's own template, disabled.
   const settings = useQuery({ queryKey: ['media-settings'], queryFn: api.mediaSettings })
   const libraryTemplate = settings.data?.readerFields?.series ?? ''
-  const shownTemplate = choice === 'library' ? libraryTemplate : nameTemplate
-  const seriesName = choice === 'library' ? '' : nameTemplate
-  const readerFields = { ...value.readerFields, series: seriesName }
-  const nameChanged = seriesName !== savedName
+  const template = choice === 'library' ? '' : choice === 'edition' ? editionSeriesName : custom
+  const shownTemplate = choice === 'library' ? libraryTemplate : template
+  const readerFields = { ...value.readerFields, series: template }
+  const nameChanged = template !== savedName
   // What readers will show for each card of the edition, rendered by the
   // server as files are.
   const [previewFields] = useDebouncedValue(readerFields, 300)
@@ -180,11 +180,7 @@ export function EditionEditor({
             ]}
             value={choice}
             disabled={edit.busy}
-            onChange={(c) => {
-              if (c === 'library') setNameTemplate('')
-              else if (c === 'edition') setNameTemplate(editionSeriesName)
-              else if (!nameTemplate.trim() || nameTemplate === editionSeriesName) setNameTemplate('')
-            }}
+            onChange={(c) => setChoice((c ?? 'library') as NameChoice)}
           />
           <TemplateInput
             label="Series name template"
@@ -198,7 +194,11 @@ export function EditionEditor({
             error={nameError}
             disabled={edit.busy || choice === 'library'}
             placeholder={choice === 'custom' ? 'A fixed name, or {tokens}' : undefined}
-            onChange={setNameTemplate}
+            onChange={(v) => {
+              // Editing the preset by hand makes it a custom template.
+              if (choice !== 'custom') setChoice('custom')
+              setCustom(v)
+            }}
           />
           {edit.error && <Alert color="red">{edit.error}</Alert>}
           <Group justify="space-between">
