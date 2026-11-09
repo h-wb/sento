@@ -546,7 +546,7 @@ func (s *Server) handleOrganize(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	res, err := s.importer.Organize(r.Context(), sid, body.Rename, body.Retag)
+	res, err := s.importer.OrganizeIfIdle(r.Context(), sid, body.Rename, body.Retag)
 	if err != nil {
 		writeErr(w, err)
 		return

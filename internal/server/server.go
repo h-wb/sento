@@ -140,8 +140,9 @@ func (s *Server) Handler() http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 		// Organizing a large series runs long by design and checks the
 		// request context per file, so it sits outside the global request
-		// cap: a run still stops when the client disconnects, and the
-		// scheduler-backed library-wide run reports progress separately.
+		// cap: a run still stops when the client disconnects, answers busy
+		// while another run holds the importer, and the scheduler-backed
+		// library-wide run reports progress separately.
 		r.Get("/series/{id}/files/organize", s.handlePlanOrganize)
 		r.Post("/series/{id}/files/organize", s.handleOrganize)
 		r.Group(func(r chi.Router) {

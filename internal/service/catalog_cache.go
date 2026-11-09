@@ -14,14 +14,16 @@ type catalogCache struct {
 	st       *store.Store
 	seriesID int64
 
-	books        map[int64]*store.Book
-	editions     map[int64]*store.Edition
-	editionList  []store.Edition
-	versions     map[int64]*store.CollectedVersion
-	versionList  []store.CollectedVersion
-	seriesRaw    string
-	seriesLoaded bool
-	worksRaw     map[int64]string
+	books          map[int64]*store.Book
+	editions       map[int64]*store.Edition
+	editionList    []store.Edition
+	editionsLoaded bool
+	versions       map[int64]*store.CollectedVersion
+	versionList    []store.CollectedVersion
+	versionsLoaded bool
+	seriesRaw      string
+	seriesLoaded   bool
+	worksRaw       map[int64]string
 }
 
 func newCatalogCache(st *store.Store, seriesID int64) *catalogCache {
@@ -53,12 +55,14 @@ func (c *catalogCache) preload(ctx context.Context) error {
 	if c.editionList, err = c.st.ListEditions(ctx, c.seriesID); err != nil {
 		return err
 	}
+	c.editionsLoaded = true
 	for i := range c.editionList {
 		c.editions[c.editionList[i].ID] = &c.editionList[i]
 	}
 	if c.versionList, err = c.st.ListVersions(ctx, c.seriesID); err != nil {
 		return err
 	}
+	c.versionsLoaded = true
 	for i := range c.versionList {
 		c.versions[c.versionList[i].ID] = &c.versionList[i]
 	}
@@ -96,14 +100,14 @@ func (c *catalogCache) edition(ctx context.Context, id int64) (*store.Edition, e
 
 // editionsAll is the decorated edition list of the series, loaded once.
 func (c *catalogCache) editionsAll(ctx context.Context) ([]store.Edition, error) {
-	if c.editionList != nil {
+	if c.editionsLoaded {
 		return c.editionList, nil
 	}
 	eds, err := c.st.ListEditions(ctx, c.seriesID)
 	if err != nil {
 		return nil, err
 	}
-	c.editionList = eds
+	c.editionList, c.editionsLoaded = eds, true
 	for i := range eds {
 		c.editions[eds[i].ID] = &eds[i]
 	}
@@ -112,14 +116,14 @@ func (c *catalogCache) editionsAll(ctx context.Context) ([]store.Edition, error)
 
 // versionsAll is the series' collected versions, loaded once.
 func (c *catalogCache) versionsAll(ctx context.Context) ([]store.CollectedVersion, error) {
-	if c.versionList != nil {
+	if c.versionsLoaded {
 		return c.versionList, nil
 	}
 	vs, err := c.st.ListVersions(ctx, c.seriesID)
 	if err != nil {
 		return nil, err
 	}
-	c.versionList = vs
+	c.versionList, c.versionsLoaded = vs, true
 	for i := range vs {
 		c.versions[vs[i].ID] = &vs[i]
 	}

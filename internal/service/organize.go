@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -56,9 +57,13 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	}
 	// The catalog rows a whole-series pass touches are loaded in bulk, so
 	// planning costs a fixed number of queries whatever the file count.
+	// One confirmed file needs a handful of rows; the cache loads those
+	// lazily, per row as before, without fetching the whole series per file.
 	cat := newCatalogCache(im.store, seriesID)
-	if err := cat.preload(ctx); err != nil {
-		return nil, nil, ms, err
+	if fileID == 0 {
+		if err := cat.preload(ctx); err != nil {
+			return nil, nil, ms, err
+		}
 	}
 	// Computed, not recorded: a preview must not change where the series
 	// is considered to live.
@@ -152,6 +157,9 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	for _, f := range files {
 		if fileID != 0 && f.ID != fileID {
 			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, nil, ms, err
 		}
 		p := filePlan{file: f, FileChange: FileChange{FileID: f.ID, From: rel(f.Path), To: rel(f.Path)}}
 		// The books this file holds, once each, filed under the edition's
@@ -287,6 +295,18 @@ func (im *Importer) PlanOrganize(ctx context.Context, seriesID int64) ([]FileCha
 // metadata. One file failing does not stop the others.
 func (im *Importer) Organize(ctx context.Context, seriesID int64, rename, retag bool) (*OrganizeResult, error) {
 	im.mu.Lock()
+	defer im.mu.Unlock()
+	return im.organize(ctx, seriesID, 0, rename, retag)
+}
+
+// OrganizeIfIdle applies Organize only when no import or organize is
+// already running; the HTTP layer prefers it because its request carries
+// no timeout, so waiting on the importer's mutex would hold the connection
+// open for as long as the other run takes.
+func (im *Importer) OrganizeIfIdle(ctx context.Context, seriesID int64, rename, retag bool) (*OrganizeResult, error) {
+	if !im.mu.TryLock() {
+		return nil, apperr.Conflictf("another import or organize is already running; try again once it finishes")
+	}
 	defer im.mu.Unlock()
 	return im.organize(ctx, seriesID, 0, rename, retag)
 }

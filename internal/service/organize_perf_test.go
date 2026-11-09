@@ -49,7 +49,10 @@ func (s *queryStats) record(query string) {
 	if m := reTable.FindStringSubmatch(query); m != nil {
 		table = strings.ToLower(m[2])
 	}
-	verb := strings.ToUpper(strings.Fields(strings.TrimSpace(query))[0])
+	verb := "?"
+	if fields := strings.Fields(strings.TrimSpace(query)); len(fields) > 0 {
+		verb = strings.ToUpper(fields[0])
+	}
 	s.mu.Lock()
 	s.total++
 	s.byOp[verb+" "+table]++
@@ -100,12 +103,28 @@ type countConn struct {
 
 func (c *countConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	c.st.record(query)
-	return c.Conn.(driver.QueryerContext).QueryContext(ctx, query, args)
+	if q, ok := c.Conn.(driver.QueryerContext); ok {
+		return q.QueryContext(ctx, query, args)
+	}
+	stmt, err := c.PrepareContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = stmt.Close() }()
+	return stmt.(driver.StmtQueryContext).QueryContext(ctx, args)
 }
 
 func (c *countConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	c.st.record(query)
-	return c.Conn.(driver.ExecerContext).ExecContext(ctx, query, args)
+	if e, ok := c.Conn.(driver.ExecerContext); ok {
+		return e.ExecContext(ctx, query, args)
+	}
+	stmt, err := c.PrepareContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = stmt.Close() }()
+	return stmt.(driver.StmtExecContext).ExecContext(ctx, args)
 }
 
 func (c *countConn) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
@@ -234,14 +253,13 @@ func buildBigSeries(t *testing.T, st *store.Store, lib *Library, libraryRoot str
 	return seriesID, editionID, versionID
 }
 
-func logQueries(t *testing.T, label string, n int) {
+func logQueries(t *testing.T, label string) {
 	total, byOp := profStats.report()
 	t.Logf("%s: %d queries", label, total)
 	for _, line := range byOp {
 		t.Log(line)
 	}
 	profStats.reset()
-	_ = n
 }
 
 // TestOrganizePlanningQueryCount guards the issue-#56 fix: planning a series
@@ -282,6 +300,23 @@ func TestOrganizePlanningQueryCount(t *testing.T) {
 	if total > 3*N+50 {
 		t.Fatalf("organize of %d files took %d queries", N, total)
 	}
+
+	// One confirmed file (review confirm) plans without bulk-loading the
+	// whole series: a bulk review runs this per file.
+	files, err := st.ListFiles(ctx, seriesID)
+	if err != nil || len(files) == 0 {
+		t.Fatalf("files: %v %v", files, err)
+	}
+	profStats.reset()
+	if _, _, _, err := im.organizePlans(ctx, seriesID, files[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	single, _ := profStats.report()
+	profStats.reset()
+	t.Logf("plan of one file in a %d-file series: %d queries", N, single)
+	if single > 40 {
+		t.Fatalf("single-file plan took %d queries: the bulk preload leaked into the per-file path", single)
+	}
 }
 
 // TestOrganizePerfProfile profiles a 270-file series organize (issue #56).
@@ -317,7 +352,7 @@ func TestOrganizePerfProfile(t *testing.T) {
 		}
 	}
 	t.Logf("PLAN: files=%d changes=%d renames=%d wall=%s (%.1f ms/file)", N, len(plans), renaming, planWall, float64(planWall.Milliseconds())/N)
-	logQueries(t, "PLAN queries", N)
+	logQueries(t, "PLAN queries")
 
 	// Phase 2: rename-only organize (hardlink move + DB update per file).
 	profStats.reset()
@@ -328,7 +363,7 @@ func TestOrganizePerfProfile(t *testing.T) {
 		t.Fatalf("organize rename: %v (after %s)", err, renameWall)
 	}
 	t.Logf("RENAME-ONLY: %+v wall=%s (%.1f ms/file)", res, renameWall, float64(renameWall.Milliseconds())/N)
-	logQueries(t, "RENAME-ONLY queries", N)
+	logQueries(t, "RENAME-ONLY queries")
 
 	// Phase 3: retag-only organize (full CBZ repack per file, names unchanged).
 	profStats.reset()
@@ -339,7 +374,7 @@ func TestOrganizePerfProfile(t *testing.T) {
 		t.Fatalf("organize retag: %v (after %s)", err, retagWall)
 	}
 	t.Logf("RETAG-ONLY: %+v wall=%s (%.1f ms/file)", res2, retagWall, float64(retagWall.Milliseconds())/N)
-	logQueries(t, "RETAG-ONLY queries", N)
+	logQueries(t, "RETAG-ONLY queries")
 
 	// Phase 4: what a re-fingerprint of every file would cost (pre-#55
 	// behavior): clear the stored hashes, change layout so files move
@@ -360,7 +395,7 @@ func TestOrganizePerfProfile(t *testing.T) {
 		t.Fatalf("organize with empty hashes: %v (after %s)", err, refpWall)
 	}
 	t.Logf("RENAME with files.hash='' (re-fingerprint): %+v wall=%s (%.1f ms/file)", res3, refpWall, float64(refpWall.Milliseconds())/N)
-	logQueries(t, "RENAME+REFINGERPRINT queries", N)
+	logQueries(t, "RENAME+REFINGERPRINT queries")
 
 	// Phase 5: raw fingerprint vs repack cost on one realistic book
 	// (~200 pages × 1 MB ≈ 200 MB, the size of a real volume CBZ).
