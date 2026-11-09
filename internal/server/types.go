@@ -79,6 +79,7 @@ type EditionPatch struct {
 	Monitored *bool   `json:"monitored"`
 	CutoffNum *int64  `json:"cutoffNum"`
 	Language  *string `json:"language"`
+	OwnSeries *bool   `json:"ownSeries"`
 }
 
 // CreateEditionBody is POST /series/{id}/editions — a custom

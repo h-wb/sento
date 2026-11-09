@@ -134,6 +134,7 @@ export interface EditionPatch {
   monitored?: boolean;
   cutoffNum?: number /* int64 */;
   language?: string;
+  ownSeries?: boolean;
 }
 /**
  * CreateEditionBody is POST /series/{id}/editions — a custom

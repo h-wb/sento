@@ -266,6 +266,19 @@ export default function EditionManager({
                               <Menu.Item onClick={() => setCollectAgain(c)}>
                                 Collect again with another profile…
                               </Menu.Item>
+                              <Menu.Item
+                                onClick={() =>
+                                  void run(() =>
+                                    api.updateEdition(seriesID, c.id, {
+                                      ownSeries: !c.ownSeries,
+                                    }),
+                                  )
+                                }
+                              >
+                                {c.ownSeries
+                                  ? 'Stop showing as its own series in readers'
+                                  : 'Show as its own series in readers'}
+                              </Menu.Item>
                               {versions.length > 1 && (
                                 <Menu.Item
                                   color="red"

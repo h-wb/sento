@@ -28,11 +28,12 @@ elements they do not know.
 | Variant facts | `Notes` `flags:` (the release's flags, as profiles match them) | `flags:colored,digital` |
 | The release | `Notes` `release:`, `via:`, `site:` | `release:"Nausicaa Deluxe v01 (Digital)"` |
 
-`Series` stays the series' title for every edition, so a reader keeps one
-series; folders keep editions apart (spec §11.2). A collected version
-beside the default appends its name to `Series` (`ONE PIECE Colored`): a
-reader that files by ComicInfo rather than folders (Kavita) keeps the
-copies apart only then.
+`Series` stays the series' title, so a reader keeps one series per work;
+folders keep editions apart (spec §11.2). An edition marked as its own
+series appends its name, and a collected version beside the default
+appends its after it (`ONE PIECE Standard Edition Colored`): a reader
+that files by ComicInfo rather than folders (Kavita) keeps copies apart
+only when the series name says which is which.
 
 **Published or fan-made.** A file is a fan translation when it came from an
 extension source (a scanlator delivered it) and the release does not name a

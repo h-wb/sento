@@ -237,6 +237,7 @@ type EditionUpdate struct {
 	Monitored *bool
 	CutoffNum *int64
 	Language  *string
+	OwnSeries *bool
 }
 
 // UpdateEdition applies a partial update under the field rules: the
@@ -271,6 +272,11 @@ func (l *Library) UpdateEdition(ctx context.Context, seriesID, editionID int64, 
 			return apperr.Invalidf("language can only be changed on local editions")
 		}
 		if err := l.store.EditEdition(ctx, seriesID, editionID, store.EditionMetadataPatch{Language: u.Language}); err != nil {
+			return err
+		}
+	}
+	if u.OwnSeries != nil {
+		if err := l.store.SetEditionOwnSeries(ctx, seriesID, editionID, *u.OwnSeries); err != nil {
 			return err
 		}
 	}

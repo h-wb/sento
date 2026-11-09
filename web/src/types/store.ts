@@ -186,6 +186,11 @@ export interface Edition {
   profileId?: number /* int64 */; // 0 = inherit from series
   cutoffNum: number /* int64 */; // chapter editions: skip through this number (exclusive cutoff)
   /**
+   * OwnSeries: the edition names itself in ComicInfo Series, so readers
+   * that group by metadata keep it apart from its siblings.
+   */
+  ownSeries: boolean;
+  /**
    * Overrides names the fields edited by hand, which refreshes leave alone.
    */
   overrides: string[];
