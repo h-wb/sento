@@ -12,6 +12,24 @@ import (
 	"github.com/h-wb/sento/internal/service"
 )
 
+// The per-series organize routes answer on their own, outside the global
+// request timeout group (a big series may organize for minutes; the run
+// still stops when the client disconnects).
+func TestSeriesOrganizeRoutes(t *testing.T) {
+	cfg := config.Default()
+	cfg.Library.Path = t.TempDir()
+	conn, dialect := dbtest.Open(t)
+	srv := New(cfg, conn, dialect, noMetadata{})
+	h := srv.Handler()
+	if rec := do(t, h, http.MethodGet, "/api/v1/series/1/files/organize", ""); rec.Code != http.StatusNotFound {
+		// No such series: routed (404 from the handler), not unmounted.
+		t.Fatalf("plan route: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, http.MethodPost, "/api/v1/series/1/files/organize", `{"rename":true}`); rec.Code != http.StatusNotFound {
+		t.Fatalf("apply route: %d %s", rec.Code, rec.Body)
+	}
+}
+
 // A library organize is accepted at once and finishes in the background,
 // reporting through its status endpoint.
 func TestOrganizeLibraryRunsInBackground(t *testing.T) {

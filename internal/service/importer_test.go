@@ -519,16 +519,17 @@ func TestBookDirNamesVersionFolders(t *testing.T) {
 	}
 	library := t.TempDir()
 	im := NewImporter(st, provider.NewRegistry(&payloadProvider{}), library, nil)
+	cat := newCatalogCache(st, sid)
 	ms := DefaultMediaSettings()
 	ms.SeriesFolder, ms.BookFolder, ms.VolumesRoot = SeriesFolderByEdition, BookFolderByVersion, "Volumes"
 	base := filepath.Join(library, "Volumes", "ONE PIECE [mangabaka-377] [Standard Edition][en]")
 	ref := store.BookRef{Ledger: "volume", EditionID: standard.ID, Number: 100}
 	ref.VersionID = version.ID
-	if dir := im.bookDir(ctx, ms, "anywhere", series, ref); dir != base {
+	if dir := im.bookDir(ctx, cat, ms, "anywhere", series, ref); dir != base {
 		t.Fatalf("default version in %q, want %q", dir, base)
 	}
 	ref.VersionID = second
-	if dir := im.bookDir(ctx, ms, "anywhere", series, ref); dir != base+" (Colored)" {
+	if dir := im.bookDir(ctx, cat, ms, "anywhere", series, ref); dir != base+" (Colored)" {
 		t.Fatalf("colored version in %q, want %q", dir, base+" (Colored)")
 	}
 }
@@ -552,15 +553,16 @@ func TestBookFileNameNamesVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	im := NewImporter(st, provider.NewRegistry(&payloadProvider{}), t.TempDir(), nil)
+	cat := newCatalogCache(st, sid)
 	ms := DefaultMediaSettings()
 	ms.VolumeFile = "{Series Title} {version} v{volume:00} [{edition}][{lang}].cbz"
 	ref := func(vid int64) []store.BookRef {
 		return []store.BookRef{{Ledger: "volume", EditionID: standard.ID, VersionID: vid, Number: 100}}
 	}
-	if name := im.bookFileName(ctx, ms, series, ref(version.ID), "", ".cbz"); name != "ONE PIECE v01 [Standard Edition][en].cbz" {
+	if name := im.bookFileName(ctx, cat, ms, series, ref(version.ID), "", ".cbz"); name != "ONE PIECE v01 [Standard Edition][en].cbz" {
 		t.Fatalf("default version named %q, want %q", name, "ONE PIECE v01 [Standard Edition][en].cbz")
 	}
-	if name := im.bookFileName(ctx, ms, series, ref(second), "", ".cbz"); name != "ONE PIECE Colored v01 [Standard Edition][en].cbz" {
+	if name := im.bookFileName(ctx, cat, ms, series, ref(second), "", ".cbz"); name != "ONE PIECE Colored v01 [Standard Edition][en].cbz" {
 		t.Fatalf("colored version named %q, want %q", name, "ONE PIECE Colored v01 [Standard Edition][en].cbz")
 	}
 }
@@ -588,10 +590,11 @@ func TestFileInfoNamesVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	im := NewImporter(st, nil, t.TempDir(), nil)
-	if info := im.fileInfo(ctx, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" {
+	cat := newCatalogCache(st, sid)
+	if info := im.fileInfo(ctx, cat, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" {
 		t.Fatalf("default version Series = %q, want %q", info.Series, "ONE PIECE")
 	}
-	if info := im.fileInfo(ctx, series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Colored" {
+	if info := im.fileInfo(ctx, cat, series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Colored" {
 		t.Fatalf("colored version Series = %q, want %q", info.Series, "ONE PIECE Colored")
 	}
 }
@@ -622,16 +625,18 @@ func TestFileInfoNamesOwnSeriesEdition(t *testing.T) {
 		t.Fatal(err)
 	}
 	im := NewImporter(st, nil, t.TempDir(), nil)
-	if info := im.fileInfo(ctx, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE Standard Edition" {
+	// A fresh cache per call: an organize pass snapshots the catalog once,
+	// so the test must not let one snapshot see the flag change.
+	if info := im.fileInfo(ctx, newCatalogCache(st, sid), series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE Standard Edition" {
 		t.Fatalf("own-series edition Series = %q, want %q", info.Series, "ONE PIECE Standard Edition")
 	}
-	if info := im.fileInfo(ctx, series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Standard Edition Colored" {
+	if info := im.fileInfo(ctx, newCatalogCache(st, sid), series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Standard Edition Colored" {
 		t.Fatalf("own-series edition's version Series = %q, want %q", info.Series, "ONE PIECE Standard Edition Colored")
 	}
 	if err := st.SetEditionOwnSeries(ctx, sid, c.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if info := im.fileInfo(ctx, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" {
+	if info := im.fileInfo(ctx, newCatalogCache(st, sid), series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" {
 		t.Fatalf("unmarked edition Series = %q, want %q", info.Series, "ONE PIECE")
 	}
 }
@@ -719,13 +724,14 @@ func TestMultiBookFileIsNamedForItsRange(t *testing.T) {
 	series, _ := st.GetSeries(ctx, id)
 	ms := DefaultMediaSettings()
 	slots := []store.BookRef{modelRef(c, ws[1], version), modelRef(c, ws[0], version)}
-	if got := im.bookFileName(ctx, ms, series, slots, "", ".cbz"); !strings.Contains(got, "v01-02") {
+	cat := newCatalogCache(st, id)
+	if got := im.bookFileName(ctx, cat, ms, series, slots, "", ".cbz"); !strings.Contains(got, "v01-02") {
 		t.Errorf("range name = %q", got)
 	}
-	if got := im.bookFileName(ctx, ms, series, slots[:1], "", ".cbz"); !strings.Contains(got, "v02") || strings.Contains(got, "-") {
+	if got := im.bookFileName(ctx, cat, ms, series, slots[:1], "", ".cbz"); !strings.Contains(got, "v02") || strings.Contains(got, "-") {
 		t.Errorf("single name = %q", got)
 	}
-	info := im.fileInfo(ctx, series, slots, tagSource{})
+	info := im.fileInfo(ctx, cat, series, slots, tagSource{})
 	if info.Title != "Volumes 1–2" || info.Number != "" {
 		t.Errorf("pack info = %+v", info)
 	}
