@@ -565,6 +565,37 @@ func TestBookFileNameNamesVersion(t *testing.T) {
 	}
 }
 
+// A collected version beside the default names itself in ComicInfo, so a
+// reader that files by metadata rather than folders keeps the copies apart.
+func TestFileInfoNamesVersion(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	lib, st, sid, c, ws, version := modelFixture(t)
+	colored, err := st.AddProfile(ctx, profile.Profile{Name: "Colored", FormatScores: map[int64]int{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := lib.SaveVersion(ctx, sid, store.CollectedVersion{EditionID: c.ID, Monitored: true, ProfileID: colored})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondV, err := st.GetVersion(ctx, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	series, err := st.GetSeries(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	im := NewImporter(st, nil, t.TempDir(), nil)
+	if info := im.fileInfo(ctx, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" {
+		t.Fatalf("default version Series = %q, want %q", info.Series, "ONE PIECE")
+	}
+	if info := im.fileInfo(ctx, series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Colored" {
+		t.Fatalf("colored version Series = %q, want %q", info.Series, "ONE PIECE Colored")
+	}
+}
+
 // With the edition in the series folder template, organising moves an
 // edition's books out of the series folder into the edition's own folder,
 // flat, and a scan still finds them there.

@@ -48,6 +48,11 @@ func (im *Importer) fileInfo(ctx context.Context, series *store.Series, slots []
 		Web:             fmt.Sprintf("https://mangabaka.org/%d", series.MangaBakaID),
 		ScanInformation: src.Group,
 	}
+	// Readers that file by ComicInfo rather than folders (Kavita) keep
+	// the copies apart only when the series name says which is which.
+	if t, err := im.store.GetVersion(ctx, first.VersionID); err == nil && !t.IsDefault {
+		info.Series = strings.TrimSpace(series.Title + " " + t.Name)
+	}
 	if series.Year > 0 {
 		info.Year = strconv.Itoa(series.Year)
 	}
