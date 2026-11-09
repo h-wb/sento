@@ -1,0 +1,11 @@
+[providers.protonpass]
+type = "proton-pass"
+vault = "Automation General"
+agent_reason = "sento fnox"
+
+[secrets]
+SENTO_QBITTORRENT_USERNAME = { provider = "protonpass", value = "pass://Automation General/qBittorrent/username" }
+SENTO_QBITTORRENT_PASSWORD = { provider = "protonpass", value = "pass://Automation General/qBittorrent/password" }
+SENTO_PROWLARR_API_KEY     = { provider = "protonpass", value = "pass://Automation General/Prowlarr/api-key" }
+# Repository-scoped GitHub token: grant explicitly with `mise x --secrets GH_TOKEN -- gh ...`.
+GH_TOKEN = { provider = "protonpass", value = "pass://Automation General/github-sento/password" }
