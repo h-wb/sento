@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
-import { Alert, Button, Checkbox, Group, Modal, Progress, Stack, Text } from '@mantine/core'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { Alert, Button, Checkbox, Group, Modal, Stack, Text } from '@mantine/core'
+import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
+import { useOrganizeRun } from '../useOrganizeRun'
+import OrganizeRunStatus from './OrganizeRunStatus'
 import { QueryFeedback } from './QueryFeedback'
 
 // Preview and apply the current Media settings across many series at once.
@@ -14,14 +16,7 @@ export default function OrganizeLibrary({
   seriesIds?: number[]
   onClose: () => void
 }) {
-  const queryClient = useQueryClient()
-  const [started, setStarted] = useState(false)
-  const status = useQuery({
-    queryKey: ['library', 'organize', 'status'],
-    queryFn: api.organizeLibraryStatus,
-    refetchInterval: (q) => (q.state.data?.running || q.state.data?.queued ? 1500 : false),
-  })
-  const busy = !!(status.data?.running || status.data?.queued)
+  const { status, busy, started, finished, apply } = useOrganizeRun(seriesIds)
   const plan = useQuery({
     queryKey: ['library', 'organize', 'plan', seriesIds ?? []],
     queryFn: () => api.planOrganizeLibrary(seriesIds),
@@ -35,21 +30,6 @@ export default function OrganizeLibrary({
   const renames = changes.filter((c) => c.rename).length
   const retags = changes.filter((c) => c.retag).length
   const selected = changes.filter((c) => (rename && c.rename) || (retag && c.retag)).length
-  const apply = useMutation({
-    mutationFn: () => api.organizeLibrary({ seriesIds: seriesIds ?? [], rename, retag }),
-    onSuccess: (s) => {
-      setStarted(true)
-      queryClient.setQueryData(['library', 'organize', 'status'], s)
-    },
-  })
-
-  const finished = started && status.data && !busy
-  useEffect(() => {
-    if (finished) void queryClient.invalidateQueries({ queryKey: ['series'] })
-  }, [finished, queryClient])
-
-  const s = status.data
-  const failed = (s?.series ?? []).filter((r) => r.errors.length > 0)
   return (
     <Modal opened onClose={onClose} title="Organize files" size="min(900px, 96vw)">
       <Stack gap="sm">
@@ -63,39 +43,7 @@ export default function OrganizeLibrary({
           onRetry={() => void (status.error ? status.refetch() : plan.refetch())}
         />
 
-        {busy && s && (
-          <Stack gap={6}>
-            <Text size="sm">
-              {s.queued
-                ? 'Starting…'
-                : `Organizing ${s.current || '…'} (${s.done} of ${s.total})`}
-            </Text>
-            <Progress value={s.total ? (100 * s.done) / s.total : 0} animated />
-            <Text size="xs" c="dimmed">
-              {s.renamed} moved · {s.retagged} updated so far. This keeps running if you close the
-              dialog.
-            </Text>
-          </Stack>
-        )}
-
-        {finished && s && (
-          <>
-            <Alert color={failed.length > 0 || s.error ? 'orange' : 'green'}>
-              {s.renamed} moved · {s.retagged} updated across {s.done} series
-              {s.done < s.total && ` (stopped after ${s.done} of ${s.total})`}.
-              {s.error && failed.length === 0 && <Text size="xs">{s.error}</Text>}
-            </Alert>
-            {failed.map((r) => (
-              <Alert key={r.seriesId} color="orange" title={r.title}>
-                {r.errors.map((e) => (
-                  <Text key={e} size="xs" style={{ overflowWrap: 'anywhere' }}>
-                    {e}
-                  </Text>
-                ))}
-              </Alert>
-            ))}
-          </>
-        )}
+        <OrganizeRunStatus status={status.data} busy={busy} finished={finished} />
 
         {!busy && !started && plan.data && (
           <>
@@ -146,7 +94,7 @@ export default function OrganizeLibrary({
           </Button>
           {!busy && !started && (
             <Button
-              onClick={() => apply.mutate()}
+              onClick={() => apply.mutate({ rename, retag })}
               loading={apply.isPending}
               disabled={selected === 0}
             >

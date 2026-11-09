@@ -16,10 +16,8 @@ import (
 	"github.com/h-wb/sento/internal/store"
 )
 
-// The per-series organize routes answer on their own, outside the global
-// request timeout group (a big series may organize for minutes; the run
-// still stops when the client disconnects, and answers busy when another
-// run holds the importer).
+// A series previews its own organize; applying it goes through the
+// background library run, so no request is held open for its duration.
 func TestSeriesOrganizeRoutes(t *testing.T) {
 	cfg := config.Default()
 	cfg.Library.Path = t.TempDir()
@@ -35,8 +33,8 @@ func TestSeriesOrganizeRoutes(t *testing.T) {
 	if rec := do(t, h, http.MethodGet, fmt.Sprintf("/api/v1/series/%d/files/organize", sid), ""); rec.Code != http.StatusOK || rec.Body.String() != "[]\n" {
 		t.Fatalf("plan route: %d %s", rec.Code, rec.Body)
 	}
-	if rec := do(t, h, http.MethodPost, fmt.Sprintf("/api/v1/series/%d/files/organize", sid), `{"rename":true}`); rec.Code != http.StatusOK {
-		t.Fatalf("apply route: %d %s", rec.Code, rec.Body)
+	if rec := do(t, h, http.MethodPost, fmt.Sprintf("/api/v1/series/%d/files/organize", sid), `{"rename":true}`); rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("per-series apply route: %d %s", rec.Code, rec.Body)
 	}
 }
 

@@ -234,14 +234,6 @@ export interface SplitBoxBody {
   count: number /* int */;
 }
 /**
- * OrganizeBody is POST /series/{id}/files/organize: which of the
- * previewed changes to apply.
- */
-export interface OrganizeBody {
-  rename: boolean;
-  retag: boolean;
-}
-/**
  * BindingPatch is PUT /series/{id}/bindings/{bid}.
  */
 export interface BindingPatch {

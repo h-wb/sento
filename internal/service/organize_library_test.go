@@ -11,20 +11,6 @@ import (
 	"github.com/h-wb/sento/internal/provider"
 )
 
-// OrganizeIfIdle answers busy instead of waiting on the importer's mutex:
-// its HTTP request carries no timeout, so queueing behind a running import
-// or organize would hold the connection open.
-func TestOrganizeIfIdleAnswersBusy(t *testing.T) {
-	t.Parallel()
-	_, st := setup(t)
-	im := NewImporter(st, nil, t.TempDir(), nil)
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	if _, err := im.OrganizeIfIdle(context.Background(), 1, true, false); !errors.Is(err, apperr.ErrConflict) {
-		t.Fatalf("busy organize: %v", err)
-	}
-}
-
 // A library run previews and applies the new settings series by series,
 // trusts the stored fingerprints, and has nothing left to do afterwards.
 func TestOrganizeLibrary(t *testing.T) {
@@ -77,6 +63,13 @@ func TestOrganizeLibrary(t *testing.T) {
 
 	if _, err := im.QueueLibraryOrganize(LibraryOrganizeRequest{}); !errors.Is(err, apperr.ErrInvalid) {
 		t.Fatalf("empty request: %v", err)
+	}
+	// A bare run (System → Tasks) moves nothing without a previewed request.
+	if err := im.RunLibraryOrganize(ctx); !errors.Is(err, apperr.ErrInvalid) {
+		t.Fatalf("run with nothing queued: %v", err)
+	}
+	if status := im.LibraryOrganizeStatus(); status.Running || status.FinishedAt != "" {
+		t.Fatalf("status after a bare run: %+v", status)
 	}
 	if q, err := im.QueueLibraryOrganize(LibraryOrganizeRequest{SeriesIDs: []int64{seriesID}, Rename: true}); err != nil || !q.Queued {
 		t.Fatalf("queue: %+v %v", q, err)
