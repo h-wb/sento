@@ -295,6 +295,11 @@ test('large packs use bounded requests for preview, match and decline', async ({
   await page.goto('/queue')
   await page.getByRole('button', { name: 'Match whole release' }).click()
   const dialog = page.getByRole('dialog', { name: 'Match whole release' })
+  // Past one page, archives open as one-line summaries, expanded on demand.
+  await expect(dialog.getByText(/Showing 1–25 of 500 files/)).toBeVisible()
+  await expect(dialog.getByRole('checkbox', { name: 'Import volume 1000', exact: true })).toHaveCount(0)
+  await dialog.getByRole('button', { name: /Volume 1000\.cbz/ }).click()
+  await expect(dialog.getByRole('checkbox', { name: 'Import volume 1000', exact: true })).toBeVisible()
   await dialog.getByRole('combobox', { name: 'Card', exact: true }).click()
   await page.getByRole('option', { name: 'en · Standard Edition' }).click()
   await dialog.getByRole('button', { name: 'Apply choices' }).click()

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -176,6 +177,7 @@ func TestApplyReviewChoicesRejectsArchiveChangedSincePreview(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			beforeHash := fileRow(t, st, sid, fid).Hash
 			changeKeepingTimes(t, fileRow(t, st, sid, fid).Path, change)
 			settleArchives(t) // so only the token's signature reveals it
 			choice := ReviewFileChoice{FileID: fid, Disposition: "keep", Use: []store.BookRef{plan.Files[0].Books[0].Book}}
@@ -183,7 +185,9 @@ func TestApplyReviewChoicesRejectsArchiveChangedSincePreview(t *testing.T) {
 			if !errors.Is(err, apperr.ErrConflict) {
 				t.Fatalf("apply accepted an archive changed since its preview: %v", err)
 			}
-			if got := fileRow(t, st, sid, fid); !got.NeedsReview || got.HashStat != "" {
+			// The preview may have recorded the signature it read, but the
+			// rejected apply must not change the review state or fingerprint.
+			if got := fileRow(t, st, sid, fid); !got.NeedsReview || got.Hash != beforeHash {
 				t.Fatalf("rejected apply changed the file: %+v", got)
 			}
 		})
@@ -226,6 +230,84 @@ func TestScanTrustsRecordedSignature(t *testing.T) {
 	}
 	if replaced, e := sc.replaced(ctx, f, fs.FileInfoToDirEntry(info)); e != nil || !replaced {
 		t.Fatalf("rewritten archive not replaced: %v %v", replaced, e)
+	}
+}
+
+// A preview that had to fingerprint an archive records the signature it read,
+// so the next preview trusts the recorded fingerprint instead of re-reading
+// the archive — the same rule a scan applies.
+func TestReviewPreviewRecordsSignatureItRead(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, col, books, version := factsClaimsFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	fid := waitingScoredFile(t, st, sid, root, "first.cbz", "")
+	settleArchives(t)
+	if f := fileRow(t, st, sid, fid); f.HashStat != "" {
+		t.Fatalf("fixture should start without a signature: %q", f.HashStat)
+	}
+	info, err := os.Stat(filepath.Join(root, "first.cbz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig := statSignature(info)
+	if sig == "" {
+		t.Skip("platform reports no inode metadata")
+	}
+	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{modelRef(col, books[0], version)}}}}
+	if _, err := lib.PreviewReviewChoices(ctx, sid, req); err != nil {
+		t.Fatal(err)
+	}
+	if f := fileRow(t, st, sid, fid); f.HashStat != sig {
+		t.Fatalf("preview did not record the signature it read: %q want %q", f.HashStat, sig)
+	}
+}
+
+// A file recorded before signatures existed gets one on the next scan without
+// being re-read, so review previews stop re-fingerprinting it.
+func TestScanBackfillsSignatureForUntouchedLegacyFile(t *testing.T) {
+	t.Parallel()
+	_, st, sid, _, _, _ := factsClaimsFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	path := filepath.Join(root, "legacy.cbz")
+	if err := os.WriteFile(path, []byte("pages"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig := statSignature(info)
+	if sig == "" {
+		t.Skip("platform reports no inode metadata")
+	}
+	hash, err := fileHash(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fid, err := st.AddFile(ctx, store.File{
+		SeriesID: sid, Path: path, Size: info.Size(), Hash: hash, Presence: "present",
+		Facts: store.AssetFacts{Title: "legacy.cbz", FactsKnown: true},
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settleArchives(t)
+	sc := NewScanner(st, root)
+	f := fileRow(t, st, sid, fid)
+	if f.HashStat != "" {
+		t.Fatalf("fixture should start without a signature: %q", f.HashStat)
+	}
+	live, err := statArchive(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced, e := sc.replaced(ctx, f, fs.FileInfoToDirEntry(live)); e != nil || replaced {
+		t.Fatalf("unchanged legacy archive reported replaced: %v %v", replaced, e)
+	}
+	if got := fileRow(t, st, sid, fid); got.HashStat != sig {
+		t.Fatalf("scan did not backfill the signature: %q want %q", got.HashStat, sig)
 	}
 }
 

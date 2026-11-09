@@ -187,13 +187,22 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 		if ierr == nil {
 			size = info.Size()
 		}
+		// Stat before hashing, through an open descriptor so NFS revalidates
+		// cached attributes; record the signature with the fingerprint so
+		// review previews trust it instead of re-reading the archive.
+		live, serr := statArchive(path)
 		hash, herr := fileHash(path)
 		if herr != nil {
 			return herr
 		}
+		hashStat := ""
+		if serr == nil {
+			hashStat = statSignature(live)
+		}
 		_, aerr := sc.store.AddFile(ctx, store.File{
 			Facts:       facts,
 			Hash:        hash,
+			HashStat:    hashStat,
 			SeriesID:    seriesID,
 			Path:        path,
 			Size:        size,
@@ -245,6 +254,13 @@ func (sc *Scanner) replaced(ctx context.Context, f store.File, d fs.DirEntry) (b
 		}
 	}
 	if !touched {
+		// A file recorded before signatures existed gets one now, so review
+		// previews stop re-reading it. Only a settled signature is trusted.
+		if f.HashStat == "" {
+			if sig := trustedSignature(live, now); sig != "" {
+				return false, sc.store.SetFileHashStat(ctx, f.ID, f.Hash, sig)
+			}
+		}
 		return false, nil
 	}
 	hash, err := fileHash(f.Path)

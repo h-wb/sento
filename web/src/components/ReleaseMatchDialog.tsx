@@ -16,13 +16,12 @@ export function ReleaseMatchDialog({ seriesID, title, files, close }: {
   files: ReviewItem[]
   close: () => void
 }) {
-  const query = useQuery({
-    queryKey: ['series', seriesID, 'release-match'],
-    queryFn: async () => {
-      const [detail, versions] = await Promise.all([api.getSeries(seriesID), api.versions(seriesID)])
-      return { editions: detail.editions, versions }
-    },
-  })
+  // Shared series caches: opened from the series page, these are already warm.
+  const detail = useQuery({ queryKey: ['series', seriesID], queryFn: () => api.getSeries(seriesID) })
+  const versions = useQuery({ queryKey: ['series', seriesID, 'versions'], queryFn: () => api.versions(seriesID) })
+  const pending = detail.isPending || versions.isPending
+  const error = detail.error ?? versions.error
+  const data = detail.data && versions.data ? { editions: detail.data.editions, versions: versions.data } : undefined
   const [versionID, setVersionID] = useState<string | null>('0')
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -31,12 +30,13 @@ export function ReleaseMatchDialog({ seriesID, title, files, close }: {
       <Stack>
         <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>{title}</Text>
         <Text size="xs" c="dimmed">{files.length} files waiting for review</Text>
-        <QueryFeedback pending={query.isPending} error={query.error} onRetry={() => void query.refetch()} />
-        {query.data && <>
+        {pending && <Text size="sm" c="dimmed">Loading the series’ cards…</Text>}
+        <QueryFeedback pending={pending} error={error} onRetry={() => { void detail.refetch(); void versions.refetch() }} />
+        {data && <>
           <Select label="Card" value={versionID} disabled={busy} onChange={setVersionID}
             data={[
               { value: '0', label: 'Use proposed editions' },
-              ...query.data.versions.map((t) => ({ value: String(t.id), label: cardLabel(query.data!.editions.find((c) => c.id === t.editionId)!, t, query.data!.versions) })),
+              ...data.versions.map((t) => ({ value: String(t.id), label: cardLabel(data.editions.find((c) => c.id === t.editionId)!, t, data.versions) })),
             ]} />
           {files.length > 500 && <Text size="sm">Reviewing the first 500 files. The rest stay available for the next batch.</Text>}
           <ReviewChoices
