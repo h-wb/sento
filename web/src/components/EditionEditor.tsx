@@ -4,7 +4,6 @@ import {
   Button,
   Divider,
   Group,
-  Radio,
   Select,
   Stack,
   Text,
@@ -16,6 +15,7 @@ import { api } from '../api'
 import type { Edition } from '../types/store'
 import { EditionOrigin } from './Origin'
 import { EditorModal } from './EditorModal'
+import { TemplateInput } from './TemplateInput'
 import { useEditor } from './useEditor'
 import { edited } from './editionText'
 
@@ -54,11 +54,16 @@ export function EditionEditor({
   )
   const edit = useEditor()
   const savedName = value.readerFields.series ?? ''
-  const [choice, setChoice] = useState(choiceOf(savedName))
-  const [custom, setCustom] = useState(choiceOf(savedName) === 'custom' ? savedName : editionSeriesName)
-  const seriesName = { library: '', edition: editionSeriesName, custom }[choice]
-  const readerFields = { ...value.readerFields, series: seriesName }
-  const nameChanged = seriesName !== savedName
+  const [choice, setChoice] = useState<NameChoice>(choiceOf(savedName))
+  const [custom, setCustom] = useState(choiceOf(savedName) === 'custom' ? savedName : '')
+  // "Same as the library" sends an empty template (the backend inherits);
+  // the input shows the library's own template, disabled.
+  const settings = useQuery({ queryKey: ['media-settings'], queryFn: api.mediaSettings })
+  const libraryTemplate = settings.data?.readerFields?.series ?? ''
+  const template = choice === 'library' ? '' : choice === 'edition' ? editionSeriesName : custom
+  const shownTemplate = choice === 'library' ? libraryTemplate : template
+  const readerFields = { ...value.readerFields, series: template }
+  const nameChanged = template !== savedName
   // What readers will show for each card of the edition, rendered by the
   // server as files are.
   const [previewFields] = useDebouncedValue(readerFields, 300)
@@ -165,34 +170,36 @@ export function EditionEditor({
             />
           )}
           <Divider label="In readers" labelPosition="left" mt="xs" />
-          <Radio.Group
-            label="Series name"
-            description="The series Kavita, Komga and other readers file this edition under. Give it its own to show it apart from the series’ other editions."
+          <Select
+            label="Series name in readers"
+            description="The series Kavita, Komga and other readers file this edition under. Give it its own to show it apart from the series’ other editions; existing files change when you organize them."
+            data={[
+              { value: 'library', label: 'Same as the library (Settings → Media)' },
+              { value: 'edition', label: 'Series and edition name' },
+              { value: 'custom', label: 'Custom…' },
+            ]}
             value={choice}
-            onChange={(c) => setChoice(c as NameChoice)}
-          >
-            <Stack gap={6} mt={6}>
-              <Radio value="library" label="Same as the library (Settings → Media)" disabled={edit.busy} />
-              <Radio value="edition" label="The series and edition name" disabled={edit.busy} />
-              <Radio value="custom" label="Custom" disabled={edit.busy} />
-            </Stack>
-          </Radio.Group>
-          {choice === 'custom' && (
-            <TextInput
-              aria-label="Custom series name"
-              description="Plain text, or tokens such as {Series Title}, {edition}, {lang} and {version}."
-              value={custom}
-              error={nameError}
-              disabled={edit.busy}
-              onChange={(e) => setCustom(e.currentTarget.value)}
-            />
-          )}
-          {!nameError && shown.length > 0 && (
-            <Text size="xs" c="dimmed">
-              Readers show {shown.map((n) => `“${n}”`).join(' and ')}. Existing files change when
-              you organize them.
-            </Text>
-          )}
+            disabled={edit.busy}
+            onChange={(c) => setChoice((c ?? 'library') as NameChoice)}
+          />
+          <TemplateInput
+            label="Series name template"
+            description={
+              choice === 'library'
+                ? 'The library’s template from Settings → Media; pick another choice above to override it for this edition.'
+                : 'Plain text, or tokens such as {Series Title}, {edition}, {lang} and {version}.'
+            }
+            value={shownTemplate}
+            preview={shown.map((n) => `“${n}”`).join(' · ')}
+            error={nameError}
+            disabled={edit.busy || choice === 'library'}
+            placeholder={choice === 'custom' ? 'A fixed name, or {tokens}' : undefined}
+            onChange={(v) => {
+              // Editing the preset by hand makes it a custom template.
+              if (choice !== 'custom') setChoice('custom')
+              setCustom(v)
+            }}
+          />
           {edit.error && <Alert color="red">{edit.error}</Alert>}
           <Group justify="space-between">
             {(v.syncState === 'linked' || v.syncState === 'stale') && (

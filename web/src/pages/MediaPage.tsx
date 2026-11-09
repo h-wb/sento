@@ -19,6 +19,7 @@ import { api, type MediaSettings } from '../api'
 import { notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
+import { TemplateInput } from '../components/TemplateInput'
 import OrganizeLibrary from '../components/OrganizeLibrary'
 import { useUnsavedChanges } from '../useUnsavedChanges'
 
@@ -329,35 +330,4 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
   )
 }
 
-function TemplateInput({
-  label,
-  description,
-  value,
-  preview,
-  error,
-  onChange,
-}: {
-  label: string
-  description?: string
-  value: string
-  preview?: string
-  error?: string
-  onChange: (v: string) => void
-}) {
-  return (
-    <div>
-      <TextInput
-        label={label}
-        description={description}
-        value={value}
-        error={error}
-        onChange={(e) => onChange(e.currentTarget.value)}
-      />
-      {!error && (
-        <Text size="xs" c="dimmed" mt={2} style={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
-          Preview: {preview ?? 'Loading…'}
-        </Text>
-      )}
-    </div>
-  )
-}
+
