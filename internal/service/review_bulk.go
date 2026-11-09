@@ -120,6 +120,22 @@ func releaseFileMatches(ctx context.Context, st *store.Store, seriesID, versionI
 	return out, nil
 }
 
+// hasConfirmedClaims reports whether a file's existing coverage was
+// confirmed by a person — manually confirmed contents, a pin, or a recorded
+// review decision. Unconfirmed claims on a waiting file came from its own
+// import and can be re-mapped by a bulk action.
+func (p *proposer) hasConfirmedClaims(fileID int64) bool {
+	if f, ok := p.files[fileID]; ok && f.ReviewAction != "" {
+		return true
+	}
+	for _, a := range p.coverage[fileID] {
+		if a.Pinned || a.Evidence == "manual" {
+			return true
+		}
+	}
+	return false
+}
+
 // matchSlots reads one file's own numbers against a chosen edition and
 // version. ok is false when the file must stay for individual review; note
 // then says why, in words for the person reviewing.
@@ -134,10 +150,14 @@ func (p *proposer) matchSlots(fileID int64, edition store.Edition, versionID int
 	if f.Presence == "unavailable" {
 		return nil, nil, "Storage unavailable; recheck this file first", false
 	}
-	if !f.Unrequested {
+	// Claims an import itself left on a waiting file are unconfirmed and
+	// may be re-mapped in bulk — matching the pack to another collected
+	// version is exactly that. Claims a person confirmed (verified contents
+	// or a pin) still require individual review.
+	if !f.Unrequested && p.hasConfirmedClaims(fileID) {
 		return nil, nil, "This file already claims books; review it individually", false
 	}
-	parsed, ledger, _, _, _, parsedOK := p.parseFile(fileID)
+	parsed, ledger, _, _, _, parsedOK := p.parseFile(fileID, true)
 	if !parsedOK {
 		return nil, nil, "The file's own name does not say which books it holds", false
 	}
