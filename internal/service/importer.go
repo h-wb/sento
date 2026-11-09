@@ -467,7 +467,14 @@ func (im *Importer) alreadyImported(ctx context.Context, item store.QueueItem, e
 		return nil, nil, err
 	}
 	for _, f := range recorded {
-		if f.Facts.ReleaseKey == item.ReleaseKey && f.ReviewAction != "" && f.Hash != "" {
+		if f.Facts.ReleaseKey != item.ReleaseKey || f.Hash == "" {
+			continue
+		}
+		// Reviewed files keep their recorded row, and so do files still
+		// waiting in review: re-importing either would install the same
+		// bytes at a new path (a waiting file lives in review/) and record
+		// a duplicate. Archives with no recorded row are still imported.
+		if f.ReviewAction != "" || (f.NeedsReview && f.Presence == "present") {
 			hashes[f.Hash] = true
 		}
 	}
