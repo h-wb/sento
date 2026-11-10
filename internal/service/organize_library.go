@@ -125,18 +125,19 @@ func (im *Importer) LibraryOrganizeStatus() LibraryOrganizeStatus {
 	return st
 }
 
-// RunLibraryOrganize carries out the queued organize run, or organizes
-// the whole library when nothing was queued (a run from System → Tasks).
-// Series are organized one at a time, so imports interleave, and a run
-// cut short is resumed by running it again: files already in place drop
-// out of the plan.
+// RunLibraryOrganize carries out the queued organize run. Nothing queued
+// (a bare run from System → Tasks) does nothing: moving files is started
+// from its preview, never blind. Series are organized one at a time, so
+// imports interleave, and a run cut short is resumed by running it again:
+// files already in place drop out of the plan.
 func (im *Importer) RunLibraryOrganize(ctx context.Context) error {
 	o := &im.organizer
 	o.mu.Lock()
-	req := LibraryOrganizeRequest{Rename: true, Retag: true}
-	if o.pending != nil {
-		req = *o.pending
+	if o.pending == nil {
+		o.mu.Unlock()
+		return apperr.Invalidf("nothing to organize: preview and start it from a series, the Library table or Settings → Media")
 	}
+	req := *o.pending
 	o.pending = nil
 	o.status = LibraryOrganizeStatus{Running: true, StartedAt: time.Now().UTC().Format(time.RFC3339), Series: []SeriesOrganizeResult{}}
 	o.mu.Unlock()

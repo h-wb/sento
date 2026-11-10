@@ -170,13 +170,6 @@ type SplitBoxBody struct {
 	Count int `json:"count"`
 }
 
-// OrganizeBody is POST /series/{id}/files/organize: which of the
-// previewed changes to apply.
-type OrganizeBody struct {
-	Rename bool `json:"rename"`
-	Retag  bool `json:"retag"`
-}
-
 // BindingPatch is PUT /series/{id}/bindings/{bid}.
 type BindingPatch struct {
 	TrustChapters *bool  `json:"trustChapters,omitempty"`

@@ -232,12 +232,21 @@ test('organize files previews renames and metadata updates before applying', asy
       claims: {},
     }
     const posted: unknown[] = []
+    const idle = { queued: false, running: false, total: 0, done: 0, renamed: 0, retagged: 0, series: [] }
     await page.route(`**/api/v1/series/${id}/files`, (route) => route.fulfill({ json: [file] }))
+    // Applying queues the background run; its status reports the result.
+    await page.route('**/api/v1/library/organize/status', (route) =>
+      route.fulfill({
+        json: posted.length
+          ? { ...idle, finishedAt: '2026-01-01T00:00:00Z', total: 1, done: 1, renamed: 1, series: [] }
+          : idle,
+      }),
+    )
+    await page.route('**/api/v1/library/organize', (route) => {
+      posted.push(route.request().postDataJSON())
+      return route.fulfill({ status: 202, json: { ...idle, queued: true } })
+    })
     await page.route(`**/api/v1/series/${id}/files/organize`, (route) => {
-      if (route.request().method() === 'POST') {
-        posted.push(route.request().postDataJSON())
-        return route.fulfill({ json: { renamed: 1, retagged: 0, errors: [] } })
-      }
       return route.fulfill({
         json: [
           {
@@ -259,11 +268,11 @@ test('organize files previews renames and metadata updates before applying', asy
     await expect(dialog.getByText(/1 file is left alone/)).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('organize.png') })
 
-    // Unticking metadata applies the move only.
+    // Unticking metadata applies the move only, as a background run.
     await dialog.getByRole('checkbox', { name: 'Update embedded metadata (1)' }).uncheck()
     await dialog.getByRole('button', { name: 'Apply to 1 file', exact: true }).click()
-    await expect(dialog).toHaveCount(0)
-    expect(posted).toEqual([{ rename: true, retag: false }])
+    await expect(dialog.getByText('1 moved · 0 updated across 1 series')).toBeVisible()
+    expect(posted).toEqual([{ seriesIds: [id], rename: true, retag: false }])
   } finally {
     await request.delete(`/api/v1/series/${id}/`)
   }

@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -292,18 +291,6 @@ func (im *Importer) PlanOrganize(ctx context.Context, seriesID int64) ([]FileCha
 // metadata. One file failing does not stop the others.
 func (im *Importer) Organize(ctx context.Context, seriesID int64, rename, retag bool) (*OrganizeResult, error) {
 	im.mu.Lock()
-	defer im.mu.Unlock()
-	return im.organize(ctx, seriesID, 0, rename, retag)
-}
-
-// OrganizeIfIdle applies Organize only when no import or organize is
-// already running; the HTTP layer prefers it because its request carries
-// no timeout, so waiting on the importer's mutex would hold the connection
-// open for as long as the other run takes.
-func (im *Importer) OrganizeIfIdle(ctx context.Context, seriesID int64, rename, retag bool) (*OrganizeResult, error) {
-	if !im.mu.TryLock() {
-		return nil, apperr.Conflictf("another import or organize is already running; try again once it finishes")
-	}
 	defer im.mu.Unlock()
 	return im.organize(ctx, seriesID, 0, rename, retag)
 }
