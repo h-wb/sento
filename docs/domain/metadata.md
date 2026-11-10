@@ -52,7 +52,8 @@ rescan never reads them back for identity; adoption goes through `Notes`.
 `Series` is also a naming token, `{Reader Series}`, for folder and file
 templates (spec §11.2): Komga, which files by folders, and Kavita, which
 files by ComicInfo, then see the same name. Copies that render the same
-series folder share it.
+series folder share it. [Naming, folders and names in readers](naming.md)
+has the templates, the tokens and the layouts for each kind of reader.
 
 **Published or fan-made.** A file is a fan translation when it came from an
 extension source (a scanlator delivered it) and the release does not name a

@@ -24,7 +24,10 @@ from people with different setups are welcome.
   Release profiles control which formats and groups to prefer or refuse.
 - Imports CBZ files with ComicInfo.xml into a library for
   [Komga](https://komga.org) or [Kavita](https://www.kavitareader.com).
-  Torrent imports use hardlinks so the original files can keep seeding.
+  Torrent payloads are never modified, so the originals keep seeding.
+- Names files and folders from templates, sets the series name each edition
+  shows under in a reader, and applies a change to the files you already
+  have after a preview.
 - Shows why a release was accepted or rejected, and lets you review files
   whose edition or contents could not be identified safely.
 
