@@ -99,7 +99,8 @@ export default function SeriesPage() {
     if (!open && view === 'sources') setTab(null)
   }
   const [cleanup, setCleanup] = useState(false)
-  const [organize, setOrganize] = useState(false)
+  // The organize preview, and why it opened when it did so on its own.
+  const [organize, setOrganize] = useState<boolean | string>(false)
 
   const queryClient = useQueryClient()
   const detail = useQuery({
@@ -143,6 +144,11 @@ export default function SeriesPage() {
       onBook={setBookSel}
       onAddEdition={(start) => setAddEdition(start ?? {})}
       seriesProfileId={series?.profileId ?? 0}
+      onReaderNameChanged={() =>
+        setOrganize(
+          'The edition’s name in readers is saved. Its files still carry the old one until they are organized:',
+        )
+      }
     />
   )
 
@@ -469,7 +475,13 @@ export default function SeriesPage() {
         />
       </Modal>
       {cleanup && <FileCleanup seriesID={seriesID} onClose={() => setCleanup(false)} />}
-      {organize && <OrganizeFiles seriesID={seriesID} onClose={() => setOrganize(false)} />}
+      {organize && (
+        <OrganizeFiles
+          seriesID={seriesID}
+          intro={typeof organize === 'string' ? organize : undefined}
+          onClose={() => setOrganize(false)}
+        />
+      )}
       <BookDialog
         seriesID={seriesID}
         sel={bookSel}

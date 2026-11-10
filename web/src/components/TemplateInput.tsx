@@ -12,6 +12,7 @@ export function TemplateInput({
   disabled,
   placeholder,
   onChange,
+  onFocus,
 }: {
   label: string
   description?: string
@@ -21,6 +22,8 @@ export function TemplateInput({
   disabled?: boolean
   placeholder?: string
   onChange: (v: string) => void
+  // The input, when it takes focus: a token picked elsewhere goes into it.
+  onFocus?: (input: HTMLInputElement) => void
 }) {
   return (
     <div>
@@ -32,6 +35,7 @@ export function TemplateInput({
         error={error}
         disabled={disabled}
         onChange={(e) => onChange(e.currentTarget.value)}
+        onFocus={(e) => onFocus?.(e.currentTarget)}
       />
       {!error && (
         <Text size="xs" c="dimmed" mt={2} style={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>

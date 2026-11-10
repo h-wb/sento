@@ -55,6 +55,9 @@ type Props = {
   onAddEdition: (start?: EditionStart) => void
   // The series' release profile (0: the instance default).
   seriesProfileId: number
+  // Open the organize preview: an edition's name in readers changed, and
+  // the files on disk still carry the old one.
+  onReaderNameChanged: () => void
 }
 export default function EditionManager({
   section,
@@ -67,6 +70,7 @@ export default function EditionManager({
   onBook,
   onAddEdition,
   seriesProfileId,
+  onReaderNameChanged,
 }: Props) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})
@@ -581,13 +585,14 @@ export default function EditionManager({
             await changed()
             setEdition(null)
           }}
-          save={async (patch) => {
+          save={async (patch, readerNameChanged) => {
             await api.editEdition(seriesID, edition.id, {
               ...patch,
               reset: [],
             })
             await changed()
             setEdition(null)
+            if (readerNameChanged && files.length > 0) onReaderNameChanged()
           }}
           close={() => setEdition(null)}
         />

@@ -3,6 +3,7 @@ import { Alert, Button, Checkbox, Group, Modal, Stack, Text } from '@mantine/cor
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import { useOrganizeRun } from '../useOrganizeRun'
+import { OrganizeChanges, SkippedFiles } from './OrganizeChanges'
 import OrganizeRunStatus from './OrganizeRunStatus'
 import { QueryFeedback } from './QueryFeedback'
 
@@ -11,9 +12,12 @@ import { QueryFeedback } from './QueryFeedback'
 // apply it as a background run, which closing the dialog does not stop.
 export default function OrganizeFiles({
   seriesID,
+  intro,
   onClose,
 }: {
   seriesID: number
+  // Why the dialog opened on its own, when it did.
+  intro?: string
   onClose: () => void
 }) {
   const { status, busy, started, finished, apply } = useOrganizeRun([seriesID])
@@ -28,12 +32,12 @@ export default function OrganizeFiles({
   const changes = plan.data ?? []
   const renames = changes.filter((c) => c.rename)
   const retags = changes.filter((c) => c.retag)
-  const skipped = changes.filter((c) => c.skip)
   const selected = changes.filter((c) => (rename && c.rename) || (retag && c.retag))
   const previewing = !busy && !started
   return (
     <Modal opened onClose={onClose} title="Organize files" size="min(900px, 96vw)">
       <Stack gap="sm">
+        {intro && previewing && <Text size="sm">{intro}</Text>}
         <Text size="sm" c="dimmed">
           Bring this series' files in line with the current Media settings. Books keep their pages
           and identity; a download that is still seeding is not touched.
@@ -65,36 +69,11 @@ export default function OrganizeFiles({
         )}
         {apply.error && <Alert color="red">{String(apply.error)}</Alert>}
         {previewing && (
-          <Stack gap={6} mah="50vh" style={{ overflowY: 'auto' }}>
-            {selected.slice(0, 200).map((c) => (
-              <div key={c.fileId}>
-                <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-                  {c.from}
-                </Text>
-                <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
-                  {rename && c.rename ? `→ ${c.to}` : '→ same place'}
-                  {retag && c.retag && (
-                    <Text span size="xs" c="dimmed">
-                      {' '}
-                      · metadata updated
-                    </Text>
-                  )}
-                </Text>
-              </div>
-            ))}
-            {selected.length > 200 && (
-              <Text size="xs" c="dimmed">
-                and {selected.length - 200} more
-              </Text>
-            )}
-          </Stack>
+          <div style={{ maxHeight: '50vh', overflowY: 'auto' }}>
+            <OrganizeChanges changes={changes} rename={rename} retag={retag} />
+          </div>
         )}
-        {previewing && skipped.length > 0 && (
-          <Text size="xs" c="dimmed">
-            {skipped.length} {skipped.length === 1 ? 'file is' : 'files are'} left alone: not
-            matched to a book yet, or not on disk.
-          </Text>
-        )}
+        {previewing && <SkippedFiles changes={changes} />}
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>
             Close

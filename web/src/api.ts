@@ -10,6 +10,7 @@ import type {
   CopyReaderNames,
   LibraryOrganizeRequest,
   LibraryOrganizeStatus,
+  MediaSchema,
   ReaderNamesRequest,
   ReleaseFileMatch,
   RemovedSeries,
@@ -440,6 +441,8 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(m),
     }),
+  // The naming tokens and reader fields, from the renderer's own lists.
+  mediaSchema: () => request<MediaSchema>('/settings/media/schema'),
   previewNaming: (m: MediaSettings) =>
     request<NamingPreview>('/settings/media/preview', {
       method: 'POST',
