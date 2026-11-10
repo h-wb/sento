@@ -104,6 +104,7 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 		}
 		slices.Sort(dirs[1:])
 	}
+	var jobs releaseJobs // the series' downloads, read when a file needs one
 	sh := seriesShelf(collections, series)
 	// Edition evidence determines file contents even when edition is paused.
 	// Ambiguous archives remain available for explicit review.
@@ -159,12 +160,14 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 			}
 			if !replaced {
 				if f.ParserVersion < parse.Version {
-					// Same bytes, older parser stamp: re-read the name with
-					// the current parser. Facts only — links, review state and
-					// manual corrections survive the AddFile merge.
-					if err := sc.rederiveFacts(ctx, f, path, titles, series, collections); err != nil {
+					// Same bytes, older parser stamp: re-read the name the
+					// facts came from with the current parser.
+					if err := sc.rederiveFacts(ctx, f, titles); err != nil {
 						return err
 					}
+				}
+				if err := sc.relink(ctx, f, &jobs); err != nil {
+					return err
 				}
 				res.Skipped = append(res.Skipped, path)
 				return nil
@@ -214,7 +217,7 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 			SeriesID:      seriesID,
 			Path:          path,
 			Size:          size,
-			Provenance:    "library-import",
+			Provenance:    scanProvenance,
 			Unrequested:   len(links) == 0,
 			NeedsReview:   len(links) == 0,
 			ParserVersion: parse.Version,
@@ -238,26 +241,103 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 	return res, nil
 }
 
-// rederiveFacts re-reads a known file's name with the current parser after a
-// parser-version bump, updating only the filename-sourced facts (an embedded
-// provenance line still wins, as for a fresh scan). Bytes, hash, links,
-// presence and review state are kept; AddFile's merge preserves manual
-// language/group corrections.
-func (sc *Scanner) rederiveFacts(ctx context.Context, f store.File, path string, titles []string, series *store.Series, collections []store.Edition) error {
-	parsed := parse.ParseAnchored(filepath.Base(path), parse.ChannelFile, titles)
-	facts := store.AssetFacts{Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}, Title: filepath.Base(path), Protocol: f.Provenance, FactsKnown: true, Flags: candidateFlags(ReleaseCandidate{Parse: parsed}), Language: parsed.Language, Group: parsed.Group, Format: strings.TrimPrefix(filepath.Ext(path), "."), Resolution: parsed.Quality.Resolution, Revision: parsed.Version, Digital: parsed.Quality.Digital}
-	if ci := mediafile.ReadComicInfo(path); ci != nil {
-		if p, ok := mediafile.ReadProvenance(ci.Notes); ok && p.MangaBaka == series.MangaBakaID && series.MangaBakaID > 0 {
-			if own := sc.linksFromProvenance(ctx, p, ci.LanguageISO, collections); len(own) > 0 {
-				facts = provenanceFacts(p, ci, path)
-			}
+// rederiveFacts re-reads, with the current parser, the name a file's facts
+// were read from, after a parser-version bump. Only what a name says is
+// replaced: flags, resolution, revision, digital, and the language and
+// group where the name supplied them. Everything else a file knows stands —
+// the download it came in, its site, profile and score, its claims, links,
+// hash, presence and review state. Facts that were not read from a name (an
+// offer's, an embedded Notes line's), or whose name is no longer known, are
+// only stamped.
+func (sc *Scanner) rederiveFacts(ctx context.Context, f store.File, titles []string) error {
+	facts := f.Facts
+	if name := factsName(f); name != "" {
+		parsed := parse.ParseAnchored(name, parse.ChannelFile, titles)
+		facts.Flags = candidateFlags(ReleaseCandidate{Parse: parsed})
+		facts.Resolution, facts.Revision, facts.Digital = parsed.Quality.Resolution, parsed.Version, parsed.Quality.Digital
+		// A download's recorded name may be the one Sento gave it, whose own
+		// brackets ("[Standard Edition][en]") read as a group and a language:
+		// the re-read corrects what the facts hold, it does not add to them.
+		scanned := f.Provenance == scanProvenance
+		if facts.Sources["language"] == "filename" && (scanned || facts.Language != "") {
+			facts.Language = parsed.Language
+		}
+		if facts.Sources["group"] == "filename" && (scanned || facts.Group != "") {
+			facts.Group = parsed.Group
 		}
 	}
-	// A dedicated rewrite, not AddFile: reviewed or manually corrected files
-	// take AddFile's preservation path, which would keep the stale facts.
-	// RewriteFileFacts keeps manual language/group and the review action and
-	// updates only the facts and the parser stamp.
 	return sc.store.RewriteFileFacts(ctx, f.ID, facts, parse.Version)
+}
+
+// releaseJobs are a series' downloads by release name, for the names that
+// stand for one release only.
+type releaseJobs map[string]store.QueueItem
+
+// relink gives a downloaded file back the download it came in when it
+// names none: the 0.7.0 parser re-read rebuilt such files' facts from
+// their embedded Notes line and emptied their claims, and Activity, import
+// retries and settlement find a download's files by that link. The Notes
+// line kept the release's name, so the series' download of that name (one
+// release, the same protocol) is the one. jobs is loaded on first need.
+func (sc *Scanner) relink(ctx context.Context, f store.File, jobs *releaseJobs) error {
+	if f.Provenance == scanProvenance || f.Facts.Title == "" || f.Facts.ReleaseKey != "" || f.Claims.ReleaseKey != "" {
+		return nil
+	}
+	if *jobs == nil {
+		items, err := sc.store.SeriesQueueItems(ctx, f.SeriesID)
+		if err != nil {
+			return err
+		}
+		*jobs = releaseJobs{}
+		shared := map[string]bool{} // names several releases go by
+		for _, item := range items {
+			if item.ReleaseKey == "" || item.Title == "" {
+				continue
+			}
+			if known, ok := (*jobs)[item.Title]; ok && known.ReleaseKey != item.ReleaseKey {
+				shared[item.Title] = true
+			}
+			(*jobs)[item.Title] = item
+		}
+		for title := range shared {
+			delete(*jobs, title)
+		}
+	}
+	job, ok := (*jobs)[f.Facts.Title]
+	if !ok || (f.Facts.Protocol != "" && f.Facts.Protocol != job.Protocol) {
+		return nil
+	}
+	return sc.store.RestoreReleaseLink(ctx, f.ID, offerFacts(job, f.Facts.Format))
+}
+
+// scanProvenance marks a file a library scan found, as opposed to one a
+// download delivered.
+const scanProvenance = "library-import"
+
+// factsName is the file name a file's facts were read from, or "" when
+// they were not read from a name, or from one the file no longer says. A
+// scan reads the name it records. A download renamed at import records its
+// new name while its facts came from the payload's, so its name counts only
+// while it still says what the facts hold: their group and digital mark.
+func factsName(f store.File) string {
+	if f.Facts.Sources["quality"] != "filename" {
+		return ""
+	}
+	name := f.Facts.Title
+	if name == "" {
+		name = filepath.Base(f.Path)
+	}
+	if f.Provenance == scanProvenance {
+		return name
+	}
+	lower := strings.ToLower(name)
+	if group := f.Facts.Group; group != "" && f.Facts.Sources["group"] == "filename" && !strings.Contains(lower, strings.ToLower(group)) {
+		return ""
+	}
+	if f.Facts.Digital && !strings.Contains(lower, "digital") {
+		return ""
+	}
+	return name
 }
 
 // replaced reports whether a known file now holds different pages. Reading
