@@ -253,19 +253,11 @@ func (sc *Scanner) rederiveFacts(ctx context.Context, f store.File, path string,
 			}
 		}
 	}
-	_, err := sc.store.AddFile(ctx, store.File{
-		SeriesID:      f.SeriesID,
-		Path:          f.Path,
-		Size:          f.Size,
-		Provenance:    f.Provenance,
-		Unrequested:   f.Unrequested,
-		NeedsReview:   f.NeedsReview,
-		Facts:         facts,
-		Hash:          f.Hash,
-		HashStat:      f.HashStat,
-		ParserVersion: parse.Version,
-	}, parsed, nil)
-	return err
+	// A dedicated rewrite, not AddFile: reviewed or manually corrected files
+	// take AddFile's preservation path, which would keep the stale facts.
+	// RewriteFileFacts keeps manual language/group and the review action and
+	// updates only the facts and the parser stamp.
+	return sc.store.RewriteFileFacts(ctx, f.ID, facts, parse.Version)
 }
 
 // replaced reports whether a known file now holds different pages. Reading

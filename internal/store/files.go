@@ -215,6 +215,41 @@ func (s *Store) ForgetFile(ctx context.Context, id int64) error {
 	return err
 }
 
+// RewriteFileFacts replaces a file's recorded facts after a parser-version
+// re-read of its name — even when a person reviewed it or corrected facts —
+// keeping manually corrected language/group, the review action, hash, links
+// and presence untouched.
+func (s *Store) RewriteFileFacts(ctx context.Context, id int64, facts AssetFacts, parserVersion int64) error {
+	var old string
+	if err := s.db.QueryRowContext(ctx, s.q(`SELECT facts_json FROM files WHERE id=?`), id).Scan(&old); err != nil {
+		return err
+	}
+	var previous AssetFacts
+	if err := json.Unmarshal([]byte(old), &previous); err != nil {
+		return err
+	}
+	if previous.Sources == nil {
+		previous.Sources = map[string]string{}
+	}
+	if facts.Sources == nil {
+		facts.Sources = map[string]string{}
+	}
+	if previous.Sources["language"] == "manual" {
+		facts.Language = previous.Language
+		facts.Sources["language"] = "manual"
+	}
+	if previous.Sources["group"] == "manual" {
+		facts.Group = previous.Group
+		facts.Sources["group"] = "manual"
+	}
+	raw, err := json.Marshal(facts)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, s.q(`UPDATE files SET facts_json=?,parser_version=? WHERE id=?`), string(raw), parserVersion, id)
+	return err
+}
+
 // SetFileSize records a file's size after its bytes changed without its
 // pages changing (retagged metadata).
 func (s *Store) SetFileSize(ctx context.Context, id, size int64) error {
