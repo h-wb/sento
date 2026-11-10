@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -253,5 +255,161 @@ func TestScanRederivesFactsWhenParserVersionMovesOn(t *testing.T) {
 	res2, err := sc.ScanSeriesFolder(ctx, seriesID, dir)
 	if err != nil || len(res2.Skipped) != 1 || res2.Scanned != 0 {
 		t.Fatalf("second scan should skip: %+v, %v", res2, err)
+	}
+}
+
+// staleFacts gives a scanned file the provenance, facts and claims an
+// import and an older parser would have left, so the next scan re-reads it.
+// Inlined values go straight to the driver, bypassing the store's ?->$N
+// rebind.
+func staleFacts(t *testing.T, conn *sql.DB, id int64, provenance string, facts, claims store.AssetFacts) {
+	t.Helper()
+	quote := func(v any) string {
+		raw, _ := json.Marshal(v)
+		return strings.ReplaceAll(string(raw), "'", "''")
+	}
+	if _, err := conn.ExecContext(context.Background(), fmt.Sprintf(`UPDATE files SET parser_version=0, provenance='%s', facts_json='%s', claims_json='%s' WHERE id=%d`, provenance, quote(facts), quote(claims), id)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A parser re-read replaces what a name says and nothing else: the download
+// a file came in, its site, profile, score and claims stand, and facts that
+// were not read from a name still known are left as they are.
+func TestScanRederiveKeepsWhatANameDoesNotSay(t *testing.T) {
+	t.Parallel()
+	conn, dialect := dbtest.Open(t)
+	st := store.New(conn, dialect)
+	lib := NewLibrary(st, testProvider())
+	ctx := context.Background()
+	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	const (
+		reread  = "ONE PIECE v01 (Digital) (Colored Council).cbz" // read from its own name
+		renamed = "ONE PIECE v02 [Standard Edition][en].cbz"      // renamed at import: the name lost what was read
+		offer   = "ONE PIECE v03 [Standard Edition][en].cbz"      // facts from the offer, not from a name
+		bare    = "ONE PIECE v04 [Standard Edition][en].cbz"      // renamed, and its payload named no group
+	)
+	names := []string{reread, renamed, offer, bare}
+	for _, name := range names {
+		writeCBZ(t, filepath.Join(dir, name), name)
+	}
+	sc := NewScanner(st, dir)
+	if _, err := sc.ScanSeriesFolder(ctx, seriesID, dir); err != nil {
+		t.Fatal(err)
+	}
+	files := mustFiles(t, st, seriesID)
+	if len(files) != len(names) {
+		t.Fatalf("scanned %d files", len(files))
+	}
+	claims := store.AssetFacts{Title: "ONE PIECE v01-04 (Digital) (1r0n)", Group: "1r0n", ReleaseKey: "nyaa:42", FactsKnown: true}
+	filename := map[string]string{"language": "filename", "group": "filename", "quality": "filename"}
+	want := map[string]store.AssetFacts{
+		// The old parser read the group as a color claim.
+		reread: {Sources: filename, Title: reread, Site: "Nyaa", Protocol: "torrent", FactsKnown: true, Group: "Colored Council", Flags: map[string]bool{"colored": true, "digital": true}, Digital: true, Format: "cbz", ProfileID: 3, FormatScore: 120, ReleaseKey: "nyaa:42"},
+		// Its facts came from "… (Digital) (1r0n).cbz".
+		renamed: {Sources: filename, Title: renamed, Site: "Nyaa", Protocol: "torrent", FactsKnown: true, Group: "1r0n", Flags: map[string]bool{"digital": true}, Digital: true, Resolution: 2048, Format: "cbz", ProfileID: 3, ReleaseKey: "nyaa:42"},
+		// A source download keeps its offer's evidence.
+		offer: {Sources: map[string]string{"language": "offer", "group": "offer", "quality": "offer"}, Title: "ONE PIECE Vol. 3", Site: "MangaDex", Protocol: "source", FactsKnown: true, Group: "TCB Scans", Language: "en", Format: "cbz", ReleaseKey: "src:7"},
+		// Nothing in the facts gives the rename away, so the name is
+		// re-read, but its brackets are not taken for a group and a language.
+		bare: {Sources: filename, Title: bare, Site: "Nyaa", Protocol: "torrent", FactsKnown: true, Flags: map[string]bool{"colored": true}, Format: "cbz", ReleaseKey: "nyaa:42"},
+	}
+	for _, f := range files {
+		staleFacts(t, conn, f.ID, "torrent", want[filepath.Base(f.Path)], claims)
+	}
+
+	if _, err := sc.ScanSeriesFolder(ctx, seriesID, dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range mustFiles(t, st, seriesID) {
+		name := filepath.Base(f.Path)
+		before := want[name]
+		if f.ParserVersion != parse.Version {
+			t.Errorf("%s: parser_version=%d", name, f.ParserVersion)
+		}
+		if f.Claims.ReleaseKey != claims.ReleaseKey || f.Claims.Group != claims.Group {
+			t.Errorf("%s: claims lost: %+v", name, f.Claims)
+		}
+		if f.Facts.ReleaseKey != before.ReleaseKey || f.Facts.Site != before.Site || f.Facts.Protocol != before.Protocol || f.Facts.ProfileID != before.ProfileID || f.Facts.FormatScore != before.FormatScore || f.Facts.Title != before.Title {
+			t.Errorf("%s: what the name does not say changed:\n got %+v\nwant %+v", name, f.Facts, before)
+		}
+		switch name {
+		case reread:
+			if f.Facts.Flags["colored"] || !f.Facts.Flags["digital"] || !f.Facts.Digital || f.Facts.Group != "Colored Council" {
+				t.Errorf("%s: name not re-read: %+v", name, f.Facts)
+			}
+		case bare:
+			if f.Facts.Flags["colored"] || f.Facts.Group != "" || f.Facts.Language != "" {
+				t.Errorf("%s: re-read should drop the stale flag and add nothing: %+v", name, f.Facts)
+			}
+		default:
+			if !reflect.DeepEqual(f.Facts, before) {
+				t.Errorf("%s: facts not read from this name were rewritten:\n got %+v\nwant %+v", name, f.Facts, before)
+			}
+		}
+	}
+}
+
+// A downloaded file whose facts were rebuilt from its Notes line, losing
+// the download it came in and its claims, gets both back from the series'
+// download of that name; a name two releases share restores nothing.
+func TestScanRestoresALostReleaseLink(t *testing.T) {
+	t.Parallel()
+	conn, dialect := dbtest.Open(t)
+	st := store.New(conn, dialect)
+	lib := NewLibrary(st, testProvider())
+	ctx := context.Background()
+	seriesID, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377, Monitor: "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue := func(title, key string) {
+		t.Helper()
+		snap, _ := json.Marshal(ReleaseCandidate{Title: title, Site: "Nyaa", ProfileID: 3})
+		id, err := st.AddQueueItem(ctx, store.QueueItem{SeriesID: seriesID, Protocol: "torrent", Title: title, Books: []byte(`[]`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// AddQueueItem records neither; inlined, as in staleFacts.
+		if _, err := conn.ExecContext(ctx, fmt.Sprintf(`UPDATE queue_items SET release_key='%s', snapshot_json='%s' WHERE id=%d`, key, strings.ReplaceAll(string(snap), "'", "''"), id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	queue("ONE PIECE v01 (Digital) (1r0n)", "nyaa:1")
+	queue("ONE PIECE v02 (Digital) (1r0n)", "nyaa:2")
+	queue("ONE PIECE v02 (Digital) (1r0n)", "nyaa:2-repost")
+
+	dir := t.TempDir()
+	names := []string{"ONE PIECE v01 [Standard Edition][en].cbz", "ONE PIECE v02 [Standard Edition][en].cbz", "ONE PIECE v03 [Standard Edition][en].cbz"}
+	for _, name := range names {
+		writeCBZ(t, filepath.Join(dir, name), name)
+	}
+	sc := NewScanner(st, dir)
+	if _, err := sc.ScanSeriesFolder(ctx, seriesID, dir); err != nil {
+		t.Fatal(err)
+	}
+	comicinfo := map[string]string{"language": "comicinfo", "group": "comicinfo", "quality": "comicinfo"}
+	titles := map[string]string{names[0]: "ONE PIECE v01 (Digital) (1r0n)", names[1]: "ONE PIECE v02 (Digital) (1r0n)", names[2]: "ONE PIECE v03 (Digital) (1r0n)"}
+	for _, f := range mustFiles(t, st, seriesID) {
+		lost := store.AssetFacts{Sources: comicinfo, Title: titles[filepath.Base(f.Path)], Protocol: "torrent", FactsKnown: true, Group: "1r0n", Format: "cbz"}
+		staleFacts(t, conn, f.ID, "torrent", lost, store.AssetFacts{})
+	}
+	for range 2 { // the second scan finds nothing left to restore
+		if _, err := sc.ScanSeriesFolder(ctx, seriesID, dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range mustFiles(t, st, seriesID) {
+		wantKey := map[string]string{names[0]: "nyaa:1"}[filepath.Base(f.Path)]
+		if f.Facts.ReleaseKey != wantKey || f.Claims.ReleaseKey != wantKey {
+			t.Errorf("%s: release key facts=%q claims=%q, want %q", filepath.Base(f.Path), f.Facts.ReleaseKey, f.Claims.ReleaseKey, wantKey)
+		}
+		if wantKey != "" && (f.Facts.Site != "Nyaa" || f.Claims.Title != titles[filepath.Base(f.Path)] || f.Facts.Group != "1r0n" || f.Facts.Sources["group"] != "comicinfo") {
+			t.Errorf("%s: restored facts %+v, claims %+v", filepath.Base(f.Path), f.Facts, f.Claims)
+		}
 	}
 }

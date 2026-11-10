@@ -26,6 +26,20 @@ func fileHash(path string) (string, error) { return mediafile.Fingerprint(path) 
 // of a pack's files still import, and the job is held for review at the end.
 var errAssetNeedsReview = errors.New("file's observed facts do not meet the requested release profile; confirm its facts in review")
 
+// offerFacts are what a download's release claimed, for a file of the given
+// format: what the file is taken to be until its own name says otherwise,
+// and the claims it keeps beside its own facts.
+func offerFacts(item store.QueueItem, format string) store.AssetFacts {
+	var snap ReleaseCandidate
+	_ = json.Unmarshal(item.Snapshot, &snap)
+	facts := store.AssetFacts{Title: snap.Title, Site: snap.Site, Protocol: item.Protocol, FactsKnown: snap.Title != "", Flags: candidateFlags(snap), Language: snap.Parse.Language, Group: snap.Parse.Group, Format: format, FormatScore: snap.FormatScore, Resolution: snap.Parse.Quality.Resolution, Revision: snap.Parse.Version, Digital: snap.Parse.Quality.Digital, ProfileID: snap.ProfileID, ReleaseKey: item.ReleaseKey}
+	if facts.Group == "" {
+		facts.Group = snap.Scanlator
+	}
+	facts.Sources = map[string]string{"language": "offer", "group": "offer", "quality": "offer"}
+	return facts
+}
+
 // assetPath is dir/name with an unsafe or overlong name tamed and, when
 // hash is given, " [hash]" before the extension.
 func assetPath(dir, name, hash string) string {
@@ -98,13 +112,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 	for _, sl := range slots {
 		links = append(links, store.BookLink{Ledger: sl.Ledger, EditionID: sl.EditionID, Number: sl.Number, VersionID: sl.VersionID, BookID: sl.BookID})
 	}
-	var snap ReleaseCandidate
-	_ = json.Unmarshal(item.Snapshot, &snap)
-	facts := store.AssetFacts{Title: snap.Title, Site: snap.Site, Protocol: item.Protocol, FactsKnown: snap.Title != "", Flags: candidateFlags(snap), Language: snap.Parse.Language, Group: snap.Parse.Group, Format: strings.TrimPrefix(filepath.Ext(path), "."), FormatScore: snap.FormatScore, Resolution: snap.Parse.Quality.Resolution, Revision: snap.Parse.Version, Digital: snap.Parse.Quality.Digital, ProfileID: snap.ProfileID, ReleaseKey: item.ReleaseKey}
-	if facts.Group == "" {
-		facts.Group = snap.Scanlator
-	}
-	facts.Sources = map[string]string{"language": "offer", "group": "offer", "quality": "offer"}
+	facts := offerFacts(item, strings.TrimPrefix(filepath.Ext(path), "."))
 	claims := facts
 	if actual, ok := parsed.(parse.Result); ok {
 		// An offer's claims remain available for review; file facts are specific to these bytes.
