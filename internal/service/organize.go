@@ -39,7 +39,10 @@ type filePlan struct {
 	file store.File
 	dir  string // destination folder
 	name string // destination file name, before any collision suffix
+	dest string // the path the settings choose, before any collision suffix
 	info mediafile.ComicInfo
+	// moved is set while applying: the file has left its original path.
+	moved bool
 }
 
 var reHashSuffix = regexp.MustCompile(` \[[a-f0-9]{64}\]$`)
@@ -226,7 +229,8 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 			}
 			p.name = filepath.Base(f.Path)
 			p.Rename = true
-			p.To = rel(assetPath(p.dir, p.name, ""))
+			p.dest = assetPath(p.dir, p.name, "")
+			p.To = rel(p.dest)
 			plans = append(plans, p)
 			continue
 		}
@@ -248,12 +252,12 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		}
 		p.dir = im.bookDir(ctx, cat, ms, seriesDir, series, slots[0])
 
-		plain := assetPath(p.dir, p.name, "")
+		p.dest = assetPath(p.dir, p.name, "")
 		if ms.HashInName && f.Hash != "" {
-			plain = assetPath(p.dir, p.name, f.Hash)
+			p.dest = assetPath(p.dir, p.name, f.Hash)
 		}
-		p.Rename = plain != f.Path
-		p.To = rel(plain)
+		p.Rename = p.dest != f.Path
+		p.To = rel(p.dest)
 		if processable {
 			// Out of date when the container is not a CBZ yet, or the merge
 			// would change what the file already says.
@@ -267,7 +271,33 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		}
 		plans = append(plans, p)
 	}
+	if fileID == 0 {
+		settleFallbackNames(plans, rel)
+	}
 	return plans, series, ms, nil
+}
+
+// settleFallbackNames takes out of the plan the files that are where they
+// can be: on their fingerprinted name because a different book of the
+// series keeps the plain one and is not going anywhere. Planning them again
+// would move nothing, run after run.
+func settleFallbackNames(plans []filePlan, rel func(string) string) {
+	stays := map[string]string{} // path → hash of the file staying on it
+	for _, p := range plans {
+		if p.Skip == "" && !p.Rename {
+			stays[p.file.Path] = p.file.Hash
+		}
+	}
+	for i := range plans {
+		p := &plans[i]
+		if !p.Rename || p.Skip != "" || p.file.Hash == "" {
+			continue
+		}
+		owner, held := stays[p.dest]
+		if held && owner != p.file.Hash && p.file.Path == assetPath(p.dir, p.name, p.file.Hash) {
+			p.Rename, p.To = false, rel(p.file.Path)
+		}
+	}
 }
 
 // PlanOrganize previews what Organize would change, without touching
@@ -327,6 +357,11 @@ func (im *Importer) organize(ctx context.Context, seriesID, fileID int64, rename
 		}
 	}
 	res := &OrganizeResult{Errors: []string{}}
+	if rename {
+		plans = moveOrder(plans)
+	}
+	// Files that landed beside their name because another file held it.
+	var beside []filePlan
 	for _, p := range plans {
 		doRename, doRetag := rename && p.Rename, retag && p.Retag
 		if p.Skip != "" || (!doRename && !doRetag) {
@@ -335,22 +370,88 @@ func (im *Importer) organize(ctx context.Context, seriesID, fileID int64, rename
 		if err := ctx.Err(); err != nil {
 			return res, err
 		}
-		if err := im.organizeFile(ctx, p, ms, doRename, doRetag); err != nil {
+		from := p.file.Path
+		dest, err := im.organizeFile(ctx, p, ms, doRename, doRetag)
+		if err != nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", p.From, err))
 			continue
 		}
-		if doRename {
-			res.Renamed++
-			pruneEmptyDirs(filepath.Dir(p.file.Path), im.libraryRoot)
-		}
 		if doRetag {
 			res.Retagged++
+		}
+		if !doRename {
+			continue
+		}
+		p.moved = dest != from
+		if p.moved {
+			res.Renamed++
+			pruneEmptyDirs(filepath.Dir(from), im.libraryRoot)
+		}
+		if dest != p.dest {
+			p.file.Path = dest
+			beside = append(beside, p)
+		}
+	}
+	// Two files on each other's names: whichever went first found its name
+	// taken, and it is free now.
+	for _, p := range beside {
+		if err := ctx.Err(); err != nil {
+			return res, err
+		}
+		if _, err := os.Lstat(p.dest); !os.IsNotExist(err) {
+			continue // still held: a different book keeps the name
+		}
+		from := p.file.Path
+		dest, err := im.organizeFile(ctx, p, ms, true, false)
+		if err != nil {
+			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", p.From, err))
+			continue
+		}
+		if dest != from {
+			if !p.moved {
+				res.Renamed++
+			}
+			pruneEmptyDirs(filepath.Dir(from), im.libraryRoot)
 		}
 	}
 	return res, nil
 }
 
-func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettings, rename, retag bool) error {
+// moveOrder puts each file after the one sitting on its destination, so a
+// name a sibling is about to leave is free when its turn comes. Files in a
+// cycle (two on each other's names) keep their order; organize settles
+// those in a second step.
+func moveOrder(plans []filePlan) []filePlan {
+	at := map[string]int{} // current path → the plan moving it away
+	for i, p := range plans {
+		if p.Rename && p.Skip == "" {
+			at[p.file.Path] = i
+		}
+	}
+	out := make([]filePlan, 0, len(plans))
+	const visiting, done = 1, 2
+	state := make([]uint8, len(plans))
+	var visit func(int)
+	visit = func(i int) {
+		if state[i] != 0 {
+			return
+		}
+		state[i] = visiting
+		if holder, ok := at[plans[i].dest]; ok && holder != i && plans[i].Rename && plans[i].Skip == "" {
+			visit(holder)
+		}
+		state[i] = done
+		out = append(out, plans[i])
+	}
+	for i := range plans {
+		visit(i)
+	}
+	return out
+}
+
+// organizeFile moves and re-tags one file and returns where it is now: its
+// planned path, or a fallback name beside it when that path is held.
+func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettings, rename, retag bool) (string, error) {
 	src := p.file.Path
 	// Re-tagging and moving never change a fingerprint, so the stored one
 	// stands; hashing every page again is the slow part of a library run.
@@ -358,7 +459,7 @@ func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettin
 	var err error
 	if hash == "" {
 		if hash, err = fileHash(src); err != nil {
-			return err
+			return "", err
 		}
 	}
 	// A rewrite without a rename still turns a .cbr into a .cbz.
@@ -374,7 +475,7 @@ func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettin
 		}
 		if dest = assetPath(dir, name, ""); dest != src {
 			if dest, err = placeAsset(dir, name, hash, ms.HashInName); err != nil {
-				return err
+				return "", err
 			}
 			// files.path is unique across the table: never land on a path
 			// another row already records, even if the disk slot looks free.
@@ -382,7 +483,7 @@ func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettin
 			for i := 2; ; i++ {
 				var taken bool
 				if taken, err = im.store.PathTaken(ctx, dest, p.file.ID); err != nil {
-					return err
+					return "", err
 				}
 				if !taken {
 					break
@@ -393,7 +494,7 @@ func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettin
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return err
+		return "", err
 	}
 
 	switch {
@@ -401,32 +502,32 @@ func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettin
 		stage := filepath.Join(filepath.Dir(dest), ".sento-stage-"+filepath.Base(dest))
 		defer func() { _ = os.Remove(stage) }()
 		if err := mediafile.Process(src, stage, &p.info); err != nil {
-			return err
+			return "", err
 		}
 		if dest == src {
 			// Same book, same place: replace it atomically.
 			if err := os.Rename(stage, dest); err != nil {
-				return err
+				return "", err
 			}
 		} else if err := installAsset(stage, dest, hash, false); err != nil {
-			return err
+			return "", err
 		}
 	case dest != src:
 		if err := installAsset(src, dest, hash, false); err != nil {
-			return err
+			return "", err
 		}
 	}
 	info, err := os.Stat(dest)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := im.store.SetFileLocation(ctx, p.file.ID, dest, info.Size(), hash); err != nil {
-		return err
+		return "", err
 	}
 	if dest != src {
 		_ = os.Remove(src)
 	}
-	return nil
+	return dest, nil
 }
 
 // pruneEmptyDirs removes dir and its parents while they are empty, up to

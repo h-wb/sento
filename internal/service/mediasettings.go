@@ -131,6 +131,9 @@ func ValidateMediaSettings(m MediaSettings) error {
 	if strings.TrimSpace(m.SeriesFolder) == "" {
 		return apperr.Invalidf("series folder template is empty")
 	}
+	if strings.ContainsAny(m.SeriesFolder, `/\`) {
+		return apperr.Invalidf("series folder template names one folder; nest with the top folders or the book folder instead")
+	}
 	if !strings.Contains(strings.ToLower(m.VolumeFile), "{volume") {
 		return apperr.Invalidf("volume file template needs a {volume} token (files would overwrite each other)")
 	}
@@ -339,7 +342,8 @@ func cleanRoot(root string) []string {
 // outside the library root stays where it is.
 func seriesFolders(libraryRoot string, series *store.Series, ms MediaSettings) (volumes, chapters string) {
 	vr, cr := cleanRoot(ms.VolumesRoot), cleanRoot(ms.ChaptersRoot)
-	rest := []string{mediafile.Render(ms.SeriesFolder, seriesFolderTokens(ms, series))}
+	// One folder name, whatever the stored template holds.
+	rest := []string{mediafile.Sanitize(mediafile.Render(ms.SeriesFolder, seriesFolderTokens(ms, series)))}
 	if series.Path != "" {
 		rel, err := filepath.Rel(libraryRoot, series.Path)
 		if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
