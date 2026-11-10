@@ -2,7 +2,6 @@
 
 The current edition/acquisition model is described in [Editions, units, collected versions, and files](domain/editions.md). Stable work IDs identify memberships, targets express independently collected versions, and verified asset coverage determines ownership. Release evaluations and queue snapshots preserve acquisition decisions.
 
-
 A map of the Go backend: packages, their dependencies, and the data flows
 that run through them. Product behavior is specified in [spec/](spec/)
 (`spec.md`, `decision-engine.md`, `parser.md`); this document is about how
@@ -148,6 +147,7 @@ service → {persistence, acquisition, metadata, domain}.
 
 - [Editions and files](domain/editions.md): metadata, collected versions, book identity and ownership.
 - [Acquisition](domain/acquisition.md): search, release decisions, downloads, import and recovery.
+- [Naming](domain/naming.md): where files land, templates, names in readers and organize.
 - [Parsing](domain/parsing.md): release names and title matching.
 
 Entry-point wiring is in `cmd/sento`, HTTP handlers in `internal/server`, and

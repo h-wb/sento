@@ -268,6 +268,13 @@ New files use stable IDs and a content hash:
 
 Names may use configured title, number, language, edition, group, version, and reader-series tokens. `{Reader Series}` is the copy's presented `Series` name (D18), so folders and file names show the same name a reader files the copy under; in a file name the version token names the version (`{series title} {version} v{volume}/…`), the default version rendering without it. A copy's top folder is the series folder template rendered for that copy: copies that render the same folder share it, and a different render gets a sibling folder (`{series folder} [{edition}][{lang}] ({version})/…` places every edition and every collected version of an edition in its own top folder, the default version keeping the edition's; `{Reader Series} [mangabaka-{seriesId}]` gives one folder per name in readers), with a kept series folder name surviving where the render still starts with the series' plain one. Existing paths remain intact. Hash-addressed destinations and exclusive installation prevent one release from overwriting another. Filename organization is independent of intrinsic content mappings.
 
+*Correction (2026-11-10):* the id folders and the hash in the name are no
+longer the default. Books go to `{series folder}/{edition} [{lang}]/…` under
+a plain name, the fingerprint entering it only when configured or when a
+different book holds the path; the id layout remains a preset. A template
+names a token from one list and a misspelled one is refused. The current
+rules are in [domain/naming.md](../domain/naming.md).
+
 ### 11.3 ComicInfo.xml `[default: on]`
 
 Written into each CBZ on import (merged if present, Sento fields win,
