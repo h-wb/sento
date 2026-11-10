@@ -36,13 +36,17 @@ export function EditionEditor({
 }: {
   seriesID: number
   value: Edition
-  save: (p: {
-    editionName: string
-    language: string
-    publisher: string
-    medium: string
-    numberingSource: string
-  }) => Promise<void>
+  // readerNameChanged: the name in readers was saved just before.
+  save: (
+    p: {
+      editionName: string
+      language: string
+      publisher: string
+      medium: string
+      numberingSource: string
+    },
+    readerNameChanged: boolean,
+  ) => Promise<void>
   saveReaderFields: (fields: Record<string, string>) => Promise<void>
   reset: () => Promise<void>
   close: () => void
@@ -91,7 +95,7 @@ export function EditionEditor({
           e.preventDefault()
           void edit.run(async () => {
             if (nameChanged) await saveReaderFields(readerFields)
-            await save(v)
+            await save(v, nameChanged)
           })
         }}
       >

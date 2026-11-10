@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Alert, Button, Checkbox, Group, Modal, Stack, Text } from '@mantine/core'
+import { Alert, Button, Checkbox, Group, Modal, Stack, Text, UnstyledButton } from '@mantine/core'
+import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import { useOrganizeRun } from '../useOrganizeRun'
+import { OrganizeChanges, SkippedFiles } from './OrganizeChanges'
 import OrganizeRunStatus from './OrganizeRunStatus'
 import { QueryFeedback } from './QueryFeedback'
 
@@ -25,6 +27,15 @@ export default function OrganizeLibrary({
   })
   const [rename, setRename] = useState(true)
   const [retag, setRetag] = useState(true)
+  // Series whose file changes are toggled from how they start.
+  const [opened, setOpened] = useState<Set<number>>(new Set())
+  const toggle = (id: number) =>
+    setOpened((v) => {
+      const next = new Set(v)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   const plans = plan.data ?? []
   const changes = plans.flatMap((p) => p.changes)
   const renames = changes.filter((c) => c.rename).length
@@ -66,22 +77,42 @@ export default function OrganizeLibrary({
               </Group>
             )}
             {apply.error && <Alert color="red">{String(apply.error)}</Alert>}
-            <Stack gap={6} mah="50vh" style={{ overflowY: 'auto' }}>
+            <Stack gap={2} mah="50vh" style={{ overflowY: 'auto' }}>
               {plans.map((p) => {
                 const moved = p.changes.filter((c) => rename && c.rename).length
                 const tagged = p.changes.filter((c) => retag && c.retag).length
                 if (moved + tagged === 0) return null
+                // One series alone starts open; the toggle then closes it.
+                const open = opened.has(p.seriesId) !== (plans.length === 1)
                 return (
-                  <Group key={p.seriesId} justify="space-between" wrap="nowrap">
-                    <Text size="sm" lineClamp={1}>
-                      {p.title}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                      {[moved && `${moved} moved`, tagged && `${tagged} updated`]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </Text>
-                  </Group>
+                  <div key={p.seriesId}>
+                    <UnstyledButton
+                      w="100%"
+                      py={4}
+                      aria-expanded={open}
+                      onClick={() => toggle(p.seriesId)}
+                    >
+                      <Group justify="space-between" wrap="nowrap" gap="xs">
+                        <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+                          {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+                          <Text size="sm" lineClamp={1}>
+                            {p.title}
+                          </Text>
+                        </Group>
+                        <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                          {[moved && `${moved} moved`, tagged && `${tagged} updated`]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </Text>
+                      </Group>
+                    </UnstyledButton>
+                    {open && (
+                      <Stack gap={6} pl={20} pb="xs">
+                        <OrganizeChanges changes={p.changes} rename={rename} retag={retag} limit={50} />
+                        <SkippedFiles changes={p.changes} />
+                      </Stack>
+                    )}
+                  </div>
                 )
               })}
             </Stack>

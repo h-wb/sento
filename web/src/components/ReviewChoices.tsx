@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Badge, Button, Card, Checkbox, Group, Pagination, Select, Stack, Text } from '@mantine/core'
+import { Alert, Badge, Button, Card, Checkbox, Group, Pagination, Select, Stack, Text, UnstyledButton } from '@mantine/core'
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
@@ -190,23 +190,17 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
         const open = !collapsed.has(f.fileId)
         return (
         <Card key={f.fileId} withBorder padding="sm" style={{ minWidth: 0 }}>
-          <Group
-            justify="space-between"
-            gap="xs"
-            wrap="nowrap"
-            role="button"
-            aria-expanded={open}
-            style={{ cursor: 'pointer' }}
-            onClick={() => toggle(f.fileId)}
-          >
-            <div style={{ minWidth: 0 }}>
-              <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>{fileName(f.path)}</Text>
-              <Text size="xs" c={f.reason && !open ? 'orange' : 'dimmed'} lineClamp={2} style={{ overflowWrap: 'anywhere' }}>
-                {cardSummary(f, i, !open)}
-              </Text>
-            </div>
-            {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
-          </Group>
+          <UnstyledButton w="100%" aria-expanded={open} onClick={() => toggle(f.fileId)}>
+            <Group justify="space-between" gap="xs" wrap="nowrap">
+              <div style={{ minWidth: 0 }}>
+                <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>{fileName(f.path)}</Text>
+                <Text size="xs" c={f.reason && !open ? 'orange' : 'dimmed'} lineClamp={2} style={{ overflowWrap: 'anywhere' }}>
+                  {cardSummary(f, i, !open)}
+                </Text>
+              </div>
+              {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+            </Group>
+          </UnstyledButton>
           {open && <Stack gap="xs" mt="xs">
             <Text size="xs" c="dimmed">{[f.source, f.group].filter(Boolean).join(' · ') || 'Source/group unknown'}</Text>
             {f.reason && <Text size="xs" c="orange">{f.reason}</Text>}
