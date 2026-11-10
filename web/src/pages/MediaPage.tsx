@@ -19,6 +19,7 @@ import { api, type MediaSettings } from '../api'
 import { notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
+import { TemplateInput } from '../components/TemplateInput'
 import OrganizeLibrary from '../components/OrganizeLibrary'
 import { useUnsavedChanges } from '../useUnsavedChanges'
 
@@ -39,11 +40,29 @@ const tokens: [string, string][] = [
   ['{type}', 'Volumes or Chapters (folders)'],
   ['{version}', 'profile of an edition collected with several, empty for its first card (folders)'],
   ['{editionId} {versionId}', 'internal ids that never change (folders)'],
+  ['{Reader Series}', 'the name in readers (ComicInfo Series), e.g. ONE PIECE Colored — folders and file names'],
+]
+
+// The ComicInfo fields readers file and group a copy by; the backend's
+// mediafile.PresentedFields. The first is shown, the rest on request.
+const readerFields: { key: string; label: string; description: string }[] = [
+  {
+    key: 'series',
+    label: 'Series name in readers',
+    description:
+      'Written into each book, so Kavita, Komga and other readers file it under this series. {version} is empty for an edition’s first card. An edition can set its own name in Edit edition. Also usable as {Reader Series} in folder and file names below.',
+  },
+  {
+    key: 'seriesGroup',
+    label: 'Series group',
+    description: 'What the copies of a series share, for readers that build collections from it.',
+  },
 ]
 
 // Folder layout presets; the templates mirror the backend's constants.
 const seriesFolderDefault = '{Series Title} [mangabaka-{seriesId}]'
 const seriesFolderByEdition = '{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}] ({version})'
+const seriesFolderByReader = '{Reader Series} [mangabaka-{seriesId}]'
 const layouts: { value: string; label: string; template: string; seriesFolder?: string }[] = [
   { value: 'edition', label: 'By edition — Standard Edition [en]', template: '{edition} [{lang}] ({version})' },
   {
@@ -51,6 +70,12 @@ const layouts: { value: string; label: string; template: string; seriesFolder?: 
     label: 'One series folder per edition and version — ONE PIECE [Standard Edition][en] (Colored)',
     template: '',
     seriesFolder: seriesFolderByEdition,
+  },
+  {
+    value: 'readerFolders',
+    label: 'One folder per name in readers — ONE PIECE [mangabaka-377] beside ONE PIECE Colored [mangabaka-377]',
+    template: '',
+    seriesFolder: seriesFolderByReader,
   },
   { value: 'type', label: 'By type, then edition — Volumes/Standard Edition [en]', template: '{type}/{edition} [{lang}] ({version})' },
   { value: 'flat', label: 'Flat — everything in the series folder', template: '' },
@@ -70,6 +95,28 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
   const [form, setForm] = useState<MediaSettings>(initial)
   const [saved, setSaved] = useState(false)
   const [organizing, setOrganizing] = useState(false)
+  const [moreReaderFields, setMoreReaderFields] = useState(false)
+  const setReaderField = (key: string, template: string) =>
+    set({ readerFields: { ...form.readerFields, [key]: template } })
+  // The sample edition, and a second card of it collected as "Colored".
+  const readerPreview = (key: string) => {
+    const sample = preview.data?.reader[key]
+    if (!sample) return undefined
+    return sample.colored !== sample.first
+      ? `${sample.first} · a “Colored” card: ${sample.colored}`
+      : sample.first
+  }
+  const readerInput = (f: (typeof readerFields)[number]) => (
+    <TemplateInput
+      key={f.key}
+      label={f.label}
+      description={f.description}
+      value={form.readerFields[f.key] ?? ''}
+      preview={readerPreview(f.key)}
+      error={preview.data?.reader[f.key]?.error}
+      onChange={(v) => setReaderField(f.key, v)}
+    />
+  )
   const set = (patch: Partial<MediaSettings>) => {
     setForm((f) => ({ ...f, ...patch }))
     setSaved(false)
@@ -106,8 +153,21 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
 
       <div className="settingsLayout">
         <fieldset className="formFields" disabled={save.isPending}><Stack>
-          <Title order={4}>File naming</Title>
+          <Title order={4}>Naming</Title>
           <QueryFeedback error={preview.error} onRetry={() => void preview.refetch()} />
+          {readerInput(readerFields[0])}
+          {moreReaderFields ? (
+            readerFields.slice(1).map(readerInput)
+          ) : (
+            <Button
+              variant="subtle"
+              size="compact-sm"
+              w="fit-content"
+              onClick={() => setMoreReaderFields(true)}
+            >
+              Other reader fields: {readerFields.slice(1).map((f) => f.label).join(', ')}
+            </Button>
+          )}
           <TemplateInput
             label="Series folder"
             value={form.seriesFolder}
@@ -270,23 +330,4 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
   )
 }
 
-function TemplateInput({
-  label,
-  value,
-  preview,
-  onChange,
-}: {
-  label: string
-  value: string
-  preview?: string
-  onChange: (v: string) => void
-}) {
-  return (
-    <div>
-      <TextInput label={label} value={value} onChange={(e) => onChange(e.currentTarget.value)} />
-      <Text size="xs" c="dimmed" mt={2} style={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
-        Preview: {preview ?? 'Loading…'}
-      </Text>
-    </div>
-  )
-}
+

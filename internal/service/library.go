@@ -237,7 +237,8 @@ type EditionUpdate struct {
 	Monitored *bool
 	CutoffNum *int64
 	Language  *string
-	OwnSeries *bool
+	// ReaderFields replaces the edition's own reader field templates.
+	ReaderFields *map[string]string
 }
 
 // UpdateEdition applies a partial update under the field rules: the
@@ -249,7 +250,7 @@ func (l *Library) UpdateEdition(ctx context.Context, seriesID, editionID int64, 
 			return err
 		}
 	}
-	if u.CutoffNum == nil && u.Language == nil && u.OwnSeries == nil {
+	if u.CutoffNum == nil && u.Language == nil && u.ReaderFields == nil {
 		return nil
 	}
 	col, err := l.store.GetEdition(ctx, editionID)
@@ -275,8 +276,21 @@ func (l *Library) UpdateEdition(ctx context.Context, seriesID, editionID int64, 
 			return err
 		}
 	}
-	if u.OwnSeries != nil {
-		if err := l.store.SetEditionOwnSeries(ctx, seriesID, editionID, *u.OwnSeries); err != nil {
+	if u.ReaderFields != nil {
+		series, err := l.store.GetSeries(ctx, seriesID)
+		if err != nil {
+			return err
+		}
+		if err := validateReaderFields(*u.ReaderFields, series, *col, nil); err != nil {
+			return err
+		}
+		own := store.ReaderFields{}
+		for key, template := range *u.ReaderFields {
+			if strings.TrimSpace(template) != "" {
+				own[key] = template
+			}
+		}
+		if err := l.store.SetEditionReaderFields(ctx, seriesID, editionID, own); err != nil {
 			return err
 		}
 	}

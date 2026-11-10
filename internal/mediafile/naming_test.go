@@ -72,3 +72,22 @@ func TestRenderRange(t *testing.T) {
 		t.Errorf("volume range: %q", got)
 	}
 }
+
+// Text for a ComicInfo field keeps what a path cannot hold.
+func TestRenderTextKeepsPunctuation(t *testing.T) {
+	tokens := NameTokens{SeriesTitle: "Dragon Quest: The Adventure of Dai", Edition: "Fan Translation", Volume: -1, Chapter: -1}
+	if got := RenderText("{Series Title} {edition} {version}", tokens); got != "Dragon Quest: The Adventure of Dai Fan Translation" {
+		t.Fatalf("RenderText = %q", got)
+	}
+	if got := Render("{Series Title}", tokens); got != "Dragon Quest The Adventure of Dai" {
+		t.Fatalf("Render = %q", got)
+	}
+}
+
+// {Reader Series} renders the presented series name in a path.
+func TestRenderReaderSeries(t *testing.T) {
+	tokens := NameTokens{SeriesTitle: "ONE PIECE", SeriesID: 377, ReaderSeries: "ONE PIECE Colored", Volume: -1, Chapter: -1}
+	if got := Render("{Reader Series} [mangabaka-{seriesId}]", tokens); got != "ONE PIECE Colored [mangabaka-377]" {
+		t.Fatalf("Render = %q", got)
+	}
+}

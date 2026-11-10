@@ -59,12 +59,13 @@ type proposer struct {
 	parses   map[int64]parse.Result     // each file's own name, parsed once
 	packs    map[string][]parse.Range   // a download's bare numbers, by release key
 	stats    map[int64]string           // review: each archive's trusted stat signature
+	coverage map[int64][]store.AssetCoverage
 }
 
 // newProposer reads everything one series' proposals are read against, for
 // review's per-file questions and the pack-level actions alike.
 func newProposer(ctx context.Context, st *store.Store, seriesID int64) (*proposer, error) {
-	p := &proposer{versions: map[int64][]store.CollectedVersion{}, books: map[int64][]store.Book{}, files: map[int64]store.File{}, jobs: map[string]store.QueueItem{}, parses: map[int64]parse.Result{}, packs: map[string][]parse.Range{}}
+	p := &proposer{versions: map[int64][]store.CollectedVersion{}, books: map[int64][]store.Book{}, files: map[int64]store.File{}, jobs: map[string]store.QueueItem{}, parses: map[int64]parse.Result{}, packs: map[string][]parse.Range{}, coverage: map[int64][]store.AssetCoverage{}}
 	var err error
 	if p.titles, err = st.SeriesTitles(ctx, seriesID); err != nil {
 		return nil, err
@@ -108,6 +109,13 @@ func newProposer(ctx context.Context, st *store.Store, seriesID int64) (*propose
 			p.jobs[j.ReleaseKey] = j
 		}
 	}
+	coverage, err := st.Coverage(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range coverage {
+		p.coverage[a.FileID] = append(p.coverage[a.FileID], a)
+	}
 	return p, nil
 }
 
@@ -129,9 +137,11 @@ func (p *proposer) fileParse(f store.File) parse.Result {
 // readsName says whether review reads a file's own name at all: a file
 // that is not manga, a different work that merely contains the title, or
 // nothing tying it to the series says nothing about its books. The job
-// of a name it does read is returned with it.
-func (p *proposer) readsName(f store.File) (parsed parse.Result, job store.QueueItem, fromJob, ok bool) {
-	if !f.NeedsReview || !f.Unrequested || f.Presence == "unavailable" {
+// of a name it does read is returned with it. allowClaimed admits files
+// that already carry (unconfirmed) claims — a bulk re-map reads their
+// names too; proposals stay for unclaimed files.
+func (p *proposer) readsName(f store.File, allowClaimed bool) (parsed parse.Result, job store.QueueItem, fromJob, ok bool) {
+	if !f.NeedsReview || (!f.Unrequested && !allowClaimed) || f.Presence == "unavailable" {
 		return parse.Result{}, store.QueueItem{}, false, false
 	}
 	parsed = p.fileParse(f)
@@ -150,12 +160,12 @@ func (p *proposer) readsName(f store.File) (parsed parse.Result, job store.Queue
 
 // parseFile reads a file's own name against the series: what it claims
 // to hold (ledger, ranges), or why it cannot be read at all.
-func (p *proposer) parseFile(fileID int64) (parsed parse.Result, ledger, evidence string, job store.QueueItem, fromJob, ok bool) {
+func (p *proposer) parseFile(fileID int64, allowClaimed bool) (parsed parse.Result, ledger, evidence string, job store.QueueItem, fromJob, ok bool) {
 	f, exists := p.files[fileID]
 	if !exists {
 		return parse.Result{}, "", "", store.QueueItem{}, false, false
 	}
-	parsed, job, fromJob, ok = p.readsName(f)
+	parsed, job, fromJob, ok = p.readsName(f, allowClaimed)
 	if !ok {
 		return parse.Result{}, "", "", store.QueueItem{}, false, false
 	}
@@ -179,7 +189,7 @@ func (p *proposer) parseFile(fileID int64) (parsed parse.Result, ledger, evidenc
 // hint is what the file's own name says it holds even when no edition
 // claims it yet, so review can prefill the numbers.
 func (p *proposer) hint(fileID int64) *store.FileHint {
-	parsed, ledger, _, _, _, ok := p.parseFile(fileID)
+	parsed, ledger, _, _, _, ok := p.parseFile(fileID, false)
 	if !ok || ledger == "" {
 		return nil
 	}
@@ -199,7 +209,7 @@ func (p *proposer) hint(fileID int64) *store.FileHint {
 }
 
 func (p *proposer) propose(fileID int64) *store.ReviewProposal {
-	parsed, ledger, evidence, _, _, ok := p.parseFile(fileID)
+	parsed, ledger, evidence, _, _, ok := p.parseFile(fileID, false)
 	if !ok {
 		return nil
 	}
@@ -341,7 +351,7 @@ func (p *proposer) packNumbers(key string) []parse.Range {
 		if f.Facts.ReleaseKey != key {
 			continue
 		}
-		if parsed, _, _, ok := p.readsName(f); ok {
+		if parsed, _, _, ok := p.readsName(f, false); ok {
 			numbers = append(numbers, parsed.Bare...)
 		}
 	}

@@ -1,17 +1,40 @@
 import { useState } from 'react'
-import { Alert, Button, Group, Select, Stack, Text, TextInput } from '@mantine/core'
+import {
+  Alert,
+  Button,
+  Divider,
+  Group,
+  Select,
+  Stack,
+  Text,
+  TextInput,
+} from '@mantine/core'
+import { useDebouncedValue } from '@mantine/hooks'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../api'
 import type { Edition } from '../types/store'
 import { EditionOrigin } from './Origin'
 import { EditorModal } from './EditorModal'
+import { TemplateInput } from './TemplateInput'
 import { useEditor } from './useEditor'
 import { edited } from './editionText'
 
+// An edition's series name in readers: the library's, its own name after
+// the title, or a template of its own.
+const editionSeriesName = '{Series Title} {edition} {version}'
+type NameChoice = 'library' | 'edition' | 'custom'
+const choiceOf = (template = ''): NameChoice =>
+  !template.trim() ? 'library' : template === editionSeriesName ? 'edition' : 'custom'
+
 export function EditionEditor({
+  seriesID,
   value,
   save,
+  saveReaderFields,
   reset,
   close,
 }: {
+  seriesID: number
   value: Edition
   save: (p: {
     editionName: string
@@ -20,6 +43,7 @@ export function EditionEditor({
     medium: string
     numberingSource: string
   }) => Promise<void>
+  saveReaderFields: (fields: Record<string, string>) => Promise<void>
   reset: () => Promise<void>
   close: () => void
 }) {
@@ -29,9 +53,35 @@ export function EditionEditor({
     value.overrides.includes('publisher') || value.overrides.includes('medium'),
   )
   const edit = useEditor()
+  const savedName = value.readerFields.series ?? ''
+  const [choice, setChoice] = useState<NameChoice>(choiceOf(savedName))
+  const [custom, setCustom] = useState(choiceOf(savedName) === 'custom' ? savedName : '')
+  // "Same as the library" sends an empty template (the backend inherits);
+  // the input shows the library's own template, disabled.
+  const settings = useQuery({ queryKey: ['media-settings'], queryFn: api.mediaSettings })
+  const libraryTemplate = settings.data?.readerFields?.series ?? ''
+  const template = choice === 'library' ? '' : choice === 'edition' ? editionSeriesName : custom
+  const shownTemplate = choice === 'library' ? libraryTemplate : template
+  const readerFields = { ...value.readerFields, series: template }
+  const nameChanged = template !== savedName
+  // What readers will show for each card of the edition, rendered by the
+  // server as files are.
+  const [previewFields] = useDebouncedValue(readerFields, 300)
+  const names = useQuery({
+    queryKey: ['series', seriesID, 'reader-names', value.id, previewFields],
+    queryFn: () => api.readerNames(seriesID, { editionId: value.id, readerFields: previewFields }),
+    placeholderData: (prev) => prev,
+    retry: false,
+  })
+  const nameError = names.error instanceof Error ? names.error.message : undefined
+  const shown = [
+    ...new Set(
+      (names.data ?? []).filter((n) => n.editionId === value.id).map((n) => n.fields.series),
+    ),
+  ]
   return (
     <EditorModal
-      dirty={JSON.stringify(v) !== JSON.stringify(value)}
+      dirty={JSON.stringify(v) !== JSON.stringify(value) || nameChanged}
       busy={edit.busy}
       onClose={close}
       title={'Edit edition'}
@@ -39,7 +89,10 @@ export function EditionEditor({
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          void edit.run(() => save(v))
+          void edit.run(async () => {
+            if (nameChanged) await saveReaderFields(readerFields)
+            await save(v)
+          })
         }}
       >
         <Stack>
@@ -116,6 +169,37 @@ export function EditionEditor({
               onChange={(source) => set({ ...v, numberingSource: source ?? 'manual' })}
             />
           )}
+          <Divider label="In readers" labelPosition="left" mt="xs" />
+          <Select
+            label="Series name in readers"
+            description="The series Kavita, Komga and other readers file this edition under. Give it its own to show it apart from the series’ other editions; existing files change when you organize them."
+            data={[
+              { value: 'library', label: 'Same as the library (Settings → Media)' },
+              { value: 'edition', label: 'Series and edition name' },
+              { value: 'custom', label: 'Custom…' },
+            ]}
+            value={choice}
+            disabled={edit.busy}
+            onChange={(c) => setChoice((c ?? 'library') as NameChoice)}
+          />
+          <TemplateInput
+            label="Series name template"
+            description={
+              choice === 'library'
+                ? 'The library’s template from Settings → Media; pick another choice above to override it for this edition.'
+                : 'Plain text, or tokens such as {Series Title}, {edition}, {lang} and {version}.'
+            }
+            value={shownTemplate}
+            preview={shown.map((n) => `“${n}”`).join(' · ')}
+            error={nameError}
+            disabled={edit.busy || choice === 'library'}
+            placeholder={choice === 'custom' ? 'A fixed name, or {tokens}' : undefined}
+            onChange={(v) => {
+              // Editing the preset by hand makes it a custom template.
+              if (choice !== 'custom') setChoice('custom')
+              setCustom(v)
+            }}
+          />
           {edit.error && <Alert color="red">{edit.error}</Alert>}
           <Group justify="space-between">
             {(v.syncState === 'linked' || v.syncState === 'stale') && (

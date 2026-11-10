@@ -154,6 +154,15 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 				if f.Hash != "" && f.Hash != digests[f.ID] {
 					return nil, "", nil, apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
 				}
+				// Record the signature the fingerprint was just read under, as
+				// a scan does, so later previews trust it instead of re-reading
+				// the archive. The write is guarded by the hash and only a
+				// settled signature is recorded.
+				if sig != "" && digests[f.ID] != "" {
+					if err = st.SetFileHashStat(ctx, f.ID, digests[f.ID], sig); err != nil {
+						return nil, "", nil, err
+					}
+				}
 			}
 			// Legacy files may have no fingerprint yet. A known fingerprint
 			// must match the evidence, never be renewed by confirmation.

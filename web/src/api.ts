@@ -7,8 +7,10 @@ import type {
   ReviewFileOutcome,
   FileChange,
   HealthReport,
+  CopyReaderNames,
   LibraryOrganizeRequest,
   LibraryOrganizeStatus,
+  ReaderNamesRequest,
   ReleaseFileMatch,
   RemovedSeries,
   SeriesOrganizePlan,
@@ -332,6 +334,13 @@ export const api = {
       body: JSON.stringify({ profileId }),
     }),
   refreshSeries: (id: number) => request<unknown>(`/series/${id}/refresh`, { method: 'POST' }),
+  // What readers show for each card, or would with an edition's unsaved
+  // reader templates.
+  readerNames: (id: number, body: ReaderNamesRequest = {}) =>
+    request<CopyReaderNames[]>(`/series/${id}/reader-names`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   updateEdition: (id: number, cid: number, patch: EditionPatch) =>
     request<void>(`/series/${id}/editions/${cid}`, {
       method: 'PUT',

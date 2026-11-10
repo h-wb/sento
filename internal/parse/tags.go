@@ -130,7 +130,7 @@ func classifySegment(text string) segmentHints {
 
 	// Compound segment ("FULL COLOR Digital Colored Comics"): the shared
 	// vocabulary scanner, same one the free-text pass uses.
-	h = scanTags(lower)
+	h = scanTags(lower, true)
 	languages := scanLanguages(lower, languageTags)
 	if languages.language != "" {
 		h.language = languages.language
@@ -183,9 +183,12 @@ func scanLanguages(text string, vocab map[string]string) segmentHints {
 // already-lowercased text. Matching is word-boundary aware (so "raw" never
 // fires inside "drawback", "color" not inside "discolored"). It is the one
 // place this vocabulary lives: classifySegment runs it on a delimited
-// segment, and parseInto runs it on free text, so a tag means the same
-// thing whether or not it sits in brackets.
-func scanTags(lower string) segmentHints {
+// segment (delimited=true), and parseInto runs it on free text, so a tag
+// means the same thing whether or not it sits in brackets — except that a
+// color word inside a delimited segment only claims color when the whole
+// segment does (segmentColorClaim): a group name like "Colored Council" is
+// the group, not a color claim.
+func scanTags(lower string, delimited bool) segmentHints {
 	var h segmentHints
 	tokens := strings.FieldsFunc(lower, func(r rune) bool {
 		return r == ' ' || r == ',' || r == '/' || r == ';'
@@ -205,6 +208,9 @@ func scanTags(lower string) segmentHints {
 	// Edition words come from the one vocabulary (edition.go); the flags
 	// are what custom formats can test.
 	claim := ReadEdition(scanned)
+	if delimited && claim.Color && !segmentColorClaim(scanned) {
+		claim.Color = false
+	}
 	for _, k := range claim.Regroup {
 		if k == "deluxe" {
 			h.edition.Deluxe = true

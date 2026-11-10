@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { activityFixture } from './activity-fixtures'
-import { reviewBook, reviewFile } from './review-choice-fixtures'
+import { reviewBook, reviewFile, reviewScore } from './review-choice-fixtures'
 
 test('global activity reviews files in place and confirms an uncertain download without submitting twice', async ({
   page,
@@ -89,8 +89,10 @@ test('global activity reviews files in place and confirms an uncertain download 
           path: '/library/review/Volume 1.cbz',
           needsReview: true,
           // The file's own name says nothing about language; the release
-          // it came from advertised en, so review prefills that.
-          facts: mapped ? { title: 'Volume 1.cbz', language: 'en', group: '1r0n' } : { title: 'Volume 1.cbz' },
+          // it came from advertised en, so review prefills that. Keep the
+          // response stable across the apply: a facts change would rebuild
+          // the preview request and remount the choices (losing the receipt).
+          facts: { title: 'Volume 1.cbz' },
           claims: { language: 'en', group: '1r0n' },
         },
       ],
@@ -111,6 +113,7 @@ test('global activity reviews files in place and confirms an uncertain download 
       },
     }),
   )
+  await page.route('**/api/v1/series/901/versions/*/files/301/score', (route) => route.fulfill({ json: reviewScore }))
   await page.route('**/api/v1/series/901/review/choices/preview', (route) => route.fulfill({ json: {
     token: 'review-token', files: [reviewFile(301, [reviewBook(ref, 'volume 1')])],
   } }))

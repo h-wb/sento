@@ -28,6 +28,10 @@ func TestReadEdition(t *testing.T) {
 		{"Full Color Edition", nil, "", "Full Color Edition", true, false},
 		// Colored alone is a colorization, not the color edition.
 		{"Dragon Ball v13 (Colored) (Fan)", nil, "", "", true, false},
+		// A group name containing the word is the group, not a color claim.
+		{"Vagabond v01 (Colored Council)", nil, "", "", false, false},
+		{"Berserk v41 (Colored) (Colored Council)", nil, "", "", true, false},
+		{"Berserk v41 (Color Edition)", nil, "", "Color Edition", true, false},
 		{"[ENG] One Piece - Vol. 106 (FULL COLOR Digital Colored Comics)", nil, "", "", true, false},
 		{"Deluxe Box Set Edition", []string{"deluxe"}, "", "Deluxe Edition", false, true},
 		{"Box Set Edition", nil, "", "", false, true},
@@ -40,7 +44,7 @@ func TestReadEdition(t *testing.T) {
 		}
 	}
 	// Only the color edition's own name names it.
-	for name, want := range map[string]bool{"Full Color Edition": true, "Dragon Ball - Full Color - Vols. 01 - 16": true, "Dragon Ball v13 (Colored)": false, "Bleach - Digital Colored Comics v01-74": false} {
+	for name, want := range map[string]bool{"Full Color Edition": true, "Dragon Ball - Full Color - Vols. 01 - 16": true, "Dragon Ball v13 (Colored)": false, "Bleach - Digital Colored Comics v01-74": false, "Berserk v41 (Color Edition)": true, "Vagabond v01 (Colored Council)": false} {
 		if got := ReadEdition(name).ColorEdition; got != want {
 			t.Errorf("%s: color edition %v, want %v", name, got, want)
 		}

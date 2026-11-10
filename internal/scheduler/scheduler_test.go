@@ -138,16 +138,18 @@ func TestManualRunDuringTickRunsAfterIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the first tick", func() bool { return runs.Load() == 1 })
+	// Asked for in this goroutine, so all three are held before the tick is
+	// let go: through Run they would start on their own, and one arriving
+	// after the follow-up run had ended would start a third.
 	for range 3 {
-		if err := s.Run("slow"); err != nil {
-			t.Fatal(err)
-		}
+		s.runTask(context.Background(), s.tasks[0], true)
 	}
-	waitFor(t, "the requests to be held", func() bool {
-		s.tasks[0].mu.Lock()
-		defer s.tasks[0].mu.Unlock()
-		return s.tasks[0].again
-	})
+	s.tasks[0].mu.Lock()
+	held := s.tasks[0].again
+	s.tasks[0].mu.Unlock()
+	if !held {
+		t.Fatal("a run asked for mid-tick was not held")
+	}
 	close(release)
 	waitFor(t, "one follow-up run", func() bool { return runs.Load() == 2 && !status(s, "slow").Running })
 	time.Sleep(20 * time.Millisecond)

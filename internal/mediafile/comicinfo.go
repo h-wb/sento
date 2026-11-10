@@ -33,6 +33,7 @@ type ComicInfo struct {
 	Format          string   `xml:"Format,omitempty"`
 	Manga           string   `xml:"Manga,omitempty"`
 	ScanInformation string   `xml:"ScanInformation,omitempty"`
+	SeriesGroup     string   `xml:"SeriesGroup,omitempty"`
 	AgeRating       string   `xml:"AgeRating,omitempty"`
 	GTIN            string   `xml:"GTIN,omitempty"`
 	// Extra keeps elements Sento does not model (Pages, Characters,
@@ -65,17 +66,21 @@ func ParseComicInfo(data []byte) (*ComicInfo, error) {
 
 // Merge overlays Sento's fields onto an existing ComicInfo: Sento wins
 // where it has a value, existing values survive elsewhere (spec.md §11.3).
-// Numbering Sento always says, including "no number": a source's own
-// guess (often a year mis-parse) must not survive a volume's absent
-// Number or a chapter's absent Volume.
+// Numbering and the presented fields Sento always says, including "none":
+// a source's own guess (often a year mis-parse) must not survive a
+// volume's absent Number or a chapter's absent Volume, nor a name it gave
+// the series compete with the one chosen for readers.
 func Merge(existing, sento ComicInfo) ComicInfo {
 	out := existing
 	out.Number, out.Volume = sento.Number, sento.Volume
+	for _, f := range PresentedFields {
+		*f.field(&out) = *f.field(&sento)
+	}
 	for _, f := range []struct {
 		dst *string
 		v   string
 	}{
-		{&out.Title, sento.Title}, {&out.Series, sento.Series}, {&out.LocalizedSeries, sento.LocalizedSeries},
+		{&out.Title, sento.Title}, {&out.LocalizedSeries, sento.LocalizedSeries},
 		{&out.Count, sento.Count},
 		{&out.Summary, sento.Summary}, {&out.Notes, sento.Notes},
 		{&out.Year, sento.Year}, {&out.Month, sento.Month}, {&out.Day, sento.Day},

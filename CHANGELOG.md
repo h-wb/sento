@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.7.0](https://github.com/h-wb/sento/compare/v0.6.0...v0.7.0) (2026-11-09)
+
+
+### Features
+
+* **library:** an edition can show as its own series in readers ([#64](https://github.com/h-wb/sento/issues/64)) ([ea26648](https://github.com/h-wb/sento/commit/ea2664836e1d3055bc62a5eced115837a6e82387))
+* **library:** name the collected version in ComicInfo Series ([#62](https://github.com/h-wb/sento/issues/62)) ([2b6cb3f](https://github.com/h-wb/sento/commit/2b6cb3f29506fb2050c899c8a40adc2514cb98c2))
+* **library:** presented reader fields name a copy in readers ([#71](https://github.com/h-wb/sento/issues/71)) ([7bf60a0](https://github.com/h-wb/sento/commit/7bf60a0abac39cbeadc970768fa6dea5bc8d946b))
+* **library:** version in the series folder template — one top folder per collected version ([#57](https://github.com/h-wb/sento/issues/57)) ([dd165d8](https://github.com/h-wb/sento/commit/dd165d89f853dbb357f426aa81d10edc1288d9d2))
+* **library:** version token in file names — readers that parse file names see two series ([#61](https://github.com/h-wb/sento/issues/61)) ([a08898a](https://github.com/h-wb/sento/commit/a08898aeca2d6e8e46554a018b829697baf09c69))
+* **scan:** re-derive filename facts when the parser version moves on ([#80](https://github.com/h-wb/sento/issues/80)) ([133c486](https://github.com/h-wb/sento/commit/133c486d38e5140a333b31cc83d365b789a023c2))
+* **web:** edition reader name as a dropdown over the shared template input ([#74](https://github.com/h-wb/sento/issues/74)) ([f711a73](https://github.com/h-wb/sento/commit/f711a734e86626a7233e099729247c091ca592e2))
+
+
+### Bug Fixes
+
+* **deps:** update go dependencies ([#65](https://github.com/h-wb/sento/issues/65)) ([8480542](https://github.com/h-wb/sento/commit/84805429a140f956f2113d8ea12b007049b59769))
+* **importer:** record every file of a pack when one waits for review ([#72](https://github.com/h-wb/sento/issues/72)) ([510f3b2](https://github.com/h-wb/sento/commit/510f3b292ebbb539e8a1185518194569d91489c9))
+* **importer:** skip recorded pack files when a parked job is retried ([#73](https://github.com/h-wb/sento/issues/73)) ([5992202](https://github.com/h-wb/sento/commit/5992202576dae6f7f97d5f15aaff614d0876fa84))
+* **library:** a volume book carries Volume only in ComicInfo ([#67](https://github.com/h-wb/sento/issues/67)) ([97cece3](https://github.com/h-wb/sento/commit/97cece3b930e6ea00967a59f0cfc7d07450c1164))
+* **library:** an own-series-only edition patch applied nothing ([#66](https://github.com/h-wb/sento/issues/66)) ([dae3920](https://github.com/h-wb/sento/commit/dae3920ab16371f129115a7648e07757a16d9253))
+* **parser:** a group name containing a color word no longer claims color ([#75](https://github.com/h-wb/sento/issues/75)) ([edc5620](https://github.com/h-wb/sento/commit/edc5620d2ae67516b2885af86daf2224f994668f))
+* **review:** match whole release can re-map a pack's unconfirmed import claims ([#77](https://github.com/h-wb/sento/issues/77)) ([27c707d](https://github.com/h-wb/sento/commit/27c707d845decc054df9913f4f3952e780535af5))
+* **store:** check presence against the folder a file lives in ([#63](https://github.com/h-wb/sento/issues/63)) ([032802d](https://github.com/h-wb/sento/commit/032802d681e0ac9ed7b48ec00d7c007c167c2906))
+* **store:** judge presence by the edition folder, not a nested book folder ([#68](https://github.com/h-wb/sento/issues/68)) ([d563aac](https://github.com/h-wb/sento/commit/d563aacb4b7bff15f15f1a2348916d1d747e94aa))
+
+
+### Performance Improvements
+
+* **library:** batch organize planning and lift the 120s cap on per-series organize ([#58](https://github.com/h-wb/sento/issues/58)) ([065b0d3](https://github.com/h-wb/sento/commit/065b0d342ec1b3cbaa116e069c0b2d89afa1f32d))
+* **review:** match dialogs load fast and open decluttered ([#76](https://github.com/h-wb/sento/issues/76)) ([0c3fec5](https://github.com/h-wb/sento/commit/0c3fec596966079f024984fa98e792d96ee3ca41))
+
 ## [0.6.0](https://github.com/h-wb/sento/compare/v0.5.0...v0.6.0) (2026-11-09)
 
 

@@ -137,12 +137,21 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	// Interactive searches fan out to live sources (some behind Cloudflare)
-	// and may auto-resolve bindings on first run.
-	r.Use(middleware.Timeout(120 * time.Second))
-
 	r.Route("/api/v1", func(r chi.Router) {
-		s.mountAPI(r)
+		// Reviewing a large pack runs long by design, so it sits outside
+		// the global request cap: its first preview may fingerprint every
+		// archive, and each file's signature is recorded as it is read, so a
+		// retry after a disconnect makes progress instead of starting over.
+		r.Post("/series/{id}/review/match", s.handleMatchRelease)
+		r.Post("/series/{id}/review/resolve", s.handleResolveFileReviews)
+		r.Post("/series/{id}/review/choices/preview", s.handleReviewChoicesPreview)
+		r.Post("/series/{id}/review/choices", s.handleReviewChoicesApply)
+		r.Group(func(r chi.Router) {
+			// Interactive searches fan out to live sources (some behind
+			// Cloudflare) and may auto-resolve bindings on first run.
+			r.Use(middleware.Timeout(120 * time.Second))
+			s.mountAPI(r)
+		})
 	})
 
 	s.mountStatic(r)

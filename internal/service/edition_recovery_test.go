@@ -358,6 +358,40 @@ func TestFileFactsAreSpecificAndManualCorrectionsSurviveRetry(t *testing.T) {
 	}
 }
 
+// An imported archive records the stat signature it was fingerprinted under,
+// so a review preview trusts the fingerprint instead of re-reading every page.
+func TestRecordAssetRecordsStatSignatureWithFingerprint(t *testing.T) {
+	t.Parallel()
+	_, st, id, c, ws, version := modelFixture(t)
+	ctx := context.Background()
+	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+	snap, _ := json.Marshal(ReleaseCandidate{Title: "ONE PIECE v01 [Advertised]"})
+	path := filepath.Join(t.TempDir(), "ONE PIECE v01 [Actual].cbz")
+	if err := os.WriteFile(path, []byte("bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig := statSignature(info)
+	if sig == "" {
+		t.Skip("platform reports no inode metadata")
+	}
+	item := store.QueueItem{SeriesID: id, Protocol: "torrent", ReleaseKey: "sig", Snapshot: snap}
+	plan := []store.BookRef{modelRef(c, ws[0], version)}
+	if err := im.recordAsset(ctx, item, path, plan, parse.Result{Group: "Actual", Language: "en"}); err != nil {
+		t.Fatal(err)
+	}
+	fs, err := st.ListFiles(ctx, id)
+	if err != nil || len(fs) != 1 {
+		t.Fatalf("recorded files: %+v %v", fs, err)
+	}
+	if fs[0].Hash == "" || fs[0].HashStat != sig {
+		t.Fatalf("import did not record the signature with the fingerprint: hash=%q hashStat=%q want %q", fs[0].Hash, fs[0].HashStat, sig)
+	}
+}
+
 func TestChapterExtrasZeroAndReadOnlyLedger(t *testing.T) {
 	t.Parallel()
 	lib, st, id, _, _, _ := modelFixture(t)

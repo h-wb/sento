@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Alert, Badge, Button, Card, Checkbox, Group, Pagination, Select, Stack, Text } from '@mantine/core'
+import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import { notify } from '../ui'
-import type { FileScore, ReviewBookPlan, ReviewPlan, ReviewPlanRequest, ReviewFileChoice, ReviewFileOutcome } from '../types/service'
+import type { FileScore, ReviewBookPlan, ReviewPlan, ReviewPlanRequest, ReviewFileChoice, ReviewFileOutcome, ReviewFilePlan } from '../types/service'
 import { QueryFeedback } from './QueryFeedback'
 import { fileName } from './editionText'
 
@@ -14,6 +15,8 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void
   onBusyChange?: (busy: boolean) => void
 }
+
+const pageSize = 25
 
 const bookKey = (b: { versionId?: number; bookId?: number }) => `${b.versionId}:${b.bookId}`
 
@@ -56,7 +59,12 @@ export function ReviewChoices(props: Props) {
     refetchOnReconnect: false,
   })
   if (!preview.data || preview.isFetching) return (
-    <QueryFeedback pending={preview.isPending || preview.isFetching} error={preview.error} onRetry={() => void preview.refetch()} />
+    <Stack gap="sm">
+      <Text size="sm" c="dimmed">
+        Checking {props.request.files.length} incoming {props.request.files.length === 1 ? 'archive' : 'archives'} — a large pack takes a moment the first time.
+      </Text>
+      <QueryFeedback pending={preview.isPending || preview.isFetching} error={preview.error} onRetry={() => void preview.refetch()} />
+    </Stack>
   )
   return <Choices key={preview.data.token} {...props} plan={preview.data} refresh={() => preview.refetch()} />
 }
@@ -68,6 +76,11 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
   const [error, setError] = useState('')
   const [page, setPage] = useState(1)
   const [receipt, setReceipt] = useState<ReviewFileOutcome[] | null>(null)
+  // Big packs open as one-line summaries; a single page or the one-file
+  // editor opens expanded, where every choice is already on screen.
+  const [collapsed, setCollapsed] = useState<Set<number>>(
+    () => new Set(plan.files.length > pageSize ? plan.files.map((f) => f.fileId) : []),
+  )
   const qc = useQueryClient()
   const dirty = JSON.stringify(choices) !== JSON.stringify(defaults)
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
@@ -109,6 +122,25 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
   }
   const trash = choices.filter((c) => c.disposition === 'trash').length
   const later = choices.filter((c) => c.disposition === 'later').length
+  // One line per archive: what it would supply, and what happens to its
+  // bytes after review. Shown on the collapsed card as well.
+  const cardSummary = (f: ReviewFilePlan, i: number, withReason: boolean) => {
+    const parts: string[] = []
+    for (const b of f.books) {
+      if (!using(i, b.book)) continue
+      parts.push(b.currentSelected ? `Keep ${b.label}` : b.owners.some((o) => o.present) ? `Use incoming instead for ${b.label}` : `Import ${b.label}`)
+    }
+    const d = choices[i].disposition
+    parts.push(d === 'trash' ? 'Move to trash' : d === 'later' ? 'Leave for later' : choices[i].use.length ? 'Keep archive' : 'Keep unused file')
+    if (withReason && f.reason) parts.push(f.reason)
+    return parts.join(' · ')
+  }
+  const toggle = (fileId: number) => setCollapsed((v) => {
+    const next = new Set(v)
+    if (next.has(fileId)) next.delete(fileId)
+    else next.add(fileId)
+    return next
+  })
   const apply = async () => {
     setBusy(true)
     setError('')
@@ -140,21 +172,42 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
       <Button onClick={() => void applied()}>Done</Button>
     </Stack>
   )
+  const from = (page - 1) * pageSize + 1
+  const to = Math.min(page * pageSize, plan.files.length)
   return (
     <Stack gap="sm">
       <Text size="sm">Choose which copies to use. Existing copies stay selected unless you explicitly choose a replacement.</Text>
+      <Text size="sm" fw={500} role="status">Import {imports} · Keep existing {kept} · Replace {replacements} · Trash {trash} · Still missing {missing} · Left for later {later}</Text>
       {plan.files.length > 1 && <Group gap="xs">
         <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setChoices(initialChoices(plan, request, true))}>Import missing; keep existing</Button>
         <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setChoices((v) => v.map((c, i) =>
           !c.use.length && !plan.files[i].trashReason ? { ...c, disposition: 'trash' } : c,
         ))}>Trash unused incoming files</Button>
       </Group>}
-      {plan.files.slice((page - 1) * 25, page * 25).map((f, offset) => {
-        const i = (page - 1) * 25 + offset
+      {plan.files.length > pageSize && <Text size="xs" c="dimmed">Showing {from}–{to} of {plan.files.length} files. Expand an archive to choose its books and its fate.</Text>}
+      {plan.files.slice((page - 1) * pageSize, page * pageSize).map((f, offset) => {
+        const i = (page - 1) * pageSize + offset
+        const open = !collapsed.has(f.fileId)
         return (
         <Card key={f.fileId} withBorder padding="sm" style={{ minWidth: 0 }}>
-          <Stack gap="xs">
-            <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>{fileName(f.path)}</Text>
+          <Group
+            justify="space-between"
+            gap="xs"
+            wrap="nowrap"
+            role="button"
+            aria-expanded={open}
+            style={{ cursor: 'pointer' }}
+            onClick={() => toggle(f.fileId)}
+          >
+            <div style={{ minWidth: 0 }}>
+              <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>{fileName(f.path)}</Text>
+              <Text size="xs" c={f.reason && !open ? 'orange' : 'dimmed'} lineClamp={2} style={{ overflowWrap: 'anywhere' }}>
+                {cardSummary(f, i, !open)}
+              </Text>
+            </div>
+            {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+          </Group>
+          {open && <Stack gap="xs" mt="xs">
             <Text size="xs" c="dimmed">{[f.source, f.group].filter(Boolean).join(' · ') || 'Source/group unknown'}</Text>
             {f.reason && <Text size="xs" c="orange">{f.reason}</Text>}
             {f.books.map((b) => (
@@ -195,12 +248,11 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
             />
             {f.trashReason && <Text size="xs" c="dimmed">{f.trashReason}</Text>}
             {f.books.length > 1 && <Text size="xs" c="dimmed">Choices select which books this archive supplies. The archive stays intact.</Text>}
-          </Stack>
+          </Stack>}
         </Card>
         )
       })}
-      {plan.files.length > 25 && <Pagination total={Math.ceil(plan.files.length / 25)} value={page} onChange={setPage} size="sm" />}
-      <Text size="sm" fw={500} role="status">Import {imports} · Keep existing {kept} · Replace {replacements} · Trash {trash} · Still missing {missing} · Left for later {later}</Text>
+      {plan.files.length > pageSize && <Pagination total={Math.ceil(plan.files.length / pageSize)} value={page} onChange={setPage} size="sm" />}
       {trash > 0 && <Text size="xs" c="dimmed">Only the selected incoming archives move to recoverable trash for 30 days. Download-client payloads stay in place.</Text>}
       {error && <Alert color="red">{error}<Button size="xs" variant="subtle" onClick={() => void refresh()}>Refresh preview</Button></Alert>}
       <Button loading={busy} disabled={choices.every((c) => c.disposition === 'later')} onClick={() => void apply()}>Apply choices</Button>

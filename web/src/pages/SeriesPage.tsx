@@ -135,6 +135,7 @@ export default function SeriesPage() {
     <EditionManager
       section={section}
       seriesID={seriesID}
+      seriesTitle={series?.title ?? ''}
       editions={editions}
       volumeCount={series?.finalVolume ?? 0}
       catalogUrl={`https://mangabaka.org/${series?.mangabakaId ?? ''}`}

@@ -13,6 +13,12 @@ import (
 	"strings"
 )
 
+// Version is the parser revision stamped on files whose filename-derived
+// facts were read from them. Bump it whenever parser output for existing
+// names may change (the corpus locks behavior; this marks facts stale):
+// scans re-read those names when a file's stored version is older.
+const Version = 1
+
 func Parse(name string, ch Channel) Result {
 	res := Result{ContentType: ContentManga, Confidence: 1}
 	cleaned := preClean(name)
@@ -114,7 +120,7 @@ func parseInto(cleaned string, ch Channel, res *Result, anchoredTitle string, kn
 	// "Digital Colored Comics", scene-style "...RAW") — fold them through the
 	// same vocabulary scanner as bracketed segments. Hint-only: it never cuts
 	// the title (that's the keyword/number passes below).
-	res.fold(scanTags(lowerFree), freeText)
+	res.fold(scanTags(lowerFree, false), freeText)
 
 	for _, kw := range []string{"complete", "completed", "batch", "oneshot"} {
 		if i := indexWord(lowerFree, kw); i >= 0 {

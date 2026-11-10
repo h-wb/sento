@@ -324,7 +324,7 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	cat := newCatalogCache(im.store, item.SeriesID)
 	src := releaseSource(item)
 	group := src.Group
-	info := im.fileInfo(ctx, cat, series, slots, src)
+	info := im.fileInfo(ctx, cat, ms, series, slots, src)
 	fileName := mediafile.Sanitize(item.Title) + ".cbz"
 	if ms.RenameImports {
 		fileName = im.bookFileName(ctx, cat, ms, series, slots, group, ".cbz")
@@ -402,6 +402,10 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	if err != nil {
 		return err
 	}
+	// One archive waiting on a person must not abort the pack: the job is
+	// not re-run once it waits for review, so every file of the payload is
+	// recorded here, and the job is held for review at the end.
+	waiting := 0
 	for _, archive := range archives {
 		if !mediafile.IsArchive(archive.name) {
 			continue
@@ -417,6 +421,10 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 		}
 		covered, e := im.importArchive(ctx, item, ms, series, seriesDir, titles, expected, archive, releaseNamed)
 		if e != nil {
+			if errors.Is(e, errAssetNeedsReview) {
+				waiting++
+				continue
+			}
 			return e
 		}
 		for _, sl := range covered {
@@ -430,6 +438,9 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			return nil
 		}
 		return fmt.Errorf("partial import: verified %d of %d expected books; unmatched files need review", len(linked), len(expected))
+	}
+	if waiting > 0 {
+		return fmt.Errorf("%w (%d %s recorded for review)", errAssetNeedsReview, waiting, plural(waiting, "file"))
 	}
 	return nil
 }
@@ -456,7 +467,14 @@ func (im *Importer) alreadyImported(ctx context.Context, item store.QueueItem, e
 		return nil, nil, err
 	}
 	for _, f := range recorded {
-		if f.Facts.ReleaseKey == item.ReleaseKey && f.ReviewAction != "" && f.Hash != "" {
+		if f.Facts.ReleaseKey != item.ReleaseKey || f.Hash == "" {
+			continue
+		}
+		// Reviewed files keep their recorded row, and so do files still
+		// waiting in review: re-importing either would install the same
+		// bytes at a new path (a waiting file lives in review/) and record
+		// a duplicate. Archives with no recorded row are still imported.
+		if f.ReviewAction != "" || (f.NeedsReview && f.Presence == "present") {
 			hashes[f.Hash] = true
 		}
 	}
@@ -538,7 +556,7 @@ func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, ms 
 	if ms.WriteComicInfo {
 		came := releaseSource(item)
 		came.Group = res.Group
-		err = installProcessed(src, dest, hash, im.fileInfo(ctx, cat, series, contents, came))
+		err = installProcessed(src, dest, hash, im.fileInfo(ctx, cat, ms, series, contents, came))
 	} else {
 		err = installAsset(src, dest, hash, ms.AlwaysCopy)
 	}

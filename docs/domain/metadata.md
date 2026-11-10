@@ -7,7 +7,9 @@ after a reinstall or a rescan, without guessing from its name (D17).
 
 Only facts are written, never preferences: the release profile and the card
 a file fills are choices you make and can change; what the file is does not
-change.
+change. Presentation — the name a reader files the copy under — is a choice
+too, so it is written but never read back for identity (D18): a rescan
+adopts a file from its `Notes` line, not from its `Series`.
 
 ## Where each fact goes
 
@@ -18,7 +20,7 @@ elements they do not know.
 
 | Fact | Field | Example |
 | --- | --- | --- |
-| Series | `Series`, `Web`; `Notes` `mangabaka:` | `Nausicaä of the Valley of the Wind` |
+| Series | `Web`; `Notes` `mangabaka:` (the name a reader files it under is the presented `Series` field, below) | `Nausicaä of the Valley of the Wind` |
 | Edition, a numbering | `Format`: what its name says it is, as `parse.ReadEdition` reads it; nothing for a standard edition. `Notes` `edition:` and, for a catalog edition, `mb-edition:` | `Deluxe`, `Box Set`, `Full Color` |
 | Language | `LanguageISO` | `en` |
 | Book | `Volume` for a volume book, `Number` for a chapter — never both, and a reader that files by ComicInfo lists the book once; `Title` for several; `Notes` `ledger:`, `books:`, `work:` | `Volumes 1–3` |
@@ -28,12 +30,28 @@ elements they do not know.
 | Variant facts | `Notes` `flags:` (the release's flags, as profiles match them) | `flags:colored,digital` |
 | The release | `Notes` `release:`, `via:`, `site:` | `release:"Nausicaa Deluxe v01 (Digital)"` |
 
-`Series` stays the series' title, so a reader keeps one series per work;
-folders keep editions apart (spec §11.2). An edition marked as its own
-series appends its name, and a collected version beside the default
-appends its after it (`ONE PIECE Standard Edition Colored`): a reader
-that files by ComicInfo rather than folders (Kavita) keeps copies apart
-only when the series name says which is which.
+## Presented fields: the name a reader files a copy under
+
+`Series` and `SeriesGroup` are presented fields (D18): each renders per
+copy from a template — library-wide in Settings → Media, with an optional
+per-edition override in Edit edition — defined in one list in code
+(`mediafile.PresentedFields`). The defaults keep one series per work:
+`Series` = `{Series Title} {version}` (empty version for an edition's
+default, so `ONE PIECE` beside `ONE PIECE Colored`) and `SeriesGroup` =
+`{Series Title}`, so readers that build collections from it still group
+the copies; folders keep editions apart (spec §11.2). A reader that files
+by ComicInfo rather than folders (Kavita) keeps copies apart only when the
+series name says which is which, so an edition can set its own template
+(`{Series Title} {edition} {version}`, or a fixed name); an organize pass
+rewrites the files. A template names a copy, not one book, so it cannot use
+`{volume}`/`{chapter}`/`{group}`/`{isbn}`. On merge the presented fields
+are written exactly — a source's own `Series` never survives — and a
+rescan never reads them back for identity; adoption goes through `Notes`.
+
+`Series` is also a naming token, `{Reader Series}`, for folder and file
+templates (spec §11.2): Komga, which files by folders, and Kavita, which
+files by ComicInfo, then see the same name. Copies that render the same
+series folder share it.
 
 **Published or fan-made.** A file is a fan translation when it came from an
 extension source (a scanlator delivered it) and the release does not name a

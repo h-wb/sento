@@ -95,11 +95,8 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 	if err != nil {
 		return nil, err
 	}
-	if def && editionAware(ms.SeriesFolder) {
-		var versions []store.CollectedVersion
-		if versionAware(ms.SeriesFolder) {
-			versions, _ = sc.store.ListVersions(ctx, seriesID)
-		}
+	if def {
+		versions, _ := sc.store.ListVersions(ctx, seriesID)
 		for _, d := range editionFolders(sc.libraryRoot, series, ms, collections, versions) {
 			if !slices.Contains(dirs, d) {
 				dirs = append(dirs, d)
@@ -161,6 +158,14 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 				return err
 			}
 			if !replaced {
+				if f.ParserVersion < parse.Version {
+					// Same bytes, older parser stamp: re-read the name with
+					// the current parser. Facts only — links, review state and
+					// manual corrections survive the AddFile merge.
+					if err := sc.rederiveFacts(ctx, f, path, titles, series, collections); err != nil {
+						return err
+					}
+				}
 				res.Skipped = append(res.Skipped, path)
 				return nil
 			}
@@ -190,19 +195,29 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 		if ierr == nil {
 			size = info.Size()
 		}
+		// Stat before hashing, through an open descriptor so NFS revalidates
+		// cached attributes; record the signature with the fingerprint so
+		// review previews trust it instead of re-reading the archive.
+		live, serr := statArchive(path)
 		hash, herr := fileHash(path)
 		if herr != nil {
 			return herr
 		}
+		hashStat := ""
+		if serr == nil {
+			hashStat = statSignature(live)
+		}
 		_, aerr := sc.store.AddFile(ctx, store.File{
-			Facts:       facts,
-			Hash:        hash,
-			SeriesID:    seriesID,
-			Path:        path,
-			Size:        size,
-			Provenance:  "library-import",
-			Unrequested: len(links) == 0,
-			NeedsReview: len(links) == 0,
+			Facts:         facts,
+			Hash:          hash,
+			HashStat:      hashStat,
+			SeriesID:      seriesID,
+			Path:          path,
+			Size:          size,
+			Provenance:    "library-import",
+			Unrequested:   len(links) == 0,
+			NeedsReview:   len(links) == 0,
+			ParserVersion: parse.Version,
 		}, parsed, links)
 		if aerr != nil {
 			return aerr
@@ -221,6 +236,28 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 		return nil, err
 	}
 	return res, nil
+}
+
+// rederiveFacts re-reads a known file's name with the current parser after a
+// parser-version bump, updating only the filename-sourced facts (an embedded
+// provenance line still wins, as for a fresh scan). Bytes, hash, links,
+// presence and review state are kept; AddFile's merge preserves manual
+// language/group corrections.
+func (sc *Scanner) rederiveFacts(ctx context.Context, f store.File, path string, titles []string, series *store.Series, collections []store.Edition) error {
+	parsed := parse.ParseAnchored(filepath.Base(path), parse.ChannelFile, titles)
+	facts := store.AssetFacts{Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}, Title: filepath.Base(path), Protocol: f.Provenance, FactsKnown: true, Flags: candidateFlags(ReleaseCandidate{Parse: parsed}), Language: parsed.Language, Group: parsed.Group, Format: strings.TrimPrefix(filepath.Ext(path), "."), Resolution: parsed.Quality.Resolution, Revision: parsed.Version, Digital: parsed.Quality.Digital}
+	if ci := mediafile.ReadComicInfo(path); ci != nil {
+		if p, ok := mediafile.ReadProvenance(ci.Notes); ok && p.MangaBaka == series.MangaBakaID && series.MangaBakaID > 0 {
+			if own := sc.linksFromProvenance(ctx, p, ci.LanguageISO, collections); len(own) > 0 {
+				facts = provenanceFacts(p, ci, path)
+			}
+		}
+	}
+	// A dedicated rewrite, not AddFile: reviewed or manually corrected files
+	// take AddFile's preservation path, which would keep the stale facts.
+	// RewriteFileFacts keeps manual language/group and the review action and
+	// updates only the facts and the parser stamp.
+	return sc.store.RewriteFileFacts(ctx, f.ID, facts, parse.Version)
 }
 
 // replaced reports whether a known file now holds different pages. Reading
@@ -248,6 +285,13 @@ func (sc *Scanner) replaced(ctx context.Context, f store.File, d fs.DirEntry) (b
 		}
 	}
 	if !touched {
+		// A file recorded before signatures existed gets one now, so review
+		// previews stop re-reading it. Only a settled signature is trusted.
+		if f.HashStat == "" {
+			if sig := trustedSignature(live, now); sig != "" {
+				return false, sc.store.SetFileHashStat(ctx, f.ID, f.Hash, sig)
+			}
+		}
 		return false, nil
 	}
 	hash, err := fileHash(f.Path)

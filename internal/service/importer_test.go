@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/h-wb/sento/internal/db/dbtest"
 	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/provider"
@@ -457,16 +459,16 @@ func TestEditionFolders(t *testing.T) {
 			{1, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][en]"),
 			{2, 0}: filepath.Join(root, "Volumes", name+" [Digital Colored Comics][en]"),
 			{3, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][fr]"),
-			// Same name and language as edition 3: told apart, the newer renamed.
-			{4, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][fr] (edition 4)"),
+			// Same render as edition 3: the folder is shared.
+			{4, 0}: filepath.Join(root, "Volumes", name+" [Standard Edition][fr]"),
 			{5, 0}: filepath.Join(root, "Chapters", name+" [Standard Edition][en]"),
 		}},
 		{"one folder per edition and version", perVersion, "", map[folderKey]string{
 			{1, 0}:  filepath.Join(root, "Volumes", name+" [Standard Edition][en]"),
 			{1, 10}: filepath.Join(root, "Volumes", name+" [Standard Edition][en]"), // the default version keeps the edition's
 			{1, 11}: filepath.Join(root, "Volumes", name+" [Standard Edition][en] (Colored)"),
-			// Same name as version 11: told apart, the newer renamed.
-			{1, 12}: filepath.Join(root, "Volumes", name+" [Standard Edition][en] (Colored) (version 12)"),
+			// Same render as version 11: the folder is shared.
+			{1, 12}: filepath.Join(root, "Volumes", name+" [Standard Edition][en] (Colored)"),
 			{2, 0}:  filepath.Join(root, "Volumes", name+" [Digital Colored Comics][en]"),
 			{5, 13}: filepath.Join(root, "Chapters", name+" [Standard Edition][en] (Colored)"),
 		}},
@@ -491,11 +493,33 @@ func TestEditionFolders(t *testing.T) {
 			}
 		}
 	}
-	if err := ValidateMediaSettings(func() MediaSettings { m := perVersion; m.SeriesFolder = "{Series Title} ({version})"; return m }()); err == nil {
-		t.Error("a version token without an edition token was accepted")
+	// Grouping is by rendered name, so a version token needs no edition
+	// token: the default version renders like the series, a named one
+	// gets a sibling folder.
+	if err := ValidateMediaSettings(func() MediaSettings { m := perVersion; m.SeriesFolder = "{Series Title} ({version})"; return m }()); err != nil {
+		t.Errorf("a version token without an edition token was rejected: %v", err)
 	}
 	if err := ValidateMediaSettings(perVersion); err != nil {
 		t.Errorf("a version token beside an edition token was rejected: %v", err)
+	}
+
+	// Folders group by the name in readers: {Reader Series} renders the
+	// presented Series field, so a copy with its own name gets a sibling.
+	byReader := DefaultMediaSettings()
+	byReader.SeriesFolder = "{Reader Series} [mangabaka-{seriesId}]"
+	fanTL := std
+	fanTL.ID = 6
+	fanTL.EditionName = "Fan Translation"
+	fanTL.ReaderFields = store.ReaderFields{"series": "{Series Title} {edition} {version}"}
+	got = editionFolders(root, series(""), byReader, append(slices.Clone(editions), fanTL), colored)
+	if got[folderKey{1, 0}] != filepath.Join(root, name) {
+		t.Errorf("the default copy stays in the series folder, got %q", got[folderKey{1, 0}])
+	}
+	if want := filepath.Join(root, "ONE PIECE Fan Translation [mangabaka-377]"); got[folderKey{6, 0}] != want {
+		t.Errorf("own-name edition in %q, want %q", got[folderKey{6, 0}], want)
+	}
+	if want := filepath.Join(root, "ONE PIECE Colored [mangabaka-377]"); got[folderKey{1, 11}] != want {
+		t.Errorf("colored version in %q, want %q", got[folderKey{1, 11}], want)
 	}
 }
 
@@ -591,17 +615,18 @@ func TestFileInfoNamesVersion(t *testing.T) {
 	}
 	im := NewImporter(st, nil, t.TempDir(), nil)
 	cat := newCatalogCache(st, sid)
-	if info := im.fileInfo(ctx, cat, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" {
-		t.Fatalf("default version Series = %q, want %q", info.Series, "ONE PIECE")
+	ms := DefaultMediaSettings()
+	if info := im.fileInfo(ctx, cat, ms, series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" || info.SeriesGroup != "ONE PIECE" {
+		t.Fatalf("default version Series, SeriesGroup = %q, %q, want ONE PIECE for both", info.Series, info.SeriesGroup)
 	}
-	if info := im.fileInfo(ctx, cat, series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Colored" {
-		t.Fatalf("colored version Series = %q, want %q", info.Series, "ONE PIECE Colored")
+	if info := im.fileInfo(ctx, cat, ms, series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Colored" || info.SeriesGroup != "ONE PIECE" {
+		t.Fatalf("colored version Series, SeriesGroup = %q, %q, want %q, %q", info.Series, info.SeriesGroup, "ONE PIECE Colored", "ONE PIECE")
 	}
 }
 
-// An edition marked as its own series names itself in ComicInfo, and a
-// collected version of it composes after the edition's name.
-func TestFileInfoNamesOwnSeriesEdition(t *testing.T) {
+// The series name readers see follows the library template, an edition's
+// own replaces it, and a collected version still renders its name in it.
+func TestFileInfoReaderFieldTemplates(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	lib, st, sid, c, ws, version := modelFixture(t)
@@ -621,23 +646,32 @@ func TestFileInfoNamesOwnSeriesEdition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetEditionOwnSeries(ctx, sid, c.ID, true); err != nil {
-		t.Fatal(err)
-	}
 	im := NewImporter(st, nil, t.TempDir(), nil)
-	// A fresh cache per call: an organize pass snapshots the catalog once,
-	// so the test must not let one snapshot see the flag change.
-	if info := im.fileInfo(ctx, newCatalogCache(st, sid), series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE Standard Edition" {
-		t.Fatalf("own-series edition Series = %q, want %q", info.Series, "ONE PIECE Standard Edition")
+	named := func(ms MediaSettings, v store.CollectedVersion) string {
+		// A fresh cache per call: an organize pass snapshots the catalog
+		// once, so one snapshot must not see the edition change.
+		return im.fileInfo(ctx, newCatalogCache(st, sid), ms, series, []store.BookRef{modelRef(c, ws[1], v)}, tagSource{}).Series
 	}
-	if info := im.fileInfo(ctx, newCatalogCache(st, sid), series, []store.BookRef{modelRef(c, ws[1], *secondV)}, tagSource{}); info.Series != "ONE PIECE Standard Edition Colored" {
-		t.Fatalf("own-series edition's version Series = %q, want %q", info.Series, "ONE PIECE Standard Edition Colored")
+	ms := DefaultMediaSettings()
+	ms.ReaderFields["series"] = "{Series Title} ({lang})"
+	if got := named(ms, version); got != "ONE PIECE (en)" {
+		t.Fatalf("library template: %q, want %q", got, "ONE PIECE (en)")
 	}
-	if err := st.SetEditionOwnSeries(ctx, sid, c.ID, false); err != nil {
+	if err := st.SetEditionReaderFields(ctx, sid, c.ID, store.ReaderFields{"series": "{Series Title} {edition} {version}"}); err != nil {
 		t.Fatal(err)
 	}
-	if info := im.fileInfo(ctx, newCatalogCache(st, sid), series, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" {
-		t.Fatalf("unmarked edition Series = %q, want %q", info.Series, "ONE PIECE")
+	if got := named(ms, version); got != "ONE PIECE Standard Edition" {
+		t.Fatalf("edition template: %q, want %q", got, "ONE PIECE Standard Edition")
+	}
+	if got := named(ms, *secondV); got != "ONE PIECE Standard Edition Colored" {
+		t.Fatalf("edition template, colored version: %q, want %q", got, "ONE PIECE Standard Edition Colored")
+	}
+	// A template that renders nothing for this copy falls back to the default.
+	if err := st.SetEditionReaderFields(ctx, sid, c.ID, store.ReaderFields{"series": "({version})"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := named(DefaultMediaSettings(), version); got != "ONE PIECE" {
+		t.Fatalf("empty render: %q, want %q", got, "ONE PIECE")
 	}
 }
 
@@ -731,7 +765,7 @@ func TestMultiBookFileIsNamedForItsRange(t *testing.T) {
 	if got := im.bookFileName(ctx, cat, ms, series, slots[:1], "", ".cbz"); !strings.Contains(got, "v02") || strings.Contains(got, "-") {
 		t.Errorf("single name = %q", got)
 	}
-	info := im.fileInfo(ctx, cat, series, slots, tagSource{})
+	info := im.fileInfo(ctx, cat, ms, series, slots, tagSource{})
 	if info.Title != "Volumes 1–2" || info.Number != "" {
 		t.Errorf("pack info = %+v", info)
 	}
@@ -784,5 +818,248 @@ func TestFilesInsideAGrabTrustItsEdition(t *testing.T) {
 				t.Fatalf("%d files, %d for review; want review=%v", len(files), reviewed, tc.review)
 			}
 		})
+	}
+}
+
+// A pack whose files break the release profile must still record every
+// file for review: one review-flagged archive may not abort the rest of
+// the payload — the job is not re-run once it waits for a person.
+func TestPackImportRecordsEveryFileWhenProfileRefuses(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, c, ws, version := modelFixture(t)
+	ctx := context.Background()
+	scan, err := st.AddFormat(ctx, profile.Format{Name: "Scan", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "scan"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := st.AddProfile(ctx, profile.Profile{Name: "Digital only", MinFormatScore: profile.MinScoreOff, Refused: []int64{scan}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	version.ProfileID = pid
+	if _, err := lib.SaveVersion(ctx, sid, version); err != nil {
+		t.Fatal(err)
+	}
+	book := func(n int64) store.Book {
+		for _, w := range ws {
+			if w.SequenceNum == n {
+				return w
+			}
+		}
+		t.Fatalf("no book %d", n)
+		return store.Book{}
+	}
+	slots := []store.BookRef{modelRef(c, book(100), version), modelRef(c, book(200), version), modelRef(c, book(300), version)}
+	raw, _ := json.Marshal(slots)
+
+	downloads, library := t.TempDir(), t.TempDir()
+	folder := "ONE PIECE v01-v03 (Scan)"
+	if err := os.MkdirAll(filepath.Join(downloads, folder), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, n := range []string{"01", "02", "03"} {
+		name := "ONE PIECE v" + n + " (Scan).cbz"
+		writeCBZ(t, filepath.Join(downloads, folder, name), name)
+		files = append(files, folder+"/"+name)
+	}
+	im := NewImporter(st, nil, library, nil)
+	item := store.QueueItem{SeriesID: sid, Protocol: provider.ProtocolTorrent, ReleaseKey: "pack-key", Title: "ONE PIECE v01-v03 (Scan)", Books: raw}
+	err = im.importFiles(ctx, item, downloads, files)
+	if err == nil {
+		t.Fatal("import of a refused pack should hold for review")
+	}
+	fs, err := st.ListFiles(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fs) != 3 {
+		t.Fatalf("pack import recorded %d files, want all 3 (err %v): %+v", len(fs), err, fs)
+	}
+	for _, f := range fs {
+		if !f.NeedsReview {
+			t.Errorf("%s not flagged for review", f.Path)
+		}
+	}
+	cv, err := st.Coverage(ctx, sid)
+	if err != nil || len(cv) != 3 {
+		t.Fatalf("pack coverage = %+v, %v; want one link per volume", cv, err)
+	}
+}
+
+// A review-flagged file in a pack does not block the pack's other files:
+// the clean ones import and link, the refused one waits in review, and the
+// job reports the partial import either way.
+func TestPackImportMixedReviewAndCleanFiles(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, c, ws, version := modelFixture(t)
+	ctx := context.Background()
+	scan, err := st.AddFormat(ctx, profile.Format{Name: "Scan", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "scan"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := st.AddProfile(ctx, profile.Profile{Name: "Digital only", MinFormatScore: profile.MinScoreOff, Refused: []int64{scan}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	version.ProfileID = pid
+	if _, err := lib.SaveVersion(ctx, sid, version); err != nil {
+		t.Fatal(err)
+	}
+	book := func(n int64) store.Book {
+		for _, w := range ws {
+			if w.SequenceNum == n {
+				return w
+			}
+		}
+		t.Fatalf("no book %d", n)
+		return store.Book{}
+	}
+	slots := []store.BookRef{modelRef(c, book(100), version), modelRef(c, book(200), version)}
+	raw, _ := json.Marshal(slots)
+
+	downloads, library := t.TempDir(), t.TempDir()
+	names := []string{"ONE PIECE v01 (Scan).cbz", "ONE PIECE v02 (Digital).cbz"}
+	var files []string
+	for _, name := range names {
+		writeCBZ(t, filepath.Join(downloads, name), name)
+		files = append(files, name)
+	}
+	im := NewImporter(st, nil, library, nil)
+	item := store.QueueItem{SeriesID: sid, Protocol: provider.ProtocolTorrent, ReleaseKey: "pack-key", Title: "ONE PIECE v01-v02", Books: raw}
+	err = im.importFiles(ctx, item, downloads, files)
+	if err == nil || !strings.Contains(err.Error(), "verified 1 of 2 expected books") {
+		t.Fatalf("import err = %v, want partial import of 1 of 2", err)
+	}
+	fs, err := st.ListFiles(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fs) != 2 {
+		t.Fatalf("pack import recorded %d files, want both: %+v", len(fs), fs)
+	}
+	byReview := map[bool]int{}
+	for _, f := range fs {
+		byReview[f.NeedsReview]++
+	}
+	if byReview[true] != 1 || byReview[false] != 1 {
+		t.Fatalf("want one file in review and one imported: %+v", fs)
+	}
+}
+
+// "Retry now" on a job parked in review re-runs the import: files of the
+// release already recorded — waiting in review or reviewed — are skipped by
+// fingerprint, so they are not duplicated, and only payload archives that
+// were never recorded (a pack cut short by an older import) are imported.
+func TestRequeuedReviewJobReimportsOnlyUnrecordedPackFiles(t *testing.T) {
+	t.Parallel()
+	conn, dialect := dbtest.Open(t)
+	st := store.New(conn, dialect)
+	lib := NewLibrary(st, testProvider())
+	ctx := context.Background()
+	sid, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cols, _ := st.ListEditions(ctx, sid)
+	var c store.Edition
+	for _, e := range cols {
+		if e.EditionName == "Standard Edition" && e.Type == "volume" {
+			c = e
+		}
+	}
+	ws, _ := st.ListBooks(ctx, c.ID)
+	versions, _ := st.ListVersions(ctx, sid)
+	var version store.CollectedVersion
+	for _, v := range versions {
+		if v.EditionID == c.ID && v.IsDefault {
+			version = v
+		}
+	}
+	scan, err := st.AddFormat(ctx, profile.Format{Name: "Scan", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "scan"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := st.AddProfile(ctx, profile.Profile{Name: "Digital only", MinFormatScore: profile.MinScoreOff, Refused: []int64{scan}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	version.ProfileID = pid
+	if _, err := lib.SaveVersion(ctx, sid, version); err != nil {
+		t.Fatal(err)
+	}
+	book := func(n int64) store.Book {
+		for _, w := range ws {
+			if w.SequenceNum == n {
+				return w
+			}
+		}
+		t.Fatalf("no book %d", n)
+		return store.Book{}
+	}
+	slots := []store.BookRef{modelRef(c, book(100), version), modelRef(c, book(200), version), modelRef(c, book(300), version)}
+	raw, _ := json.Marshal(slots)
+
+	downloads := t.TempDir()
+	folder := "ONE PIECE v01-v03 (Scan)"
+	if err := os.MkdirAll(filepath.Join(downloads, folder), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, n := range []string{"01", "02", "03"} {
+		name := "ONE PIECE v" + n + " (Scan).cbz"
+		writeCBZ(t, filepath.Join(downloads, folder, name), name)
+		files = append(files, folder+"/"+name)
+	}
+	im := NewImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), t.TempDir(), nil)
+	qid, err := st.AddQueueItem(ctx, store.QueueItem{
+		SeriesID: sid, Protocol: provider.ProtocolTorrent, ExternalID: "hash1",
+		Title: "ONE PIECE v01-v03 (Scan)", Books: raw, Status: store.QueueQueued,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Inline the id: this goes straight to the driver, bypassing the
+	// store's ?→$N rebind, so a placeholder would fail on PostgreSQL.
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`UPDATE queue_items SET release_key='rel-1', provider_id='torrent' WHERE id=%d`, qid)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := im.ProcessQueue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	job, _ := st.GetQueueItem(ctx, qid)
+	fs, _ := st.ListFiles(ctx, sid)
+	if job.Status != store.QueueNeedsReview || len(fs) != 3 {
+		t.Fatalf("pass 1: status=%s files=%d, want needs_review with 3 files", job.Status, len(fs))
+	}
+	// The pre-fix failure mode: only the first pack file was ever recorded.
+	kept := fs[0].ID
+	for _, f := range fs[1:] {
+		if err := st.ForgetFile(ctx, f.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// "Retry now" re-queues the parked job; the next pass re-imports.
+	if err := st.ResumeQueue(ctx, qid, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := im.ProcessQueue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fs, _ = st.ListFiles(ctx, sid)
+	if len(fs) != 3 {
+		t.Fatalf("after retry: %d file rows, want 3 (no duplicates): %+v", len(fs), fs)
+	}
+	seenKept := false
+	for _, f := range fs {
+		if f.ID == kept {
+			seenKept = true
+		}
+		if !f.NeedsReview {
+			t.Errorf("file %d not waiting in review", f.ID)
+		}
+	}
+	if !seenKept {
+		t.Fatal("the already-recorded file row was not preserved")
 	}
 }

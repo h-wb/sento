@@ -34,6 +34,7 @@ clean library for readers like Komga/Kavita.
 | D15 | Metadata/download separation | Verified source observations enter review or an explicitly trusted binding; never expand numbering from source maxima. |
 | D16 | Review proposes | Review items carry a proposed resolution read from evidence (a file's name, the download it came in), accepted one by one or together; nothing is recorded until accepted, and automatic acquisition stays as strict as before. |
 | D17 | Files describe themselves | Each archive carries the facts that make it what it is (edition, books, published or fan-made, group, release, flags) in standard ComicInfo fields and Sento's `Notes` line, never preferences (profile, card); a rescan adopts a file back from that line before guessing from its name ([metadata.md](../domain/metadata.md)). |
+| D18 | Presented fields | `Series`/`SeriesGroup` are presentation, not fact: each renders per copy from a template — library-wide in media settings, with a per-edition override (#70) — and is written exactly on merge, never read back for identity; adoption still goes through `Notes` (D17). |
 
 ## 2. Goals / non-goals
 
@@ -265,14 +266,18 @@ New files use stable IDs and a content hash:
 
 `{series folder}/collections/{edition ID}/versions/{target ID}/{book name} [{sha256}].cbz`
 
-Names may use configured title, number, language, edition, group, and version tokens; in a file name the version token names the version (`{series title} {version} v{volume}/…`), the default version rendering without it. A series folder template with edition tokens places each edition in its own top folder (`{series folder} [{edition}][{lang}]/…`), and one that also names the version places every collected version of an edition in a sibling top folder (`{series folder} [{edition}][{lang}] ({version})/…`), the default version keeping the edition's. Existing paths remain intact. Hash-addressed destinations and exclusive installation prevent one release from overwriting another. Filename organization is independent of intrinsic content mappings.
+Names may use configured title, number, language, edition, group, version, and reader-series tokens. `{Reader Series}` is the copy's presented `Series` name (D18), so folders and file names show the same name a reader files the copy under; in a file name the version token names the version (`{series title} {version} v{volume}/…`), the default version rendering without it. A copy's top folder is the series folder template rendered for that copy: copies that render the same folder share it, and a different render gets a sibling folder (`{series folder} [{edition}][{lang}] ({version})/…` places every edition and every collected version of an edition in its own top folder, the default version keeping the edition's; `{Reader Series} [mangabaka-{seriesId}]` gives one folder per name in readers), with a kept series folder name surviving where the render still starts with the series' plain one. Existing paths remain intact. Hash-addressed destinations and exclusive installation prevent one release from overwriting another. Filename organization is independent of intrinsic content mappings.
 
 ### 11.3 ComicInfo.xml `[default: on]`
 
 Written into each CBZ on import (merged if present, Sento fields win,
 original preserved as `ComicInfo.orig.xml` once):
 
-- `Series`, `Title`, `Number` (chapter) / `Volume` (a volume book carries
+- `Series`, `SeriesGroup` (presented fields, rendered per copy from the
+  reader templates — D18, [metadata.md](../domain/metadata.md) — and
+  written exactly on merge, a source's own guess does not survive),
+  `Title`,
+  `Number` (chapter) / `Volume` (a volume book carries
   `Volume` only — both would make a metadata-filing reader list it twice —
   and numbering is always Sento's to say, a source's own guess does not
   survive the merge), `Count` (final_volume

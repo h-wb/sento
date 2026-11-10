@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +19,12 @@ import (
 // fileHash identifies a book by its pages (mediafile.Fingerprint), so a
 // download and its processed, tagged library copy are the same asset.
 func fileHash(path string) (string, error) { return mediafile.Fingerprint(path) }
+
+// errAssetNeedsReview marks an asset that was recorded but whose observed
+// facts break the requested release profile: the file is in place (exiled
+// to review/) and is waiting for a person. It is a soft outcome — the rest
+// of a pack's files still import, and the job is held for review at the end.
+var errAssetNeedsReview = errors.New("file's observed facts do not meet the requested release profile; confirm its facts in review")
 
 // assetPath is dir/name with an unsafe or overlong name tamed and, when
 // hash is given, " [hash]" before the extension.
@@ -111,10 +118,14 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		facts.Digital = actual.Quality.Digital
 		facts.FactsKnown = true
 	}
+	// Stat before hashing, so a write during or after the hash changes the
+	// signature recorded with it. Recording the signature lets review
+	// previews trust the fingerprint instead of re-reading the archive.
 	hash, err := fileHash(path)
 	if err != nil {
 		return err
 	}
+	hashStat := statSignature(fi)
 	review := false
 	profiles, err := NewProfiles(im.store).seriesProfiles(ctx, item.SeriesID)
 	if err != nil {
@@ -133,7 +144,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 	for _, refs := range contents {
 		contentBooks = append(contentBooks, refs...)
 	}
-	fid, err := im.store.AddFile(ctx, store.File{ContentBooks: contentBooks, SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol, Facts: facts, Claims: claims, Hash: hash, NeedsReview: review}, parsed, links)
+	fid, err := im.store.AddFile(ctx, store.File{ContentBooks: contentBooks, SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol, Facts: facts, Claims: claims, Hash: hash, HashStat: hashStat, NeedsReview: review, ParserVersion: parse.Version}, parsed, links)
 	if err == nil {
 		// The import claims its books; if a better file already holds one,
 		// this one yields (automatic upgrades only — review can force).
@@ -146,7 +157,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		}
 	}
 	if err == nil && review {
-		return fmt.Errorf("file's observed facts do not meet the requested release profile; confirm its facts in review")
+		return errAssetNeedsReview
 	}
 	return err
 }
@@ -229,7 +240,8 @@ func (im *Importer) importReviewFile(ctx context.Context, item store.QueueItem, 
 	if err = installAsset(src, dest, hash, copy); err != nil {
 		return err
 	}
-	info, err := os.Stat(dest)
+	// Stat through an open descriptor so NFS revalidates cached attributes.
+	info, err := statArchive(dest)
 	if err != nil {
 		return err
 	}
@@ -246,6 +258,8 @@ func (im *Importer) importReviewFile(ctx context.Context, item store.QueueItem, 
 		facts.Revision = p.Version
 		facts.Digital = p.Quality.Digital
 	}
-	_, err = im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: dest, Size: info.Size(), Provenance: item.Protocol, NeedsReview: true, Unrequested: true, Facts: facts, Claims: claims, Hash: hash}, parsed, nil)
+	// The signature of the installed copy, read after install: a later write
+	// to the shared inode changes it, so review re-reads the archive then.
+	_, err = im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: dest, Size: info.Size(), Provenance: item.Protocol, NeedsReview: true, Unrequested: true, Facts: facts, Claims: claims, Hash: hash, HashStat: statSignature(info), ParserVersion: parse.Version}, parsed, nil)
 	return err
 }

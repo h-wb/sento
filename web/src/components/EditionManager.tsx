@@ -43,6 +43,8 @@ export type EditionSection = 'editions' | 'files'
 type Props = {
   section: EditionSection
   seriesID: number
+  // Cards named otherwise in readers say so.
+  seriesTitle: string
   editions: Edition[]
   // The volume count MangaBaka gives for the series, 0 when it gives none.
   volumeCount: number
@@ -57,6 +59,7 @@ type Props = {
 export default function EditionManager({
   section,
   seriesID,
+  seriesTitle,
   editions,
   volumeCount,
   catalogUrl,
@@ -79,6 +82,15 @@ export default function EditionManager({
     queryKey: ['series', seriesID, 'coverage'],
     queryFn: () => api.coverage(seriesID),
   })
+  const readerNames = useQuery({
+    queryKey: ['series', seriesID, 'reader-names'],
+    queryFn: () => api.readerNames(seriesID),
+  })
+  // A card's series name in readers, when it is not just the series title.
+  const readerName = (versionId: number) => {
+    const name = readerNames.data?.find((n) => n.versionId === versionId)?.fields.series
+    return name && name !== seriesTitle ? name : undefined
+  }
   const [collectAgain, setCollectAgain] = useState<Edition | null>(null)
   const [version, setVersion] = useState<CollectedVersion | null>(null)
   const [book, setBook] = useState<Book | null>(null)
@@ -221,7 +233,11 @@ export default function EditionManager({
                         </Group>
                         <Text size="xs" c="dimmed" mt={2}>
                           {/* A profile chosen here and not in the title. */}
-                          {editionDetails(c, versions.length === 1 && t.profileName)}
+                          {editionDetails(
+                            c,
+                            versions.length === 1 && t.profileName,
+                            readerName(t.id) && `in readers: ${readerName(t.id)}`,
+                          )}
                         </Text>
                       </div>
                       <Group gap="xs" wrap="nowrap">
@@ -265,19 +281,6 @@ export default function EditionManager({
                             <>
                               <Menu.Item onClick={() => setCollectAgain(c)}>
                                 Collect again with another profile…
-                              </Menu.Item>
-                              <Menu.Item
-                                onClick={() =>
-                                  void run(() =>
-                                    api.updateEdition(seriesID, c.id, {
-                                      ownSeries: !c.ownSeries,
-                                    }),
-                                  )
-                                }
-                              >
-                                {c.ownSeries
-                                  ? 'Stop showing as its own series in readers'
-                                  : 'Show as its own series in readers'}
                               </Menu.Item>
                               {versions.length > 1 && (
                                 <Menu.Item
@@ -566,7 +569,11 @@ export default function EditionManager({
       )}
       {edition && (
         <EditionEditor
+          seriesID={seriesID}
           value={edition}
+          saveReaderFields={(readerFields) =>
+            api.updateEdition(seriesID, edition.id, { readerFields })
+          }
           reset={async () => {
             await api.editEdition(seriesID, edition.id, {
               reset: ['edition_name', 'language', 'publisher', 'medium'],
