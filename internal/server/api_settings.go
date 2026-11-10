@@ -69,7 +69,13 @@ func (s *Server) handlePreviewMediaSettings(w http.ResponseWriter, r *http.Reque
 		BookFolder:   p["bookFolder"],
 		SeriesFolder: p["seriesFolder"], VolumeFile: p["volumeFile"], ChapterFile: p["chapterFile"],
 		Reader: service.PreviewReaderFields(m),
+		Errors: service.MediaSettingsProblems(m),
 	})
+}
+
+// handleMediaSchema lists the naming tokens and reader fields.
+func (s *Server) handleMediaSchema(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, service.MediaSettingsSchema())
 }
 
 // --- extensions (sidecar host management) ---

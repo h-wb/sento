@@ -39,6 +39,7 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/settings/media", s.handleGetMediaSettings)
 	r.Put("/settings/media", s.handlePutMediaSettings)
 	r.Post("/settings/media/preview", s.handlePreviewMediaSettings)
+	r.Get("/settings/media/schema", s.handleMediaSchema)
 	r.Get("/settings/connections", s.handleGetConnections)
 	r.Put("/settings/connections", s.handlePutConnections)
 	r.Post("/settings/connections/test", s.handleTestConnections)

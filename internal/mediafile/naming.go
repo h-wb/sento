@@ -81,48 +81,11 @@ func RenderText(template string, t NameTokens) string {
 	return render(template, t, strings.TrimSpace)
 }
 
-func render(template string, t NameTokens, sanitize func(string) string) string {
+func render(template string, t NameTokens, clean func(string) string) string {
 	out := tokenRe.ReplaceAllStringFunc(template, func(m string) string {
 		sub := tokenRe.FindStringSubmatch(m)
-		name, pad := sub[1], len(sub[2])
-		switch strings.ToLower(strings.TrimSpace(name)) {
-		case "series title":
-			return sanitize(t.SeriesTitle)
-		case "series titleslug":
-			return slug(t.SeriesTitle)
-		case "seriesid":
-			return fmt.Sprintf("%d", t.SeriesID)
-		case "reader series":
-			return sanitize(t.ReaderSeries)
-		case "volume":
-			return renderSpan(t.Volume, t.VolumeEnd, pad)
-		case "chapter":
-			return renderSpan(t.Chapter, t.ChapterEnd, pad)
-		case "edition":
-			return sanitize(t.Edition)
-		case "lang":
-			return sanitize(t.Lang)
-		case "group":
-			return sanitize(t.Group)
-		case "isbn":
-			return sanitize(t.ISBN)
-		case "publisher":
-			return sanitize(t.Publisher)
-		case "medium":
-			return sanitize(t.Medium)
-		case "version":
-			return sanitize(t.Version)
-		case "type":
-			return sanitize(t.Type)
-		case "editionid", "collectionid": // collectionid: the token's earlier name
-			return fmt.Sprintf("%d", t.EditionID)
-		case "versionid":
-			return fmt.Sprintf("%d", t.VersionID)
-		case "year":
-			if t.Year == 0 {
-				return ""
-			}
-			return fmt.Sprintf("%d", t.Year)
+		if tok := lookupToken(sub[1]); tok != nil {
+			return tok.value(t, len(sub[2]), clean)
 		}
 		return ""
 	})

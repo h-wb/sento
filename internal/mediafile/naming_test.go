@@ -91,3 +91,31 @@ func TestRenderReaderSeries(t *testing.T) {
 		t.Fatalf("Render = %q", got)
 	}
 }
+
+// Every token renders from the registry, an earlier name still works, and
+// a name that is no token is reported instead of vanishing unnoticed.
+func TestTokenRegistry(t *testing.T) {
+	tokens := NameTokens{
+		SeriesTitle: "ONE PIECE", SeriesID: 377, Volume: 100, Chapter: 150, Edition: "Standard Edition",
+		Lang: "en", Group: "TCB", ISBN: "978", Year: 1997, ReaderSeries: "ONE PIECE Colored",
+		Publisher: "VIZ", Medium: "digital", Version: "Colored", Type: "Volumes", EditionID: 42, VersionID: 81,
+	}
+	for _, tok := range Tokens {
+		if got := Render(tok.Syntax, tokens); got == "" {
+			t.Errorf("%s renders empty", tok.Syntax)
+		}
+		if tok.Help == "" {
+			t.Errorf("%s has no help", tok.Syntax)
+		}
+	}
+	if got := Render("{collectionId}", tokens); got != "42" {
+		t.Errorf("the earlier name of editionId renders %q", got)
+	}
+	if got := UnknownTokens("{Seris Title} v{volume:00} [{ edition }] {nope}"); len(got) != 2 || got[0] != "Seris Title" || got[1] != "nope" {
+		t.Errorf("unknown tokens = %q", got)
+	}
+	used := TemplateTokens("{Series Title} {volume:00} {VOLUME} [{group}]")
+	if len(used) != 3 || !used[1].PerBook || used[0].PerBook {
+		t.Errorf("template tokens = %+v", used)
+	}
+}

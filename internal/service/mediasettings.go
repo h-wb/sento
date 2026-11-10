@@ -3,11 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"path/filepath"
-	"regexp"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/h-wb/sento/internal/apperr"
@@ -126,43 +125,76 @@ func SaveMediaSettings(ctx context.Context, st *store.Store, m MediaSettings) er
 
 // ValidateMediaSettings rejects templates that would collide or vanish:
 // file templates need their number token, every template must render to
-// something non-empty.
+// something non-empty, and a {name} that is no token is a mistake.
 func ValidateMediaSettings(m MediaSettings) error {
-	if strings.TrimSpace(m.SeriesFolder) == "" {
-		return apperr.Invalidf("series folder template is empty")
+	if problems := mediaSettingsProblems(m); len(problems) > 0 {
+		return apperr.Invalidf("%s", problems[0].message)
 	}
-	if strings.ContainsAny(m.SeriesFolder, `/\`) {
-		return apperr.Invalidf("series folder template names one folder; nest with the top folders or the book folder instead")
+	return validateReaderFields(m.ReaderFields, &previewSeries, previewVolumes, nil)
+}
+
+// MediaSettingsProblems says, per settings field, why saving would be
+// refused, so the settings page can show it beside the field. Reader
+// fields report theirs through PreviewReaderFields.
+func MediaSettingsProblems(m MediaSettings) map[string]string {
+	out := map[string]string{}
+	for _, p := range mediaSettingsProblems(m) {
+		if _, seen := out[p.field]; !seen {
+			out[p.field] = p.message
+		}
 	}
-	if !strings.Contains(strings.ToLower(m.VolumeFile), "{volume") {
-		return apperr.Invalidf("volume file template needs a {volume} token (files would overwrite each other)")
+	return out
+}
+
+type fieldProblem struct{ field, message string }
+
+// mediaSettingsProblems checks the naming fields in the order the settings
+// page shows them.
+func mediaSettingsProblems(m MediaSettings) []fieldProblem {
+	var out []fieldProblem
+	add := func(field, format string, args ...any) {
+		out = append(out, fieldProblem{field, fmt.Sprintf(format, args...)})
 	}
-	if !strings.Contains(strings.ToLower(m.ChapterFile), "{chapter") {
-		return apperr.Invalidf("chapter file template needs a {chapter} token (files would overwrite each other)")
+	unknown := func(field, label, template string) {
+		if names := mediafile.UnknownTokens(template); len(names) > 0 {
+			add(field, "%s template uses an unknown token {%s}", label, names[0])
+		}
 	}
-	if mediafile.Render(m.SeriesFolder, seriesFolderTokens(m, &previewSeries)) == "" {
-		return apperr.Invalidf("series folder template renders empty (every series would share a folder)")
+
+	unknown("seriesFolder", "series folder", m.SeriesFolder)
+	switch {
+	case strings.TrimSpace(m.SeriesFolder) == "":
+		add("seriesFolder", "series folder template is empty")
+	case strings.ContainsAny(m.SeriesFolder, `/\`):
+		add("seriesFolder", "series folder template names one folder; nest with the top folders or the book folder instead")
+	case mediafile.Sanitize(mediafile.Render(m.SeriesFolder, seriesFolderTokens(m, &previewSeries))) == "":
+		add("seriesFolder", "series folder template renders empty (every series would share a folder)")
 	}
-	if strings.Contains(m.BookFolder, "..") || strings.HasPrefix(strings.TrimSpace(m.BookFolder), "/") {
-		return apperr.Invalidf("book folder template must stay inside the series folder")
+	unknown("volumeFile", "volume file", m.VolumeFile)
+	if !usesToken(m.VolumeFile, "volume") {
+		add("volumeFile", "volume file template needs a {volume} token (files would overwrite each other)")
 	}
-	for _, root := range []string{m.VolumesRoot, m.ChaptersRoot} {
+	unknown("chapterFile", "chapter file", m.ChapterFile)
+	if !usesToken(m.ChapterFile, "chapter") {
+		add("chapterFile", "chapter file template needs a {chapter} token (files would overwrite each other)")
+	}
+	for field, root := range map[string]string{"volumesRoot": m.VolumesRoot, "chaptersRoot": m.ChaptersRoot} {
 		if strings.Contains(root, "..") || filepath.IsAbs(strings.TrimSpace(root)) {
-			return apperr.Invalidf("top folders must be plain folder names inside the library")
+			add(field, "top folders must be plain folder names inside the library")
 		}
 	}
-	if err := validateReaderFields(m.ReaderFields, &previewSeries, previewVolumes, nil); err != nil {
-		return err
+	unknown("bookFolder", "book folder", m.BookFolder)
+	if strings.Contains(m.BookFolder, "..") || strings.HasPrefix(strings.TrimSpace(m.BookFolder), "/") {
+		add("bookFolder", "book folder template must stay inside the series folder")
 	}
-	for name, rendered := range PreviewMediaSettings(m) {
-		if name == "bookFolder" || name == "volumePath" || name == "chapterPath" {
-			continue // empty book folder = books directly in the series folder
-		}
-		if strings.TrimSpace(strings.TrimSuffix(rendered, ".cbz")) == "" {
-			return apperr.Invalidf("%s template renders empty", name)
-		}
-	}
-	return nil
+	return out
+}
+
+// usesToken reports whether a template uses the named token.
+func usesToken(template, name string) bool {
+	return slices.ContainsFunc(mediafile.TemplateTokens(template), func(t mediafile.Token) bool {
+		return strings.EqualFold(t.Name, name)
+	})
 }
 
 var (
@@ -204,17 +236,6 @@ func PreviewMediaSettings(m MediaSettings) map[string]string {
 	}
 }
 
-var reTemplateToken = regexp.MustCompile(`\{([A-Za-z ]+?)(?::0+)?\}`)
-
-// templateTokens is the set of tokens a template uses, lowercased.
-func templateTokens(template string) map[string]bool {
-	out := map[string]bool{}
-	for _, m := range reTemplateToken.FindAllStringSubmatch(template, -1) {
-		out[strings.ToLower(strings.TrimSpace(m[1]))] = true
-	}
-	return out
-}
-
 // ReaderPreview is what readers would show for the sample edition, and
 // for a second card of it collected as "Colored"; Error says why saving
 // the field's template would be refused.
@@ -239,144 +260,38 @@ func PreviewReaderFields(m MediaSettings) map[string]ReaderPreview {
 	return out
 }
 
-func seriesTokens(series *store.Series) mediafile.NameTokens {
-	return mediafile.NameTokens{SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1, Year: series.Year}
+// NamingToken is a template token as the settings page lists it.
+type NamingToken struct {
+	Syntax string `json:"syntax"`
+	Help   string `json:"help"`
+	// PerBook tokens name one book, so reader templates cannot use them.
+	PerBook bool `json:"perBook"`
 }
 
-// seriesFolderTokens are what the series folder renders with for the series
-// itself: the reader series name of a default copy, so a template using
-// {Reader Series} and a kept folder name agree on the series' own folder.
-func seriesFolderTokens(ms MediaSettings, series *store.Series) mediafile.NameTokens {
-	t := seriesTokens(series)
-	t.ReaderSeries = readerValues(ms, series, store.Edition{}, nil)["series"]
-	return t
+// ReaderFieldInfo is a presented ComicInfo field as the settings page
+// offers it.
+type ReaderFieldInfo struct {
+	Key     string `json:"key"`
+	Title   string `json:"title"`
+	Help    string `json:"help"`
+	Default string `json:"default"`
 }
 
-// editionTokens are the tokens a folder of one edition's books renders with.
-func editionTokens(series *store.Series, e store.Edition) mediafile.NameTokens {
-	t := seriesTokens(series)
-	t.Edition, t.Lang, t.Publisher, t.Medium, t.EditionID = e.EditionName, e.Language, e.Publisher, e.Medium, e.ID
-	t.Type = "Volumes"
-	if e.Type == "chapter" {
-		t.Type = "Chapters"
-	}
-	return t
+// MediaSchema is what the naming settings are made of: the tokens a
+// template can use and the reader fields that have one. It comes from the
+// lists the renderer itself uses (mediafile.Tokens, mediafile.PresentedFields).
+type MediaSchema struct {
+	Tokens       []NamingToken     `json:"tokens"`
+	ReaderFields []ReaderFieldInfo `json:"readerFields"`
 }
 
-// folderKey identifies the top folder a book goes in: its edition, and
-// the collected version. VersionID 0 names the edition's own folder, the
-// one its default version and unversioned books live in.
-type folderKey struct{ EditionID, VersionID int64 }
-
-// editionFolders maps each edition — and each collected version — to the
-// top folder its books go in: the series folder template rendered for that
-// copy, reader name included. Copies that render the same folder share it;
-// a different render gets a sibling folder, keeping the series' own folder
-// name where the render still starts with the series' plain one (a kept or
-// adopted name survives). The default version keeps its edition's folder.
-// A series adopted from outside the library root stays where it is.
-func editionFolders(libraryRoot string, series *store.Series, ms MediaSettings, editions []store.Edition, versions []store.CollectedVersion) map[folderKey]string {
-	volumes, chapters := seriesFolders(libraryRoot, series, ms)
-	plain := mediafile.Render(ms.SeriesFolder, seriesFolderTokens(ms, series))
-	sorted := slices.Clone(editions)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
-	ofEdition := map[int64][]store.CollectedVersion{}
-	for _, v := range versions {
-		ofEdition[v.EditionID] = append(ofEdition[v.EditionID], v)
+func MediaSettingsSchema() MediaSchema {
+	out := MediaSchema{}
+	for _, t := range mediafile.Tokens {
+		out.Tokens = append(out.Tokens, NamingToken{Syntax: t.Syntax, Help: t.Help, PerBook: t.PerBook})
 	}
-	out := map[folderKey]string{}
-	taken := map[string]string{}
-	folderFor := func(base, typ string, e store.Edition, v *store.CollectedVersion) string {
-		name := mediafile.Render(ms.SeriesFolder, copyTokens(ms, series, e, v))
-		if name == "" || name == plain {
-			return base
-		}
-		if rest, ok := strings.CutPrefix(name, plain); ok && plain != "" {
-			name = filepath.Base(base) + rest
-		}
-		dir := filepath.Join(filepath.Dir(base), mediafile.Sanitize(name))
-		key := typ + "\x00" + dir
-		if prev, ok := taken[key]; ok {
-			return prev // the same rendered folder is shared
-		}
-		taken[key] = dir
-		return dir
-	}
-	for _, e := range sorted {
-		base := volumes
-		if e.Type == "chapter" {
-			base = chapters
-		}
-		out[folderKey{e.ID, 0}] = base
-		if rel, err := filepath.Rel(libraryRoot, base); err != nil || rel == "." || strings.HasPrefix(rel, "..") {
-			continue // adopted from outside the library: left where it is
-		}
-		dir := folderFor(base, e.Type, e, nil)
-		out[folderKey{e.ID, 0}] = dir
-		for _, v := range ofEdition[e.ID] {
-			if v.IsDefault {
-				out[folderKey{e.ID, v.ID}] = dir
-				continue
-			}
-			out[folderKey{e.ID, v.ID}] = folderFor(base, e.Type, e, &v)
-		}
+	for _, f := range mediafile.PresentedFields {
+		out.ReaderFields = append(out.ReaderFields, ReaderFieldInfo{Key: f.Key, Title: f.Title, Help: f.Help, Default: f.Default})
 	}
 	return out
-}
-
-// cleanRoot splits a top-folder setting into safe path segments.
-func cleanRoot(root string) []string {
-	var out []string
-	for _, segment := range strings.Split(filepath.ToSlash(root), "/") {
-		if s := mediafile.Sanitize(segment); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// seriesFolders is where a series' volumes and chapters belong under the
-// current settings. The series keeps the folder it already has, re-rooted
-// under the configured top folder; chapters get their own folder only when
-// their top folder differs from the volumes'. A series adopted from
-// outside the library root stays where it is.
-func seriesFolders(libraryRoot string, series *store.Series, ms MediaSettings) (volumes, chapters string) {
-	vr, cr := cleanRoot(ms.VolumesRoot), cleanRoot(ms.ChaptersRoot)
-	// One folder name, whatever the stored template holds.
-	rest := []string{mediafile.Sanitize(mediafile.Render(ms.SeriesFolder, seriesFolderTokens(ms, series)))}
-	if series.Path != "" {
-		rel, err := filepath.Rel(libraryRoot, series.Path)
-		if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
-			return series.Path, series.Path
-		}
-		rest = strings.Split(filepath.ToSlash(rel), "/")
-		// A series already split by type shows its old top folders: what
-		// its two folders share from the end is the series' own part.
-		if crel, err := filepath.Rel(libraryRoot, series.ChapterPath); series.ChapterPath != "" && err == nil && !strings.HasPrefix(crel, "..") {
-			other := strings.Split(filepath.ToSlash(crel), "/")
-			n := 0
-			for n < len(rest) && n < len(other) && rest[len(rest)-1-n] == other[len(other)-1-n] {
-				n++
-			}
-			if n > 0 {
-				rest = rest[len(rest)-n:]
-			}
-		}
-		// Drop a top folder the series already sits under before re-rooting.
-		for _, root := range [][]string{vr, cr} {
-			if len(root) > 0 && len(rest) > len(root) && slices.Equal(rest[:len(root)], root) {
-				rest = rest[len(root):]
-				break
-			}
-		}
-	}
-	join := func(root []string) string {
-		return filepath.Join(append(append([]string{libraryRoot}, root...), rest...)...)
-	}
-	volumes = join(vr)
-	chapters = volumes
-	if !slices.Equal(vr, cr) {
-		chapters = join(cr)
-	}
-	return volumes, chapters
 }

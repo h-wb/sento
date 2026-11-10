@@ -44,7 +44,7 @@ packages:
 
   - path: "github.com/h-wb/sento/internal/service"
     output_path: "web/src/types/service.ts"
-    exclude_files: ["catalog_cache.go"] # no exported API types
+    exclude_files: ["catalog_cache.go", "layout.go", "placement.go"] # no exported API types
     frontmatter: |
       /* eslint-disable */
       import type { SeriesRef } from "./metadata"
