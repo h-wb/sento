@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/h-wb/sento/internal/store"
 )
 
 func TestMediaSettingsRoundtrip(t *testing.T) {
@@ -93,11 +96,27 @@ func TestValidateEditionFolderTemplates(t *testing.T) {
 		"{edition} [{lang}]":                     false, // renders empty for the series itself: every series would share it
 		"{Series Title} [mangabaka-{seriesId}]":  true,
 		"{Series Title} {type} [{edition}]":      true,
+		"{Series Title}/{edition}":               false, // one folder name: nesting belongs to the book folder
+		"../{Series Title}":                      false,
+		`..\{Series Title}`:                      false,
 	} {
 		m := DefaultMediaSettings()
 		m.SeriesFolder = template
 		if err := ValidateMediaSettings(m); (err == nil) != ok {
 			t.Errorf("%q: err = %v, want ok %v", template, err, ok)
 		}
+	}
+}
+
+// A stored series folder template that climbs out of the library (saved
+// before templates were confined) still lands inside it.
+func TestSeriesFolderStaysInsideTheLibrary(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(string(filepath.Separator), "library")
+	ms := DefaultMediaSettings()
+	ms.SeriesFolder = "../../{Series Title}"
+	volumes, chapters := seriesFolders(root, &store.Series{Title: "ONE PIECE", MangaBakaID: 377}, ms)
+	if want := filepath.Join(root, "ONE PIECE"); volumes != want || chapters != want {
+		t.Fatalf("series folders = %q, %q; want %q", volumes, chapters, want)
 	}
 }
