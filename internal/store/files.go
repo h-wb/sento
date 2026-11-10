@@ -250,6 +250,38 @@ func (s *Store) RewriteFileFacts(ctx context.Context, id int64, facts AssetFacts
 	return err
 }
 
+// RestoreReleaseLink gives a file back the download it came in: the release
+// key (and site) on its facts and the release's claims. It only fills what
+// is missing: a file that still names a release on either is left alone.
+func (s *Store) RestoreReleaseLink(ctx context.Context, id int64, claims AssetFacts) error {
+	var rawFacts, rawClaims string
+	if err := s.db.QueryRowContext(ctx, s.q(`SELECT facts_json,claims_json FROM files WHERE id=?`), id).Scan(&rawFacts, &rawClaims); err != nil {
+		return err
+	}
+	var facts, old AssetFacts
+	if err := json.Unmarshal([]byte(rawFacts), &facts); err != nil {
+		return err
+	}
+	_ = json.Unmarshal([]byte(rawClaims), &old)
+	if facts.ReleaseKey != "" || old.ReleaseKey != "" {
+		return nil
+	}
+	facts.ReleaseKey = claims.ReleaseKey
+	if facts.Site == "" {
+		facts.Site = claims.Site
+	}
+	newFacts, err := json.Marshal(facts)
+	if err != nil {
+		return err
+	}
+	newClaims, err := json.Marshal(claims)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, s.q(`UPDATE files SET facts_json=?,claims_json=? WHERE id=?`), string(newFacts), string(newClaims), id)
+	return err
+}
+
 // SetFileSize records a file's size after its bytes changed without its
 // pages changing (retagged metadata).
 func (s *Store) SetFileSize(ctx context.Context, id, size int64) error {
