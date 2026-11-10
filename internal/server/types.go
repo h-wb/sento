@@ -162,6 +162,8 @@ type NamingPreview struct {
 	ChapterFile  string `json:"chapterFile"`
 	// Reader is what readers show, per presented ComicInfo field.
 	Reader map[string]service.ReaderPreview `json:"reader"`
+	// Errors says why saving would be refused, per settings field.
+	Errors map[string]string `json:"errors"`
 }
 
 // SplitBoxBody is POST /series/{id}/books/{bid}/split: how many volumes

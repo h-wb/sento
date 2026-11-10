@@ -44,7 +44,8 @@ by ComicInfo rather than folders (Kavita) keeps copies apart only when the
 series name says which is which, so an edition can set its own template
 (`{Series Title} {edition} {version}`, or a fixed name); an organize pass
 rewrites the files. A template names a copy, not one book, so it cannot use
-`{volume}`/`{chapter}`/`{group}`/`{isbn}`. On merge the presented fields
+`{volume}`/`{chapter}`/`{group}`/`{isbn}`, nor `{Reader Series}`, which is
+the name it sets. On merge the presented fields
 are written exactly — a source's own `Series` never survives — and a
 rescan never reads them back for identity; adoption goes through `Notes`.
 

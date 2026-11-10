@@ -233,6 +233,10 @@ export interface NamingPreview {
    * Reader is what readers show, per presented ComicInfo field.
    */
   reader: { [key: string]: ReaderPreview};
+  /**
+   * Errors says why saving would be refused, per settings field.
+   */
+  errors: { [key: string]: string};
 }
 /**
  * SplitBoxBody is POST /series/{id}/books/{bid}/split: how many volumes

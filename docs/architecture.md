@@ -109,7 +109,7 @@ service → {persistence, acquisition, metadata, domain}.
 | `internal/store` | Persistence: hand-written SQL via scany, portable across SQLite and PostgreSQL (`?` rebound per dialect) |
 | `internal/parse` | Pure release/file/chapter-name parser (spec/parser.md); no I/O, regression corpus |
 | `internal/provider` | Abstraction over release sources + download clients. `TorrentProvider` (torznab + qBittorrent) and `SourceProvider` (extension sources; Sento assembles CBZs itself) |
-| `internal/mediafile` | CBZ import (atomic), ComicInfo.xml merge, naming templates, hardlink-or-copy |
+| `internal/mediafile` | CBZ import (atomic), ComicInfo.xml merge, naming templates and their token list, hardlink-or-copy |
 | `internal/extensions` | Protocol-adapter contract for extension sources + HTTP client for the Kotlin sidecar (`extensions/`). Host keys are opaque; Sento owns all state |
 | `internal/metadata/mangabaka` | The one `metadata.Provider` implementation |
 | `internal/scheduler` | Background loops, crash-isolated; observable via System → Tasks |

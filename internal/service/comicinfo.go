@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -40,8 +38,8 @@ func releaseSource(item store.QueueItem) tagSource {
 // fileInfo builds the ComicInfo for a file holding the given books of one
 // edition: everything a reader needs to file and describe it without
 // Sento, and Sento's Notes line to adopt it back by (docs/domain/metadata.md).
-// The catalog rows come from cat, so a whole-series pass loads them once.
-func (im *Importer) fileInfo(ctx context.Context, cat *catalogCache, ms MediaSettings, series *store.Series, slots []store.BookRef, src tagSource) mediafile.ComicInfo {
+func (p *placement) info(ctx context.Context, slots []store.BookRef, src tagSource) mediafile.ComicInfo {
+	series, cat := p.series, p.cat
 	first, last := slotSpan(slots)
 	info := mediafile.ComicInfo{
 		Series:          series.Title,
@@ -79,7 +77,9 @@ func (im *Importer) fileInfo(ctx context.Context, cat *catalogCache, ms MediaSet
 		}
 		// How readers file and group this copy: the user's templates.
 		version, _ := cat.version(ctx, first.VersionID)
-		presentCopy(&info, ms, series, *col, version)
+		for _, f := range mediafile.PresentedFields {
+			f.Set(&info, p.reader(*col, version)[f.Key])
+		}
 	}
 	books := map[int64]*store.Book{}
 	for _, sl := range slots {
@@ -214,52 +214,6 @@ func slotSpan(slots []store.BookRef) (first, last store.BookRef) {
 	return first, last
 }
 
-// bookFileName is the templated name for a file holding the given books:
-// a single number, or the range it spans ("c001-008") when it holds
-// several. ext includes the dot.
-func (im *Importer) bookFileName(ctx context.Context, cat *catalogCache, ms MediaSettings, series *store.Series, slots []store.BookRef, group, ext string) string {
-	first, last := slotSpan(slots)
-	tokens := mediafile.NameTokens{
-		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Group: group,
-		Volume: -1, Chapter: -1, Year: series.Year, VersionID: first.VersionID,
-	}
-	var ver *store.CollectedVersion
-	if t, err := cat.version(ctx, first.VersionID); err == nil {
-		ver = t
-		if !t.IsDefault {
-			tokens.Version = t.Name
-		}
-	}
-	if col, err := cat.edition(ctx, first.EditionID); err == nil {
-		tokens.Edition, tokens.Lang = col.EditionName, col.Language
-		tokens.ReaderSeries = readerValues(ms, series, *col, ver)["series"]
-	}
-	tmpl := ms.VolumeFile
-	if first.Ledger == "volume" {
-		tokens.Volume, tokens.VolumeEnd = first.Number, last.Number
-	} else {
-		tokens.Chapter, tokens.ChapterEnd, tmpl = first.Number, last.Number, ms.ChapterFile
-	}
-	rendered := mediafile.Render(tmpl, tokens)
-	return strings.TrimSuffix(rendered, filepath.Ext(rendered)) + ext
-}
-
-// installProcessed writes src to dest as a clean, tagged CBZ. A book with
-// this fingerprint already at dest is left as it is.
-func installProcessed(src, dest, hash string, info mediafile.ComicInfo) error {
-	if _, err := os.Stat(dest); err == nil {
-		return verifyDestination(dest, hash)
-	}
-	// Staged next to dest, then installed exclusively: a path that became
-	// occupied in the meantime is never replaced.
-	stage := filepath.Join(filepath.Dir(dest), ".sento-stage-"+filepath.Base(dest))
-	defer func() { _ = os.Remove(stage) }()
-	if err := mediafile.Process(src, stage, &info); err != nil {
-		return err
-	}
-	return installAsset(stage, dest, hash, false)
-}
-
 func splitDate(date string) (y, m, d string, ok bool) {
 	parts := strings.Split(date, "-")
 	if len(parts) != 3 || len(parts[0]) != 4 {
@@ -279,53 +233,4 @@ func titleCase(s string) string {
 		words[i] = strings.ToUpper(w[:1]) + w[1:]
 	}
 	return strings.Join(words, " ")
-}
-
-// bookDir is where a book of the given edition and version lives: in its
-// copy's top folder (the series folder template rendered for it), then
-// the configured book folder layout.
-func (im *Importer) bookDir(ctx context.Context, cat *catalogCache, ms MediaSettings, seriesDir string, series *store.Series, sl store.BookRef) string {
-	if editions, err := cat.editionsAll(ctx); err == nil {
-		versions, _ := cat.versionsAll(ctx)
-		folders := editionFolders(im.libraryRoot, series, ms, editions, versions)
-		if dir, ok := folders[folderKey{sl.EditionID, sl.VersionID}]; ok {
-			seriesDir = dir
-		} else if dir, ok := folders[folderKey{sl.EditionID, 0}]; ok {
-			seriesDir = dir
-		}
-	}
-	tokens := mediafile.NameTokens{
-		SeriesTitle: series.Title, SeriesID: series.MangaBakaID, Volume: -1, Chapter: -1,
-		Year: series.Year, EditionID: sl.EditionID, VersionID: sl.VersionID,
-		Type: "Volumes",
-	}
-	if sl.Ledger == "chapter" {
-		tokens.Type = "Chapters"
-	}
-	var ver *store.CollectedVersion
-	if t, err := cat.version(ctx, sl.VersionID); err == nil {
-		ver = t
-		if !t.IsDefault {
-			tokens.Version = t.Name
-		}
-	}
-	if col, err := cat.edition(ctx, sl.EditionID); err == nil {
-		tokens.Edition, tokens.Lang, tokens.Publisher, tokens.Medium = col.EditionName, col.Language, col.Publisher, col.Medium
-		tokens.ReaderSeries = readerValues(ms, series, *col, ver)["series"]
-	}
-	return filepath.Join(append([]string{seriesDir}, mediafile.RenderFolder(ms.BookFolder, tokens)...)...)
-}
-
-// placeAsset picks the path for a book with the given fingerprint. The
-// fingerprint enters the name when configured, or when a different book
-// already holds the plain path: an occupied path is never overwritten.
-func placeAsset(dir, name, hash string, hashInName bool) (string, error) {
-	if !hashInName {
-		plain := assetPath(dir, name, "")
-		if verifyDestination(plain, hash) == nil {
-			return plain, nil
-		}
-	}
-	dest := assetPath(dir, name, hash)
-	return dest, verifyDestination(dest, hash)
 }

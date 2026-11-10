@@ -58,6 +58,37 @@ func verifyDestination(path, hash string) error {
 	}
 	return nil
 }
+
+// placeAsset picks the path for a book with the given fingerprint. The
+// fingerprint enters the name when configured, or when a different book
+// already holds the plain path: an occupied path is never overwritten.
+func placeAsset(dir, name, hash string, hashInName bool) (string, error) {
+	if !hashInName {
+		plain := assetPath(dir, name, "")
+		if verifyDestination(plain, hash) == nil {
+			return plain, nil
+		}
+	}
+	dest := assetPath(dir, name, hash)
+	return dest, verifyDestination(dest, hash)
+}
+
+// installProcessed writes src to dest as a clean, tagged CBZ. A book with
+// this fingerprint already at dest is left as it is.
+func installProcessed(src, dest, hash string, info mediafile.ComicInfo) error {
+	if _, err := os.Stat(dest); err == nil {
+		return verifyDestination(dest, hash)
+	}
+	// Staged next to dest, then installed exclusively: a path that became
+	// occupied in the meantime is never replaced.
+	stage := filepath.Join(filepath.Dir(dest), ".sento-stage-"+filepath.Base(dest))
+	defer func() { _ = os.Remove(stage) }()
+	if err := mediafile.Process(src, stage, &info); err != nil {
+		return err
+	}
+	return installAsset(stage, dest, hash, false)
+}
+
 func (im *Importer) normalizeExpected(ctx context.Context, item store.QueueItem) ([]store.BookRef, error) {
 	var slots []store.BookRef
 	if err := json.Unmarshal(item.Books, &slots); err != nil {

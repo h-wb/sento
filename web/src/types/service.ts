@@ -508,6 +508,36 @@ export interface ReaderPreview {
   colored: string;
   error?: string;
 }
+/**
+ * NamingToken is a template token as the settings page lists it.
+ */
+export interface NamingToken {
+  syntax: string;
+  help: string;
+  /**
+   * PerBook tokens name one book, so reader templates cannot use them.
+   */
+  perBook: boolean;
+}
+/**
+ * ReaderFieldInfo is a presented ComicInfo field as the settings page
+ * offers it.
+ */
+export interface ReaderFieldInfo {
+  key: string;
+  title: string;
+  help: string;
+  default: string;
+}
+/**
+ * MediaSchema is what the naming settings are made of: the tokens a
+ * template can use and the reader fields that have one. It comes from the
+ * lists the renderer itself uses (mediafile.Tokens, mediafile.PresentedFields).
+ */
+export interface MediaSchema {
+  tokens: NamingToken[];
+  readerFields: ReaderFieldInfo[];
+}
 
 //////////
 // source: observations.go

@@ -321,13 +321,13 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 
 	// One book, or an archive holding several (a volume's worth of
 	// chapters): named and tagged for what it actually holds.
-	cat := newCatalogCache(im.store, item.SeriesID)
+	place := im.newPlacement(ms, series)
 	src := releaseSource(item)
 	group := src.Group
-	info := im.fileInfo(ctx, cat, ms, series, slots, src)
+	info := place.info(ctx, slots, src)
 	fileName := mediafile.Sanitize(item.Title) + ".cbz"
 	if ms.RenameImports {
-		fileName = im.bookFileName(ctx, cat, ms, series, slots, group, ".cbz")
+		fileName = place.fileName(ctx, slots, group, ".cbz")
 	}
 	destPath := filepath.Join(seriesDir, fileName)
 
@@ -352,7 +352,7 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	if err != nil {
 		return err
 	}
-	destPath, err = placeAsset(im.bookDir(ctx, cat, ms, seriesDir, series, first), filepath.Base(destPath), hash, ms.HashInName)
+	destPath, err = placeAsset(place.dir(ctx, seriesDir, first), filepath.Base(destPath), hash, ms.HashInName)
 	if err != nil {
 		return err
 	}
@@ -402,6 +402,9 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	if err != nil {
 		return err
 	}
+	// One placement for the pack: its catalog rows and folder layout are
+	// read once, not per archive.
+	place := im.newPlacement(ms, series)
 	// One archive waiting on a person must not abort the pack: the job is
 	// not re-run once it waits for review, so every file of the payload is
 	// recorded here, and the job is held for review at the end.
@@ -419,7 +422,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 				continue
 			}
 		}
-		covered, e := im.importArchive(ctx, item, ms, series, seriesDir, titles, expected, archive, releaseNamed)
+		covered, e := im.importArchive(ctx, item, place, seriesDir, titles, expected, archive, releaseNamed)
 		if e != nil {
 			if errors.Is(e, errAssetNeedsReview) {
 				waiting++
@@ -516,7 +519,8 @@ func releaseCoverage(key string, expected []store.BookRef, view *ledgerView, fil
 // the expected books its name covers, or into review when it is not
 // recognisably this series' or covers none. A name with no title at all
 // is the series' when releaseNamed. It returns the books covered.
-func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, ms MediaSettings, series *store.Series, seriesDir string, titles []string, expected []store.BookRef, archive payloadArchive, releaseNamed bool) ([]store.BookRef, error) {
+func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, place *placement, seriesDir string, titles []string, expected []store.BookRef, archive payloadArchive, releaseNamed bool) ([]store.BookRef, error) {
+	ms := place.ms
 	rel, src := archive.name, archive.path
 	res := parse.ParseAnchored(filepath.Base(rel), parse.ChannelFile, titles)
 	named := (res.Anchored && res.TitleLeftover == "") || (res.Title == "" && releaseNamed)
@@ -535,10 +539,9 @@ func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, ms 
 		return nil, err
 	}
 	// A pack stays one asset with several verified coverage links.
-	cat := newCatalogCache(im.store, item.SeriesID)
 	name := filepath.Base(rel)
 	if ms.RenameImports {
-		name = im.bookFileName(ctx, cat, ms, series, contents, res.Group, strings.ToLower(filepath.Ext(rel)))
+		name = place.fileName(ctx, contents, res.Group, strings.ToLower(filepath.Ext(rel)))
 	}
 	// Identical bytes can serve several confirmed versions. Keep one
 	// archive with all coverage links; different releases get different
@@ -549,14 +552,14 @@ func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, ms 
 	if ms.WriteComicInfo {
 		name = strings.TrimSuffix(name, filepath.Ext(name)) + ".cbz"
 	}
-	dest, err := placeAsset(im.bookDir(ctx, cat, ms, seriesDir, series, covered[0]), name, hash, ms.HashInName)
+	dest, err := placeAsset(place.dir(ctx, seriesDir, covered[0]), name, hash, ms.HashInName)
 	if err != nil {
 		return nil, err
 	}
 	if ms.WriteComicInfo {
 		came := releaseSource(item)
 		came.Group = res.Group
-		err = installProcessed(src, dest, hash, im.fileInfo(ctx, cat, ms, series, contents, came))
+		err = installProcessed(src, dest, hash, place.info(ctx, contents, came))
 	} else {
 		err = installAsset(src, dest, hash, ms.AlwaysCopy)
 	}

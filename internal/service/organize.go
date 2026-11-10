@@ -61,7 +61,8 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	// planning costs a fixed number of queries whatever the file count.
 	// One confirmed file needs a handful of rows; the cache loads those
 	// lazily, per row as before, without fetching the whole series per file.
-	cat := newCatalogCache(im.store, seriesID)
+	place := im.newPlacement(ms, series)
+	cat := place.cat
 	if fileID == 0 {
 		if err := cat.preload(ctx); err != nil {
 			return nil, nil, ms, err
@@ -242,15 +243,15 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		}
 		group := f.Facts.Group
 		p.name = reHashSuffix.ReplaceAllString(strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path)), "") + ext
-		p.info = im.fileInfo(ctx, cat, ms, series, slots, tagSource{Release: f.Claims.Title, Group: group, Via: f.Facts.Protocol, Site: f.Facts.Site, Flags: f.Facts.Flags})
+		p.info = place.info(ctx, slots, tagSource{Release: f.Claims.Title, Group: group, Via: f.Facts.Protocol, Site: f.Facts.Site, Flags: f.Facts.Flags})
 		if ms.RenameImports {
-			p.name = im.bookFileName(ctx, cat, ms, series, slots, group, ext)
+			p.name = place.fileName(ctx, slots, group, ext)
 		}
 		seriesDir := volumesDir
 		if slots[0].Ledger == "chapter" {
 			seriesDir = chaptersDir
 		}
-		p.dir = im.bookDir(ctx, cat, ms, seriesDir, series, slots[0])
+		p.dir = place.dir(ctx, seriesDir, slots[0])
 
 		p.dest = assetPath(p.dir, p.name, "")
 		if ms.HashInName && f.Hash != "" {

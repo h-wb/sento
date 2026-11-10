@@ -120,3 +120,73 @@ func TestSeriesFolderStaysInsideTheLibrary(t *testing.T) {
 		t.Fatalf("series folders = %q, %q; want %q", volumes, chapters, want)
 	}
 }
+
+// A misspelled token is refused instead of silently rendering nothing, and
+// the settings page gets the reason beside the field it belongs to.
+func TestMediaSettingsNameUnknownTokens(t *testing.T) {
+	t.Parallel()
+	m := DefaultMediaSettings()
+	m.VolumeFile = "{Seris Title} v{volume:00}.cbz"
+	m.BookFolder = "{edition} [{language}]"
+	if err := ValidateMediaSettings(m); err == nil || !strings.Contains(err.Error(), "{Seris Title}") {
+		t.Fatalf("validate: %v", err)
+	}
+	problems := MediaSettingsProblems(m)
+	if len(problems) != 2 || !strings.Contains(problems["volumeFile"], "{Seris Title}") || !strings.Contains(problems["bookFolder"], "{language}") {
+		t.Fatalf("problems: %v", problems)
+	}
+	if problems := MediaSettingsProblems(DefaultMediaSettings()); len(problems) != 0 {
+		t.Fatalf("the defaults have problems: %v", problems)
+	}
+	// Every token works in every path template: a file name may say the
+	// publisher as a folder may.
+	m = DefaultMediaSettings()
+	m.VolumeFile = "{Series Title} v{volume:00} [{publisher}][{type}].cbz"
+	if err := ValidateMediaSettings(m); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A reader template cannot name itself, name one book, or misspell a token.
+func TestReaderFieldTemplatesAreChecked(t *testing.T) {
+	t.Parallel()
+	for template, want := range map[string]string{
+		"{Series Title} {edition}":        "",
+		"A fixed name":                    "",
+		"{Reader Series} {edition}":       "{Reader Series}",
+		"{Series Title} v{volume}":        "{volume}",
+		"{Series Title} {editon}":         "unknown token {editon}",
+		"{Series Title} [{group}]":        "{group}",
+		"{version}":                       "renders empty",
+		"{Series Title} {version} {lang}": "",
+	} {
+		m := DefaultMediaSettings()
+		m.ReaderFields["series"] = template
+		err := ValidateMediaSettings(m)
+		if (want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), want)) {
+			t.Errorf("%q: err = %v, want %q", template, err, want)
+		}
+		if got := PreviewReaderFields(m)["series"].Error; (want == "") != (got == "") {
+			t.Errorf("%q: preview error = %q, want %q", template, got, want)
+		}
+	}
+}
+
+// The settings page is built from the renderer's own lists.
+func TestMediaSettingsSchema(t *testing.T) {
+	t.Parallel()
+	schema := MediaSettingsSchema()
+	if len(schema.Tokens) == 0 || len(schema.ReaderFields) != 2 {
+		t.Fatalf("schema: %+v", schema)
+	}
+	for _, f := range schema.ReaderFields {
+		if f.Title == "" || f.Help == "" || f.Default != DefaultMediaSettings().ReaderFields[f.Key] {
+			t.Errorf("reader field %+v", f)
+		}
+	}
+	for _, tok := range schema.Tokens {
+		if tok.PerBook != (tok.Syntax == "{volume:00}" || tok.Syntax == "{chapter:000}" || tok.Syntax == "{group}" || tok.Syntax == "{isbn}") {
+			t.Errorf("token %+v", tok)
+		}
+	}
+}

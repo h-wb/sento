@@ -2,40 +2,14 @@ package service
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/store"
 )
-
-// bookTokens name one book or file, not a copy: a presented field holds
-// for every book of an edition's version, so it cannot use them.
-var bookTokens = []string{"volume", "chapter", "group", "isbn"}
-
-// baseCopyTokens are what a copy's presented fields render with: its
-// series, its edition and, beside the edition's default version, the
-// version. They do not include the presented names themselves, so a
-// presented-field template cannot name {Reader Series}.
-func baseCopyTokens(series *store.Series, e store.Edition, v *store.CollectedVersion) mediafile.NameTokens {
-	t := editionTokens(series, e)
-	if v != nil {
-		t.VersionID = v.ID
-		if !v.IsDefault {
-			t.Version = v.Name
-		}
-	}
-	return t
-}
-
-// copyTokens are what a copy's paths render with: the base tokens plus its
-// reader series name, so {Reader Series} in a folder or file template is
-// the same name readers file the copy under.
-func copyTokens(ms MediaSettings, series *store.Series, e store.Edition, v *store.CollectedVersion) mediafile.NameTokens {
-	t := baseCopyTokens(series, e, v)
-	t.ReaderSeries = readerValues(ms, series, e, v)["series"]
-	return t
-}
 
 // readerTemplate is the template a presented field renders with for an
 // edition: the edition's own, else the media settings', else the field's
@@ -65,19 +39,14 @@ func readerValues(ms MediaSettings, series *store.Series, e store.Edition, v *st
 	return out
 }
 
-// presentCopy writes a copy's presented fields into its ComicInfo.
-func presentCopy(info *mediafile.ComicInfo, ms MediaSettings, series *store.Series, e store.Edition, v *store.CollectedVersion) {
-	values := readerValues(ms, series, e, v)
-	for _, f := range mediafile.PresentedFields {
-		f.Set(info, values[f.Key])
-	}
-}
-
 // validateReaderFields rejects templates for fields Sento does not
-// present, templates naming one book, and templates that render nothing
-// for the given copy; empty templates inherit and always pass.
+// present, templates naming one book (a presented field holds for every
+// book of a copy), templates naming themselves, misspelled tokens, and
+// templates that render nothing for the given copy; empty templates
+// inherit and always pass.
 func validateReaderFields(fields map[string]string, series *store.Series, e store.Edition, v *store.CollectedVersion) error {
-	for key, template := range fields {
+	for _, key := range slices.Sorted(maps.Keys(fields)) {
+		template := fields[key]
 		if strings.TrimSpace(template) == "" {
 			continue
 		}
@@ -85,10 +54,15 @@ func validateReaderFields(fields map[string]string, series *store.Series, e stor
 		if f == nil {
 			return apperr.Invalidf("unknown reader field %q", key)
 		}
-		tokens := templateTokens(template)
-		for _, t := range bookTokens {
-			if tokens[t] {
-				return apperr.Invalidf("the %s in readers holds for every book, so it cannot use {%s}", f.Label, t)
+		if names := mediafile.UnknownTokens(template); len(names) > 0 {
+			return apperr.Invalidf("the %s in readers uses an unknown token {%s}", f.Label, names[0])
+		}
+		for _, t := range mediafile.TemplateTokens(template) {
+			if t.PerBook {
+				return apperr.Invalidf("the %s in readers holds for every book, so it cannot use {%s}", f.Label, t.Name)
+			}
+			if t.Name == mediafile.ReaderSeriesToken {
+				return apperr.Invalidf("the %s in readers cannot use {%s}: that token is the name being set here", f.Label, t.Name)
 			}
 		}
 		if mediafile.RenderText(template, baseCopyTokens(series, e, v)) == "" {
