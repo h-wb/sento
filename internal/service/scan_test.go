@@ -200,7 +200,10 @@ func TestScanRederivesFactsWhenParserVersionMovesOn(t *testing.T) {
 	}
 
 	// Simulate a fact recorded by an older parser (color read from the
-	// group name) plus a manual language correction, and downgrade the stamp.
+	// group name), a manual language correction, and a recorded review
+	// decision — the re-derivation must update the facts but keep both
+	// human marks. Inline the id: this goes straight to the driver,
+	// bypassing the store's ?->$N rebind, so a placeholder fails on PG.
 	facts := f0.Facts
 	flags := map[string]bool{}
 	for k, v := range facts.Flags {
@@ -211,9 +214,10 @@ func TestScanRederivesFactsWhenParserVersionMovesOn(t *testing.T) {
 	facts.Language = "fr"
 	facts.Sources["language"] = "manual"
 	raw, _ := json.Marshal(facts)
-	// Inline the id: this goes straight to the driver, bypassing the store's
-	// ?->$N rebind, so a placeholder would fail on PostgreSQL.
-	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`UPDATE files SET parser_version=0, facts_json='%s' WHERE id=%d`, strings.ReplaceAll(string(raw), "'", "''"), f0.ID)); err != nil {
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`UPDATE files SET parser_version=0, facts_json='%s', review_action='keep' WHERE id=%d`, strings.ReplaceAll(string(raw), "'", "''"), f0.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`INSERT INTO asset_contents(file_id,book_id,verified,evidence) SELECT file_id,book_id,TRUE,'manual' FROM asset_contents WHERE file_id=%d ON CONFLICT(file_id,book_id) DO UPDATE SET evidence='manual',verified=TRUE`, f0.ID)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -240,6 +244,9 @@ func TestScanRederivesFactsWhenParserVersionMovesOn(t *testing.T) {
 	}
 	if f1.Facts.Language != "fr" || f1.Facts.Sources["language"] != "manual" {
 		t.Errorf("manual correction lost: %+v", f1.Facts)
+	}
+	if f1.ReviewAction != "keep" {
+		t.Errorf("review action lost on re-derivation: %q", f1.ReviewAction)
 	}
 
 	// A settled stamp is left alone on the next scan.
