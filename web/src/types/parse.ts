@@ -60,8 +60,11 @@ anchor.go is the title-aware entry point, num.go the number domain.
  * facts were read from them. Bump it whenever parser output for existing
  * names may change (the corpus locks behavior; this marks facts stale):
  * scans re-read those names when a file's stored version is older.
+ * 2: 0.7.0 stamped reviewed files as read by revision 1 without re-reading
+ * them, so they still hold what the parser before it read (a group name
+ * taken for a color claim).
  */
-export const Version = 1;
+export const Version = 2;
 
 //////////
 // source: result.go

@@ -104,7 +104,7 @@ export function MappingEditor({
       }
       busy={busy}
       onClose={close}
-      title="Match imported file"
+      title={value.needsReview ? 'Match imported file' : 'Edit file mappings'}
     >
       <Stack>
         <div>

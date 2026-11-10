@@ -13,13 +13,16 @@ import (
 // here too, with its reason saying so. The library-wide view behind the
 // Wanted page.
 type WantedRow struct {
-	SeriesID     int64      `json:"seriesId"`
-	SeriesTitle  string     `json:"seriesTitle"`
-	EditionID    int64      `json:"editionId"`
-	EditionName  string     `json:"editionName"`
-	Language     string     `json:"language"`
-	Ledger       string     `json:"ledger"`
-	VersionID    int64      `json:"versionId"`
+	SeriesID    int64  `json:"seriesId"`
+	SeriesTitle string `json:"seriesTitle"`
+	EditionID   int64  `json:"editionId"`
+	EditionName string `json:"editionName"`
+	Language    string `json:"language"`
+	Ledger      string `json:"ledger"`
+	VersionID   int64  `json:"versionId"`
+	// Card names the collected version beside an edition's first one
+	// ("Colored"), so two cards wanting the same book read apart.
+	Card         string     `json:"card,omitempty"`
 	Book         store.Book `json:"book"`
 	Reason       string     `json:"reason"`
 	Availability string     `json:"availability"`
@@ -53,7 +56,12 @@ func (l *Library) Wanted(ctx context.Context) ([]WantedRow, error) {
 					continue
 				}
 				col := byID[t.EditionID]
+				card := ""
+				if !t.IsDefault {
+					card = t.Name
+				}
 				out = append(out, WantedRow{
+					Card:     card,
 					SeriesID: sr.ID, SeriesTitle: sr.Title,
 					EditionID: col.ID, EditionName: col.EditionName, Language: col.Language,
 					Ledger: col.Type, VersionID: t.ID,

@@ -95,6 +95,7 @@ function SeriesWanted({ rows }: { rows: WantedRow[] }) {
                 <Table.Td>
                   <Text size="sm" c="dimmed">
                     {r.editionName}
+                    {r.card ? ` · ${r.card}` : ''}
                     {r.language ? ` · ${r.language}` : ''}
                   </Text>
                 </Table.Td>

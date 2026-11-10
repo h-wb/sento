@@ -1171,6 +1171,11 @@ export interface WantedRow {
   language: string;
   ledger: string;
   versionId: number /* int64 */;
+  /**
+   * Card names the collected version beside an edition's first one
+   * ("Colored"), so two cards wanting the same book read apart.
+   */
+  card?: string;
   book: Book;
   reason: string;
   availability: string;

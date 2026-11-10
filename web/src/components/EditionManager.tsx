@@ -136,9 +136,21 @@ export default function EditionManager({
   const details = useQuery({
     queryKey: ['series', seriesID, 'version-books'],
     queryFn: () => api.versionBooks(seriesID),
-    enabled: !!file,
+    enabled: !!file || section === 'files',
   })
   const allBooks = Object.values(details.data ?? {}).flat()
+  // What a file is for: the books it supplies and the cards that use it.
+  const usedFor = (fileId: number) => {
+    const uses = allBooks.filter((b) => b.fileIds.includes(fileId))
+    if (uses.length === 0) return details.data ? 'Not used by any card' : undefined
+    const numbers = [...new Set(uses.map((b) => b.book.sequenceStr))]
+    const cards = [...new Set(uses.map((b) => b.versionId))].flatMap((id) => {
+      const t = allVersions.find((v) => v.id === id)
+      const c = t && editions.find((e) => e.id === t.editionId)
+      return t && c ? [cardTitle(c, t, allVersions)] : []
+    })
+    return `${numbers.length > 3 ? `${numbers.length} books` : numbers.join(', ')} · ${cards.join(' and ')}`
+  }
   const [otherEditions, setOtherEditions] = useState(false)
   const [language, setLanguage] = useState<string | null>(null)
   const [layout, setLayout] = useState<string | null>(null)
@@ -506,9 +518,9 @@ export default function EditionManager({
                       </Text>
                       <Text size="xs" c={review(f) ? 'yellow' : 'dimmed'}>
                         {[
-                          f.reviewAction === 'trash' ? 'Trash pending' : review(f) ? 'Needs review' : f.unrequested ? 'Unused, reviewed' : 'Confirmed coverage',
-                          f.facts?.language || 'Language unknown',
-                          f.facts?.group,
+                          f.reviewAction === 'trash' ? 'Trash pending' : review(f) ? 'Needs review' : f.unrequested ? 'Reviewed, not used' : usedFor(f.id),
+                          f.facts?.language || f.claims?.language || 'Language unknown',
+                          f.facts?.group || f.claims?.group,
                           f.provenance,
                           fmtSize(f.size),
                         ]

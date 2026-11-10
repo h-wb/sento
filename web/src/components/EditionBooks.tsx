@@ -552,7 +552,7 @@ export default function EditionBooks({
                           if (f) onFile(f)
                         }}
                       >
-                        View files
+                        Edit file mappings
                       </Menu.Item>
                     )}
                     {pins.map((a) => (

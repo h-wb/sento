@@ -17,7 +17,11 @@ import (
 // facts were read from them. Bump it whenever parser output for existing
 // names may change (the corpus locks behavior; this marks facts stale):
 // scans re-read those names when a file's stored version is older.
-const Version = 1
+//
+// 2: 0.7.0 stamped reviewed files as read by revision 1 without re-reading
+// them, so they still hold what the parser before it read (a group name
+// taken for a color claim).
+const Version = 2
 
 func Parse(name string, ch Channel) Result {
 	res := Result{ContentType: ContentManga, Confidence: 1}
