@@ -537,23 +537,6 @@ func (s *Server) handlePlanOrganize(w http.ResponseWriter, r *http.Request) {
 	respondList(w, changes, err)
 }
 
-func (s *Server) handleOrganize(w http.ResponseWriter, r *http.Request) {
-	sid, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	var body OrganizeBody
-	if !decodeBody(w, r, &body) {
-		return
-	}
-	res, err := s.importer.OrganizeIfIdle(r.Context(), sid, body.Rename, body.Retag)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, res)
-}
-
 // handlePlanOrganizeLibrary previews organizing every series, or those
 // in ?series=1,2,3, listing the series it would change.
 func (s *Server) handlePlanOrganizeLibrary(w http.ResponseWriter, r *http.Request) {

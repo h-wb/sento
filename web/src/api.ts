@@ -10,7 +10,6 @@ import type {
   CopyReaderNames,
   LibraryOrganizeRequest,
   LibraryOrganizeStatus,
-  OrganizeResult,
   ReaderNamesRequest,
   ReleaseFileMatch,
   RemovedSeries,
@@ -180,11 +179,6 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   planOrganize: (id: number) => request<FileChange[]>(`/series/${id}/files/organize`),
-  organize: (id: number, body: { rename: boolean; retag: boolean }) =>
-    request<OrganizeResult>(`/series/${id}/files/organize`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
   planOrganizeLibrary: (ids?: number[]) =>
     request<SeriesOrganizePlan[]>(
       `/library/organize${ids?.length ? `?series=${ids.join(',')}` : ''}`,

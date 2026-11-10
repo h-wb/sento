@@ -207,18 +207,21 @@ export default function SystemPage() {
                 </Text>
               </Table.Td>
               <Table.Td>
-                <Tooltip label={t.running ? 'Running' : 'Run now'}>
-                  <ActionIcon
-                    size="sm"
-                    variant="subtle"
-                    aria-label={`Run ${t.name}`}
-                    loading={t.running || (runTask.isPending && runTask.variables?.slug === t.slug)}
-                    disabled={runTask.isPending}
-                    onClick={() => runTask.mutate(t)}
-                  >
-                    <IconRefresh size={14} />
-                  </ActionIcon>
-                </Tooltip>
+                {/* An on-demand task is started from its own preview, never blind. */}
+                {t.intervalSec > 0 && (
+                  <Tooltip label={t.running ? 'Running' : 'Run now'}>
+                    <ActionIcon
+                      size="sm"
+                      variant="subtle"
+                      aria-label={`Run ${t.name}`}
+                      loading={t.running || (runTask.isPending && runTask.variables?.slug === t.slug)}
+                      disabled={runTask.isPending}
+                      onClick={() => runTask.mutate(t)}
+                    >
+                      <IconRefresh size={14} />
+                    </ActionIcon>
+                  </Tooltip>
+                )}
               </Table.Td>
             </Table.Tr>
           ))}

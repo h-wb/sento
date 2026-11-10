@@ -138,16 +138,10 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.Recoverer)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// Organizing a large series runs long by design and checks the
-		// request context per file, so it sits outside the global request
-		// cap: a run still stops when the client disconnects, answers busy
-		// while another run holds the importer, and the scheduler-backed
-		// library-wide run reports progress separately. Reviewing a large
-		// pack is the same shape: its first preview may fingerprint every
+		// Reviewing a large pack runs long by design, so it sits outside
+		// the global request cap: its first preview may fingerprint every
 		// archive, and each file's signature is recorded as it is read, so a
 		// retry after a disconnect makes progress instead of starting over.
-		r.Get("/series/{id}/files/organize", s.handlePlanOrganize)
-		r.Post("/series/{id}/files/organize", s.handleOrganize)
 		r.Post("/series/{id}/review/match", s.handleMatchRelease)
 		r.Post("/series/{id}/review/resolve", s.handleResolveFileReviews)
 		r.Post("/series/{id}/review/choices/preview", s.handleReviewChoicesPreview)

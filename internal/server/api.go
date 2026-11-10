@@ -81,8 +81,8 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Put("/coverage/pin", s.handlePinCoverage)
 			r.Put("/book-monitor", s.handleBookMonitor)
 			r.Put("/files/{fid}/mapping", s.handleRemapFile)
-			// The review routes live outside the global request cap, next to
-			// organize: see Server.Handler.
+			// The review routes live outside the global request cap: see
+			// Server.Handler.
 			r.Patch("/files/{fid}/facts", s.handleFileFacts)
 			r.Post("/check-files", s.handleCheckFiles)
 			r.Get("/observations", s.handleObservations)
@@ -100,6 +100,7 @@ func (s *Server) mountAPI(r chi.Router) {
 			r.Get("/files/trash", s.handleFileTrash)
 			r.Post("/files/trash/{fid}/restore", s.handleRestoreTrash)
 			r.Delete("/files/trash/{fid}", s.handlePurgeTrash)
+			r.Get("/files/organize", s.handlePlanOrganize)
 			r.Post("/import", s.handleScanSeries)
 			r.Get("/bindings", s.handleListBindings)
 			r.Post("/bindings", s.handleAddBinding)
