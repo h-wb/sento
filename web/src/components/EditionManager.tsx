@@ -136,9 +136,24 @@ export default function EditionManager({
   const details = useQuery({
     queryKey: ['series', seriesID, 'version-books'],
     queryFn: () => api.versionBooks(seriesID),
-    enabled: !!file,
+    enabled: !!file || section === 'files',
   })
   const allBooks = Object.values(details.data ?? {}).flat()
+  // What a file is for: "Vol. 2 · used by Standard Edition and Standard
+  // Edition · Colored".
+  const usedFor = (fileId: number) => {
+    const uses = allBooks.filter((b) => b.fileIds.includes(fileId))
+    if (uses.length === 0) return details.data ? 'Not used by any card' : undefined
+    const numbers = [...new Set(uses.map((b) => b.book.sequenceStr))]
+    const cards = [...new Set(uses.map((b) => b.versionId))].flatMap((id) => {
+      const t = allVersions.find((v) => v.id === id)
+      const c = t && editions.find((e) => e.id === t.editionId)
+      return t && c ? [{ title: cardTitle(c, t, allVersions), chapter: c.type === 'chapter' }] : []
+    })
+    const kind = cards.some((c) => c.chapter) ? 'Ch.' : 'Vol.'
+    const books = numbers.length > 3 ? `${numbers.length} books` : `${kind} ${numbers.join(', ')}`
+    return `${books} · used by ${cards.map((c) => c.title).join(' and ')}`
+  }
   const [otherEditions, setOtherEditions] = useState(false)
   const [language, setLanguage] = useState<string | null>(null)
   const [layout, setLayout] = useState<string | null>(null)
@@ -506,10 +521,10 @@ export default function EditionManager({
                       </Text>
                       <Text size="xs" c={review(f) ? 'yellow' : 'dimmed'}>
                         {[
-                          f.reviewAction === 'trash' ? 'Trash pending' : review(f) ? 'Needs review' : f.unrequested ? 'Unused, reviewed' : 'Confirmed coverage',
-                          f.facts?.language || 'Language unknown',
-                          f.facts?.group,
-                          f.provenance,
+                          f.reviewAction === 'trash' ? 'Trash pending' : review(f) ? 'Needs review' : f.unrequested ? 'Reviewed, not used' : usedFor(f.id),
+                          f.facts?.language || f.claims?.language || 'Language unknown',
+                          f.facts?.group || f.claims?.group,
+                          f.provenance === 'library-import' ? 'found by a scan' : f.provenance,
                           fmtSize(f.size),
                         ]
                           .filter(Boolean)
