@@ -54,9 +54,8 @@ import { AddSeriesForm } from './components/AddSeriesForm'
 import { PRESETS, useThemePreset } from './theme'
 import LibraryPage from './pages/LibraryPage'
 
-// Lazy-loaded routes so heavy deps (e.g. recharts on Activity/System) land in
-// their own chunks, fetched only when the route is visited. Library stays
-// eager since it's the landing page.
+// Lazy-loaded routes land in their own chunks, fetched only when the route
+// is visited. Library stays eager since it's the landing page.
 const AddPage = lazy(() => import('./pages/AddPage'))
 const SeriesPage = lazy(() => import('./pages/SeriesPage'))
 const CalendarPage = lazy(() => import('./pages/CalendarPage'))

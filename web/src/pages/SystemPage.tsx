@@ -1,6 +1,5 @@
 import { ActionIcon, Anchor, Badge, Card, Group, Stack, Table, Text, ThemeIcon, Title, Tooltip } from '@mantine/core'
-import { BarChart } from '@mantine/charts'
-import { IconAlertTriangle, IconCircleCheck, IconCircleX, IconRefresh } from '@tabler/icons-react'
+import { IconAlertTriangle, IconCircleCheck, IconCircleX, IconPlayerPlay, IconRefresh } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, type TaskStatus } from '../api'
@@ -53,12 +52,6 @@ export default function SystemPage() {
     onError: notify.err,
   })
 
-  // Last-run durations, longest first — a quick read on which loops are heavy.
-  const durations = (tasks ?? [])
-    .filter((t) => t.lastDurationMs > 0)
-    .sort((a, b) => b.lastDurationMs - a.lastDurationMs)
-    .map((t) => ({ task: t.name, ms: t.lastDurationMs }))
-
   return (
     <>
       <PageHeader title="System" description="Service status and background tasks." />
@@ -72,7 +65,7 @@ export default function SystemPage() {
           <Group justify="space-between" mt="xs">
             <Text>Database</Text>
             <Badge color={status.database.ok ? 'green' : 'red'}>
-              {status.database.ok ? 'ok' : 'down'}
+              {status.database.ok ? 'OK' : 'Down'}
             </Badge>
           </Group>
         </Card>
@@ -136,23 +129,6 @@ export default function SystemPage() {
         </Card>
       )}
 
-      {durations.length > 0 && (
-        <Card withBorder maw={900} mb="lg">
-          <Text size="sm" fw={600} mb="md">
-            Last run duration (ms)
-          </Text>
-          <BarChart
-            h={Math.max(160, durations.length * 38)}
-            data={durations}
-            dataKey="task"
-            orientation="vertical"
-            series={[{ name: 'ms', color: 'brand.5' }]}
-            withTooltip
-            gridAxis="none"
-          />
-        </Card>
-      )}
-
       <Title order={4} mb="xs">
         Scheduled tasks
       </Title>
@@ -165,9 +141,9 @@ export default function SystemPage() {
           <Table.Tr>
             <Table.Th>Name</Table.Th>
             <Table.Th>Interval</Table.Th>
-            <Table.Th>Last Execution</Table.Th>
-            <Table.Th>Last Duration</Table.Th>
-            <Table.Th>Next Execution</Table.Th>
+            <Table.Th>Last run</Table.Th>
+            <Table.Th>Took</Table.Th>
+            <Table.Th>Next run</Table.Th>
             <Table.Th w={50} />
           </Table.Tr>
         </Table.Thead>
@@ -180,7 +156,7 @@ export default function SystemPage() {
                   {t.lastError && (
                     <Tooltip label={t.lastError} multiline maw={360}>
                       <Badge size="xs" color="red" variant="light">
-                        failed
+                        Failed
                       </Badge>
                     </Tooltip>
                   )}
@@ -218,7 +194,7 @@ export default function SystemPage() {
                       disabled={runTask.isPending}
                       onClick={() => runTask.mutate(t)}
                     >
-                      <IconRefresh size={14} />
+                      <IconPlayerPlay size={14} />
                     </ActionIcon>
                   </Tooltip>
                 )}
