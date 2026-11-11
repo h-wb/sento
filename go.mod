@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/georgysavva/scany/v2 v2.1.4
 	github.com/go-chi/chi/v5 v5.5.0
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/nwaples/rardecode/v2 v2.4.6
 	golang.org/x/sync v0.25.0
 	golang.org/x/text v0.44.0
