@@ -39,9 +39,11 @@ export function TemplateInput({
         disabled={disabled}
         onChange={(e) => onChange(e.currentTarget.value)}
         onFocus={(e) => onFocus?.(e.currentTarget)}
+        // The template and its preview in one font, so they read alike.
+        styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)', fontSize: 12.5 } }}
       />
       {!error && (
-        <Text size="xs" c="dimmed" mt={2} style={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
+        <Text size="xs" c="dimmed" mt={4} style={{ fontFamily: 'var(--mantine-font-family-monospace)', overflowWrap: 'anywhere' }}>
           Preview: {preview ?? 'Loading…'}
         </Text>
       )}

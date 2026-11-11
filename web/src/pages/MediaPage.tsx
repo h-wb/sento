@@ -1,6 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import {
-  Accordion,
   Alert,
   Badge,
   Button,
@@ -12,7 +11,6 @@ import {
   SimpleGrid,
   Stack,
   Switch,
-  Table,
   Text,
   TextInput,
   Title,
@@ -198,7 +196,7 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
   useUnsavedChanges(dirty)
 
   return (
-    <>
+    <div className={classes.page}>
       <PageHeader
         title="Media"
         description="Where Sento puts your books, and what it writes inside them. New imports follow these settings at once; files already in the library change when you organize them."
@@ -304,26 +302,30 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
             description="Where each book's file goes, one level at a time. The tree shows three sample books; pick a level to change the setting that makes it."
           >
             {preview.data?.paths ? <PathTree examples={preview.data.paths} onPick={pick} /> : <Text size="sm" c="dimmed">Loading…</Text>}
-            <Group grow align="flex-start">
-              <TextInput
-                id="media-volumesRoot"
-                label="Volumes top folder"
-                placeholder="None"
-                description="Optional folder above the series, e.g. Volumes."
-                value={form.volumesRoot}
-                error={errors.volumesRoot}
-                onChange={(e) => set({ volumesRoot: e.currentTarget.value })}
-              />
-              <TextInput
-                id="media-chaptersRoot"
-                label="Chapters top folder"
-                placeholder="None"
-                description="A different name, e.g. Chapters, keeps chapters in their own tree."
-                value={form.chaptersRoot}
-                error={errors.chaptersRoot}
-                onChange={(e) => set({ chaptersRoot: e.currentTarget.value })}
-              />
-            </Group>
+            <div>
+              <Group grow align="flex-start">
+                <TextInput
+                  id="media-volumesRoot"
+                  label="Volumes top folder"
+                  placeholder="None"
+                  value={form.volumesRoot}
+                  error={errors.volumesRoot}
+                  onChange={(e) => set({ volumesRoot: e.currentTarget.value })}
+                />
+                <TextInput
+                  id="media-chaptersRoot"
+                  label="Chapters top folder"
+                  placeholder="None"
+                  value={form.chaptersRoot}
+                  error={errors.chaptersRoot}
+                  onChange={(e) => set({ chaptersRoot: e.currentTarget.value })}
+                />
+              </Group>
+              <Text size="xs" c="dimmed" mt={6}>
+                Optional folders above every series, such as Volumes and Chapters. Two different
+                names keep chapters in a tree of their own.
+              </Text>
+            </div>
             <TemplateInput
               id="media-seriesFolder"
               label="Series folder"
@@ -422,26 +424,20 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
                 {allFields ? 'Hide' : 'Show'} every field Sento writes ({schema.data?.comicInfo.length ?? 0})
               </Button>
               <Collapse expanded={allFields}>
-                <Table verticalSpacing={4} mt="xs" withRowBorders={false}>
-                  <Table.Tbody>
-                    {(schema.data?.comicInfo ?? []).map((w) => (
-                      <Table.Tr key={w.fields.join()}>
-                        <Table.Td style={{ verticalAlign: 'top', whiteSpace: 'nowrap' }}>
-                          <Group gap={4}>
-                            {w.fields.map((f) => (
-                              <Code key={f}>{f}</Code>
-                            ))}
-                          </Group>
-                        </Table.Td>
-                        <Table.Td>
-                          <Text size="xs" c="dimmed">
-                            {w.from}
-                          </Text>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
+                <div className={classes.pairs} style={{ marginTop: 8 }}>
+                  {(schema.data?.comicInfo ?? []).map((w) => (
+                    <Fragment key={w.fields.join()}>
+                      <Group gap={4}>
+                        {w.fields.map((f) => (
+                          <Code key={f}>{f}</Code>
+                        ))}
+                      </Group>
+                      <Text size="xs" c="dimmed">
+                        {w.from}
+                      </Text>
+                    </Fragment>
+                  ))}
+                </div>
               </Collapse>
             </div>
           </Section>
@@ -488,54 +484,46 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
         </fieldset>
 
         <Card padding="md" className={classes.tokens}>
-          <Accordion variant="default" defaultValue="tokens">
-            <Accordion.Item value="tokens">
-              <Accordion.Control>Naming tokens</Accordion.Control>
-              <Accordion.Panel>
-                <Text size="xs" c="dimmed" mb="xs">
-                  Click a token to put it into the template you are editing. <Code>:00</Code> pads
-                  a number.
+          <Title order={4} mb={4}>
+            Naming tokens
+          </Title>
+          <Text size="xs" c="dimmed" mb="sm">
+            Click a token to put it into the template you are editing. <Code>:00</Code> pads a
+            number.
+          </Text>
+          <div className={classes.pairs}>
+            {(schema.data?.tokens ?? []).map((t) => (
+              <Fragment key={t.syntax}>
+                <span style={{ whiteSpace: 'nowrap' }}>
+                  <UnstyledButton
+                    aria-label={`Insert ${t.syntax}`}
+                    // Keep the caret in the template being edited.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => insertToken(t.syntax)}
+                  >
+                    <Code>{t.syntax}</Code>
+                  </UnstyledButton>
+                  {t.perBook && (
+                    <Text span size="xs" c="dimmed" aria-hidden>
+                      {' *'}
+                    </Text>
+                  )}
+                </span>
+                <Text size="xs" c="dimmed">
+                  {t.help}
                 </Text>
-                <Table withRowBorders={false} verticalSpacing={2}>
-                  <Table.Tbody>
-                    {(schema.data?.tokens ?? []).map((t) => (
-                      <Table.Tr key={t.syntax}>
-                        <Table.Td style={{ whiteSpace: 'nowrap' }}>
-                          <UnstyledButton
-                            aria-label={`Insert ${t.syntax}`}
-                            // Keep the caret in the template being edited.
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => insertToken(t.syntax)}
-                          >
-                            <Code style={{ whiteSpace: 'nowrap' }}>{t.syntax}</Code>
-                          </UnstyledButton>
-                          {t.perBook && (
-                            <Text span size="xs" c="dimmed" aria-hidden>
-                              {' *'}
-                            </Text>
-                          )}
-                        </Table.Td>
-                        <Table.Td>
-                          <Text size="xs" c="dimmed">
-                            {t.help}
-                          </Text>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-                <Text size="xs" c="dimmed" mt="xs">
-                  Brackets around an empty token disappear: <Code>[{'{group}'}]</Code> vanishes
-                  when there is no group.
-                </Text>
-                <Text size="xs" c="dimmed" mt={4}>
-                  * names one book, so it cannot be part of a name in readers.
-                </Text>
-              </Accordion.Panel>
-            </Accordion.Item>
-          </Accordion>
+              </Fragment>
+            ))}
+          </div>
+          <Text size="xs" c="dimmed" mt="sm">
+            Brackets around an empty token disappear: <Code>[{'{group}'}]</Code> vanishes when
+            there is no group.
+          </Text>
+          <Text size="xs" c="dimmed" mt={4}>
+            * names one book, so it cannot be part of a name in readers.
+          </Text>
         </Card>
       </div>
-    </>
+    </div>
   )
 }
