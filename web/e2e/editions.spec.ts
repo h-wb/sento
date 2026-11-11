@@ -27,7 +27,6 @@ test('editions retain independent versions, editable books, and mobile layout', 
     expect(created.ok()).toBeTruthy()
     const profileId = (await created.json()).id
     await edition.getByRole('button', { name: /More actions/ }).click()
-    await page.getByRole('menuitem', { name: 'More', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Collect again with another profile…', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Collect again with another profile', exact: true })
     await dialog.getByRole('combobox', { name: 'Release profile' }).click()

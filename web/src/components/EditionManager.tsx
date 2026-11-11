@@ -288,9 +288,6 @@ export default function EditionManager({
                           }}
                           more={
                             <>
-                              <Menu.Item onClick={() => setCollectAgain(c)}>
-                                Collect again with another profile…
-                              </Menu.Item>
                               {versions.length > 1 && (
                                 <Menu.Item
                                   color="red"
@@ -319,6 +316,9 @@ export default function EditionManager({
                           <Menu.Item onClick={findMissing}>Search releases</Menu.Item>
                           <Menu.Item onClick={() => setEdition(c)}>Edit edition</Menu.Item>
                           <Menu.Item onClick={() => setVersion(t)}>Download settings</Menu.Item>
+                          <Menu.Item onClick={() => setCollectAgain(c)}>
+                            Collect again with another profile…
+                          </Menu.Item>
                           <Menu.Item
                             onClick={() =>
                               setBook({
