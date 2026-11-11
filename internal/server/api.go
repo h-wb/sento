@@ -36,6 +36,7 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/library/organize", s.handlePlanOrganizeLibrary)
 	r.Post("/library/organize", s.handleOrganizeLibrary)
 	r.Get("/library/organize/status", s.handleOrganizeLibraryStatus)
+	r.Get("/library/progress", s.handleLibraryProgress)
 	r.Get("/settings/media", s.handleGetMediaSettings)
 	r.Put("/settings/media", s.handlePutMediaSettings)
 	r.Post("/settings/media/preview", s.handlePreviewMediaSettings)
@@ -215,6 +216,13 @@ func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
 // across every monitored series (the Wanted page).
 func (s *Server) handleWanted(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.library.Wanted(r.Context())
+	respondList(w, rows, err)
+}
+
+// handleLibraryProgress counts each series' books on disk and wanted, for
+// the Library's posters.
+func (s *Server) handleLibraryProgress(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.library.Progress(r.Context())
 	respondList(w, rows, err)
 }
 

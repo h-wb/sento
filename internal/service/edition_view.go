@@ -76,6 +76,45 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 	return out, nil
 }
 
+// SeriesProgress is how much of what a series collects is in the library:
+// copies whose card holds an accepted file, of the copies its cards
+// collect that are out. The Library draws it under each poster.
+type SeriesProgress struct {
+	SeriesID  int64 `json:"seriesId"`
+	Owned     int   `json:"owned"`
+	Collected int   `json:"collected"`
+}
+
+// Progress counts, for every series, the copies its cards own and collect.
+// A file a card refuses, or a download still running, is not owned yet.
+func (l *Library) Progress(ctx context.Context) ([]SeriesProgress, error) {
+	series, err := l.store.ListSeries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SeriesProgress, 0, len(series))
+	for _, sr := range series {
+		v, err := loadLedger(ctx, l.store, sr.ID)
+		if err != nil {
+			return nil, err
+		}
+		row := SeriesProgress{SeriesID: sr.ID}
+		for _, t := range v.Versions {
+			for _, sl := range v.Status[t.ID] {
+				switch sl.State {
+				case StateUnmonitored, StateNotReleased:
+					continue
+				case StateOwned, StateUpgradeEligible:
+					row.Owned++
+				}
+				row.Collected++
+			}
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
 // VersionBooks lists every book of one collected version with its ledger
 // state. The list is not paged: the ledger is evaluated whole either way,
 // and the Editions view needs all of it to draw the overview grid, count

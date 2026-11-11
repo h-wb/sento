@@ -15,6 +15,7 @@ import type {
   ReleaseFileMatch,
   RemovedSeries,
   SeriesOrganizePlan,
+  SeriesProgress,
   WantedRow,
 } from './types/service'
 import type {
@@ -191,6 +192,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   organizeLibraryStatus: () => request<LibraryOrganizeStatus>('/library/organize/status'),
+  libraryProgress: () => request<SeriesProgress[]>('/library/progress'),
   checkFiles: (id: number) => request<void>(`/series/${id}/check-files`, { method: 'POST' }),
   editionOverview: (id: number) => request<EditionOverview>(`/series/${id}/edition-overview`),
   // Older servers answered this route with a paged object. Say so instead
