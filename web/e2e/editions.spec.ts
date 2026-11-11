@@ -163,6 +163,8 @@ test('a long chapter edition is browsed as a grid with filters, ranges and jump'
   const { id } = await added.json()
   try {
     await page.goto(`/series/${id}`)
+    // Chapters the volumes cover are all paused: the card opens folded.
+    await page.getByRole('button', { name: /Show chapters/ }).click()
     await expect(page.getByRole('button', { name: /Hide chapters/ })).toBeVisible()
     // One tab row only: no nested section switcher above the editions.
     await expect(page.getByText('Your editions', { exact: true })).toHaveCount(0)

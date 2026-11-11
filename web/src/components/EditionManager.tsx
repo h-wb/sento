@@ -207,8 +207,11 @@ export default function EditionManager({
               const owned = stats?.owned ?? 0
               const total = stats?.total ?? 0
               const noun = (c.type === 'chapter' ? 'chapter' : 'volume') + (total === 1 ? '' : 's')
-              // With one or two cards there is nothing to scan past.
-              const show = expanded[t.id] ?? cardCount <= 2
+              // With one or two cards there is nothing to scan past, but a
+              // card with nothing on disk and nothing wanted (chapters the
+              // volumes already cover) is only a wall of paused numbers.
+              const idle = !!stats && stats.onDisk === 0 && stats.wanted === 0 && stats.review === 0
+              const show = expanded[t.id] ?? (cardCount <= 2 && !idle)
               const title = cardTitle(c, t, allVersions)
               const missing = stats?.wanted ?? 0
               const refusal = refused(t.id)
@@ -369,6 +372,7 @@ export default function EditionManager({
                               onClick={() => setExpanded({ ...expanded, [t.id]: !show })}
                             >
                               {total} {noun} · {owned} owned
+                              {(stats?.wanted ?? 0) > 0 && ` · ${stats?.wanted} wanted`}
                             </Button>
                           ) : (
                             <Text size="sm" c="dimmed">
