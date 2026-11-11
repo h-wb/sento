@@ -50,7 +50,7 @@ const layouts: { value: string; label: string; template: string; seriesFolder?: 
   { value: 'edition', label: 'By edition — Standard Edition [en]', template: '{edition} [{lang}] ({version})' },
   {
     value: 'editionFolders',
-    label: 'One series folder per edition and card — ONE PIECE [Standard Edition][en] (Colored)',
+    label: 'One series folder per edition and profile — ONE PIECE [Standard Edition][en] (Colored)',
     template: '',
     seriesFolder: seriesFolderByEdition,
   },
@@ -131,7 +131,7 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
     const sample = preview.data?.reader[key]
     if (!sample) return undefined
     return sample.colored !== sample.first
-      ? `${sample.first} · a “Colored” card: ${sample.colored}`
+      ? `${sample.first} · collected again as “Colored”: ${sample.colored}`
       : sample.first
   }
   const readerInput = (f: (typeof readerFields)[number]) => (
@@ -240,7 +240,7 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
           </Group>
           <Select
             label="Folders inside a series"
-            description="How editions, and the cards of an edition collected with several profiles, are separated. A series folder template naming the edition gives each edition its own top folder, which folder-based readers show as its own series."
+            description="How editions, and an edition collected again with another profile, are separated. A series folder template naming the edition gives each edition its own top folder, which folder-based readers show as its own series."
             allowDeselect={false}
             value={
               layouts.find(

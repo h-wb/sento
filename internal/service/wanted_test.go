@@ -110,3 +110,43 @@ func TestWantedListsMissingAndRescanReopens(t *testing.T) {
 		t.Error("an unmonitored series should have no wanted rows")
 	}
 }
+
+// TestProgressCountsOwnedOfCollected keeps the Library's poster honest:
+// a fresh series owns none of what it collects, and a scanned file its
+// card accepts counts once.
+func TestProgressCountsOwnedOfCollected(t *testing.T) {
+	t.Parallel()
+	lib, st := setup(t)
+	ctx := context.Background()
+	sid, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	if err != nil {
+		t.Fatal(err)
+	}
+	progress := func() SeriesProgress {
+		t.Helper()
+		rows, err := lib.Progress(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 1 || rows[0].SeriesID != sid {
+			t.Fatalf("progress rows %+v, want one for series %d", rows, sid)
+		}
+		return rows[0]
+	}
+	before := progress()
+	if before.Owned != 0 || before.Collected == 0 {
+		t.Fatalf("fresh series progress %+v, want none owned of some collected", before)
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "ONE PIECE v01 (Digital).cbz"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewScanner(st, dir).ScanSeriesFolder(ctx, sid, dir); err != nil {
+		t.Fatal(err)
+	}
+	after := progress()
+	if after.Owned != 1 || after.Collected != before.Collected {
+		t.Errorf("after scanning volume 1: %+v, want 1 owned of %d", after, before.Collected)
+	}
+}

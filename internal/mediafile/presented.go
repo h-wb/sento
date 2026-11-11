@@ -24,7 +24,7 @@ var PresentedFields = []PresentedField{
 	// names itself, so a reader keeps it apart from the default one.
 	{Key: "series", Label: "series name", Default: "{Series Title} {version}",
 		Title: "Series name in readers",
-		Help:  "Written into each book, so Kavita, Komga and other readers file it under this series. {version} is empty for an edition’s first card. An edition can set its own name in Edit edition. Also usable as {Reader Series} in folder and file names.",
+		Help:  "Written into each book, so Kavita, Komga and other readers file it under this series. {version} is empty for the first profile an edition is collected with. An edition can set its own name in Edit edition. Also usable as {Reader Series} in folder and file names.",
 		field: func(c *ComicInfo) *string { return &c.Series }},
 	// What the copies have in common, for readers that collect series.
 	{Key: "seriesGroup", Label: "series group", Default: "{Series Title}",

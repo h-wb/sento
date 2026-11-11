@@ -9,13 +9,13 @@ import { PageHeader } from '../components/PageHeader'
 import { AddSeriesForm } from '../components/AddSeriesForm'
 
 export default function AddPage() {
-  usePageTitle('Add Series')
+  usePageTitle('Add series')
   const navigate = useNavigate()
 
   return (
     <>
       <PageHeader
-        title="Add Series"
+        title="Add series"
         description="Search MangaBaka and add a series to your library."
       />
       <Tabs defaultValue={new URLSearchParams(window.location.search).get('tab') === 'import' ? 'import' : 'search'}>

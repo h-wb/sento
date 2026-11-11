@@ -274,7 +274,7 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 		}
 		for _, a := range cov {
 			if a.FileID == f.ID {
-				row.TrashReason = "A card uses this file, so it cannot go to trash: untick it for every card first"
+				row.TrashReason = "An edition uses this file, so it cannot go to trash: untick it everywhere first"
 			}
 		}
 		if slices.Contains(pins, f.ID) {
@@ -388,7 +388,7 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 			}
 			key := store.BookKey(b.Book.VersionID, b.Book.BookID)
 			if used[key] {
-				return nil, apperr.Invalidf("choose one incoming archive per book and card")
+				return nil, apperr.Invalidf("choose one incoming archive per book and edition")
 			}
 			used[key] = true
 			w.Selected = append(w.Selected, b.Book)

@@ -160,6 +160,16 @@ export interface EditionOverview {
   wantedCopies: number /* int */;
   reviewFiles: number /* int */;
 }
+/**
+ * SeriesProgress is how much of what a series collects is in the library:
+ * copies whose card holds an accepted file, of the copies its cards
+ * collect that are out. The Library draws it under each poster.
+ */
+export interface SeriesProgress {
+  seriesId: number /* int64 */;
+  owned: number /* int */;
+  collected: number /* int */;
+}
 
 //////////
 // source: extensions.go

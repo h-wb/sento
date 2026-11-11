@@ -58,7 +58,7 @@ var Tokens = []Token{
 	{Name: "publisher", Help: "the edition's publisher", value: text(func(t NameTokens) string { return t.Publisher })},
 	{Name: "medium", Help: "paperback, digital…", value: text(func(t NameTokens) string { return t.Medium })},
 	{Name: "type", Help: "Volumes or Chapters", value: text(func(t NameTokens) string { return t.Type })},
-	{Name: "version", Help: "profile of an edition collected with several; empty for its first card", value: text(func(t NameTokens) string { return t.Version })},
+	{Name: "version", Help: "profile of an edition collected with several; empty for the first", value: text(func(t NameTokens) string { return t.Version })},
 	{Name: "editionId", Help: "internal id that never changes", value: id(func(t NameTokens) int64 { return t.EditionID })},
 	{Name: "versionId", Help: "internal id that never changes", value: id(func(t NameTokens) int64 { return t.VersionID })},
 }

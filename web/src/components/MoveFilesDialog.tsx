@@ -113,7 +113,7 @@ export function MoveFilesDialog({
       f.reason ||
       mine.find((b) => b.reason)?.reason ||
       (mine.length === 0
-        ? 'This card has no book of that number'
+        ? 'This edition has no book of that number'
         : usable.length === 0
           ? 'Another selected file already supplies this book'
           : '')
@@ -158,22 +158,22 @@ export function MoveFilesDialog({
     cardLabel(editions.find((c) => c.id === t.editionId)!, t, versions)
   const cardName = card ? label(card) : ''
   return (
-    <Modal opened onClose={() => !busy && close()} title="Use files for a card" size="lg">
+    <Modal opened onClose={() => !busy && close()} title="Use files for an edition" size="lg">
       <Stack gap="sm">
         <Text size="sm">
-          {files.length} {files.length === 1 ? 'file' : 'files'}. Pick the card that should use
-          them. A card of another edition takes each file for its book of the same number.
+          {files.length} {files.length === 1 ? 'file' : 'files'}. Pick the edition that should use
+          them. Each file stands for its book of the same number there.
         </Text>
         <Select
-          label="Card"
-          placeholder="Pick a card"
+          label="Edition"
+          placeholder="Pick an edition"
           disabled={busy}
           data={versions.map((t) => ({ value: String(t.id), label: label(t) }))}
           value={target}
           onChange={setTarget}
         />
         <Checkbox
-          label="Only this card: the other cards stop using these files"
+          label="Only this one: other editions stop using these files"
           checked={only}
           disabled={busy}
           onChange={(e) => setOnly(e.currentTarget.checked)}

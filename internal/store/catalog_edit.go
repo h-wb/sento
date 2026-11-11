@@ -293,7 +293,7 @@ func (s *Store) LinkCatalog(ctx context.Context, seriesID, localID, catalogID in
 	}
 	for _, v := range p.CatalogVersions {
 		if !v.IsDefault {
-			return apperr.Conflictf("this edition is collected with several profiles; remove the extra cards before linking")
+			return apperr.Conflictf("this edition is collected with several profiles; stop collecting it with the extra ones before linking")
 		}
 	}
 	tx, err := s.db.BeginTx(ctx, nil)

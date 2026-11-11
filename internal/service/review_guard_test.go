@@ -33,7 +33,7 @@ func TestReviewChoicesProtectsCurrentlySelectedArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !plan.Files[0].Books[0].CurrentSelected || !plan.Files[0].Books[0].UseIncoming || !strings.Contains(plan.Files[0].TrashReason, "A card uses this file") {
+	if !plan.Files[0].Books[0].CurrentSelected || !plan.Files[0].Books[0].UseIncoming || !strings.Contains(plan.Files[0].TrashReason, "An edition uses this file") {
 		t.Fatalf("selected archive not represented/protected: %+v", plan.Files[0])
 	}
 	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "trash"}}}); !errors.Is(err, apperr.ErrConflict) {

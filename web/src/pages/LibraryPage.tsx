@@ -72,6 +72,20 @@ export default function LibraryPage() {
   const queryClient = useQueryClient()
   const openAddSeries = useAddSeries()
   const { data: series, error, isPending, refetch } = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
+  // Under ['series'], so whatever refreshes the list refreshes these too.
+  const { data: progressRows } = useQuery({ queryKey: ['series', 'progress'], queryFn: api.libraryProgress })
+  const progress = new Map((progressRows ?? []).map((p) => [p.seriesId, p]))
+  // "4/7": books owned of those the series collects that are out.
+  const owned = (id: number) => {
+    const p = progress.get(id)
+    if (!p || p.collected === 0) return null
+    return {
+      complete: p.owned >= p.collected,
+      share: (100 * p.owned) / p.collected,
+      label: `${p.owned}/${p.collected}`,
+      title: `${p.owned} of ${p.collected} collected books in the library`,
+    }
+  }
   const [filter, setFilter] = useState('')
   const [scope, setScope] = useState<'all' | 'monitored' | 'unmonitored'>('all')
   const [sortField, setSortField] = useState<SortField>('sortTitle')
@@ -164,13 +178,18 @@ export default function LibraryPage() {
       {series && series.length > 0 && (
         <div className={classes.toolbar}>
           <div className={classes.scopes} role="group" aria-label="Monitoring filter">
-            {(['all', 'monitored', 'unmonitored'] as const).map((value) => (
-              <UnstyledButton key={value} className={classes.scope} data-active={scope === value}
-                aria-pressed={scope === value} onClick={() => { setScope(value); setSelected(new Set()) }}>
-                {value === 'all' ? 'All series' : value === 'monitored' ? 'Monitored' : 'Unmonitored'}
-                <span>{value === 'all' ? series.length : series.filter((s) => value === 'monitored' ? s.monitored : !s.monitored).length}</span>
-              </UnstyledButton>
-            ))}
+            {(['all', 'monitored', 'unmonitored'] as const).map((value) => {
+              const count = value === 'all' ? series.length : series.filter((s) => value === 'monitored' ? s.monitored : !s.monitored).length
+              // A filter that would show nothing is not worth a tab.
+              if (count === 0 && scope !== value) return null
+              return (
+                <UnstyledButton key={value} className={classes.scope} data-active={scope === value}
+                  aria-pressed={scope === value} onClick={() => { setScope(value); setSelected(new Set()) }}>
+                  {value === 'all' ? 'All series' : value === 'monitored' ? 'Monitored' : 'Unmonitored'}
+                  <span>{count}</span>
+                </UnstyledButton>
+              )
+            })}
           </div>
           <Group gap="xs" wrap="nowrap" className={classes.tools}>
             <TextInput size="sm" placeholder="Filter by title…" aria-label="Filter by title"
@@ -285,11 +304,20 @@ export default function LibraryPage() {
                   fallbackSrc="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='360'%3E%3Crect width='240' height='360' fill='%2352524e'/%3E%3C/svg%3E" /> :
                   <div className={classes.coverFallback}><IconBooks size={32} stroke={1} /><Text size="sm" ta="center">{s.title}</Text></div>}
                 {!s.monitored && <Tooltip label="Unmonitored"><span className={classes.monitorFlag}><IconEyeOff size={14} /></span></Tooltip>}
+                {owned(s.id) && (
+                  <span className={classes.progress} data-complete={owned(s.id)!.complete}>
+                    <span style={{ width: `${owned(s.id)!.share}%` }} />
+                  </span>
+                )}
               </div>
               <Text className={classes.posterTitle} fw={500} size="sm" mt={11} lineClamp={2}>{s.title}</Text>
               <Group gap={6} mt={4} className={classes.metadata}>
                 {s.status && <><span className={classes.releaseDot} data-ongoing={s.status === 'ongoing'} /><Text size="xs" tt="capitalize">{s.status.replaceAll('_', ' ')}</Text></>}
-                {s.finalVolume > 0 && <Text size="xs">· {s.finalVolume} vol</Text>}
+                {owned(s.id) ? (
+                  <Text size="xs" title={owned(s.id)!.title}>· {owned(s.id)!.label}</Text>
+                ) : (
+                  s.finalVolume > 0 && <Text size="xs">· {s.finalVolume} vol</Text>
+                )}
                 {!s.status && (s.year ?? 0) > 0 && <Text size="xs">{s.year}</Text>}
               </Group>
             </UnstyledButton>
@@ -314,6 +342,7 @@ export default function LibraryPage() {
                 {sortTh('Type', 'type')}
                 {sortTh('Status', 'status')}
                 {sortTh('Year', 'year')}
+                <Table.Th ta="right">Owned</Table.Th>
                 {sortTh('Vol', 'finalVolume', 'right')}
                 {sortTh('Chapters', 'totalChapters', 'right')}
                 {sortTh('Added', 'addedAt')}
@@ -368,6 +397,11 @@ export default function LibraryPage() {
                   <Table.Td>
                     <Text size="sm" c="dimmed">
                       {s.year || '—'}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td ta="right">
+                    <Text size="sm" c={owned(s.id)?.complete === false ? undefined : 'dimmed'} title={owned(s.id)?.title}>
+                      {owned(s.id)?.label ?? '—'}
                     </Text>
                   </Table.Td>
                   <Table.Td ta="right">

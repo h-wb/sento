@@ -1,0 +1,9 @@
+.lines { margin-top: 12px; border-top: 1px solid var(--mantine-color-default-border); }
+.line { display: grid; grid-template-columns: minmax(140px, 240px) minmax(0, 1fr) auto; gap: 16px; align-items: baseline; padding: 8px 0 0; }
+.card { overflow-wrap: anywhere; }
+.books { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.kind { white-space: nowrap; }
+@media (max-width: 36em) {
+  .line { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; }
+  .card { grid-column: 1 / -1; }
+}

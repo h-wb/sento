@@ -20,25 +20,25 @@ test('wanted page lists missing books, searches them, and rescans on demand', as
 
   await page.goto('/wanted')
 
-  // One section per series, with the series link and a wanted count.
+  // One section per series: its link, then one line per card naming the
+  // missing books as ranges with a count.
   const section = page.locator('.mantine-Card-root').filter({ hasText: 'Deterministic Diaries' }).first()
   await expect(section).toBeVisible()
-  await expect(section.getByText(/wanted/)).toBeVisible()
-  await expect(section.getByText('Missing', { exact: true }).first()).toBeVisible()
+  await expect(section.getByText(/^Vol\. \d/).first()).toBeVisible()
+  await expect(section.getByText(/^\d+ missing$/).first()).toBeVisible()
 
-  // The summary line and the segmented control show the counts.
-  await expect(page.getByText(/missing · /)).toBeVisible()
+  // The filter shows the counts.
   await expect(page.getByText(/^Missing ·/)).toBeVisible()
 
   // The automatic search queues its release and says so.
-  await section.getByRole('button', { name: /Search volume for Deterministic Diaries/ }).click()
+  await section.getByRole('button', { name: /Search volumes for Deterministic Diaries/ }).click()
   await expect(page.getByText(/Queued 1 release for Deterministic Diaries/)).toBeVisible()
 
   // With the real backend, no configured volume indexer means nothing can
   // be queued. This used to return null and crash the success handler.
   await page.unroute(`**/api/v1/series/${id}/search`)
   const response = page.waitForResponse((res) => res.url().endsWith(`/api/v1/series/${id}/search`))
-  await section.getByRole('button', { name: /Search volume for Deterministic Diaries/ }).click()
+  await section.getByRole('button', { name: /Search volumes for Deterministic Diaries/ }).click()
   expect(await (await response).json()).toMatchObject({ queued: [] })
   await expect(page.getByText('No usable release found for Deterministic Diaries', { exact: true })).toBeVisible()
   await expect(page.getByText('Something went wrong', { exact: true })).toHaveCount(0)

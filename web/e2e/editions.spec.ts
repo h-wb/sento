@@ -27,7 +27,6 @@ test('editions retain independent versions, editable books, and mobile layout', 
     expect(created.ok()).toBeTruthy()
     const profileId = (await created.json()).id
     await edition.getByRole('button', { name: /More actions/ }).click()
-    await page.getByRole('menuitem', { name: 'More', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Collect again with another profile…', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Collect again with another profile', exact: true })
     await dialog.getByRole('combobox', { name: 'Release profile' }).click()
@@ -163,6 +162,8 @@ test('a long chapter edition is browsed as a grid with filters, ranges and jump'
   const { id } = await added.json()
   try {
     await page.goto(`/series/${id}`)
+    // Chapters the volumes cover are all paused: the card opens folded.
+    await page.getByRole('button', { name: /Show chapters/ }).click()
     await expect(page.getByRole('button', { name: /Hide chapters/ })).toBeVisible()
     // One tab row only: no nested section switcher above the editions.
     await expect(page.getByText('Your editions', { exact: true })).toHaveCount(0)
@@ -202,7 +203,11 @@ test('a long chapter edition is browsed as a grid with filters, ranges and jump'
 
     // The list shows the same books one per line and still opens a book.
     await layout.getByText('List', { exact: true }).click()
-    await expect(chapters.getByRole('checkbox', { name: 'Collect chapter 12', exact: true })).toBeChecked()
+    await expect(chapters.getByRole('button', { name: 'Collect chapter 12', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    // In the list a book's checkbox selects it; collecting is its bookmark.
+    await chapters.getByRole('checkbox', { name: 'Select chapter 12', exact: true }).check()
+    await expect(chapters.getByText('1 selected', { exact: true })).toBeVisible()
+    await chapters.getByRole('button', { name: 'Clear', exact: true }).click()
     await page.screenshot({ path: testInfo.outputPath('chapters-list.png'), fullPage: true })
     await chapters.getByRole('button', { name: '12', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'Chapter 12', exact: true })).toBeVisible()

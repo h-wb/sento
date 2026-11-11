@@ -103,7 +103,7 @@ test('a release pack maps by one card choice and leaves unreadable files for rev
   await page.getByRole('button', { name: 'Match whole release' }).click()
   const dialog = page.getByRole('dialog', { name: 'Match whole release' })
   await expect(dialog.getByText('3 files waiting for review')).toBeVisible()
-  await dialog.getByRole('combobox', { name: 'Card', exact: true }).click()
+  await dialog.getByRole('combobox', { name: 'Edition', exact: true }).click()
   await page.getByRole('option', { name: 'en · Standard Edition' }).click()
   // Each file previews by its own numbers; the unreadable one stays orange.
   await expect(dialog.getByRole('checkbox', { name: 'Import volume 1', exact: true })).toBeVisible()
@@ -112,7 +112,7 @@ test('a release pack maps by one card choice and leaves unreadable files for rev
   expect(matched).toBeUndefined()
   await dialog.getByRole('button', { name: 'Apply choices' }).click()
   await expect(dialog).toBeHidden()
-  await expect(page.getByText('Imported 2; kept existing 0; replaced 0; moved 0 to trash; still missing 0; left for later 1', { exact: true })).toBeVisible()
+  await expect(page.getByText('Saved: import 2 · left for later 1', { exact: true })).toBeVisible()
   expect(matched).toMatchObject({ request: { versionId: 10 }, choices: [
     { fileId: 301, disposition: 'keep' }, { fileId: 302, disposition: 'keep' }, { fileId: 303, disposition: 'later' },
   ] })
@@ -153,7 +153,7 @@ for (const [preset, existing] of [[false, false], [false, true], [true, false], 
     const copies = dialog.getByRole('checkbox', { name: existing ? 'Use incoming instead for volume 1' : 'Import volume 1', exact: true })
     if (existing) {
       await expect(copies.nth(0)).not.toBeChecked()
-      await expect(dialog.getByText('Import 1 · Keep existing 1 · Replace 0 · Trash 0 · Still missing 0 · Left for later 0', { exact: true })).toBeVisible()
+      await expect(dialog.getByText('Import 1 · Keep existing 1', { exact: true })).toBeVisible()
     } else await expect(copies.nth(0)).toBeChecked()
     await expect(copies.nth(1)).not.toBeChecked()
     await expect(dialog.getByRole('checkbox', { name: 'Import volume 2', exact: true })).toBeChecked()
@@ -166,7 +166,7 @@ for (const [preset, existing] of [[false, false], [false, true], [true, false], 
       else await expect(copies.nth(0)).toBeChecked()
       await expect(copies.nth(1)).not.toBeChecked()
     }
-    const summary = existing ? `Import 1 · Keep existing ${preset ? 1 : 0} · Replace ${preset ? 0 : 1} · Trash 0 · Still missing 0 · Left for later 0` : 'Import 2 · Keep existing 0 · Replace 0 · Trash 0 · Still missing 0 · Left for later 0'
+    const summary = existing ? (preset ? 'Import 1 · Keep existing 1' : 'Import 1 · Replace 1') : 'Import 2'
     await expect(dialog.getByText(summary, { exact: true })).toBeVisible()
     if (existing && !preset) {
       await expect(dialog.getByText('Keep existing: Existing volume 1.cbz', { exact: false })).toHaveCount(0)
@@ -207,19 +207,19 @@ for (const refused of [false, true]) {
     await expect(current).toBeChecked()
     await expect(current).toBeEnabled()
     await expect(incoming).not.toBeChecked()
-    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 1 · Replace 0 · Trash 0 · Still missing 0 · Left for later 0')
+    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 1')
     await dialog.getByRole('button', { name: 'Import missing; keep existing', exact: true }).click()
     await expect(current).toBeChecked()
     await current.uncheck()
-    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 0 · Replace 0 · Trash 0 · Still missing 1 · Left for later 0')
+    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Still missing 1')
     await incoming.check()
     await expect(current).not.toBeChecked()
-    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 0 · Replace 1 · Trash 0 · Still missing 0 · Left for later 0')
+    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Replace 1')
     await incoming.uncheck()
     await dialog.getByRole('combobox', { name: 'After review: Volume 301.cbz', exact: true }).click()
-    await expect(page.getByRole('option', { name: 'Move incoming file to trash', exact: true })).toHaveAttribute('data-combobox-disabled', 'true')
+    await expect(page.getByRole('option', { name: 'Move to trash', exact: true })).toHaveAttribute('data-combobox-disabled', 'true')
     await page.getByRole('option', { name: 'Leave for later', exact: true }).click()
-    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 1 · Replace 0 · Trash 0 · Still missing 0 · Left for later 1')
+    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 1 · Left for later 1')
   })
 }
 
@@ -248,13 +248,13 @@ for (const unknownFacts of [false, true]) {
     await page.goto('/queue')
     await page.getByRole('button', { name: 'Match whole release', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Match whole release', exact: true })
-    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 0 · Replace 0 · Trash 0 · Still missing 1 · Left for later 2')
+    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Still missing 1 · Left for later 2')
     await dialog.getByRole('combobox', { name: 'After review: Volume 301.cbz', exact: true }).click()
-    await page.getByRole('option', { name: 'Keep unused file', exact: true }).click()
-    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Keep existing 0 · Replace 0 · Trash 0 · Still missing 1 · Left for later 1')
+    await page.getByRole('option', { name: 'Keep, unused', exact: true }).click()
+    await expect(dialog.getByRole('status')).toHaveText('Import 1 · Still missing 1 · Left for later 1')
     if (unknownFacts) {
       await dialog.getByRole('checkbox', { name: 'Import volume 1', exact: true }).nth(0).check()
-      await expect(dialog.getByRole('status')).toHaveText('Import 2 · Keep existing 0 · Replace 0 · Trash 0 · Still missing 0 · Left for later 1')
+      await expect(dialog.getByRole('status')).toHaveText('Import 2 · Left for later 1')
     }
   })
 }
@@ -300,11 +300,11 @@ test('large packs use bounded requests for preview, match and decline', async ({
   await expect(dialog.getByRole('checkbox', { name: 'Import volume 1000', exact: true })).toHaveCount(0)
   await dialog.getByRole('button', { name: /Volume 1000\.cbz/ }).click()
   await expect(dialog.getByRole('checkbox', { name: 'Import volume 1000', exact: true })).toBeVisible()
-  await dialog.getByRole('combobox', { name: 'Card', exact: true }).click()
+  await dialog.getByRole('combobox', { name: 'Edition', exact: true }).click()
   await page.getByRole('option', { name: 'en · Standard Edition' }).click()
   await dialog.getByRole('button', { name: 'Apply choices' }).click()
   await expect(dialog).toBeHidden()
-  await expect(page.getByText('Imported 500; kept existing 0; replaced 0; moved 0 to trash; still missing 0; left for later 0', { exact: true })).toBeVisible()
+  await expect(page.getByText('Saved: import 500', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Decline all (501)' }).click()
   const confirmation = page.getByRole('dialog', { name: 'Decline all 501 files?' })
   await confirmation.getByRole('button', { name: 'Mark 501 reviewed and unmapped' }).click()
