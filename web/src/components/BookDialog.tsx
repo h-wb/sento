@@ -24,6 +24,8 @@ import type { EditionStart } from './AddEdition'
 import type { AcquisitionPlan as Plan } from '../types/service'
 import { useConfirmAction } from './ConfirmAction'
 import { FileScoreDetails } from './FileScoreDetails'
+import { fileName } from './editionText'
+import { fileOrigin } from './factFlags'
 
 export type BookSelection = {
   // A download this search looks to replace: it keeps running until a
@@ -44,6 +46,8 @@ export type BookSelection = {
   monitored: boolean
   wanted: boolean
   fileIds: number[]
+  // Files of the book on disk that this card does not use.
+  unusedFileIds?: number[]
   // Fire the streaming search as soon as the modal opens (the
   // interactive-search buttons; a plain row click opens quietly).
   autoSearch?: boolean
@@ -123,6 +127,8 @@ function Inner({
   // place to grab packs and complete releases.
   const editionWide = sel.all ?? !sel.bookId
   const linked = files.filter((f) => sel.fileIds.includes(f.id))
+  const unused = files.filter((f) => sel.unusedFileIds?.includes(f.id) && !sel.fileIds.includes(f.id))
+  const shown = [...linked, ...unused]
 
   const { confirm, confirmation } = useConfirmAction()
   const qc = useQueryClient()
@@ -137,7 +143,7 @@ function Inner({
   // Search buttons land on Search; a quiet row click lands on Files when
   // there's a file to look at.
   const [tab, setTab] = useState<string | null>(
-    sel.autoSearch || editionWide || linked.length === 0 ? 'search' : 'files',
+    sel.autoSearch || editionWide || shown.length === 0 ? 'search' : 'files',
   )
   const small = useMediaQuery('(max-width: 48em)')
 
@@ -337,12 +343,12 @@ function Inner({
                 released {sel.releaseDate}
               </Text>
             )}
-            <Badge size="sm" color={sel.monitored ? 'indigo' : 'gray'} variant="outline">
-              {sel.monitored ? 'monitored' : 'unmonitored'}
+            <Badge size="sm" color="gray" variant="outline">
+              {sel.monitored ? 'Collected' : 'Paused'}
             </Badge>
             {sel.wanted && (
-              <Badge size="sm" color="yellow">
-                wanted
+              <Badge size="sm" color="red">
+                Wanted
               </Badge>
             )}
           </Group>
@@ -363,7 +369,7 @@ function Inner({
                 Search
               </Tabs.Tab>
               <Tabs.Tab value="files" leftSection={<IconFile size={14} />}>
-                Files ({linked.length})
+                Files ({shown.length})
               </Tabs.Tab>
             </Tabs.List>
           )}
@@ -525,26 +531,27 @@ function Inner({
           {!editionWide && (
             <Tabs.Panel value="files" pt="sm">
               <Stack gap="xs">
-                {linked.length === 0 && (
+                {shown.length === 0 && (
                   <Text size="sm" c="dimmed">
                     No file for this book.
                   </Text>
                 )}
-                {linked.map((f) => (
+                {shown.map((f) => (
                   <Card key={f.id} withBorder padding="xs">
                     <Group justify="space-between" wrap="nowrap">
                       <div style={{ minWidth: 0 }}>
-                        <Text size="xs" style={{ wordBreak: 'break-all' }}>
-                          {f.path}
+                        <Text size="sm" title={f.path} style={{ overflowWrap: 'anywhere' }}>
+                          {fileName(f.path)}
                         </Text>
-                        <Group gap={6} mt={2}>
-                          <Badge size="xs" variant="outline">
-                            {f.provenance}
-                          </Badge>
-                          <Text size="xs" c="dimmed">
-                            {fmtSize(f.size)}
+                        <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                          {fileOrigin(f)} · {fmtSize(f.size)}
+                        </Text>
+                        {/* Its score below says why. */}
+                        {unused.includes(f) && (
+                          <Text size="xs" c="orange" mt={2}>
+                            On disk, but this card doesn’t use it.
                           </Text>
-                        </Group>
+                        )}
                         <FileScoreDetails seriesID={seriesID} versionID={sel.versionId} fileID={f.id} />
                       </div>
                       <Button

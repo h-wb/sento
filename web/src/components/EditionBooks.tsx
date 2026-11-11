@@ -128,6 +128,7 @@ function bookSelection(c: Edition, t: CollectedVersion, label: string, s: BookSt
     label: s.book.sequenceStr,
     editionLabel: label,
     fileIds: s.fileIds,
+    unusedFileIds: s.onDiskFileIds.filter((id) => !s.fileIds.includes(id)),
     monitored: s.monitored,
     wanted: s.wanted,
   }
