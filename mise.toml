@@ -11,7 +11,7 @@ experimental = true
 # Exact versions, not ranges: CI caches installs keyed on this file, so a
 # range like "1.27" kept a cached go1.27.1 through its security release.
 [tools]
-go = "1.27.3"
+go = "1.27.4"
 node = "24.22.2"
 # Java keeps its upstream build metadata ("+9.0.LTS"): macOS resolves only
 # the full form, so the pin uses it.
