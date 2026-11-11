@@ -17,7 +17,13 @@ import {
   Text,
   Tooltip,
 } from '@mantine/core'
-import { IconDots, IconSortAscendingNumbers, IconSortDescendingNumbers } from '@tabler/icons-react'
+import {
+  IconBookmark,
+  IconBookmarkFilled,
+  IconDots,
+  IconSortAscendingNumbers,
+  IconSortDescendingNumbers,
+} from '@tabler/icons-react'
 import { useLocalStorage } from '@mantine/hooks'
 import { api } from '../api'
 import type {
@@ -139,6 +145,7 @@ export default function EditionBooks({
   onFile,
   run,
   busy,
+  explained,
 }: {
   seriesID: number
   edition: Edition
@@ -152,6 +159,9 @@ export default function EditionBooks({
   onFile: (f: SeriesFile) => void
   run: (fn: () => Promise<unknown>) => Promise<void>
   busy: boolean
+  // A reason the card already states above its books: rows keep it on
+  // hover instead of repeating it on every line.
+  explained?: string
 }) {
   const noun = c.type === 'chapter' ? 'chapter' : 'volume'
   const [filter, setFilter] = useState('all')
@@ -225,7 +235,7 @@ export default function EditionBooks({
     setAnchor(s.book.id)
   }
   const open = (e: MouseEvent, s: BookStatus) => {
-    if (selecting || e.shiftKey || e.metaKey || e.ctrlKey) {
+    if ((selecting && view === 'grid') || e.shiftKey || e.metaKey || e.ctrlKey) {
       e.preventDefault()
       pick(s, e.shiftKey)
       return
@@ -322,15 +332,18 @@ export default function EditionBooks({
         </Chip.Group>
 
         <Group gap="xs">
-          <Button
-            size="compact-xs"
-            variant={selecting ? 'light' : 'subtle'}
-            aria-pressed={selecting}
-            title="Click books to select them. Shift-click selects a range; Ctrl/Cmd-click works without this mode."
-            onClick={() => setSelecting(!selecting)}
-          >
-            {selecting ? 'Done selecting' : 'Select'}
-          </Button>
+          {/* The list has a checkbox per book; tiles need a mode to select. */}
+          {view === 'grid' && (
+            <Button
+              size="compact-xs"
+              variant={selecting ? 'light' : 'subtle'}
+              aria-pressed={selecting}
+              title="Click books to select them. Shift-click selects a range; Ctrl/Cmd-click works without this mode."
+              onClick={() => setSelecting(!selecting)}
+            >
+              {selecting ? 'Done selecting' : 'Select'}
+            </Button>
+          )}
           <Popover
             opened={rangeOpen}
             onChange={setRangeOpen}
@@ -405,7 +418,7 @@ export default function EditionBooks({
       </Group>
 
       {/* Bulk actions stay out of the way until a filter or a selection gives them a subject. */}
-      {(selecting || picked.length > 0 || filter !== 'all') && (
+      {((selecting && view === 'grid') || picked.length > 0 || filter !== 'all') && (
         <Group gap="xs">
           {picked.length > 0 ? (
             <>
@@ -502,14 +515,10 @@ export default function EditionBooks({
               >
                 <Checkbox
                   size="xs"
-                  aria-label={`Collect ${c.type} ${s.book.sequenceStr}`}
-                  checked={s.monitored}
-                  disabled={busy}
-                  onChange={(e) =>
-                    void run(() =>
-                      api.bookMonitor(seriesID, t.id, s.book.id, e.currentTarget.checked),
-                    )
-                  }
+                  aria-label={`Select ${noun} ${s.book.sequenceStr}`}
+                  checked={selected.has(s.book.id)}
+                  // Clicks drive the change, so Shift extends a range here too.
+                  onChange={(e) => pick(s, (e.nativeEvent as globalThis.MouseEvent).shiftKey === true)}
                 />
                 <Button size="compact-sm" variant="subtle" miw={44} onClick={(e) => open(e, s)}>
                   {s.book.sequenceStr}
@@ -517,16 +526,31 @@ export default function EditionBooks({
                 <Text size="xs" c="dimmed" className={classes.rowDetail}>
                   {s.book.countType !== 'main' &&
                     (s.book.countType === 'extra' ? 'Bonus / special · ' : 'Other · ')}
-                  {s.reason || s.book.releaseDate || 'Publication date unknown'}
+                  {(s.reason !== explained && s.reason) || s.book.releaseDate || 'Publication date unknown'}
                   {c.collections.length > 1 &&
                     s.book.copies > 0 &&
                     s.book.copies < c.collections.length &&
                     ` · in ${s.book.copies} of ${c.collections.length} media`}
                 </Text>
                 <BookOrigin book={s.book} edition={c} />
-                <Badge size="xs" variant="light" color={badgeColor[tone(s)]}>
-                  {labels[s.state] ?? s.state}
-                </Badge>
+                <Tooltip label={s.reason} disabled={!s.reason || s.reason !== explained} multiline maw={320}>
+                  <Badge size="xs" variant="light" color={badgeColor[tone(s)]}>
+                    {labels[s.state] ?? s.state}
+                  </Badge>
+                </Tooltip>
+                <Tooltip label={s.monitored ? 'Collected · click to pause' : 'Paused · click to collect'} openDelay={300}>
+                  <ActionIcon
+                    size="sm"
+                    variant="subtle"
+                    color={s.monitored ? undefined : 'gray'}
+                    aria-label={`Collect ${c.type} ${s.book.sequenceStr}`}
+                    aria-pressed={s.monitored}
+                    disabled={busy}
+                    onClick={() => void run(() => api.bookMonitor(seriesID, t.id, s.book.id, !s.monitored))}
+                  >
+                    {s.monitored ? <IconBookmarkFilled size={14} /> : <IconBookmark size={14} />}
+                  </ActionIcon>
+                </Tooltip>
                 <Menu position="bottom-end" withinPortal>
                   <Menu.Target>
                     <ActionIcon

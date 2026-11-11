@@ -19,7 +19,7 @@ export interface Preset {
   // A neutral scale's dark-scheme fill is nearly the page color, so a
   // checked switch or a primary button would vanish. Such a preset fills
   // with a light shade and dark text on dark surfaces instead.
-  darkFill?: { filled: string; hover: string; text: string }
+  darkFill?: { filled: string; hover: string; text: string; tint: string; tintHover: string }
   radius: 'xs' | 'sm' | 'md' | 'lg'
 }
 
@@ -42,7 +42,13 @@ export const PRESETS: Preset[] = [
       '#27272a',
       '#18181b',
     ],
-    darkFill: { filled: '#e4e4e7', hover: '#d4d4d8', text: '#18181b' },
+    darkFill: {
+      filled: '#e4e4e7',
+      hover: '#d4d4d8',
+      text: '#18181b',
+      tint: 'rgba(228, 228, 231, 0.08)',
+      tintHover: 'rgba(228, 228, 231, 0.14)',
+    },
     radius: 'sm',
   },
   {
@@ -143,6 +149,9 @@ export const cssVariables =
         '--mantine-color-brand-filled': p.darkFill.filled,
         '--mantine-color-brand-filled-hover': p.darkFill.hover,
         '--mantine-primary-color-contrast': p.darkFill.text,
+        '--mantine-color-brand-light': p.darkFill.tint,
+        '--mantine-color-brand-light-hover': p.darkFill.tintHover,
+        '--mantine-color-brand-light-color': p.darkFill.filled,
       }),
     },
   })

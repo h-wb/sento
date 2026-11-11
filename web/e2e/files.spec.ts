@@ -38,9 +38,9 @@ test('a card explains refused files, and they can be corrected and moved togethe
 
     await page.goto(`/series/${id}`)
     const card = page.locator('.mantine-Card-root').filter({ hasText: 'No color' }).first()
-    await expect(card.getByText(/2 books are on disk, but this card does not accept their files/)).toBeVisible()
+    await expect(card.getByText('Vol. 1–2 are on disk, but this card doesn’t use their files', { exact: true })).toBeVisible()
     await expect(card.getByRole('button', { name: 'Collect them with another profile…' })).toBeVisible()
-    await card.getByRole('button', { name: 'The files were read wrong…' }).click()
+    await card.getByRole('button', { name: 'Correct what they are…' }).click()
     const facts = page.getByRole('dialog', { name: 'Correct what these files are', exact: true })
     await expect(facts.getByRole('button', { name: 'Correct 2 files', exact: true })).toBeDisabled()
     await facts.getByRole('combobox', { name: 'These files are not', exact: true }).click()
@@ -49,7 +49,7 @@ test('a card explains refused files, and they can be corrected and moved togethe
     await facts.getByText(/^2 files\./).click()
     await facts.getByRole('button', { name: 'Correct 2 files', exact: true }).click()
     await expect(facts).toBeHidden()
-    await expect(card.getByText(/on disk, but this card does not accept/)).toHaveCount(0)
+    await expect(card.getByText(/on disk, but this card doesn’t use/)).toHaveCount(0)
     await expect(card.getByText(/2 owned/)).toBeVisible()
     const after: SeriesFile[] = await (await request.get(`/api/v1/series/${id}/files`)).json()
     expect(after.every((f) => f.facts.flags?.colored === false && f.facts.sources?.['flag:colored'] === 'manual')).toBe(true)
@@ -71,6 +71,7 @@ test('a card explains refused files, and they can be corrected and moved togethe
     // One file: its books, what it is, and the cards that use it.
     await page.getByRole('button', { name: 'Edit file', exact: true }).first().click()
     const editor = page.getByRole('dialog', { name: 'File', exact: true })
+    await editor.getByRole('button', { name: 'Correct…', exact: true }).click()
     await expect(editor.getByText('Set by you: Colored off. A rescan keeps these.')).toBeVisible()
     await expect(editor.getByRole('checkbox', { name: /Keep this copy for volume/ })).toBeChecked()
     await page.setViewportSize({ width: 390, height: 844 })

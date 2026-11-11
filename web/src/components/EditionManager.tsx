@@ -37,6 +37,8 @@ import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
 import { cardLabel, cardTitle, editionDetails, editionMedia } from './editionText'
 import { EditionOrigin, MangaBakaMark } from './Origin'
+import { RefusedFilesNotice } from './RefusedFiles'
+import { refusedFiles } from './refusal'
 
 // Editions and Files share their book, version and file-mapping dialogs.
 export type EditionSection = 'editions' | 'files'
@@ -136,25 +138,7 @@ export default function EditionManager({
     queryFn: () => api.versionBooks(seriesID),
   })
   const allBooks = Object.values(details.data ?? {}).flat()
-  // The files a card has on disk and does not accept while no other card
-  // uses them either, with the reason most of them share. A file another
-  // card holds is not a problem to solve, just a book this card lacks.
-  const usedSomewhere = new Set(allBooks.flatMap((b) => b.fileIds))
-  const refused = (versionId: number) => {
-    const rows = allBooks.filter(
-      (b) =>
-        b.versionId === versionId &&
-        b.state === 'unsatisfactory' &&
-        b.onDiskFileIds.some((id) => !usedSomewhere.has(id)),
-    )
-    const reasons = new Map<string, number>()
-    for (const r of rows) reasons.set(r.reason, (reasons.get(r.reason) ?? 0) + 1)
-    return {
-      books: rows.length,
-      fileIds: [...new Set(rows.flatMap((b) => b.onDiskFileIds))],
-      reason: [...reasons].sort((x, y) => y[1] - x[1])[0]?.[0] ?? '',
-    }
-  }
+  const refused = (versionId: number) => refusedFiles(versionId, allBooks)
   const [correcting, setCorrecting] = useState<{ fileIds: number[]; hint: string } | null>(null)
   const [otherEditions, setOtherEditions] = useState(false)
   const [language, setLanguage] = useState<string | null>(null)
@@ -227,6 +211,7 @@ export default function EditionManager({
               const show = expanded[t.id] ?? cardCount <= 2
               const title = cardTitle(c, t, allVersions)
               const missing = stats?.wanted ?? 0
+              const refusal = refused(t.id)
               const findMissing = () =>
                 t &&
                 onBook({
@@ -352,41 +337,18 @@ export default function EditionManager({
                         </EditionActions>
                       </Group>
                     </Group>
-                    {(() => {
-                      // Files are here but this card's profile will not have
-                      // them: say so, and what can be done about it.
-                      const r = refused(t.id)
-                      if (r.books === 0) return null
-                      return (
-                        <Alert color="orange" variant="outline" p="sm">
-                          <Text size="sm">
-                            {r.books} {r.books === 1 ? 'book is' : 'books are'} on disk, but this
-                            card does not accept {r.books === 1 ? 'its file' : 'their files'}
-                            {r.reason ? `: ${r.reason.charAt(0).toLowerCase()}${r.reason.slice(1)}.` : '.'}
-                          </Text>
-                          <Group gap="xs" mt="xs">
-                            <Button
-                              size="xs"
-                              variant="default"
-                              onClick={() =>
-                                setCorrecting({
-                                  fileIds: r.fileIds,
-                                  hint: `${title} does not accept these files${r.reason ? `: ${r.reason.charAt(0).toLowerCase()}${r.reason.slice(1)}` : ''}. If that was read wrong, say what they are.`,
-                                })
-                              }
-                            >
-                              The files were read wrong…
-                            </Button>
-                            <Button size="xs" variant="default" onClick={() => setCollectAgain(c)}>
-                              Collect them with another profile…
-                            </Button>
-                            <Button size="xs" variant="subtle" onClick={findMissing}>
-                              Search for other releases
-                            </Button>
-                          </Group>
-                        </Alert>
-                      )
-                    })()}
+                    <RefusedFilesNotice
+                      refused={refusal}
+                      chapters={c.type === 'chapter'}
+                      onCorrect={() =>
+                        setCorrecting({
+                          fileIds: refusal.fileIds,
+                          hint: `${title} doesn’t use these files${refusal.reason ? `: ${refusal.reason.charAt(0).toLowerCase()}${refusal.reason.slice(1)}` : ''}. If that was read wrong, say what they are.`,
+                        })
+                      }
+                      onCollectAgain={() => setCollectAgain(c)}
+                      onSearch={findMissing}
+                    />
                     {(
                       <Group justify="space-between" gap="sm">
                         <Group gap="sm">
@@ -444,6 +406,7 @@ export default function EditionManager({
                         onFile={setFile}
                         run={run}
                         busy={busy}
+                        explained={refusal.books.length ? refusal.reason : undefined}
                       />
                     )}
                   </Stack>

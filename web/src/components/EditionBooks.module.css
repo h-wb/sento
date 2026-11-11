@@ -25,8 +25,8 @@
 .cell[data-tone='review'] { background: var(--mantine-color-yellow-light); color: var(--mantine-color-yellow-light-color); }
 .cell[data-tone='upcoming'] { background: transparent; border: 1px dashed var(--mantine-color-default-border); color: var(--mantine-color-dimmed); }
 .cell[data-tone='paused'] { background: var(--mantine-color-default); border-color: var(--mantine-color-default-border); color: var(--mantine-color-dimmed); }
-.cell[data-selected='true'],
-.row[data-selected='true'] { outline: 2px solid var(--mantine-primary-color-filled); outline-offset: -1px; }
+.cell[data-selected='true'] { outline: 2px solid var(--mantine-primary-color-filled); outline-offset: -1px; }
+.row[data-selected='true'] { background: var(--mantine-primary-color-light-hover); }
 .cell[data-flash='true'],
 .row[data-flash='true'] { box-shadow: 0 0 0 3px var(--mantine-primary-color-light-hover); outline: 2px solid var(--mantine-primary-color-filled); }
 

@@ -202,7 +202,11 @@ test('a long chapter edition is browsed as a grid with filters, ranges and jump'
 
     // The list shows the same books one per line and still opens a book.
     await layout.getByText('List', { exact: true }).click()
-    await expect(chapters.getByRole('checkbox', { name: 'Collect chapter 12', exact: true })).toBeChecked()
+    await expect(chapters.getByRole('button', { name: 'Collect chapter 12', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    // In the list a book's checkbox selects it; collecting is its bookmark.
+    await chapters.getByRole('checkbox', { name: 'Select chapter 12', exact: true }).check()
+    await expect(chapters.getByText('1 selected', { exact: true })).toBeVisible()
+    await chapters.getByRole('button', { name: 'Clear', exact: true }).click()
     await page.screenshot({ path: testInfo.outputPath('chapters-list.png'), fullPage: true })
     await chapters.getByRole('button', { name: '12', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'Chapter 12', exact: true })).toBeVisible()
