@@ -1,53 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Alert, Badge, Button, Card, Checkbox, Group, Pagination, Select, Stack, Text, UnstyledButton } from '@mantine/core'
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api'
-import { notify } from '../ui'
-import type { FileScore, ReviewBookPlan, ReviewPlan, ReviewPlanRequest, ReviewFileChoice, ReviewFileOutcome, ReviewFilePlan } from '../types/service'
+import type { FileScore, ReviewBookPlan, ReviewFileOutcome, ReviewFilePlan, ReviewPlan, ReviewPlanRequest } from '../types/service'
 import { QueryFeedback } from './QueryFeedback'
 import { fileName } from './editionText'
+import { bookKey, initialChoices, useReviewChoices, useReviewPlan } from './useReviewChoices'
 
 type Props = {
   seriesID: number
   request: ReviewPlanRequest
   applied: () => Promise<void>
-  // Start from the cards that use the file now, proposing no new use: for
-  // a file that is already matched.
-  keepCurrent?: boolean
-  // One file, in its own dialog: the wording speaks of the file and its
-  // cards instead of a batch of incoming archives.
-  single?: boolean
   onDirtyChange?: (dirty: boolean) => void
   onBusyChange?: (busy: boolean) => void
 }
 
 const pageSize = 25
 
-const bookKey = (b: { versionId?: number; bookId?: number }) => `${b.versionId}:${b.bookId}`
-
-function initialChoices(plan: ReviewPlan, request: ReviewPlanRequest, missingOnly = false, keepCurrent = false): ReviewFileChoice[] {
-  const selected = new Set<string>()
-  return plan.files.map((f, i) => {
-    const disposition = (f.reason && request.files[i].books === null) || (f.books.length > 0 && f.books.every((b) => !b.currentSelected && (!!b.reason || !b.incoming.factsKnown))) ? 'later' : 'keep'
-    return {
-      fileId: f.fileId, disposition,
-      use: f.books.filter((b) => {
-        const wanted = keepCurrent ? b.currentSelected : missingOnly ? b.currentSelected || (!b.reason && b.incoming.factsKnown && !b.owners.some((o) => o.present)) : b.useIncoming
-        if (!wanted || f.reason || disposition === 'later' || selected.has(bookKey(b.book))) return false
-        selected.add(bookKey(b.book))
-        return true
-      }).map((b) => b.book),
-    }
-  })
-}
-
+// How a file scores with a profile, and the formats that made the score.
 function Score({ value }: { value: FileScore }) {
   return (
-    <details>
-      <summary style={{ fontSize: 'var(--mantine-font-size-xs)', cursor: 'pointer' }}>
-        Score {value.score} · {value.profileName || 'No profile'}
-      </summary>
+    <details className="more">
+      <summary>Score {value.score} · {value.profileName || 'No profile'}</summary>
       <Text size="xs" c="dimmed">
         {value.formats.map((f) => `${f.name}: ${f.score > 0 ? '+' : ''}${f.score}`).join(' · ') || 'No custom formats matched.'}
       </Text>
@@ -56,14 +29,33 @@ function Score({ value }: { value: FileScore }) {
   )
 }
 
+const outcomeText: Record<string, string> = {
+  imported: 'Imported',
+  kept: 'Kept archive',
+  trashed: 'Moved to trash',
+  trash_pending: 'Trash move pending',
+  later: 'Left for later',
+  settlement_pending: 'Finishing download pending',
+}
+
+// What was saved, when some of it still needs attention.
+export function ReviewReceipt({ plan, receipt, done }: { plan: ReviewPlan; receipt: ReviewFileOutcome[]; done: () => void }) {
+  return (
+    <Stack gap="sm">
+      <Text size="sm" fw={500}>Choices saved</Text>
+      {receipt.map((f, i) => <Text key={`${f.fileId}-${i}`} size="sm" style={{ overflowWrap: 'anywhere' }}>
+        {fileName(plan.files.find((p) => p.fileId === f.fileId)?.path ?? '')}: {outcomeText[f.status] ?? f.status}{f.note && ` · ${f.note}`}
+      </Text>)}
+      <Text size="xs" c="dimmed">Pending trash moves will retry automatically. Archives already imported or retained keep their saved choices.</Text>
+      <Button onClick={done}>Done</Button>
+    </Stack>
+  )
+}
+
+// Several incoming archives at once: which books each supplies and what
+// happens to it afterwards. One file on its own is FileUses.
 export function ReviewChoices(props: Props) {
-  const preview = useQuery({
-    queryKey: ['series', props.seriesID, 'review-choices', props.request],
-    queryFn: () => api.previewReviewChoices(props.seriesID, props.request),
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  })
+  const preview = useReviewPlan(props.seriesID, props.request)
   if (!preview.data || preview.isFetching) return (
     <Stack gap="sm">
       <Text size="sm" c="dimmed">
@@ -75,68 +67,24 @@ export function ReviewChoices(props: Props) {
   return <Choices key={preview.data.token} {...props} plan={preview.data} refresh={() => preview.refetch()} />
 }
 
-function Choices({ seriesID, request, applied, keepCurrent, single, onDirtyChange, onBusyChange, plan, refresh }: Props & { plan: ReviewPlan; refresh: () => Promise<unknown> }) {
-  const defaults = initialChoices(plan, request, false, keepCurrent)
-  // With several cards in play, every choice says which card it is for.
+function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan, refresh }: Props & { plan: ReviewPlan; refresh: () => Promise<unknown> }) {
+  const { choices, setChoices, busy, error, receipt, using, update, selectBook, replacementChosen, counts, nothingToApply, apply } =
+    useReviewChoices({ seriesID, request, plan, applied, onDirtyChange, onBusyChange })
+  // With several editions in play, every choice says which one it is for.
   const severalCards = new Set(plan.files.flatMap((f) => f.books.map((b) => b.card))).size > 1
   const forCard = (b: ReviewBookPlan) => (severalCards ? `${b.label} — ${b.card}` : b.label)
-  const [choices, setChoices] = useState(defaults)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
   const [page, setPage] = useState(1)
-  const [receipt, setReceipt] = useState<ReviewFileOutcome[] | null>(null)
-  // Big packs open as one-line summaries; a single page or the one-file
-  // editor opens expanded, where every choice is already on screen.
+  // Big packs open as one-line summaries; a single page opens expanded,
+  // where every choice is already on screen.
   const [collapsed, setCollapsed] = useState<Set<number>>(
     () => new Set(plan.files.length > pageSize ? plan.files.map((f) => f.fileId) : []),
   )
-  const qc = useQueryClient()
-  const dirty = JSON.stringify(choices) !== JSON.stringify(defaults)
-  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
-  useEffect(() => { onBusyChange?.(busy) }, [busy, onBusyChange])
-  const using = (i: number, b: { versionId?: number; bookId?: number }) => choices[i].use.some((v) => bookKey(v) === bookKey(b))
-  const update = (i: number, change: Partial<ReviewFileChoice>) =>
-    setChoices((v) => v.map((c, j) => i === j ? { ...c, ...change } : c))
-  const selectBook = (i: number, b: ReviewBookPlan, checked: boolean) => setChoices((before) => before.map((c, j) => {
-    const use = c.use.filter((v) => bookKey(v) !== bookKey(b.book))
-    if (i === j) return { ...c, use: checked ? [...use, b.book] : use, disposition: 'keep' }
-    return checked ? { ...c, use } : c
-  }))
-  let imports = 0, replacements = 0, kept = 0, missing = 0
-  const outcomes = new Map<string, { current: Set<number>; chosen: Set<number>; reviewed: Set<number> }>()
-  plan.files.forEach((f, i) => {
-    f.books.forEach((b) => {
-      const key = bookKey(b.book)
-      const outcome = outcomes.get(key) ?? { current: new Set<number>(), chosen: new Set<number>(), reviewed: new Set<number>() }
-      if (b.currentSelected) outcome.current.add(f.fileId)
-      b.owners.filter((o) => o.present).forEach((o) => outcome.current.add(o.fileId))
-      if (choices[i].disposition !== 'later') {
-        outcome.reviewed.add(f.fileId)
-        if (using(i, b.book)) outcome.chosen.add(f.fileId)
-      }
-      outcomes.set(key, outcome)
-    })
-  })
-  outcomes.forEach((b) => {
-    if (b.chosen.size) {
-      if ([...b.chosen].some((id) => b.current.has(id))) kept++
-      else if (b.current.size) replacements++
-      else imports++
-    } else if ([...b.current].some((id) => !b.reviewed.has(id))) kept++
-    else missing++
-  })
-  const replacementChosen = (book: ReviewBookPlan['book']) => {
-    const outcome = outcomes.get(bookKey(book))
-    return !!outcome && [...outcome.chosen].some((id) => !outcome.current.has(id))
-  }
-  const trash = choices.filter((c) => c.disposition === 'trash').length
-  const later = choices.filter((c) => c.disposition === 'later').length
+  const { imports, kept, replacements, trash, missing, later } = counts
   // Only what will happen: six counters, five of them zero, read as noise.
   const summary = ([[imports, 'Import'], [kept, 'Keep existing'], [replacements, 'Replace'], [trash, 'Trash'], [missing, 'Still missing'], [later, 'Left for later']] as const)
     .filter(([n]) => n > 0)
     .map(([n, label]) => `${label} ${n}`)
     .join(' · ') || 'Nothing chosen yet'
-  const nothingToApply = choices.every((c) => c.disposition === 'later')
   // One line per archive: what it would supply, and what happens to its
   // bytes after review. Shown on the collapsed card as well.
   const cardSummary = (f: ReviewFilePlan, i: number, withReason: boolean) => {
@@ -156,37 +104,7 @@ function Choices({ seriesID, request, applied, keepCurrent, single, onDirtyChang
     else next.add(fileId)
     return next
   })
-  const apply = async () => {
-    setBusy(true)
-    setError('')
-    try {
-      const outcomes = await api.applyReviewChoices(seriesID, { request, token: plan.token, choices })
-      await Promise.all(['series', 'activity', 'review', 'queue', 'wanted'].map((k) => qc.invalidateQueries({
-        queryKey: [k],
-        // Keep the open editor's snapshot until the saved receipt is dismissed.
-        predicate: (q) => !q.queryKey.includes('review-choices') && !q.queryKey.includes('file-review'),
-      })))
-      const warnings = outcomes.filter((f) => f.note)
-      if (warnings.length) {
-        setReceipt(outcomes)
-        notify.err('Choices saved. Some file operations still need attention; trash moves will retry automatically.')
-        return
-      }
-      notify.ok(single ? 'File saved' : `Saved: ${summary.toLowerCase()}`)
-      await applied()
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
-    finally { setBusy(false) }
-  }
-  if (receipt) return (
-    <Stack gap="sm">
-      <Text size="sm" fw={500}>Choices saved</Text>
-      {receipt.map((f, i) => <Text key={`${f.fileId}-${i}`} size="sm" style={{ overflowWrap: 'anywhere' }}>
-        {fileName(plan.files.find((p) => p.fileId === f.fileId)?.path ?? '')}: {{ imported: 'Imported', kept: 'Kept archive', trashed: 'Moved to trash', trash_pending: 'Trash move pending', later: 'Left for later', settlement_pending: 'Finishing download pending' }[f.status] ?? f.status}{f.note && ` · ${f.note}`}
-      </Text>)}
-      <Text size="xs" c="dimmed">Pending trash moves will retry automatically. Archives already imported or retained keep their saved choices.</Text>
-      <Button onClick={() => void applied()}>Done</Button>
-    </Stack>
-  )
+  if (receipt) return <ReviewReceipt plan={plan} receipt={receipt} done={() => void applied()} />
   const from = (page - 1) * pageSize + 1
   const to = Math.min(page * pageSize, plan.files.length)
   // Big packs open as one-line summaries to expand; otherwise every file
@@ -226,15 +144,15 @@ function Choices({ seriesID, request, applied, keepCurrent, single, onDirtyChang
   )
   const fate = (f: ReviewFilePlan, i: number) => (
     <Select
-      label={single ? 'The file itself' : 'After review'}
-      aria-label={single ? undefined : `After review: ${fileName(f.path)}`}
-      size={single ? 'sm' : 'xs'}
-      w={single ? undefined : 220}
+      label="After review"
+      aria-label={`After review: ${fileName(f.path)}`}
+      size="xs"
+      w={220}
       value={choices[i].disposition}
       disabled={busy}
       allowDeselect={false}
       data={[
-        { value: 'keep', label: choices[i].use.length ? (single ? 'Keep it for the ticked editions' : 'Keep for the ticked books') : (single ? 'Keep it, used by no edition' : 'Keep, unused') },
+        { value: 'keep', label: choices[i].use.length ? 'Keep for the ticked books' : 'Keep, unused' },
         { value: 'trash', label: 'Move to trash', disabled: choices[i].use.length > 0 || !!f.trashReason },
         { value: 'later', label: 'Leave for later' },
       ]}
@@ -243,8 +161,8 @@ function Choices({ seriesID, request, applied, keepCurrent, single, onDirtyChang
   )
   return (
     <Stack gap="sm">
-      <Text size="sm" c="dimmed">{single ? 'Tick the editions that should use this file. Each keeps the copy it has unless you choose this one instead.' : 'Choose which copies to use. Existing copies stay selected unless you explicitly choose a replacement.'}</Text>
-      {!(single && nothingToApply) && <Text size="sm" fw={500} role="status">{summary}</Text>}
+      <Text size="sm" c="dimmed">Choose which copies to use. Existing copies stay selected unless you explicitly choose a replacement.</Text>
+      <Text size="sm" fw={500} role="status">{summary}</Text>
       {plan.files.length > 1 && <Group gap="xs">
         <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setChoices(initialChoices(plan, request, true))}>Import missing; keep existing</Button>
         <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setChoices((v) => v.map((c, i) =>
@@ -252,12 +170,7 @@ function Choices({ seriesID, request, applied, keepCurrent, single, onDirtyChang
         ))}>Trash unused incoming files</Button>
       </Group>}
       {collapsible && <Text size="xs" c="dimmed">Showing {from}–{to} of {plan.files.length} files. Expand an archive to choose its books and its fate.</Text>}
-      {single && plan.files.length === 1 ? (
-        <>
-          {fileChoices(plan.files[0], 0)}
-          {fate(plan.files[0], 0)}
-        </>
-      ) : plan.files.slice((page - 1) * pageSize, page * pageSize).map((f, offset) => {
+      {plan.files.slice((page - 1) * pageSize, page * pageSize).map((f, offset) => {
         const i = (page - 1) * pageSize + offset
         const open = !collapsible || !collapsed.has(f.fileId)
         const origin = [f.source, f.group].filter(Boolean).join(' · ')
@@ -285,10 +198,10 @@ function Choices({ seriesID, request, applied, keepCurrent, single, onDirtyChang
       {collapsible && <Pagination total={Math.ceil(plan.files.length / pageSize)} value={page} onChange={setPage} size="sm" />}
       {trash > 0 && <Text size="xs" c="dimmed">Only the selected incoming archives move to recoverable trash for 30 days. Download-client payloads stay in place.</Text>}
       {error && <Alert color="red">{error}<Button size="xs" variant="subtle" onClick={() => void refresh()}>Refresh preview</Button></Alert>}
-      {nothingToApply && !single && (
+      {nothingToApply && (
         <Text size="xs" c="dimmed">Every file is left for later. Tick the books to import, or choose what happens to a file.</Text>
       )}
-      <Button loading={busy} disabled={nothingToApply} onClick={() => void apply()}>{single ? 'Save' : 'Apply choices'}</Button>
+      <Button loading={busy} disabled={nothingToApply} onClick={() => void apply(`Saved: ${summary.toLowerCase()}`)}>Apply choices</Button>
     </Stack>
   )
 }

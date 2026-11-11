@@ -946,6 +946,11 @@ export interface ReviewFilePlan {
   books: ReviewBookPlan[];
   reason: string;
   trashReason: string;
+  /**
+   * TrashWhenUnused is set when the only thing keeping the file out of
+   * trash is that an edition uses it: saved as unused, it can go.
+   */
+  trashWhenUnused: boolean;
 }
 export interface ReviewPlan {
   token: string;

@@ -116,7 +116,7 @@ func TestReviewChoicesExplainsDeselectedPinTrashBlocker(t *testing.T) {
 		t.Fatalf("fixture must have only a deselected pin: %+v %v", cov, err)
 	}
 	plan, err = lib.PreviewReviewChoices(ctx, sid, req)
-	if err != nil || !strings.Contains(plan.Files[0].TrashReason, "Unpin") {
+	if err != nil || !strings.Contains(plan.Files[0].TrashReason, "Unpin") || plan.Files[0].TrashWhenUnused {
 		t.Fatalf("preview did not explain pin protection: %+v %v", plan, err)
 	}
 }

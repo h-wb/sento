@@ -13,6 +13,38 @@ import (
 	"github.com/h-wb/sento/internal/store"
 )
 
+// A file an edition uses goes to trash in two requests, as the one-file
+// editor sends them: saved as unused, then trashed on a fresh preview.
+func TestReviewChoicesTrashAfterRelease(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, col, books, version := factsClaimsFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	im := NewImporter(st, nil, root, nil)
+	fid := waitingScoredFile(t, st, sid, root, "ONE PIECE v01 (Digital).cbz", "")
+	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{modelRef(col, books[0], version)}}}}
+	plan, err := lib.PreviewReviewChoices(ctx, sid, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+		t.Fatal(err)
+	}
+	if plan, err = lib.PreviewReviewChoices(ctx, sid, req); err != nil || !plan.Files[0].TrashWhenUnused {
+		t.Fatalf("a used file should be trashable once unused: %+v %v", plan, err)
+	}
+	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "keep"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if plan, err = lib.PreviewReviewChoices(ctx, sid, req); err != nil || plan.Files[0].TrashReason != "" || plan.Files[0].TrashWhenUnused {
+		t.Fatalf("an unused file should be free to trash: %+v %v", plan, err)
+	}
+	out, err := im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "trash"}}})
+	if err != nil || len(out) == 0 || out[0].Status != "trashed" {
+		t.Fatalf("released file was not trashed: %+v %v", out, err)
+	}
+}
+
 func TestReviewChoicesProtectsCurrentlySelectedArchive(t *testing.T) {
 	t.Parallel()
 	lib, st, sid, col, books, version := factsClaimsFixture(t)

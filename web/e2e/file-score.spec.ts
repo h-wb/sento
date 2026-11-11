@@ -44,7 +44,7 @@ test('file details show current profile scores and refresh after profile or fact
     await page.goto(`/series/${id}?view=files`)
     await page.getByRole('button', { name: 'Edit file', exact: true }).click()
     const editor = page.getByRole('dialog', { name: 'File', exact: true })
-    // Each card that can use the file shows what its profile makes of it.
+    // Each edition that can use the file shows what its profile makes of it.
     await editor.getByText('Score 150 · File score policy', { exact: true }).click()
     await expect(editor.getByText('File score test group: +150')).toBeVisible()
     await editor.getByRole('button', { name: 'Close dialog', exact: true }).click()
@@ -70,7 +70,7 @@ test('file details show current profile scores and refresh after profile or fact
     await editor.getByRole('button', { name: 'Correct…', exact: true }).click()
     await expect(editor.getByText(/Set by you/)).toHaveCount(0)
     await editor.getByText('Digital', { exact: true }).click()
-    await expect(editor.getByText('Set by you: Digital off. A rescan keeps these.')).toBeVisible()
+    await expect(editor.getByText(/This file becomes: not Digital\. A rescan keeps it\./)).toBeVisible()
     await page.setViewportSize({ width: 390, height: 844 })
     expect(await editor.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
     await editor.getByRole('button', { name: 'Close dialog', exact: true }).click()

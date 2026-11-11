@@ -137,7 +137,7 @@ test('global activity reviews files in place and confirms an uncertain download 
   const dialog = page.getByRole('dialog', { name: 'Match imported file' })
   await expect(dialog.getByRole('combobox', { name: 'Edition', exact: true })).toHaveValue(/Standard Edition/)
   // Language and group are prefilled from what the release advertised.
-  await expect(dialog.getByText(/^Read as en · 1r0n/)).toBeVisible()
+  await expect(dialog.getByText(/^en · 1r0n/)).toBeVisible()
   await dialog.getByRole('button', { name: 'Correct…', exact: true }).click()
   await expect(dialog.getByRole('textbox', { name: 'Language', exact: true })).toHaveValue('en')
   await expect(dialog.getByRole('textbox', { name: 'Release group', exact: true })).toHaveValue('1r0n')

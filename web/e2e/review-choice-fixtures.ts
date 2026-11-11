@@ -3,7 +3,7 @@ import type { BookRef } from '../src/types/store'
 
 export const reviewScore: FileScore = { profileId: 1, profileName: 'Standard', score: 100, formats: [{ name: 'Digital', score: 100 }], factsKnown: true, reason: '' }
 export const reviewBook = (book: BookRef, label: string): ReviewBookPlan => ({ book, label, card: 'Standard Edition', incoming: reviewScore, owners: [], useIncoming: true, currentSelected: false, requestedReplacement: false, reason: '' })
-export const reviewFile = (fileId: number, books: ReviewBookPlan[], reason = ''): ReviewFilePlan => ({ fileId, path: `/library/Volume ${fileId}.cbz`, group: '1r0n', source: 'torrent', books, reason, trashReason: '' })
+export const reviewFile = (fileId: number, books: ReviewBookPlan[], reason = ''): ReviewFilePlan => ({ fileId, path: `/library/Volume ${fileId}.cbz`, group: '1r0n', source: 'torrent', books, reason, trashReason: '', trashWhenUnused: false })
 
 // Tiny archives with distinct page bytes exercise real scanning and fingerprints.
 export const reviewArchives: string[] = [

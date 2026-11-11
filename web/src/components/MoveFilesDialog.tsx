@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, Button, Checkbox, Group, Modal, Select, Stack, Text } from '@mantine/core'
+import { Alert, Button, Checkbox, Group, Modal, Radio, Select, Stack, Text } from '@mantine/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import { notify } from '../ui'
@@ -13,12 +13,15 @@ import type {
 import type { BookStatus, ReviewFileChoice, ReviewPlanRequest } from '../types/service'
 import { cardLabel, fileName } from './editionText'
 import { QueryFeedback } from './QueryFeedback'
+import { shortBook } from './useReviewChoices'
+import classes from './FileDialog.module.css'
 
 const key = (b: { versionId?: number; bookId?: number }) => `${b.versionId}:${b.bookId}`
 
-// Give several files to one card at once: the card of another profile, or
-// of another edition, whose books the files then stand for by number. The
-// server checks each file against the card's profile, as it does for one.
+// Give files to one edition at once: the same edition collected with
+// another profile, or another edition, whose books the files then stand for
+// by number. The server checks each file against the edition's profile, as
+// it does for one.
 export function MoveFilesDialog({
   seriesID,
   files,
@@ -40,7 +43,9 @@ export function MoveFilesDialog({
 }) {
   const qc = useQueryClient()
   const [target, setTarget] = useState<string | null>(null)
-  const [only, setOnly] = useState(true)
+  // Whether the editions using the files now go on using them.
+  const [share, setShare] = useState(false)
+  const only = !share
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const card = versions.find((t) => String(t.id) === target)
@@ -157,27 +162,57 @@ export function MoveFilesDialog({
   const label = (t: CollectedVersion) =>
     cardLabel(editions.find((c) => c.id === t.editionId)!, t, versions)
   const cardName = card ? label(card) : ''
+  const one = files.length === 1
+  const ids = new Set(files.map((f) => f.id))
+  const usedElsewhere = !!card && coverage.some((a) => ids.has(a.fileId) && a.versionId !== card.id)
+  const onDisk = (t: CollectedVersion) => {
+    const mine = books.filter((s) => s.versionId === t.id)
+    return `${mine.filter((s) => s.fileIds.length > 0).length} of ${mine.length} books on disk`
+  }
   return (
-    <Modal opened onClose={() => !busy && close()} title="Use files for an edition" size="lg">
-      <Stack gap="sm">
-        <Text size="sm">
-          {files.length} {files.length === 1 ? 'file' : 'files'}. Pick the edition that should use
-          them. Each file stands for its book of the same number there.
+    <Modal
+      opened
+      onClose={() => !busy && close()}
+      title={one ? 'Use this file for an edition' : `Use ${files.length} files for an edition`}
+    >
+      <Stack gap="md">
+        <Text size="sm" c="dimmed">
+          {one ? 'The file becomes' : 'Each file becomes'} the book of the same number in the
+          edition you pick.
         </Text>
-        <Select
-          label="Edition"
-          placeholder="Pick an edition"
-          disabled={busy}
-          data={versions.map((t) => ({ value: String(t.id), label: label(t) }))}
-          value={target}
-          onChange={setTarget}
-        />
-        <Checkbox
-          label="Only this one: other editions stop using these files"
-          checked={only}
-          disabled={busy}
-          onChange={(e) => setOnly(e.currentTarget.checked)}
-        />
+        {versions.length > 6 ? (
+          <Select
+            label="Edition"
+            placeholder="Pick an edition"
+            disabled={busy}
+            data={versions.map((t) => ({ value: String(t.id), label: label(t) }))}
+            value={target}
+            onChange={setTarget}
+          />
+        ) : (
+          <Radio.Group label="Edition" value={target} onChange={setTarget}>
+            <Stack gap={10} mt={8}>
+              {versions.map((t) => (
+                <Radio
+                  key={t.id}
+                  value={String(t.id)}
+                  disabled={busy}
+                  label={label(t)}
+                  description={onDisk(t)}
+                />
+              ))}
+            </Stack>
+          </Radio.Group>
+        )}
+        {usedElsewhere && (
+          <Checkbox
+            label={`The editions using ${one ? 'it' : 'them'} now keep using ${one ? 'it' : 'them'} too`}
+            description={`Otherwise they stop using ${one ? 'it' : 'them'}.`}
+            checked={share}
+            disabled={busy}
+            onChange={(e) => setShare(e.currentTarget.checked)}
+          />
+        )}
         {request && (
           <QueryFeedback
             pending={preview.isPending}
@@ -186,22 +221,30 @@ export function MoveFilesDialog({
           />
         )}
         {plan && card && (
-          <>
-            <Text size="sm" fw={500} role="status">
-              {moved.length} of {rows.length} can be used by {cardName}
-            </Text>
-            {refused.length > 0 && (
-              <Alert color="orange" title={`${refused.length} stay as they are`}>
-                <Stack gap={2} mah="30vh" style={{ overflowY: 'auto' }}>
-                  {refused.map((r) => (
-                    <Text key={r.file.fileId} size="xs" style={{ overflowWrap: 'anywhere' }}>
-                      {fileName(r.file.path)}: {r.why}
-                    </Text>
-                  ))}
-                </Stack>
-              </Alert>
+          <div>
+            {!one && (
+              <Text size="sm" fw={500} role="status" mb={6}>
+                {moved.length === rows.length
+                  ? `All ${rows.length} files can go to ${cardName}`
+                  : `${moved.length} of ${rows.length} files can go to ${cardName}`}
+              </Text>
             )}
-          </>
+            <div className={classes.moves}>
+              {/* What cannot move comes first: it is what needs a look. */}
+              {[...refused, ...moved].map((r) => (
+                <div key={r.file.fileId} className={classes.move}>
+                  <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+                    {fileName(r.file.path)}
+                  </Text>
+                  <Text size="xs" c={r.usable.length ? 'dimmed' : 'orange'}>
+                    {r.usable.length
+                      ? `Becomes ${r.usable.map((b) => shortBook(b.label)).join(', ')}`
+                      : `Stays as it is: ${r.why.charAt(0).toLowerCase()}${r.why.slice(1)}`}
+                  </Text>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
         {error && (
           <Alert color="red">
@@ -211,12 +254,16 @@ export function MoveFilesDialog({
             </Button>
           </Alert>
         )}
-        <Group justify="flex-end">
+        <Group justify="flex-end" gap="sm">
           <Button variant="default" disabled={busy} onClick={close}>
             Cancel
           </Button>
           <Button loading={busy} disabled={!plan || moved.length === 0} onClick={() => void apply()}>
-            {moved.length ? `Use ${moved.length} ${moved.length === 1 ? 'file' : 'files'}` : 'Use files'}
+            {one
+              ? 'Use file'
+              : moved.length
+                ? `Use ${moved.length} ${moved.length === 1 ? 'file' : 'files'}`
+                : 'Use files'}
           </Button>
         </Group>
       </Stack>
