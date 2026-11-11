@@ -252,9 +252,6 @@ export default function App() {
             <span className={classes.brandMark} aria-hidden="true"><IconBooks size={19} stroke={1.7} /></span>
             <Title order={3} className={classes.wordmark}>sento</Title>
           </Group>
-          <Text c="dimmed" size="xs" visibleFrom="sm" className={classes.breadcrumb}>
-            / &nbsp; {allLinks.find((l) => isActive(l.to))?.label ?? (location.pathname === '/add' ? 'Add series' : 'Series')}
-          </Text>
           <Group gap="xs" ml="auto" wrap="nowrap">
             <UnstyledButton
               className={classes.searchTrigger}

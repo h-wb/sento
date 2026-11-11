@@ -16,7 +16,6 @@
   color: light-dark(#fff, #1d1d1b);
 }
 .wordmark { font-size: 22px; letter-spacing: -0.065em; font-weight: 650; }
-.breadcrumb { margin-left: 80px; }
 .sectionLabel {
   font-size: 10px;
   font-weight: 600;
