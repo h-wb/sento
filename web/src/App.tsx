@@ -48,6 +48,7 @@ import {
 import { useIsFetching, useQuery } from '@tanstack/react-query'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api'
+import { versionLabel } from './ui'
 import classes from './App.module.css'
 import { AddSeriesCtx } from './addSeries'
 import { AddSeriesForm } from './components/AddSeriesForm'
@@ -335,7 +336,7 @@ export default function App() {
             </Tooltip>
           </Group>
           <Text size="xs" c="dimmed" px="sm" py={4}>
-            {status.data ? `v${status.data.version}` : '…'}
+            {status.data ? versionLabel(status.data) : '…'}
             {!healthy && ' · backend unreachable'}
           </Text>
         </AppShell.Section>

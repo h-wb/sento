@@ -681,7 +681,12 @@ export interface BookOwner {
   pinned: boolean;
   present: boolean;
 }
+/**
+ * AssetFactPatch is a person's correction of what a file is. A flag named
+ * in Flags is set to that value by hand; the others are left as read.
+ */
 export interface AssetFactPatch {
   language?: string;
   group?: string;
+  flags?: { [key: string]: boolean};
 }

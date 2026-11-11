@@ -166,6 +166,15 @@ type NamingPreview struct {
 	Errors map[string]string `json:"errors"`
 }
 
+// FilesFactsBody is PATCH /series/{id}/files/facts: one correction of what
+// the named files are.
+type FilesFactsBody struct {
+	FileIDs  []int64         `json:"fileIds"`
+	Language *string         `json:"language,omitempty"`
+	Group    *string         `json:"group,omitempty"`
+	Flags    map[string]bool `json:"flags,omitempty"`
+}
+
 // SplitBoxBody is POST /series/{id}/books/{bid}/split: how many volumes
 // the box holds.
 type SplitBoxBody struct {

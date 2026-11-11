@@ -42,11 +42,11 @@ test('file details show current profile scores and refresh after profile or fact
     })).ok()).toBeTruthy()
 
     await page.goto(`/series/${id}?view=files`)
-    await page.getByRole('button', { name: 'Edit mappings', exact: true }).click()
-    const editor = page.getByRole('dialog', { name: 'Match imported file' })
-    await expect(editor.getByText('Current score: 150', { exact: true })).toBeVisible()
-    await expect(editor.getByText('Profile: File score policy', { exact: true })).toBeVisible()
-    await expect(editor.getByText('File score test group: +150', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Edit file', exact: true }).click()
+    const editor = page.getByRole('dialog', { name: 'File', exact: true })
+    // Each card that can use the file shows what its profile makes of it.
+    await editor.getByText('Score 150 · File score policy', { exact: true }).click()
+    await expect(editor.getByText('File score test group: +150')).toBeVisible()
     await editor.getByRole('button', { name: 'Close dialog', exact: true }).click()
 
     // Editing a profile must change today's file score without rescanning.
@@ -54,20 +54,25 @@ test('file details show current profile scores and refresh after profile or fact
       data: { ...policy, id: profileId, formatScores: { [formatId]: -25 } },
     })).ok()).toBeTruthy()
     await page.reload()
-    await page.getByRole('button', { name: 'Edit mappings', exact: true }).click()
-    await expect(editor.getByText('Current score: -25', { exact: true })).toBeVisible()
-    await expect(editor.getByText('File score test group: -25', { exact: true })).toBeVisible()
-    await editor.getByRole('textbox', { name: 'Confirmed release group' }).fill('OtherGroup')
-    await expect(editor.getByText('The score uses saved facts. Save your corrections to update it.')).toBeVisible()
-    await expect(editor.getByText('Current score: -25', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Edit file', exact: true }).click()
+    await editor.getByText('Score -25 · File score policy', { exact: true }).click()
+    await expect(editor.getByText('File score test group: -25')).toBeVisible()
+    // A correction is judged as it is typed, before it is saved.
+    await editor.getByRole('textbox', { name: 'Release group' }).fill('OtherGroup')
+    await expect(editor.getByText('Score 0 · File score policy', { exact: true })).toBeVisible()
     await editor.getByRole('button', { name: 'Apply choices' }).click()
     await expect(editor).toBeHidden()
-    await page.getByRole('button', { name: 'Edit mappings', exact: true }).click()
-    await expect(editor.getByText('Current score: 0', { exact: true })).toBeVisible()
-    await expect(editor.getByText('File score test group: -25', { exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Edit file', exact: true }).click()
+    await expect(editor.getByText('Score 0 · File score policy', { exact: true })).toBeVisible()
+    await expect(editor.getByText('File score test group: -25')).toHaveCount(0)
+    // What was read wrong can be said by hand, flags included.
+    await expect(editor.getByText(/Set by you/)).toHaveCount(0)
+    await editor.getByText('Digital', { exact: true }).click()
+    await expect(editor.getByText('Set by you: Digital off. A rescan keeps these.')).toBeVisible()
     await page.setViewportSize({ width: 390, height: 844 })
     expect(await editor.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
     await editor.getByRole('button', { name: 'Close dialog', exact: true }).click()
+    await page.getByRole('button', { name: 'Discard changes', exact: true }).click()
 
     await page.getByRole('tab', { name: 'Editions', exact: true }).click()
     const card = page.locator('.mantine-Card-root').filter({ hasText: 'File score policy' }).first()

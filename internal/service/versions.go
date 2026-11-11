@@ -355,12 +355,13 @@ func backedFacts(facts, claims store.AssetFacts) store.AssetFacts {
 	if facts.Resolution == 0 {
 		facts.Resolution = claims.Resolution
 	}
-	if claims.Digital && !facts.Digital {
+	// A flag a person turned off stays off, whatever the release claimed.
+	if claims.Digital && !facts.Digital && !facts.ManualFlag("digital") {
 		facts.Digital = true
 	}
 	var backed []string
 	for flag, set := range claims.Flags {
-		if set && !facts.Flags[flag] {
+		if set && !facts.Flags[flag] && !facts.ManualFlag(flag) {
 			backed = append(backed, flag)
 		}
 	}

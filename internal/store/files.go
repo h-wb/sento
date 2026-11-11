@@ -109,17 +109,7 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 		if err = json.Unmarshal([]byte(oldFacts), &previous); err != nil {
 			return 0, err
 		}
-		if f.Facts.Sources == nil {
-			f.Facts.Sources = map[string]string{}
-		}
-		if previous.Sources["language"] == "manual" {
-			f.Facts.Language = previous.Language
-			f.Facts.Sources["language"] = "manual"
-		}
-		if previous.Sources["group"] == "manual" {
-			f.Facts.Group = previous.Group
-			f.Facts.Sources["group"] = "manual"
-		}
+		f.Facts = f.Facts.KeepingManual(previous)
 		factsJSON, _ = json.Marshal(f.Facts)
 	}
 
@@ -217,8 +207,8 @@ func (s *Store) ForgetFile(ctx context.Context, id int64) error {
 
 // RewriteFileFacts replaces a file's recorded facts after a parser-version
 // re-read of its name — even when a person reviewed it or corrected facts —
-// keeping manually corrected language/group, the review action, hash, links
-// and presence untouched.
+// keeping what a person corrected (language, group, flags), the review
+// action, hash, links and presence untouched.
 func (s *Store) RewriteFileFacts(ctx context.Context, id int64, facts AssetFacts, parserVersion int64) error {
 	var old string
 	if err := s.db.QueryRowContext(ctx, s.q(`SELECT facts_json FROM files WHERE id=?`), id).Scan(&old); err != nil {
@@ -228,21 +218,7 @@ func (s *Store) RewriteFileFacts(ctx context.Context, id int64, facts AssetFacts
 	if err := json.Unmarshal([]byte(old), &previous); err != nil {
 		return err
 	}
-	if previous.Sources == nil {
-		previous.Sources = map[string]string{}
-	}
-	if facts.Sources == nil {
-		facts.Sources = map[string]string{}
-	}
-	if previous.Sources["language"] == "manual" {
-		facts.Language = previous.Language
-		facts.Sources["language"] = "manual"
-	}
-	if previous.Sources["group"] == "manual" {
-		facts.Group = previous.Group
-		facts.Sources["group"] = "manual"
-	}
-	raw, err := json.Marshal(facts)
+	raw, err := json.Marshal(facts.KeepingManual(previous))
 	if err != nil {
 		return err
 	}

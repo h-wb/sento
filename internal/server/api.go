@@ -85,6 +85,7 @@ func (s *Server) mountAPI(r chi.Router) {
 			// The review routes live outside the global request cap: see
 			// Server.Handler.
 			r.Patch("/files/{fid}/facts", s.handleFileFacts)
+			r.Patch("/files/facts", s.handleFilesFacts)
 			r.Post("/check-files", s.handleCheckFiles)
 			r.Get("/observations", s.handleObservations)
 			r.Post("/observations", s.handleObservations)

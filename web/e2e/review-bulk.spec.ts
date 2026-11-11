@@ -192,7 +192,7 @@ for (const refused of [false, true]) {
     ] }))
     await page.route('**/api/v1/series/901/review/choices/preview', (route) => route.fulfill({ json: {
       token: 'selected-copy', files: [
-        { ...reviewFile(301, [{ ...reviewBook(ref, 'volume 1'), currentSelected: true, reason: refused ? 'Score is below the required minimum' : '' }]), trashReason: 'This archive is currently selected by a book or version; keep it instead of moving it to trash' },
+        { ...reviewFile(301, [{ ...reviewBook(ref, 'volume 1'), currentSelected: true, reason: refused ? 'Score is below the required minimum' : '' }]), trashReason: 'A card uses this file, so it cannot go to trash: untick it for every card first' },
         reviewFile(302, [{ ...reviewBook(ref, 'volume 1'), useIncoming: false, owners: [
           { fileId: 301, path: '/library/Volume 301.cbz', group: '1r0n', source: 'torrent', pinned: false, present: true, score: reviewScore },
         ] }]),

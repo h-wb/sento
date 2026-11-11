@@ -80,9 +80,9 @@ test('a mixed pack keeps the existing volume, trashes its duplicate, and support
     // Restoring an unused copy retains confirmed contents but does not select it.
     // A deliberate choice in the single-file editor can replace the old copy.
     await page.goto(`/series/${id}?view=files`)
-    const row = page.locator('.mantine-Group-root').filter({ has: page.getByText(path.basename(incoming4.path), { exact: true }) }).filter({ has: page.getByRole('button', { name: 'Edit mappings', exact: true }) }).last()
-    await row.getByRole('button', { name: 'Edit mappings', exact: true }).click()
-    const editor = page.getByRole('dialog', { name: 'Match imported file', exact: true })
+    const row = page.getByRole('row').filter({ has: page.getByText(path.basename(incoming4.path), { exact: true }) }).last()
+    await row.getByRole('button', { name: 'Edit file', exact: true }).click()
+    const editor = page.getByRole('dialog', { name: 'File', exact: true })
     await expect(editor.getByRole('checkbox', { name: 'Use incoming instead for volume 4', exact: true })).not.toBeChecked()
     await editor.getByRole('checkbox', { name: 'Use incoming instead for volume 4', exact: true }).check()
     await expect(editor.getByText('Import 0 · Keep existing 0 · Replace 1 · Trash 0 · Still missing 0 · Left for later 0', { exact: true })).toBeVisible()
