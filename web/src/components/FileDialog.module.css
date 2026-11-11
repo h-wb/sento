@@ -1,0 +1,18 @@
+/* The file dialogs: one file's editor, and the ones that act on several. */
+.about { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 10px 0 0; font-size: var(--mantine-font-size-xs); }
+.about dt { color: var(--mantine-color-dimmed); }
+.about dd { margin: 0; overflow-wrap: anywhere; }
+.readAs { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.facts { margin-top: 12px; padding: 12px; border-radius: var(--mantine-radius-md); background: light-dark(#f7f7f5, rgba(255, 255, 255, 0.03)); }
+
+.section { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; border-top: 1px solid var(--mantine-color-default-border); }
+.sectionTitle { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+
+.uses { display: flex; flex-direction: column; gap: 14px; }
+.use { min-width: 0; }
+/* Under the checkbox's label, clear of the box itself. */
+.useDetail { margin: 4px 0 0 32px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.moves { max-height: 30vh; overflow-y: auto; border: 1px solid var(--mantine-color-default-border); border-radius: var(--mantine-radius-md); }
+.move { padding: 8px 12px; }
+.move + .move { border-top: 1px solid var(--mantine-color-default-border); }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, Button, Divider, Group, MultiSelect, Select, Stack, Text } from '@mantine/core'
+import { Alert, Button, MultiSelect, Select, Stack, Text } from '@mantine/core'
 import type {
   AssetCoverage,
   CollectedVersion,
@@ -13,13 +13,14 @@ import { fileName } from './editionText'
 import { EditorModal } from './EditorModal'
 import { FileFacts } from './FileFacts'
 import { factFlags, fileOrigin, hasFlag } from './factFlags'
-import { ReviewChoices } from './ReviewChoices'
+import { FileUses } from './FileUses'
+import classes from './FileDialog.module.css'
 
 type Entry = { versionId: number; bookId: number; editionId: number; number: number; ledger: string }
 
-// One file, in three questions: which books it holds, what it is, and which
-// cards use it. A file waiting in review is matched here; a matched one is
-// corrected or moved to another edition or card.
+// One file: what it is, the books it holds and the editions that use it. A
+// file waiting in review is matched here; a matched one is corrected or
+// moved to another edition.
 export function MappingEditor({
   seriesID,
   value,
@@ -47,7 +48,7 @@ export function MappingEditor({
   const ledgerOf = (editionId: number) =>
     editions.find((c) => c.id === editionId)?.type ?? 'volume'
   // Every card of an edition gets a say on each of its books the file
-  // holds, so "which cards use it" lists them all, used or not.
+  // holds, so "Used by" lists them all, used or not.
   const forEveryCard = (editionId: number, bookIds: number[]): Entry[] =>
     versions
       .filter((t) => t.editionId === editionId)
@@ -136,6 +137,11 @@ export function MappingEditor({
   const otherLanguage =
     !!language && !!editionLanguage && language.toLowerCase() !== editionLanguage.toLowerCase()
   const collected = editions.filter((c) => versions.some((t) => t.editionId === c.id))
+  const ledger = editionId ? ledgerOf(editionId) : 'volume'
+  const bookName = (s: BookStatus) =>
+    s.book.countType === 'main'
+      ? `${ledger === 'chapter' ? 'Ch.' : 'Vol.'} ${s.book.sequenceStr}`
+      : `${s.book.countType} ${s.book.sequenceStr}`.trim()
   return (
     <EditorModal
       dirty={
@@ -149,133 +155,129 @@ export function MappingEditor({
       onClose={close}
       title={value.needsReview ? 'Match imported file' : 'File'}
     >
-      <Stack>
+      <Stack gap="lg">
         <div>
-          <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>
+          <Text size="sm" fw={600} style={{ overflowWrap: 'anywhere' }}>
             {fileName(value.path)}
           </Text>
           <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
             {fileOrigin(value)}
           </Text>
-          <details>
-            <summary style={{ fontSize: 'var(--mantine-font-size-xs)', cursor: 'pointer' }}>
-              Stored at
-            </summary>
-            <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-              {value.path}
-            </Text>
-          </details>
+          <dl className={classes.about}>
+            <dt>Read as</dt>
+            <dd className={classes.readAs}>
+              <span>{readAs}</span>
+              {!factsOpen && (
+                <Button size="compact-xs" variant="default" onClick={() => setFactsOpen(true)}>
+                  Correct…
+                </Button>
+              )}
+            </dd>
+            <dt>Stored at</dt>
+            <dd>{value.path}</dd>
+          </dl>
+          {factsOpen && (
+            <div className={classes.facts}>
+              <FileFacts
+                files={[value]}
+                language={language}
+                group={group}
+                flags={flags}
+                disabled={busy}
+                onLanguage={setLanguage}
+                onGroup={setGroup}
+                onFlags={setFlags}
+              />
+            </div>
+          )}
         </div>
         {proposal && !known.length && (
           <Alert variant="light" p="xs">
             <Text size="sm">
-              Proposed: <b>{proposal.label}</b> of {proposal.edition} ({proposal.evidence}). Check
-              the books, then the editions that should use the file.
+              Sento’s guess: <b>{proposal.label}</b> of {proposal.edition} ({proposal.evidence}).
+              Check the books, then tick the editions that should use the file.
             </Text>
           </Alert>
         )}
 
-        <Divider label="What’s in it" labelPosition="left" />
-        <Select
-          label="Edition"
-          description="The edition whose books this file holds. Pick another to move the file there."
-          disabled={busy}
-          allowDeselect={false}
-          data={collected.map((c) => ({
-            value: String(c.id),
-            label: [c.language, c.editionName].filter(Boolean).join(' · '),
-          }))}
-          value={editionId ? String(editionId) : null}
-          onChange={(v) => v && pickEdition(Number(v))}
-        />
-        <MultiSelect
-          label="Books in this file"
-          description={
-            editionId
-              ? booksOf(editionId).length > 20
-                ? 'Type a range such as 1-30 and press Enter to add every book in it.'
-                : undefined
-              : pending.length
-                ? `Its name says ${pending.join(', ')}. Pick the edition to match them.`
-                : 'Pick the edition first.'
-          }
-          searchable
-          searchValue={bookSearch}
-          onSearchChange={setBookSearch}
-          onKeyDown={(e) => {
-            const range = /^\s*(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*$/.exec(bookSearch)
-            if (e.key !== 'Enter' || !range || !editionId) return
-            e.preventDefault()
-            const [low, high] = [Number(range[1]), Number(range[2])].sort((a, b) => a - b)
-            const inRange = booksOf(editionId)
-              .filter((s) => s.book.numberKnown && s.book.sequenceNum >= low * 100 && s.book.sequenceNum <= high * 100)
-              .map((s) => s.book.id)
-            setBooks(editionId, [...new Set([...chosen, ...inRange])])
-            setBookSearch('')
-          }}
-          disabled={busy || !editionId}
-          data={
-            editionId
-              ? booksOf(editionId).map((s) => ({
-                  value: String(s.book.id),
-                  label: s.book.sequenceStr,
-                }))
-              : pending.map((n) => ({ value: n, label: n }))
-          }
-          value={editionId ? chosen.map(String) : pending}
-          onChange={(ids) => (editionId ? setBooks(editionId, ids.map(Number)) : setPending(ids))}
-        />
-        {otherLanguage && (
-          <Text size="xs" c="orange">
-            The file reads as {language}, but this edition is {editionLanguage}. Check the edition,
-            or correct the language below if it was read wrong.
-          </Text>
-        )}
-
-        <Divider label="What it is" labelPosition="left" />
-        {factsOpen ? (
-          <FileFacts
-            file={value}
-            language={language}
-            group={group}
-            flags={flags}
+        <section className={classes.section}>
+          <Text className={classes.sectionTitle}>Books in this file</Text>
+          <Select
+            label="Edition"
+            placeholder="Pick an edition"
             disabled={busy}
-            onLanguage={setLanguage}
-            onGroup={setGroup}
-            onFlags={setFlags}
+            allowDeselect={false}
+            data={collected.map((c) => ({
+              value: String(c.id),
+              label: [c.language, c.editionName].filter(Boolean).join(' · '),
+            }))}
+            value={editionId ? String(editionId) : null}
+            onChange={(v) => v && pickEdition(Number(v))}
           />
-        ) : (
-          <Group justify="space-between" wrap="nowrap" gap="sm">
-            <Text size="sm" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-              Read as {readAs}
+          <MultiSelect
+            label="Books"
+            description={
+              editionId
+                ? booksOf(editionId).length > 20
+                  ? 'Type a range such as 1-30 and press Enter to add every book in it.'
+                  : undefined
+                : pending.length
+                  ? `Its name says ${pending.join(', ')}. Pick the edition to match them.`
+                  : 'Pick the edition first.'
+            }
+            searchable
+            searchValue={bookSearch}
+            onSearchChange={setBookSearch}
+            onKeyDown={(e) => {
+              const range = /^\s*(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*$/.exec(bookSearch)
+              if (e.key !== 'Enter' || !range || !editionId) return
+              e.preventDefault()
+              const [low, high] = [Number(range[1]), Number(range[2])].sort((a, b) => a - b)
+              const inRange = booksOf(editionId)
+                .filter((s) => s.book.numberKnown && s.book.sequenceNum >= low * 100 && s.book.sequenceNum <= high * 100)
+                .map((s) => s.book.id)
+              setBooks(editionId, [...new Set([...chosen, ...inRange])])
+              setBookSearch('')
+            }}
+            disabled={busy || !editionId}
+            data={
+              editionId
+                ? booksOf(editionId).map((s) => ({ value: String(s.book.id), label: bookName(s) }))
+                : pending.map((n) => ({ value: n, label: n }))
+            }
+            value={editionId ? chosen.map(String) : pending}
+            onChange={(ids) => (editionId ? setBooks(editionId, ids.map(Number)) : setPending(ids))}
+          />
+          {otherLanguage && (
+            <Text size="xs" c="orange">
+              The file reads as {language}, but this edition is {editionLanguage}. Check the
+              edition, or correct the language above if it was read wrong.
             </Text>
-            <Button size="compact-sm" variant="default" onClick={() => setFactsOpen(true)}>
-              Correct…
-            </Button>
-          </Group>
-        )}
+          )}
+        </section>
 
-        <Divider label="Which editions use it" labelPosition="left" />
-        <ReviewChoices
-          seriesID={seriesID}
-          request={{
-            files: [
-              {
-                fileId: value.id,
-                books: draft.length || initial.length || changed ? draft : null,
-                ...(language !== (value.facts?.language ?? '') ? { language } : {}),
-                ...(group !== (value.facts?.group ?? '') ? { group } : {}),
-                ...(Object.keys(flags).length ? { flags } : {}),
-              },
-            ],
-          }}
-          // A matched file changes hands only where a person says so.
-          keepCurrent={!value.needsReview && !changed}
-          single
-          applied={applied}
-          onDirtyChange={setChoicesDirty}
-          onBusyChange={setBusy}
-        />
+        <section className={classes.section}>
+          <Text className={classes.sectionTitle}>Used by</Text>
+          <FileUses
+            seriesID={seriesID}
+            request={{
+              files: [
+                {
+                  fileId: value.id,
+                  books: draft.length || initial.length || changed ? draft : null,
+                  ...(language !== (value.facts?.language ?? '') ? { language } : {}),
+                  ...(group !== (value.facts?.group ?? '') ? { group } : {}),
+                  ...(Object.keys(flags).length ? { flags } : {}),
+                },
+              ],
+            }}
+            keepCurrent={!value.needsReview && !changed}
+            applied={applied}
+            cancel={close}
+            onDirtyChange={setChoicesDirty}
+            onBusyChange={setBusy}
+          />
+        </section>
       </Stack>
     </EditorModal>
   )

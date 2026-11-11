@@ -61,6 +61,9 @@ type ReviewFilePlan struct {
 	Books       []ReviewBookPlan `json:"books"`
 	Reason      string           `json:"reason"`
 	TrashReason string           `json:"trashReason"`
+	// TrashWhenUnused is set when the only thing keeping the file out of
+	// trash is that an edition uses it: saved as unused, it can go.
+	TrashWhenUnused bool `json:"trashWhenUnused"`
 }
 
 type ReviewPlan struct {
@@ -273,12 +276,13 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 			row.Books = append(row.Books, b)
 		}
 		for _, a := range cov {
-			if a.FileID == f.ID {
+			if a.FileID == f.ID && row.TrashReason == "" {
 				row.TrashReason = "An edition uses this file, so it cannot go to trash: untick it everywhere first"
+				row.TrashWhenUnused = true
 			}
 		}
 		if slices.Contains(pins, f.ID) {
-			row.TrashReason = "Unpin this archive before moving it to trash"
+			row.TrashReason, row.TrashWhenUnused = "Unpin this archive before moving it to trash", false
 		}
 		out.Files = append(out.Files, row)
 	}

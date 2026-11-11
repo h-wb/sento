@@ -17,3 +17,9 @@ table, .tabnums { font-variant-numeric: tabular-nums; }
 .tabCount { margin-left: 6px; color: var(--mantine-color-dimmed); font-size: 11px; font-variant-numeric: tabular-nums; }
 .dataTable { border-top: 1px solid var(--mantine-color-default-border); }
 @media (max-width: 64em) { .settingsLayout { grid-template-columns: minmax(0, 1fr); } }
+/* A quiet "show more": a chevron instead of the browser's triangle. */
+details.more > summary { display: inline-flex; align-items: flex-start; gap: 6px; cursor: pointer; list-style: none; font-size: var(--mantine-font-size-xs); color: var(--mantine-color-dimmed); overflow-wrap: anywhere; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::before { content: ''; flex: none; margin-top: 0.5em; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 0.12s; }
+details.more[open] > summary::before { transform: rotate(45deg); }
+details.more > summary:hover { color: var(--mantine-color-text); }
