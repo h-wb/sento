@@ -91,6 +91,7 @@ export default function ProfilesPage() {
     queryFn: api.listProfiles,
   })
   const formats = useQuery({ queryKey: ['formats'], queryFn: api.listFormats })
+  const formatName = (id: number) => formats.data?.find((f) => f.id === id)?.name ?? `format ${id}`
   const defaultProfile = useQuery({
     queryKey: ['default-profile'],
     queryFn: api.defaultProfile,
@@ -140,27 +141,34 @@ export default function ProfilesPage() {
     <Stack gap="lg">
       <PageHeader
         title="Profiles"
-        description="Rules and preferences for choosing releases."
-        action={
-          <Group gap="xs">
-            <Button
-              variant="default"
-              size="xs"
-              leftSection={<IconUpload size={14} />}
-              onClick={() => setImportOpen(true)}
-            >
-              Import
-            </Button>
-            <Button
-              size="xs"
-              leftSection={<IconPlus size={14} />}
-              onClick={() => setEditProfile('new')}
-            >
-              Add profile
-            </Button>
-          </Group>
-        }
+        description="Which releases Sento downloads, and which it prefers."
       />
+
+      <Group justify="space-between">
+        <div>
+          <Title order={3}>Release profiles</Title>
+          <Text c="dimmed" size="sm">
+            A series or card uses the starred profile unless it chooses another.
+          </Text>
+        </div>
+        <Group gap="xs">
+          <Button
+            variant="default"
+            size="xs"
+            leftSection={<IconUpload size={14} />}
+            onClick={() => setImportOpen(true)}
+          >
+            Import
+          </Button>
+          <Button
+            size="xs"
+            leftSection={<IconPlus size={14} />}
+            onClick={() => setEditProfile('new')}
+          >
+            Add profile
+          </Button>
+        </Group>
+      </Group>
 
       <QueryFeedback
         pending={profiles.isPending}
@@ -178,6 +186,7 @@ export default function ProfilesPage() {
               <Table.Th>Name</Table.Th>
               <Table.Th>Min format score</Table.Th>
               <Table.Th>Scored formats</Table.Th>
+              <Table.Th>Rules</Table.Th>
               <Table.Th w={120} />
             </Table.Tr>
           </Table.Thead>
@@ -214,6 +223,14 @@ export default function ProfilesPage() {
                   <Table.Td>
                     <Text size="sm" c="dimmed">
                       {Object.keys(p.formatScores ?? {}).length}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm" c="dimmed">
+                      {[
+                        ...(p.required ?? []).map((id) => `Requires ${formatName(id)}`),
+                        ...(p.refused ?? []).map((id) => `Refuses ${formatName(id)}`),
+                      ].join(' · ') || '—'}
                     </Text>
                   </Table.Td>
                   <Table.Td>
