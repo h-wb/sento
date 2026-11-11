@@ -5,6 +5,7 @@ import { api, fmtNum, fmtSize, type ReleaseCandidate } from '../api'
 import type { AcquisitionPlan as Plan, PlanBook, PlanOutcome, PlanPick, SearchScope } from '../types/service'
 import type { BookRef } from '../types/store'
 import CandidateList from './CandidateList'
+import { bookRanges } from './bookRanges'
 import classes from './AcquisitionPlan.module.css'
 
 const bookKey = (b: BookRef) => `${b.versionId}/${b.bookId}`
@@ -23,18 +24,7 @@ const states: [string, string][] = [
   ['unknown', 'Not checked'],
 ]
 const bookName = (b: PlanBook) => b.label || fmtNum(b.book.number)
-// "1–3, 5": consecutive whole numbers collapse into a range.
-const ranges = (books: PlanBook[]) => {
-  const sorted = [...books].sort((a, b) => a.book.number - b.book.number)
-  const out: string[] = []
-  let start = 0
-  for (let i = 1; i <= sorted.length; i++) {
-    if (i < sorted.length && sorted[i].book.number - sorted[i - 1].book.number === 100) continue
-    out.push(start === i - 1 ? bookName(sorted[start]) : `${bookName(sorted[start])}–${bookName(sorted[i - 1])}`)
-    start = i
-  }
-  return out.join(', ')
-}
+const ranges = (books: PlanBook[]) => bookRanges(books, (b) => b.book.number, bookName)
 const outcomeBadges: Record<string, [string, string]> = {
   queued: ['blue', 'Queued'],
   skipped: ['gray', 'Skipped'],
