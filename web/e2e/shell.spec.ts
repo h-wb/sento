@@ -74,6 +74,10 @@ test('the g-key sequence jumps to a page', async ({ page }) => {
   await page.keyboard.press('g')
   await page.keyboard.press('o')
   await expect(page.getByRole('heading', { name: 'Connections', level: 2 })).toBeVisible()
+  // Every page in the help has a working sequence, Wanted included.
+  await page.keyboard.press('g')
+  await page.keyboard.press('w')
+  await expect(page.getByRole('heading', { name: 'Wanted', level: 2 })).toBeVisible()
 })
 
 test('the theme menu switches presets', async ({ page }) => {

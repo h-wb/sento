@@ -16,7 +16,6 @@ import {
   Menu,
   Modal,
   NavLink,
-  Stack,
   Table,
   Text,
   Title,
@@ -69,23 +68,25 @@ const MediaPage = lazy(() => import('./pages/MediaPage'))
 const ProfilesPage = lazy(() => import('./pages/ProfilesPage'))
 const SystemPage = lazy(() => import('./pages/SystemPage'))
 
-// Day-to-day pages, always on top.
-const primaryLinks = [
-  { to: '/', label: 'Library', icon: IconBooks },
-  { to: '/calendar', label: 'Calendar', icon: IconCalendar },
-  { to: '/queue', label: 'Activity', icon: IconDownload },
-  { to: '/wanted', label: 'Wanted', icon: IconZoomCheck },
+type NavItem = { to: string; label: string; icon: typeof IconBooks; key: string }
+
+// Day-to-day pages, always on top. `key` is the page's "g <key>" shortcut.
+const primaryLinks: NavItem[] = [
+  { to: '/', label: 'Library', icon: IconBooks, key: 'l' },
+  { to: '/calendar', label: 'Calendar', icon: IconCalendar, key: 'c' },
+  { to: '/queue', label: 'Activity', icon: IconDownload, key: 'a' },
+  { to: '/wanted', label: 'Wanted', icon: IconZoomCheck, key: 'w' },
 ]
 // Set-up-once config, ordered to mirror the pipeline: search → download →
 // quality decision → import.
-const configLinks = [
-  { to: '/indexers', label: 'Indexers', icon: IconWorldSearch },
-  { to: '/connections', label: 'Connections', icon: IconPlug },
-  { to: '/profiles', label: 'Profiles', icon: IconAdjustmentsHorizontal },
-  { to: '/media', label: 'Media', icon: IconFiles },
+const configLinks: NavItem[] = [
+  { to: '/indexers', label: 'Indexers', icon: IconWorldSearch, key: 'i' },
+  { to: '/connections', label: 'Connections', icon: IconPlug, key: 'o' },
+  { to: '/profiles', label: 'Profiles', icon: IconAdjustmentsHorizontal, key: 'p' },
+  { to: '/media', label: 'Media', icon: IconFiles, key: 'm' },
 ]
-const systemLink = { to: '/system', label: 'System', icon: IconServerBolt }
-type NavItem = (typeof primaryLinks)[number]
+const systemLink: NavItem = { to: '/system', label: 'System', icon: IconServerBolt, key: 's' }
+const allLinks = [...primaryLinks, ...configLinks, systemLink]
 
 const MODES = [
   { value: 'light', label: 'Light', icon: IconSun },
@@ -93,28 +94,14 @@ const MODES = [
   { value: 'auto', label: 'System', icon: IconDeviceDesktop },
 ] as const
 
-// `g` then one of these keys jumps to a page (Gmail-style sequence).
-const GO_TO: Record<string, string> = {
-  l: '/',
-  c: '/calendar',
-  a: '/queue',
-  i: '/indexers',
-  o: '/connections',
-  p: '/profiles',
-  m: '/media',
-  s: '/system',
-}
+const modKey = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl '
 
-const SHORTCUTS: [string, string][] = [
-  ['⌘K  /  /', 'Open command palette'],
-  ['g then l', 'Go to Library'],
-  ['g then c', 'Go to Calendar'],
-  ['g then a', 'Go to Activity'],
-  ['g then w', 'Go to Wanted'],
-  ['g then n', 'Add Series'],
-  ['g then i / o / p / m', 'Indexers / Connections / Profiles / Media'],
-  ['g then s', 'Go to System'],
-  ['?', 'Show this help'],
+// "g" then a page's key jumps to it (Gmail-style sequence); "g n" adds a series.
+const SHORTCUTS: [string[], string][] = [
+  [[`${modKey}K`, '/'], 'Search pages and series'],
+  ...allLinks.map((l): [string[], string] => [[`g ${l.key}`], `Go to ${l.label}`]),
+  [['g n'], 'Add a series'],
+  [['?'], 'Show this help'],
 ]
 
 export default function App() {
@@ -165,10 +152,13 @@ export default function App() {
           e.preventDefault()
           openAdd()
           gAt = 0
-        } else if (GO_TO[e.key]) {
-          e.preventDefault()
-          navigate(GO_TO[e.key])
-          gAt = 0
+        } else {
+          const link = allLinks.find((l) => l.key === e.key)
+          if (link) {
+            e.preventDefault()
+            navigate(link.to)
+            gAt = 0
+          }
         }
       }
     }
@@ -189,7 +179,7 @@ export default function App() {
   const spotlightActions: SpotlightActionData[] = [
     {
       id: 'add-series',
-      label: 'Add Series',
+      label: 'Add series',
       group: 'Actions',
       leftSection: <IconPlus size={18} />,
       onClick: openAdd,
@@ -264,7 +254,7 @@ export default function App() {
             <Title order={3} className={classes.wordmark}>sento</Title>
           </Group>
           <Text c="dimmed" size="xs" visibleFrom="sm" className={classes.breadcrumb}>
-            / &nbsp; {[...primaryLinks, ...configLinks, systemLink].find((l) => isActive(l.to))?.label ?? (location.pathname === '/add' ? 'Add series' : 'Series')}
+            / &nbsp; {allLinks.find((l) => isActive(l.to))?.label ?? (location.pathname === '/add' ? 'Add series' : 'Series')}
           </Text>
           <Group gap="xs" ml="auto" wrap="nowrap">
             <UnstyledButton
@@ -275,7 +265,7 @@ export default function App() {
               <Group gap="xs" px="sm" h={32} wrap="nowrap">
                 <IconSearch size={15} />
                 <Text size="sm">Search library…</Text>
-                <Kbd size="xs">⌘K</Kbd>
+                <Kbd size="xs">{modKey}K</Kbd>
               </Group>
             </UnstyledButton>
             <ActionIcon hiddenFrom="xs" variant="default" size="lg" aria-label="Search library" onClick={spotlight.open}><IconSearch size={18} /></ActionIcon>
@@ -320,7 +310,6 @@ export default function App() {
       </AppShell.Header>
       <AppShell.Navbar p="md" className={classes.navbar}>
         <AppShell.Section grow>
-          <Text className={classes.sectionLabel}>Edition</Text>
           {primaryLinks.map(renderLink)}
 
           <Text className={classes.sectionLabel}>Settings</Text>
@@ -383,14 +372,14 @@ export default function App() {
           <Table.Tbody>
             {SHORTCUTS.map(([keys, desc]) => (
               <Table.Tr key={desc}>
-                <Table.Td w={170}>
-                  <Stack gap={4} align="flex-start">
-                    {keys.split('  /  ').map((k) => (
+                <Table.Td w={140}>
+                  <Group gap={6}>
+                    {keys.map((k) => (
                       <Kbd key={k} size="sm">
                         {k}
                       </Kbd>
                     ))}
-                  </Stack>
+                  </Group>
                 </Table.Td>
                 <Table.Td>
                   <Text size="sm">{desc}</Text>

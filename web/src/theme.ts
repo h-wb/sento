@@ -3,13 +3,23 @@
 
 import { createContext, useContext } from 'react'
 import classes from './theme.module.css'
-import { createTheme, type MantineColorsTuple } from '@mantine/core'
+import {
+  createTheme,
+  defaultVariantColorsResolver,
+  type CSSVariablesResolver,
+  type MantineColorsTuple,
+  type VariantColorsResolver,
+} from '@mantine/core'
 
 export interface Preset {
   id: string
   label: string
   swatch: string // representative color shown in the picker
   brand: MantineColorsTuple // 10 shades, light → dark (index 6 = primary)
+  // A neutral scale's dark-scheme fill is nearly the page color, so a
+  // checked switch or a primary button would vanish. Such a preset fills
+  // with a light shade and dark text on dark surfaces instead.
+  darkFill?: { filled: string; hover: string; text: string }
   radius: 'xs' | 'sm' | 'md' | 'lg'
 }
 
@@ -32,6 +42,7 @@ export const PRESETS: Preset[] = [
       '#27272a',
       '#18181b',
     ],
+    darkFill: { filled: '#e4e4e7', hover: '#d4d4d8', text: '#18181b' },
     radius: 'sm',
   },
   {
@@ -110,9 +121,36 @@ export const PRESETS: Preset[] = [
 
 export const THEME_STORAGE_KEY = 'sento-theme'
 
+// Text on a primary fill follows the scheme's contrast color, which a
+// darkFill preset turns dark in the dark scheme.
+const variantColorResolver: VariantColorsResolver = (input) => {
+  const colors = defaultVariantColorsResolver(input)
+  const primary = !input.color || input.color === 'brand'
+  return input.variant === 'filled' && primary
+    ? { ...colors, color: 'var(--mantine-primary-color-contrast)' }
+    : colors
+}
+
+export const cssVariables =
+  (p: Preset): CSSVariablesResolver =>
+  () => ({
+    variables: {},
+    light: { '--mantine-color-body': '#ffffff', '--mantine-color-default-border': '#e5e5e0' },
+    dark: {
+      '--mantine-color-body': '#181816',
+      '--mantine-color-default-border': '#353532',
+      ...(p.darkFill && {
+        '--mantine-color-brand-filled': p.darkFill.filled,
+        '--mantine-color-brand-filled-hover': p.darkFill.hover,
+        '--mantine-primary-color-contrast': p.darkFill.text,
+      }),
+    },
+  })
+
 export function buildTheme(p: Preset) {
   return createTheme({
     primaryColor: 'brand',
+    variantColorResolver,
     defaultRadius: p.radius,
     fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     colors: {
@@ -135,6 +173,11 @@ export function buildTheme(p: Preset) {
       Modal: { classNames: { title: classes.modalTitle }, defaultProps: { closeButtonProps: { 'aria-label': 'Close dialog' }, overlayProps: { backgroundOpacity: 0.35, blur: 2 } } },
       Tabs: { classNames: { list: classes.tabsList, tab: classes.tab } },
       Badge: { classNames: { label: classes.badgeLabel }, defaultProps: { radius: 'sm', variant: 'light', fw: 500 } },
+      Checkbox: {
+        vars: (_theme: unknown, props: { color?: string }) =>
+          props.color ? { root: {} } : { root: { '--checkbox-icon-color': 'var(--mantine-primary-color-contrast)' } },
+      },
+      Switch: { classNames: { thumb: classes.switchThumb } },
       Card: { defaultProps: { withBorder: true, shadow: undefined } },
       Paper: { defaultProps: { withBorder: true, shadow: undefined } },
     },

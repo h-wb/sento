@@ -7,7 +7,7 @@ test.describe.configure({ mode: 'serial' })
 
 test('search, add, and open a series', async ({ page }) => {
   await page.goto('/add')
-  await expect(page.getByRole('heading', { name: 'Add Series', level: 2 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Add series', level: 2 })).toBeVisible()
 
   await page.getByPlaceholder('Search MangaBaka…').fill('Stub Blade')
   await page.getByRole('button', { name: 'Search', exact: true }).click()

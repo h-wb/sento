@@ -11,3 +11,4 @@
 .badgeLabel { text-transform: none; letter-spacing: 0; }
 .tabsList { gap: 5px; }
 .tab { font-size: 13px; padding: 12px 14px; }
+input:checked + * > .switchThumb { --switch-thumb-bg: var(--mantine-primary-color-contrast); }

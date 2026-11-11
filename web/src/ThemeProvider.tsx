@@ -1,18 +1,14 @@
-import { MantineProvider, type CSSVariablesResolver } from '@mantine/core'
-import { useEffect, useState, type ReactNode } from 'react'
-import { buildTheme, PRESETS, THEME_STORAGE_KEY, ThemeCtx } from './theme'
-
-const surfaces: CSSVariablesResolver = () => ({
-  variables: {},
-  light: { '--mantine-color-body': '#ffffff', '--mantine-color-default-border': '#e5e5e0' },
-  dark: { '--mantine-color-body': '#181816', '--mantine-color-default-border': '#353532' },
-})
+import { MantineProvider } from '@mantine/core'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { buildTheme, cssVariables, PRESETS, THEME_STORAGE_KEY, ThemeCtx } from './theme'
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [themeId, setThemeId] = useState<string>(
     () => localStorage.getItem(THEME_STORAGE_KEY) ?? 'minimal',
   )
   const preset = PRESETS.find((p) => p.id === themeId) ?? PRESETS[0]
+  const theme = useMemo(() => buildTheme(preset), [preset])
+  const resolver = useMemo(() => cssVariables(preset), [preset])
 
   useEffect(() => {
     localStorage.setItem(THEME_STORAGE_KEY, preset.id)
@@ -20,7 +16,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeCtx.Provider value={{ themeId: preset.id, setThemeId, preset }}>
-      <MantineProvider theme={buildTheme(preset)} defaultColorScheme="dark" cssVariablesResolver={surfaces}>
+      <MantineProvider theme={theme} defaultColorScheme="dark" cssVariablesResolver={resolver}>
         {children}
       </MantineProvider>
     </ThemeCtx.Provider>
