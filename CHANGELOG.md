@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.8.0](https://github.com/h-wb/sento/compare/v0.7.0...v0.8.0) (2026-11-11)
+
+
+### Features
+
+* **files:** correct what a file is, and work on several at once ([#92](https://github.com/h-wb/sento/issues/92)) ([b5d9492](https://github.com/h-wb/sento/commit/b5d94923fd05c9fe5bf70e7c2cfaf9f14c0229e0))
+* **media:** a naming page in three parts, with setups for Kavita and Komga ([#97](https://github.com/h-wb/sento/issues/97)) ([3bfb384](https://github.com/h-wb/sento/commit/3bfb3840718eb35943e292b768b3045b7c1ef986))
+* **web:** a design pass over editions, files and the shell ([#95](https://github.com/h-wb/sento/issues/95)) ([31f84f4](https://github.com/h-wb/sento/commit/31f84f4183a0697fd5da719b15073546b7649511))
+* **web:** naming and organize follow-through ([#85](https://github.com/h-wb/sento/issues/85)) ([2094d46](https://github.com/h-wb/sento/commit/2094d46bb9fe8055c343ec9bd163b71bfada19e1))
+
+
+### Bug Fixes
+
+* **library:** organize converges in one run ([#82](https://github.com/h-wb/sento/issues/82)) ([864cd57](https://github.com/h-wb/sento/commit/864cd57abc9b571f5b6173b120e01dc30f3d6304))
+* **scan:** a parser re-read keeps a file's release link and claims ([#84](https://github.com/h-wb/sento/issues/84)) ([de9a382](https://github.com/h-wb/sento/commit/de9a382d36be4b9df2919aacee39d6c65a242305))
+* **scan:** re-derive facts on reviewed files too ([#81](https://github.com/h-wb/sento/issues/81)) ([22d854d](https://github.com/h-wb/sento/commit/22d854d5720e74619ec6c3098aaf036c47f1bd20))
+* **scan:** re-read the files 0.7.0 stamped without reading ([#91](https://github.com/h-wb/sento/issues/91)) ([5760161](https://github.com/h-wb/sento/commit/5760161300cd416d49f3265bf0bcee1476a5b5e7))
+* **web:** say card where a card is meant ([#93](https://github.com/h-wb/sento/issues/93)) ([d0fb8ca](https://github.com/h-wb/sento/commit/d0fb8ca26db0b30a4c5c6d70a1e5af5159779b7e))
+
 ## [0.7.0](https://github.com/h-wb/sento/compare/v0.6.0...v0.7.0) (2026-11-09)
 
 
