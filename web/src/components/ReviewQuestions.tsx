@@ -14,12 +14,15 @@ import { notify } from '../ui'
 // per-file questions, which stay visible and answerable on their own.
 function FilePack({
   title,
+  note,
   files,
   busy,
   onDecline,
   onMatch,
 }: {
   title: string
+  // What every file of the pack is waiting for, when they share it.
+  note: string
   files: ReviewItem[]
   busy: boolean
   onDecline: () => void
@@ -34,6 +37,11 @@ function FilePack({
         <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>
           {title}
         </Text>
+        {note && (
+          <Text size="xs" c="dimmed">
+            {note}
+          </Text>
+        )}
       </div>
       <Group gap="xs">
         <Button size="xs" variant="default" disabled={busy} onClick={onDecline}>
@@ -140,47 +148,50 @@ export default function ReviewQuestions({
       },
     })
   }
-  const itemRow = (i: ReviewItem) => (
-    <div
+  const kindLabel = (i: ReviewItem) =>
+    i.kind === 'chapter'
+      ? 'New chapter'
+      : i.kind === 'file'
+        ? 'File review'
+        : i.kind === 'edition'
+          ? 'Catalog edition available'
+          : i.kind === 'source'
+            ? 'Source without a match'
+            : 'Download'
+  // One question per row: what it is on the left, its answers on the right.
+  // Inside a pack the shared label and explanation are said once above.
+  const itemRow = (i: ReviewItem, shared?: string) => (
+    <Group
       key={i.id}
-      style={{
-        paddingBlock: 10,
-        borderBottom: '1px solid var(--mantine-color-default-border)',
-      }}
+      justify="space-between"
+      align="flex-start"
+      gap="xs"
+      py={10}
+      style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
     >
-      <Stack gap={6}>
-        <Text size="xs" c="dimmed">
-          {seriesID ? '' : `${i.seriesTitle} · `}
-          {i.kind === 'chapter'
-            ? 'New chapter'
-            : i.kind === 'file'
-              ? 'File review'
-              : i.kind === 'edition'
-                ? 'Catalog edition available'
-                : i.kind === 'source'
-                  ? 'Source without a match'
-                  : 'Download'}
-        </Text>
+      <Stack gap={2} style={{ flex: '1 1 260px', minWidth: 0 }}>
+        {shared === undefined && (
+          <Text size="xs" c="dimmed">
+            {seriesID ? '' : `${i.seriesTitle} · `}
+            {kindLabel(i)}
+          </Text>
+        )}
         <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>
           {i.kind === 'file' ? fileName(i.title) : i.title}
         </Text>
         {i.proposal ? (
-          <Text size="sm">
+          <Text size="xs">
             Proposed: <b>{i.proposal.label}</b> of {i.proposal.edition}{' '}
             <Text span size="xs" c="dimmed">
               ({i.proposal.evidence})
             </Text>
           </Text>
         ) : (
-          <Text
-            size="xs"
-            c="dimmed"
-            lineClamp={3}
-            title={i.detail}
-            style={{ overflowWrap: 'anywhere' }}
-          >
-            {i.detail}
-          </Text>
+          i.detail !== shared && (
+            <Text size="xs" c="dimmed" lineClamp={3} title={i.detail} style={{ overflowWrap: 'anywhere' }}>
+              {i.detail}
+            </Text>
+          )
         )}
         {i.detail.length > 180 && (
           <details>
@@ -197,83 +208,79 @@ export default function ReviewQuestions({
             </Text>
           </details>
         )}
-        <Group gap="xs">
-          {i.proposal && (
-            <Button size="xs" disabled={busy} onClick={() => void run(() => accept(i))}>
-              Accept
-            </Button>
-          )}
-          {i.kind === 'file' && (
-            <Button size="xs" variant="default" onClick={() => dialogs.file(i)}>
-              Review file
-            </Button>
-          )}
-          {i.kind === 'edition' && (
-            <>
-              <Button
-                size="xs"
-                disabled={busy}
-                onClick={() =>
-                  void run(async () =>
-                    setLink({ item: i, editions: (await api.getSeries(i.seriesId)).editions }),
-                  )
-                }
-              >
-                Review and link
-              </Button>
-              <Button
-                size="xs"
-                variant="subtle"
-                disabled={busy}
-                onClick={() =>
-                  void run(() => api.declineCatalogLink(i.seriesId, i.itemId, i.relatedId ?? 0))
-                }
-              >
-                Not the same edition
-              </Button>
-            </>
-          )}
-          {i.kind === 'source' &&
-            (onSources ? (
-              <Button size="xs" variant="default" onClick={onSources}>
-                Open sources
-              </Button>
-            ) : (
-              <Button
-                size="xs"
-                variant="default"
-                component={Link}
-                to={`/series/${i.seriesId}?sources=1`}
-              >
-                Open sources
-              </Button>
-            ))}
-          {i.kind === 'chapter' && (
-            <>
-              <Button
-                size="xs"
-                disabled={busy}
-                onClick={() =>
-                  void run(() => api.reviewObservation(i.seriesId, i.itemId, true))
-                }
-              >
-                Add chapter
-              </Button>
-              <Button
-                size="xs"
-                variant="subtle"
-                disabled={busy}
-                onClick={() =>
-                  void run(() => api.reviewObservation(i.seriesId, i.itemId, false))
-                }
-              >
-                Dismiss
-              </Button>
-            </>
-          )}
-        </Group>
       </Stack>
-    </div>
+      <Group gap="xs">
+        {i.proposal && (
+          <Button size="xs" disabled={busy} onClick={() => void run(() => accept(i))}>
+            Accept
+          </Button>
+        )}
+        {i.kind === 'file' && (
+          <Button size="xs" variant="default" onClick={() => dialogs.file(i)}>
+            Review file
+          </Button>
+        )}
+        {i.kind === 'edition' && (
+          <>
+            <Button
+              size="xs"
+              disabled={busy}
+              onClick={() =>
+                void run(async () =>
+                  setLink({ item: i, editions: (await api.getSeries(i.seriesId)).editions }),
+                )
+              }
+            >
+              Review and link
+            </Button>
+            <Button
+              size="xs"
+              variant="subtle"
+              disabled={busy}
+              onClick={() =>
+                void run(() => api.declineCatalogLink(i.seriesId, i.itemId, i.relatedId ?? 0))
+              }
+            >
+              Not the same edition
+            </Button>
+          </>
+        )}
+        {i.kind === 'source' &&
+          (onSources ? (
+            <Button size="xs" variant="default" onClick={onSources}>
+              Open sources
+            </Button>
+          ) : (
+            <Button
+              size="xs"
+              variant="default"
+              component={Link}
+              to={`/series/${i.seriesId}?sources=1`}
+            >
+              Open sources
+            </Button>
+          ))}
+        {i.kind === 'chapter' && (
+          <>
+            <Button
+              size="xs"
+              disabled={busy}
+              onClick={() => void run(() => api.reviewObservation(i.seriesId, i.itemId, true))}
+            >
+              Add chapter
+            </Button>
+            <Button
+              size="xs"
+              variant="subtle"
+              disabled={busy}
+              onClick={() => void run(() => api.reviewObservation(i.seriesId, i.itemId, false))}
+            >
+              Dismiss
+            </Button>
+          </>
+        )}
+      </Group>
+    </Group>
   )
   const rendered = new Set<string>()
   return (
@@ -345,10 +352,13 @@ export default function ReviewQuestions({
         const pack = packs.get(key)!
         if (pack.length < 2) return itemRow(i)
         const title = pack[0].release || 'Imported files'
+        // The explanation every file of the pack shares, said once.
+        const shared = pack.every((f) => !f.proposal && f.detail === pack[0].detail) ? pack[0].detail : ''
         return (
           <div key={`pack-${key}`}>
             <FilePack
               title={title}
+              note={shared}
               files={pack}
               busy={busy}
               onDecline={() => decline(pack)}
@@ -356,7 +366,7 @@ export default function ReviewQuestions({
                 dialogs.release({ seriesID: i.seriesId, title, files: pack })
               }
             />
-            {pack.map(itemRow)}
+            {pack.map((f) => itemRow(f, shared))}
           </div>
         )
       })}

@@ -58,14 +58,16 @@ test('file details show current profile scores and refresh after profile or fact
     await editor.getByText('Score -25 · File score policy', { exact: true }).click()
     await expect(editor.getByText('File score test group: -25')).toBeVisible()
     // A correction is judged as it is typed, before it is saved.
+    await editor.getByRole('button', { name: 'Correct…', exact: true }).click()
     await editor.getByRole('textbox', { name: 'Release group' }).fill('OtherGroup')
     await expect(editor.getByText('Score 0 · File score policy', { exact: true })).toBeVisible()
-    await editor.getByRole('button', { name: 'Apply choices' }).click()
+    await editor.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(editor).toBeHidden()
     await page.getByRole('button', { name: 'Edit file', exact: true }).click()
     await expect(editor.getByText('Score 0 · File score policy', { exact: true })).toBeVisible()
     await expect(editor.getByText('File score test group: -25')).toHaveCount(0)
     // What was read wrong can be said by hand, flags included.
+    await editor.getByRole('button', { name: 'Correct…', exact: true }).click()
     await expect(editor.getByText(/Set by you/)).toHaveCount(0)
     await editor.getByText('Digital', { exact: true }).click()
     await expect(editor.getByText('Set by you: Digital off. A rescan keeps these.')).toBeVisible()

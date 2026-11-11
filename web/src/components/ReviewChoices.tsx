@@ -131,6 +131,12 @@ function Choices({ seriesID, request, applied, keepCurrent, single, onDirtyChang
   }
   const trash = choices.filter((c) => c.disposition === 'trash').length
   const later = choices.filter((c) => c.disposition === 'later').length
+  // Only what will happen: six counters, five of them zero, read as noise.
+  const summary = ([[imports, 'Import'], [kept, 'Keep existing'], [replacements, 'Replace'], [trash, 'Trash'], [missing, 'Still missing'], [later, 'Left for later']] as const)
+    .filter(([n]) => n > 0)
+    .map(([n, label]) => `${label} ${n}`)
+    .join(' · ') || 'Nothing chosen yet'
+  const nothingToApply = choices.every((c) => c.disposition === 'later')
   // One line per archive: what it would supply, and what happens to its
   // bytes after review. Shown on the collapsed card as well.
   const cardSummary = (f: ReviewFilePlan, i: number, withReason: boolean) => {
@@ -166,7 +172,7 @@ function Choices({ seriesID, request, applied, keepCurrent, single, onDirtyChang
         notify.err('Choices saved. Some file operations still need attention; trash moves will retry automatically.')
         return
       }
-      notify.ok(`Imported ${imports}; kept existing ${kept}; replaced ${replacements}; moved ${trash} to trash; still missing ${missing}; left for later ${later}`)
+      notify.ok(single ? 'File saved' : `Saved: ${summary.toLowerCase()}`)
       await applied()
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setBusy(false) }
@@ -183,82 +189,106 @@ function Choices({ seriesID, request, applied, keepCurrent, single, onDirtyChang
   )
   const from = (page - 1) * pageSize + 1
   const to = Math.min(page * pageSize, plan.files.length)
+  // Big packs open as one-line summaries to expand; otherwise every file
+  // shows its choices at once and needs no toggle.
+  const collapsible = plan.files.length > pageSize
+  const fileChoices = (f: ReviewFilePlan, i: number) => (
+    <Stack gap="xs">
+      {f.reason && <Text size="xs" c="orange">{f.reason}</Text>}
+      {f.books.map((b) => (
+        <Stack key={bookKey(b.book)} gap={4}>
+          <Checkbox
+            label={b.currentSelected ? `Keep this copy for ${forCard(b)}` : b.owners.some((o) => o.present) ? `Use incoming instead for ${forCard(b)}` : `Import ${forCard(b)}`}
+            checked={using(i, b.book)}
+            disabled={busy || (!!b.reason && !b.currentSelected) || !!f.reason || choices[i].disposition === 'later'}
+            onChange={(event) => selectBook(i, b, event.currentTarget.checked)}
+          />
+          {plan.files.some((_, j) => i !== j && using(j, b.book)) && <Text size="xs" c="dimmed">Another incoming archive is selected for this book. Select this copy to switch.</Text>}
+          <Score value={b.incoming} />
+          {b.owners.map((o) => (
+            <div key={o.fileId}>
+              <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
+                {using(i, b.book) && !b.currentSelected ? 'Replace' : replacementChosen(b.book) ? 'Replaced by another incoming archive' : 'Keep existing'}: {fileName(o.path)}{!o.present && ' (missing)'}
+                {[o.source, o.group].filter(Boolean).length > 0 && ` · ${[o.source, o.group].filter(Boolean).join(' · ')}`}
+                {o.pinned && <Badge size="xs" ml={4}>Pinned</Badge>}
+              </Text>
+              <Score value={o.score} />
+            </div>
+          ))}
+          {b.requestedReplacement && <Text size="xs" c="blue">Replacement requested when this download was selected.</Text>}
+          {b.reason && <Text size="xs" c="orange">{b.reason}</Text>}
+          {b.currentSelected && b.reason && <Text size="xs" c="dimmed">Keeping this selection preserves existing ownership without replacing another copy.</Text>}
+        </Stack>
+      ))}
+      {f.trashReason && <Text size="xs" c="dimmed">{f.trashReason}</Text>}
+      {f.books.length > 1 && <Text size="xs" c="dimmed">Choices select which books this archive supplies. The archive stays intact.</Text>}
+    </Stack>
+  )
+  const fate = (f: ReviewFilePlan, i: number) => (
+    <Select
+      label={single ? 'The file itself' : 'After review'}
+      aria-label={single ? undefined : `After review: ${fileName(f.path)}`}
+      size={single ? 'sm' : 'xs'}
+      w={single ? undefined : 220}
+      value={choices[i].disposition}
+      disabled={busy}
+      allowDeselect={false}
+      data={[
+        { value: 'keep', label: choices[i].use.length ? (single ? 'Keep it for the ticked cards' : 'Keep for the ticked books') : (single ? 'Keep it, used by no card' : 'Keep, unused') },
+        { value: 'trash', label: 'Move to trash', disabled: choices[i].use.length > 0 || !!f.trashReason },
+        { value: 'later', label: 'Leave for later' },
+      ]}
+      onChange={(v) => v && update(i, { disposition: v, ...(v === 'later' ? { use: [] } : {}) })}
+    />
+  )
   return (
     <Stack gap="sm">
-      <Text size="sm">{single ? 'Tick the cards that should use this file. A card keeps the copy it has unless you choose this one instead.' : 'Choose which copies to use. Existing copies stay selected unless you explicitly choose a replacement.'}</Text>
-      <Text size="sm" fw={500} role="status">Import {imports} · Keep existing {kept} · Replace {replacements} · Trash {trash} · Still missing {missing} · Left for later {later}</Text>
+      <Text size="sm" c="dimmed">{single ? 'Tick the cards that should use this file. A card keeps the copy it has unless you choose this one instead.' : 'Choose which copies to use. Existing copies stay selected unless you explicitly choose a replacement.'}</Text>
+      {!(single && nothingToApply) && <Text size="sm" fw={500} role="status">{summary}</Text>}
       {plan.files.length > 1 && <Group gap="xs">
         <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setChoices(initialChoices(plan, request, true))}>Import missing; keep existing</Button>
         <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setChoices((v) => v.map((c, i) =>
           !c.use.length && !plan.files[i].trashReason ? { ...c, disposition: 'trash' } : c,
         ))}>Trash unused incoming files</Button>
       </Group>}
-      {plan.files.length > pageSize && <Text size="xs" c="dimmed">Showing {from}–{to} of {plan.files.length} files. Expand an archive to choose its books and its fate.</Text>}
-      {plan.files.slice((page - 1) * pageSize, page * pageSize).map((f, offset) => {
+      {collapsible && <Text size="xs" c="dimmed">Showing {from}–{to} of {plan.files.length} files. Expand an archive to choose its books and its fate.</Text>}
+      {single && plan.files.length === 1 ? (
+        <>
+          {fileChoices(plan.files[0], 0)}
+          {fate(plan.files[0], 0)}
+        </>
+      ) : plan.files.slice((page - 1) * pageSize, page * pageSize).map((f, offset) => {
         const i = (page - 1) * pageSize + offset
-        const open = !collapsed.has(f.fileId)
+        const open = !collapsible || !collapsed.has(f.fileId)
+        const origin = [f.source, f.group].filter(Boolean).join(' · ')
         return (
         <Card key={f.fileId} withBorder padding="sm" style={{ minWidth: 0 }}>
-          <UnstyledButton w="100%" aria-expanded={open} onClick={() => toggle(f.fileId)}>
-            <Group justify="space-between" gap="xs" wrap="nowrap">
-              <div style={{ minWidth: 0 }}>
-                <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>{fileName(f.path)}</Text>
-                <Text size="xs" c={f.reason && !open ? 'orange' : 'dimmed'} lineClamp={2} style={{ overflowWrap: 'anywhere' }}>
-                  {cardSummary(f, i, !open)}
-                </Text>
-              </div>
-              {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
-            </Group>
-          </UnstyledButton>
-          {open && <Stack gap="xs" mt="xs">
-            <Text size="xs" c="dimmed">{[f.source, f.group].filter(Boolean).join(' · ') || 'Source/group unknown'}</Text>
-            {f.reason && <Text size="xs" c="orange">{f.reason}</Text>}
-            {f.books.map((b) => (
-              <Stack key={bookKey(b.book)} gap={4}>
-                <Checkbox
-                  label={b.currentSelected ? `Keep this copy for ${forCard(b)}` : b.owners.some((o) => o.present) ? `Use incoming instead for ${forCard(b)}` : `Import ${forCard(b)}`}
-                  checked={using(i, b.book)}
-                  disabled={busy || (!!b.reason && !b.currentSelected) || !!f.reason || choices[i].disposition === 'later'}
-                  onChange={(event) => selectBook(i, b, event.currentTarget.checked)}
-                />
-                {plan.files.some((_, j) => i !== j && using(j, b.book)) && <Text size="xs" c="dimmed">Another incoming archive is selected for this book. Select this copy to switch.</Text>}
-                <Score value={b.incoming} />
-                {b.owners.map((o) => (
-                  <div key={o.fileId}>
-                    <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
-                      {using(i, b.book) && !b.currentSelected ? 'Replace' : replacementChosen(b.book) ? 'Replaced by another incoming archive' : 'Keep existing'}: {fileName(o.path)}{!o.present && ' (missing)'}
-                      {[o.source, o.group].filter(Boolean).length > 0 && ` · ${[o.source, o.group].filter(Boolean).join(' · ')}`}
-                      {o.pinned && <Badge size="xs" ml={4}>Pinned</Badge>}
-                    </Text>
-                    <Score value={o.score} />
-                  </div>
-                ))}
-                {b.requestedReplacement && <Text size="xs" c="blue">Replacement requested when this download was selected.</Text>}
-                {b.reason && <Text size="xs" c="orange">{b.reason}</Text>}
-                {b.currentSelected && b.reason && <Text size="xs" c="dimmed">Keeping this selection preserves existing ownership without replacing another copy.</Text>}
-              </Stack>
-            ))}
-            <Select
-              label={single ? 'The file itself' : `After review: ${fileName(f.path)}`}
-              value={choices[i].disposition}
-              disabled={busy}
-              data={[
-                { value: 'keep', label: choices[i].use.length ? (single ? 'Keep it for the ticked cards' : 'Keep archive for selected books') : (single ? 'Keep it, used by no card' : 'Keep unused file') },
-                { value: 'trash', label: single ? 'Move it to trash' : 'Move incoming file to trash', disabled: choices[i].use.length > 0 || !!f.trashReason },
-                { value: 'later', label: 'Leave for later' },
-              ]}
-              onChange={(v) => v && update(i, { disposition: v, ...(v === 'later' ? { use: [] } : {}) })}
-            />
-            {f.trashReason && <Text size="xs" c="dimmed">{f.trashReason}</Text>}
-            {f.books.length > 1 && <Text size="xs" c="dimmed">Choices select which books this archive supplies. The archive stays intact.</Text>}
-          </Stack>}
+          <Group justify="space-between" gap="sm" wrap="nowrap" align="flex-start">
+            <UnstyledButton component={collapsible ? 'button' : 'div'} style={{ minWidth: 0, flex: 1, cursor: collapsible ? 'pointer' : 'default' }}
+              aria-expanded={collapsible ? open : undefined} onClick={collapsible ? () => toggle(f.fileId) : undefined}>
+              <Group gap={6} wrap="nowrap" align="flex-start">
+                {collapsible && (open ? <IconChevronDown size={14} style={{ marginTop: 3, flexShrink: 0 }} /> : <IconChevronRight size={14} style={{ marginTop: 3, flexShrink: 0 }} />)}
+                <div style={{ minWidth: 0 }}>
+                  <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>{fileName(f.path)}</Text>
+                  <Text size="xs" c={f.reason && !open ? 'orange' : 'dimmed'} lineClamp={2} style={{ overflowWrap: 'anywhere' }}>
+                    {open ? origin || 'Source and group unknown' : cardSummary(f, i, true)}
+                  </Text>
+                </div>
+              </Group>
+            </UnstyledButton>
+            {open && fate(f, i)}
+          </Group>
+          {open && <div style={{ marginTop: 8 }}>{fileChoices(f, i)}</div>}
         </Card>
         )
       })}
-      {plan.files.length > pageSize && <Pagination total={Math.ceil(plan.files.length / pageSize)} value={page} onChange={setPage} size="sm" />}
+      {collapsible && <Pagination total={Math.ceil(plan.files.length / pageSize)} value={page} onChange={setPage} size="sm" />}
       {trash > 0 && <Text size="xs" c="dimmed">Only the selected incoming archives move to recoverable trash for 30 days. Download-client payloads stay in place.</Text>}
       {error && <Alert color="red">{error}<Button size="xs" variant="subtle" onClick={() => void refresh()}>Refresh preview</Button></Alert>}
-      <Button loading={busy} disabled={choices.every((c) => c.disposition === 'later')} onClick={() => void apply()}>Apply choices</Button>
+      {nothingToApply && !single && (
+        <Text size="xs" c="dimmed">Every file is left for later. Tick the books to import, or choose what happens to a file.</Text>
+      )}
+      <Button loading={busy} disabled={nothingToApply} onClick={() => void apply()}>{single ? 'Save' : 'Apply choices'}</Button>
     </Stack>
   )
 }

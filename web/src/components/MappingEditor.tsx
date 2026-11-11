@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, Divider, MultiSelect, Select, Stack, Text } from '@mantine/core'
+import { Alert, Button, Divider, Group, MultiSelect, Select, Stack, Text } from '@mantine/core'
 import type {
   AssetCoverage,
   CollectedVersion,
@@ -12,7 +12,7 @@ import type { BookStatus } from '../types/service'
 import { fileName } from './editionText'
 import { EditorModal } from './EditorModal'
 import { FileFacts } from './FileFacts'
-import { fileOrigin } from './factFlags'
+import { factFlags, fileOrigin, hasFlag } from './factFlags'
 import { ReviewChoices } from './ReviewChoices'
 
 type Entry = { versionId: number; bookId: number; editionId: number; number: number; ledger: string }
@@ -92,6 +92,14 @@ export function MappingEditor({
   const [language, setLanguage] = useState(read('language'))
   const [group, setGroup] = useState(read('group'))
   const [flags, setFlags] = useState<Record<string, boolean>>({})
+  // What it is matters when a profile judges it wrong; until then one line
+  // says what was read.
+  const [factsOpen, setFactsOpen] = useState(false)
+  const readAs = [
+    language || 'language unknown',
+    group || 'group unknown',
+    ...factFlags.filter((f) => flags[f.key] ?? hasFlag(value, f.key)).map((f) => f.label),
+  ].join(' · ')
 
   // Numbers the file's own name carries, shown until an edition is picked;
   // picking one maps them onto its books, so no number is typed twice.
@@ -122,6 +130,10 @@ export function MappingEditor({
     setEditionId(id)
   }
   const changed = JSON.stringify(draft) !== JSON.stringify(initial)
+  // Profiles may not test language, so a slip here would pass silently.
+  const editionLanguage = editions.find((c) => c.id === editionId)?.language ?? ''
+  const otherLanguage =
+    !!language && !!editionLanguage && language.toLowerCase() !== editionLanguage.toLowerCase()
   const collected = editions.filter((c) => versions.some((t) => t.editionId === c.id))
   return (
     <EditorModal
@@ -162,7 +174,7 @@ export function MappingEditor({
           </Alert>
         )}
 
-        <Divider label="Books" labelPosition="left" />
+        <Divider label="What’s in it" labelPosition="left" />
         <Select
           label="Edition"
           description="The edition whose books this file holds. Pick another to move the file there."
@@ -177,7 +189,13 @@ export function MappingEditor({
         />
         <MultiSelect
           label="Books in this file"
-          description={editionId ? undefined : 'Pick the edition first.'}
+          description={
+            editionId
+              ? undefined
+              : pending.length
+                ? `Its name says ${pending.join(', ')}. Pick the edition to match them.`
+                : 'Pick the edition first.'
+          }
           searchable
           disabled={busy || !editionId}
           data={
@@ -191,25 +209,37 @@ export function MappingEditor({
           value={editionId ? chosen.map(String) : pending}
           onChange={(ids) => (editionId ? setBooks(editionId, ids.map(Number)) : setPending(ids))}
         />
-        {draft.length === 0 && (
-          <Text size="sm" c="dimmed">
-            With no books, the file stays in the library and no card uses it.
+        {otherLanguage && (
+          <Text size="xs" c="orange">
+            The file reads as {language}, but this edition is {editionLanguage}. Check the edition,
+            or correct the language below if it was read wrong.
           </Text>
         )}
 
         <Divider label="What it is" labelPosition="left" />
-        <FileFacts
-          file={value}
-          language={language}
-          group={group}
-          flags={flags}
-          disabled={busy}
-          onLanguage={setLanguage}
-          onGroup={setGroup}
-          onFlags={setFlags}
-        />
+        {factsOpen ? (
+          <FileFacts
+            file={value}
+            language={language}
+            group={group}
+            flags={flags}
+            disabled={busy}
+            onLanguage={setLanguage}
+            onGroup={setGroup}
+            onFlags={setFlags}
+          />
+        ) : (
+          <Group justify="space-between" wrap="nowrap" gap="sm">
+            <Text size="sm" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+              Read as {readAs}
+            </Text>
+            <Button size="compact-sm" variant="default" onClick={() => setFactsOpen(true)}>
+              Correct…
+            </Button>
+          </Group>
+        )}
 
-        <Divider label="Cards that use it" labelPosition="left" />
+        <Divider label="Which cards use it" labelPosition="left" />
         <ReviewChoices
           seriesID={seriesID}
           request={{
