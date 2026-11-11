@@ -8,6 +8,8 @@ package mediafile
 type PresentedField struct {
 	// Key names the field in settings and edition overrides.
 	Key string
+	// Element is the ComicInfo element it writes.
+	Element string
 	// Label names it in messages: "the series name in readers".
 	Label string
 	// Title and Help are how the settings page offers it.
@@ -22,12 +24,12 @@ type PresentedField struct {
 var PresentedFields = []PresentedField{
 	// The series a reader files the copy under: an additional version
 	// names itself, so a reader keeps it apart from the default one.
-	{Key: "series", Label: "series name", Default: "{Series Title} {version}",
+	{Key: "series", Element: "Series", Label: "series name", Default: "{Series Title} {version}",
 		Title: "Series name in readers",
 		Help:  "Written into each book, so Kavita, Komga and other readers file it under this series. {version} is empty for the first profile an edition is collected with. An edition can set its own name in Edit edition. Also usable as {Reader Series} in folder and file names.",
 		field: func(c *ComicInfo) *string { return &c.Series }},
 	// What the copies have in common, for readers that collect series.
-	{Key: "seriesGroup", Label: "series group", Default: "{Series Title}",
+	{Key: "seriesGroup", Element: "SeriesGroup", Label: "series group", Default: "{Series Title}",
 		Title: "Series group",
 		Help:  "What the copies of a series share, for readers that build collections from it.",
 		field: func(c *ComicInfo) *string { return &c.SeriesGroup }},

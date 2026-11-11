@@ -4,6 +4,7 @@ import { Text, TextInput } from '@mantine/core'
 // error) underneath — the same input on the Media settings page and in the
 // edition editor.
 export function TemplateInput({
+  id,
   label,
   description,
   value,
@@ -14,6 +15,7 @@ export function TemplateInput({
   onChange,
   onFocus,
 }: {
+  id?: string
   label: string
   description?: string
   value: string
@@ -28,6 +30,7 @@ export function TemplateInput({
   return (
     <div>
       <TextInput
+        id={id}
         label={label}
         description={description}
         value={value}

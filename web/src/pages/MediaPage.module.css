@@ -1,0 +1,10 @@
+.section { padding-bottom: 32px; margin-bottom: 32px; border-bottom: 1px solid var(--mantine-color-default-border); }
+.sectionTitle { font-size: 18px; letter-spacing: -0.02em; margin-bottom: 4px; }
+.setup { display: block; padding: 12px 14px; border: 1px solid var(--mantine-color-default-border); border-radius: var(--mantine-radius-md); transition: border-color 120ms ease, background-color 120ms ease; }
+.setup:hover { background: var(--mantine-color-default-hover); }
+.setup[data-active='true'] { border-color: var(--mantine-color-text); }
+.tips { padding: 10px 14px; border-radius: var(--mantine-radius-md); background: light-dark(#f7f7f5, #1f1f1d); }
+.tipList { margin: 2px 0 0; padding-left: 18px; }
+.saveBar { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 12px; padding: 12px 0 16px; background: var(--mantine-color-body); border-top: 1px solid var(--mantine-color-default-border); }
+.tokens { position: sticky; top: calc(var(--app-shell-header-offset, 0px) + 16px); max-height: calc(100vh - var(--app-shell-header-offset, 0px) - 32px); overflow-y: auto; }
+@media (max-width: 64em) { .tokens { position: static; max-height: none; } }

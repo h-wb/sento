@@ -509,6 +509,22 @@ export const BookFolderByVersion = "";
  */
 export const BookFolderOnlyVersion = "({version})";
 /**
+ * PathPart is one level of an example path and the setting that makes it:
+ * volumesRoot or chaptersRoot, seriesFolder, bookFolder, volumeFile or
+ * chapterFile.
+ */
+export interface PathPart {
+  setting: string;
+  text: string;
+}
+/**
+ * PathExample is where one sample book lands, level by level.
+ */
+export interface PathExample {
+  label: string;
+  parts: PathPart[];
+}
+/**
  * ReaderPreview is what readers would show for the sample edition, and
  * for a second card of it collected as "Colored"; Error says why saving
  * the field's template would be refused.
@@ -540,6 +556,14 @@ export interface ReaderFieldInfo {
   default: string;
 }
 /**
+ * ComicInfoSource is where the value of one or more ComicInfo fields Sento
+ * writes comes from (mediafile.WrittenFields).
+ */
+export interface ComicInfoSource {
+  fields: string[];
+  from: string;
+}
+/**
  * MediaSchema is what the naming settings are made of: the tokens a
  * template can use and the reader fields that have one. It comes from the
  * lists the renderer itself uses (mediafile.Tokens, mediafile.PresentedFields).
@@ -547,6 +571,63 @@ export interface ReaderFieldInfo {
 export interface MediaSchema {
   tokens: NamingToken[];
   readerFields: ReaderFieldInfo[];
+  /**
+   * ComicInfo says where each field Sento writes into a book comes from.
+   */
+  comicInfo: ComicInfoSource[];
+  /**
+   * Setups are the arrangements the page offers, recommended first.
+   */
+  setups: NamingSetup[];
+}
+
+//////////
+// source: naming_setups.go
+
+/**
+ * NamingSetup is a known arrangement of the naming settings: where a copy's
+ * files go and the name readers file it under. Picking one on the Media
+ * page fills those settings; it is not stored, and a setup is recognised
+ * by the settings matching it. Top folders, file names and import options
+ * are left as they are.
+ */
+export interface NamingSetup {
+  key: string;
+  title: string;
+  summary: string;
+  seriesFolder: string;
+  bookFolder: string;
+  readerFields: { [key: string]: string};
+  /**
+   * Tips say what to set in each reader for the setup to show as meant.
+   */
+  tips: ReaderTip[];
+}
+/**
+ * ReaderTip is one thing to know or set in a reader.
+ */
+export interface ReaderTip {
+  reader: string;
+  tip: string;
+}
+/**
+ * SeriesFolderByReader gives every name in readers its own folder, so a
+ * copy readers show apart also sits apart.
+ */
+export const SeriesFolderByReader = "{Reader Series} [mangabaka-{seriesId}]";
+/**
+ * ReaderCheck is what one reader makes of the sample edition and the same
+ * edition collected again as Colored: two series, as the user most likely
+ * wants, or not.
+ */
+export interface ReaderCheck {
+  reader: string;
+  /**
+   * Fine is false when the reader would merge the two copies, or show
+   * them in a way it does not support well.
+   */
+  fine: boolean;
+  says: string;
 }
 
 //////////

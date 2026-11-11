@@ -1,11 +1,12 @@
 # Naming, folders and names in readers
 
 Where a book's file goes, what it is called, and which series a reader
-shows it under are all templates in Settings → Media. New imports follow
+shows it under are all templates in Settings → Media, which groups them as
+your reader's setup, what goes on disk, and what goes inside each book. New imports follow
 them at once. Files already in the library change only when they are
 [organized](#organizing-existing-files).
 
-A **copy** below is one collected version of an edition: the card on the
+A **copy** below is one collected version of an edition: one box on the
 series page. See [editions](editions.md) for what those are.
 
 ## Where a file lands
@@ -108,30 +109,59 @@ A reader files a book under its ComicInfo `Series`, groups series by
 
 | Field | Default | Result |
 | --- | --- | --- |
-| `Series` | `{Series Title} {version}` | `ONE PIECE`, and `ONE PIECE Colored` for a second card collected as Colored |
+| `Series` | `{Series Title} {version}` | `ONE PIECE`, and `ONE PIECE Colored` for the edition collected again as Colored |
 | `SeriesGroup` | `{Series Title}` | `ONE PIECE` for every copy |
 
 An edition can set its own `Series` template in Edit edition → In readers:
 the library's, the series and edition name
 (`{Series Title} {edition} {version}`), or a custom one. A template that
 renders empty for a copy falls back to the default, so a copy always has a
-name. The card shows the name when it differs from the series title.
+name. The edition's box shows the name when it differs from the series title.
 
 These fields are presentation, written exactly and never read back for
 identity ([metadata](metadata.md), D18).
 
 ### Setting up for a reader
 
-- **A reader that files by ComicInfo** (Kavita) keeps copies apart by
-  `Series`. The default already separates the versions of an edition. To
-  show an edition as its own series, give it its own name in Edit edition.
-- **A reader that files by folders** (Komga) shows one series per folder.
-  The layout "One series folder per edition and profile"
-  (`{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}] ({version})`,
-  flat book folder) gives every copy its own.
-- **Both at once**: "One folder per name in readers"
-  (`{Reader Series} [mangabaka-{seriesId}]`) makes the folders follow the
-  names, so both kinds of reader show the same series.
+Readers decide what a series is differently:
+
+- **Kavita** files a book under the `Series` name inside it, not its
+  folder, but wants every series in a folder of its own: several series in
+  one folder "is not supported but does work", and one series must not sit
+  in two sibling folders of a library
+  ([Kavita scanner](https://wiki.kavitareader.com/guides/scanner/)).
+  `SeriesGroup` becomes a collection when the library's Manage Collections
+  is on.
+- **Komga** makes a series of every folder that holds books, at any depth,
+  and titles it with the `Series` inside them when it imports ComicInfo;
+  with "Append volume to series title" on, a manga volume's `Volume` turns
+  the title into `ONE PIECE (12)`
+  ([Komga scan](https://komga.org/docs/guides/scan-analysis-refresh)).
+  `SeriesGroup` becomes a collection.
+
+The Media page offers **setups** (`service.NamingSetups`, served with the
+schema): a series folder, a book folder and the reader fields known to
+work together. Picking one fills those settings, to be saved like any
+edit; a setup is not stored, and the page recognises one by the settings
+matching it. Top folders, file names and import options are left alone.
+
+| Setup | Series folder | Book folder | Readers |
+| --- | --- | --- | --- |
+| Kavita or Komga (recommended) | `{Reader Series} [mangabaka-{seriesId}]` | none | each name in readers its own folder: both readers show a Colored copy as its own series |
+| Sento's default | `{Series Title} [mangabaka-{seriesId}]` | `{edition} [{lang}] ({version})` | Kavita reads several series from one folder; Komga shows each edition folder as a series |
+
+Under the setups the page says what Kavita and Komga would show for the
+current settings (`service.CheckReaders`): the sample edition and the same
+edition collected again as Colored, as two series or merged into one. To
+show an edition as its own series, give it its own name in Edit edition.
+Chapters kept apart from volumes by top folders belong in a second Kavita
+library.
+
+The page's tree draws three sample books — a volume, the same volume
+collected again as Colored, and a chapter — level by level, each level
+naming the setting that makes it (`service.PreviewPaths`). Below it, every
+ComicInfo field Sento writes is listed with where its value comes from
+(`mediafile.WrittenFields`; a test keeps it in step with the struct).
 
 ## Organizing existing files
 
@@ -170,9 +200,9 @@ fingerprint and only hash its pages when none is recorded.
 | Route | Purpose |
 | --- | --- |
 | `GET`, `PUT /settings/media` | the settings |
-| `POST /settings/media/preview` | sample paths, reader names, and per-field errors for unsaved settings |
-| `GET /settings/media/schema` | tokens and reader fields |
-| `POST /series/{id}/reader-names` | each card's names in readers, optionally with an edition's unsaved templates |
+| `POST /settings/media/preview` | sample paths level by level, reader names, what Kavita and Komga would show, and per-field errors for unsaved settings |
+| `GET /settings/media/schema` | tokens, reader fields, ComicInfo sources and setups |
+| `POST /series/{id}/reader-names` | each collected version's names in readers, optionally with an edition's unsaved templates |
 | `GET /series/{id}/files/organize` | one series' preview |
 | `GET /library/organize?series=1,2` | the preview across series (all when omitted) |
 | `POST /library/organize` | start the run (`seriesIds`, `rename`, `retag`) |
@@ -185,4 +215,5 @@ fingerprint and only hash its pages when none is recorded.
 | `internal/service/layout.go` | series and copy folders, token values |
 | `internal/service/placement.go` | one series' folders, file names and ComicInfo for a pass |
 | `internal/service/mediasettings.go`, `reader_fields.go` | settings, validation, previews |
+| `internal/service/naming_setups.go` | the setups and the reader checks |
 | `internal/service/organize.go`, `organize_library.go` | the plan, the run and its status |
