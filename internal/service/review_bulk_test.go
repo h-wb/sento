@@ -121,7 +121,7 @@ func TestBulkDeclineResolvesAPackAtOnce(t *testing.T) {
 	for _, c := range cleanup {
 		if c.Eligible {
 			eligible++
-			if c.Category != "unmapped" || c.Reason != "Unmapped file, already reviewed" {
+			if c.Category != "unmapped" || c.Reason != "Reviewed, holds no book" {
 				t.Errorf("declined file in cleanup: %s (%s)", c.Reason, c.Category)
 			}
 		}

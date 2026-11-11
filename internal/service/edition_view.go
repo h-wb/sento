@@ -87,7 +87,7 @@ func (l *Library) VersionBooks(ctx context.Context, sid, tid int64) ([]BookStatu
 	}
 	slots, ok := v.Status[tid]
 	if !ok {
-		return nil, apperr.NotFoundf("collected version not found")
+		return nil, apperr.NotFoundf("card not found")
 	}
 	return slots, nil
 }

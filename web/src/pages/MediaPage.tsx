@@ -50,7 +50,7 @@ const layouts: { value: string; label: string; template: string; seriesFolder?: 
   { value: 'edition', label: 'By edition — Standard Edition [en]', template: '{edition} [{lang}] ({version})' },
   {
     value: 'editionFolders',
-    label: 'One series folder per edition and version — ONE PIECE [Standard Edition][en] (Colored)',
+    label: 'One series folder per edition and card — ONE PIECE [Standard Edition][en] (Colored)',
     template: '',
     seriesFolder: seriesFolderByEdition,
   },

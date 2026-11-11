@@ -45,7 +45,7 @@ export function CatalogLink({
       <Stack>
         <Text size="sm">
           Your edition becomes this catalog edition and follows MangaBaka from now on. Its files,
-          collected versions, and the fields you edited by hand are kept. Review the book matches
+          cards, and the fields you edited by hand are kept. Review the book matches
           before linking.
         </Text>
         <Select
