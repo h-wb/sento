@@ -178,13 +178,18 @@ export default function LibraryPage() {
       {series && series.length > 0 && (
         <div className={classes.toolbar}>
           <div className={classes.scopes} role="group" aria-label="Monitoring filter">
-            {(['all', 'monitored', 'unmonitored'] as const).map((value) => (
-              <UnstyledButton key={value} className={classes.scope} data-active={scope === value}
-                aria-pressed={scope === value} onClick={() => { setScope(value); setSelected(new Set()) }}>
-                {value === 'all' ? 'All series' : value === 'monitored' ? 'Monitored' : 'Unmonitored'}
-                <span>{value === 'all' ? series.length : series.filter((s) => value === 'monitored' ? s.monitored : !s.monitored).length}</span>
-              </UnstyledButton>
-            ))}
+            {(['all', 'monitored', 'unmonitored'] as const).map((value) => {
+              const count = value === 'all' ? series.length : series.filter((s) => value === 'monitored' ? s.monitored : !s.monitored).length
+              // A filter that would show nothing is not worth a tab.
+              if (count === 0 && scope !== value) return null
+              return (
+                <UnstyledButton key={value} className={classes.scope} data-active={scope === value}
+                  aria-pressed={scope === value} onClick={() => { setScope(value); setSelected(new Set()) }}>
+                  {value === 'all' ? 'All series' : value === 'monitored' ? 'Monitored' : 'Unmonitored'}
+                  <span>{count}</span>
+                </UnstyledButton>
+              )
+            })}
           </div>
           <Group gap="xs" wrap="nowrap" className={classes.tools}>
             <TextInput size="sm" placeholder="Filter by title…" aria-label="Filter by title"
