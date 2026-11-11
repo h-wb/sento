@@ -39,6 +39,7 @@ import type {
   SearchBody,
   BrowseProwlarrBody,
   EditionPatch,
+  FilesFactsBody,
   CreateEditionBody,
   ExtensionRepos,
   IndexerBody,
@@ -270,6 +271,9 @@ export const api = {
     request<ReviewPlan>(`/series/${id}/review/choices/preview`, { method: 'POST', body: JSON.stringify(body) }),
   applyReviewChoices: (id: number, body: ReviewApplyRequest) =>
     request<ReviewFileOutcome[]>(`/series/${id}/review/choices`, { method: 'POST', body: JSON.stringify(body) }),
+  // One correction of what several files are (language, group, flags).
+  correctFilesFacts: (id: number, body: FilesFactsBody) =>
+    request<void>(`/series/${id}/files/facts`, { method: 'PATCH', body: JSON.stringify(body) }),
   pinCoverage: (id: number, coverage: AssetCoverage) =>
     request<void>(`/series/${id}/coverage/pin`, {
       method: 'PUT',

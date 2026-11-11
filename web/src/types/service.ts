@@ -815,6 +815,10 @@ export interface ReviewFileRequest {
   books: BookRef[] | null;
   language?: string;
   group?: string;
+  /**
+   * Flags corrects flags by hand, as store.AssetFactPatch does.
+   */
+  flags?: { [key: string]: boolean};
 }
 export interface ReviewPlanRequest {
   versionId?: number /* int64 */;
@@ -832,6 +836,10 @@ export interface ReviewCopy {
 export interface ReviewBookPlan {
   book: BookRef;
   label: string;
+  /**
+   * Card names the card this choice is for, as the series page titles it.
+   */
+  card: string;
   incoming: FileScore;
   owners: ReviewCopy[];
   useIncoming: boolean;

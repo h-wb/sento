@@ -508,6 +508,27 @@ func (s *Server) handleFileFacts(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleFilesFacts records one correction on several files of a series.
+func (s *Server) handleFilesFacts(w http.ResponseWriter, r *http.Request) {
+	sid, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var body FilesFactsBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if len(body.FileIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "no files given")
+		return
+	}
+	if err := s.store.CorrectFilesFacts(r.Context(), sid, body.FileIDs, store.AssetFactPatch{Language: body.Language, Group: body.Group, Flags: body.Flags}); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleSplitBox turns one catalog item into the box of volumes it is.
 func (s *Server) handleSplitBox(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")

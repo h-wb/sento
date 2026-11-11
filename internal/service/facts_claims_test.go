@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/h-wb/sento/internal/profile"
@@ -174,5 +175,86 @@ func TestReviewUsesTheSameReleaseEvidenceAsOwnership(t *testing.T) {
 	}
 	if got := proposalOf(t, lib, sid, fid); got == nil || got.Books[0].VersionID != version.ID {
 		t.Fatalf("review refused the release evidence accepted by ownership: %+v", got)
+	}
+}
+
+// A flag the name got wrong can be corrected by hand: the correction is
+// judged at once, survives a parser re-read, and is not undone by what the
+// release claimed.
+func TestCorrectedFlagsAreKeptAndJudged(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, col, books, version := factsClaimsFixture(t)
+	ctx := context.Background()
+	// A scan group named for color, read as a color claim by an older parser.
+	name := "ONE PIECE v01 (Scan) (Colored Council).cbz"
+	fid := addFactFile(t, st, sid, col, books[0], version, name,
+		store.AssetFacts{Title: name, FactsKnown: true, Protocol: "torrent", Sources: map[string]string{"quality": "filename", "group": "filename", "language": "filename"}, Flags: map[string]bool{"colored": true, "scan": true}},
+		store.AssetFacts{Title: "ONE PIECE v01-12 (Scan) (Colored)", FactsKnown: true, Protocol: "torrent", Flags: map[string]bool{"colored": true, "scan": true}})
+	// The card's profile refuses color, as a black-and-white collection does.
+	colored, err := st.AddFormat(ctx, profile.Format{Name: "Colored", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "colored"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prof, err := st.GetProfile(ctx, version.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prof.Refused = []int64{colored}
+	if err := st.UpdateProfile(ctx, *prof); err != nil {
+		t.Fatal(err)
+	}
+	if before := bookStatus(t, lib, sid, version, books[0]); len(before.FileIDs) != 0 || before.State != StateUnsatisfactory {
+		t.Fatalf("a file flagged colored was accepted: %+v", before)
+	}
+
+	if err := st.CorrectFileFacts(ctx, sid, fid, store.AssetFactPatch{Flags: map[string]bool{"colored": false, "digital": true}}); err != nil {
+		t.Fatal(err)
+	}
+	after := bookStatus(t, lib, sid, version, books[0])
+	if len(after.FileIDs) != 1 || after.CurrentScore != 100 {
+		t.Fatalf("corrected file not accepted on its digital score: %+v", after)
+	}
+
+	// A re-read of the name with the current parser keeps both corrections.
+	f := fileByID(t, st, sid, fid)
+	reread := f.Facts
+	reread.Flags = map[string]bool{"colored": true, "scan": true}
+	reread.Digital = false
+	if err := st.RewriteFileFacts(ctx, fid, reread, 99); err != nil {
+		t.Fatal(err)
+	}
+	f = fileByID(t, st, sid, fid)
+	if f.Facts.Flags["colored"] || !f.Facts.Flags["digital"] || !f.Facts.Digital || !f.Facts.Flags["scan"] || !f.Facts.ManualFlag("colored") || f.Facts.ManualFlag("scan") {
+		t.Fatalf("corrections lost on re-read: %+v", f.Facts)
+	}
+	if got := bookStatus(t, lib, sid, version, books[0]); got.CurrentScore != after.CurrentScore {
+		t.Fatalf("score after re-read = %d, want %d", got.CurrentScore, after.CurrentScore)
+	}
+
+	if err := st.CorrectFileFacts(ctx, sid, fid, store.AssetFactPatch{Flags: map[string]bool{"sepia": true}}); err == nil {
+		t.Fatal("an unknown flag was accepted")
+	}
+	if err := st.CorrectFilesFacts(ctx, sid+1, []int64{fid}, store.AssetFactPatch{}); err == nil {
+		t.Fatal("a file of another series was corrected")
+	}
+}
+
+func fileByID(t *testing.T, st *store.Store, sid, fid int64) store.File {
+	t.Helper()
+	for _, f := range mustFiles(t, st, sid) {
+		if f.ID == fid {
+			return f
+		}
+	}
+	t.Fatalf("no file %d", fid)
+	return store.File{}
+}
+
+// Every flag the parser produces can be corrected.
+func TestFactFlagsCoverTheParsersFlags(t *testing.T) {
+	for flag := range candidateFlags(ReleaseCandidate{}) {
+		if !slices.Contains(store.FactFlags, flag) {
+			t.Errorf("flag %q is read from names but cannot be corrected", flag)
+		}
 	}
 }

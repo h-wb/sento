@@ -5,6 +5,8 @@ import { EditionEditor } from './EditionEditor'
 import { CatalogLink } from './CatalogLink'
 import { CollectAgain } from './CollectAgain'
 import { MappingEditor } from './MappingEditor'
+import SeriesFiles from './SeriesFiles'
+import { BulkFactsDialog } from './BulkFactsDialog'
 import EditionBooks from './EditionBooks'
 import EditionActions from './EditionActions'
 import { useState } from 'react'
@@ -15,16 +17,14 @@ import {
   Card,
   Group,
   Menu,
-  Pagination,
   Select,
   Stack,
   Switch,
   Text,
-  TextInput,
 } from '@mantine/core'
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, fmtSize } from '../api'
+import { api } from '../api'
 import type {
   Edition,
   CollectedVersion,
@@ -101,8 +101,6 @@ export default function EditionManager({
   const [edition, setEdition] = useState<Edition | null>(null)
   const [link, setLink] = useState<Edition | null>(null)
   const [file, setFile] = useState<SeriesFile | null>(null)
-  const [fileFilter, setFileFilter] = useState('')
-  const [filePage, setFilePage] = useState(1)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const { confirm, confirmation } = useConfirmAction()
@@ -136,24 +134,28 @@ export default function EditionManager({
   const details = useQuery({
     queryKey: ['series', seriesID, 'version-books'],
     queryFn: () => api.versionBooks(seriesID),
-    enabled: !!file || section === 'files',
   })
   const allBooks = Object.values(details.data ?? {}).flat()
-  // What a file is for: "Vol. 2 · used by Standard Edition and Standard
-  // Edition · Colored".
-  const usedFor = (fileId: number) => {
-    const uses = allBooks.filter((b) => b.fileIds.includes(fileId))
-    if (uses.length === 0) return details.data ? 'Not used by any card' : undefined
-    const numbers = [...new Set(uses.map((b) => b.book.sequenceStr))]
-    const cards = [...new Set(uses.map((b) => b.versionId))].flatMap((id) => {
-      const t = allVersions.find((v) => v.id === id)
-      const c = t && editions.find((e) => e.id === t.editionId)
-      return t && c ? [{ title: cardTitle(c, t, allVersions), chapter: c.type === 'chapter' }] : []
-    })
-    const kind = cards.some((c) => c.chapter) ? 'Ch.' : 'Vol.'
-    const books = numbers.length > 3 ? `${numbers.length} books` : `${kind} ${numbers.join(', ')}`
-    return `${books} · used by ${cards.map((c) => c.title).join(' and ')}`
+  // The files a card has on disk and does not accept while no other card
+  // uses them either, with the reason most of them share. A file another
+  // card holds is not a problem to solve, just a book this card lacks.
+  const usedSomewhere = new Set(allBooks.flatMap((b) => b.fileIds))
+  const refused = (versionId: number) => {
+    const rows = allBooks.filter(
+      (b) =>
+        b.versionId === versionId &&
+        b.state === 'unsatisfactory' &&
+        b.onDiskFileIds.some((id) => !usedSomewhere.has(id)),
+    )
+    const reasons = new Map<string, number>()
+    for (const r of rows) reasons.set(r.reason, (reasons.get(r.reason) ?? 0) + 1)
+    return {
+      books: rows.length,
+      fileIds: [...new Set(rows.flatMap((b) => b.onDiskFileIds))],
+      reason: [...reasons].sort((x, y) => y[1] - x[1])[0]?.[0] ?? '',
+    }
   }
+  const [correcting, setCorrecting] = useState<{ fileIds: number[]; hint: string } | null>(null)
   const [otherEditions, setOtherEditions] = useState(false)
   const [language, setLanguage] = useState<string | null>(null)
   const [layout, setLayout] = useState<string | null>(null)
@@ -350,6 +352,41 @@ export default function EditionManager({
                         </EditionActions>
                       </Group>
                     </Group>
+                    {(() => {
+                      // Files are here but this card's profile will not have
+                      // them: say so, and what can be done about it.
+                      const r = refused(t.id)
+                      if (r.books === 0) return null
+                      return (
+                        <Alert color="orange" variant="outline" p="sm">
+                          <Text size="sm">
+                            {r.books} {r.books === 1 ? 'book is' : 'books are'} on disk, but this
+                            card does not accept {r.books === 1 ? 'its file' : 'their files'}
+                            {r.reason ? `: ${r.reason.charAt(0).toLowerCase()}${r.reason.slice(1)}.` : '.'}
+                          </Text>
+                          <Group gap="xs" mt="xs">
+                            <Button
+                              size="xs"
+                              variant="default"
+                              onClick={() =>
+                                setCorrecting({
+                                  fileIds: r.fileIds,
+                                  hint: `${title} does not accept these files${r.reason ? `: ${r.reason.charAt(0).toLowerCase()}${r.reason.slice(1)}` : ''}. If that was read wrong, say what they are.`,
+                                })
+                              }
+                            >
+                              The files were read wrong…
+                            </Button>
+                            <Button size="xs" variant="default" onClick={() => setCollectAgain(c)}>
+                              Collect them with another profile…
+                            </Button>
+                            <Button size="xs" variant="subtle" onClick={findMissing}>
+                              Search for other releases
+                            </Button>
+                          </Group>
+                        </Alert>
+                      )
+                    })()}
                     {(
                       <Group justify="space-between" gap="sm">
                         <Group gap="sm">
@@ -484,69 +521,16 @@ export default function EditionManager({
       {section === 'files' && files.length > 0 && (
         <Stack gap="sm">
           {error && <Alert color="red">{error}</Alert>}
-          <TextInput
-            placeholder="Find a file"
-            aria-label="Find a file"
-            size="xs"
-            maw={320}
-            value={fileFilter}
-            onChange={(e) => {
-              setFileFilter(e.currentTarget.value)
-              setFilePage(1)
-            }}
+          <SeriesFiles
+            seriesID={seriesID}
+            files={files}
+            editions={editions}
+            versions={allVersions}
+            coverage={coverage.data}
+            books={details.data ? allBooks : undefined}
+            onOpen={setFile}
+            changed={changed}
           />
-          {(() => {
-            const review = (f: SeriesFile) =>
-              f.needsReview ||
-              (f.unrequested && !f.reviewAction) ||
-              coverage.data?.some((a) => a.fileId === f.id && !a.verified)
-            const list = files
-              .filter((f) => f.path.toLowerCase().includes(fileFilter.toLowerCase()))
-              .sort((a, b) => Number(!!review(b)) - Number(!!review(a)))
-            return (
-              <>
-                {list.length === 0 && (
-                  <Text size="sm" c="dimmed">
-                    No files match.
-                  </Text>
-                )}
-                {list.slice((filePage - 1) * 20, filePage * 20).map((f) => (
-                  <Group key={f.id} justify="space-between" wrap="nowrap">
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <Text size="sm" title={f.path} style={{ overflowWrap: 'anywhere' }}>
-                        {f.path
-                          .split(/[\\/]/)
-                          .pop()
-                          ?.replace(/ \[[a-f0-9]{64}\](?=\.[^.]+$)/i, '')}
-                      </Text>
-                      <Text size="xs" c={review(f) ? 'yellow' : 'dimmed'}>
-                        {[
-                          f.reviewAction === 'trash' ? 'Trash pending' : review(f) ? 'Needs review' : f.unrequested ? 'Reviewed, not used' : usedFor(f.id),
-                          f.facts?.language || f.claims?.language || 'Language unknown',
-                          f.facts?.group || f.claims?.group,
-                          f.provenance === 'library-import' ? 'found by a scan' : f.provenance,
-                          fmtSize(f.size),
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </Text>
-                    </div>
-                    <Button size="xs" variant="default" onClick={() => setFile(f)}>
-                      {review(f) ? 'Match file' : 'Edit mappings'}
-                    </Button>
-                  </Group>
-                ))}
-                {list.length > 20 && (
-                  <Pagination
-                    size="sm"
-                    total={Math.ceil(list.length / 20)}
-                    value={filePage}
-                    onChange={setFilePage}
-                  />
-                )}
-              </>
-            )
-          })()}
         </Stack>
       )}
       {version && (
@@ -667,6 +651,15 @@ export default function EditionManager({
             setFile(null)
           }}
           close={() => setFile(null)}
+        />
+      )}
+      {correcting && (
+        <BulkFactsDialog
+          seriesID={seriesID}
+          files={files.filter((f) => correcting.fileIds.includes(f.id))}
+          hint={correcting.hint}
+          done={changed}
+          close={() => setCorrecting(null)}
         />
       )}
       {confirmation}

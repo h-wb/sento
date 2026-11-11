@@ -12,6 +12,12 @@ type Props = {
   seriesID: number
   request: ReviewPlanRequest
   applied: () => Promise<void>
+  // Start from the cards that use the file now, proposing no new use: for
+  // a file that is already matched.
+  keepCurrent?: boolean
+  // One file, in its own dialog: the wording speaks of the file and its
+  // cards instead of a batch of incoming archives.
+  single?: boolean
   onDirtyChange?: (dirty: boolean) => void
   onBusyChange?: (busy: boolean) => void
 }
@@ -20,14 +26,14 @@ const pageSize = 25
 
 const bookKey = (b: { versionId?: number; bookId?: number }) => `${b.versionId}:${b.bookId}`
 
-function initialChoices(plan: ReviewPlan, request: ReviewPlanRequest, missingOnly = false): ReviewFileChoice[] {
+function initialChoices(plan: ReviewPlan, request: ReviewPlanRequest, missingOnly = false, keepCurrent = false): ReviewFileChoice[] {
   const selected = new Set<string>()
   return plan.files.map((f, i) => {
     const disposition = (f.reason && request.files[i].books === null) || (f.books.length > 0 && f.books.every((b) => !b.currentSelected && (!!b.reason || !b.incoming.factsKnown))) ? 'later' : 'keep'
     return {
       fileId: f.fileId, disposition,
       use: f.books.filter((b) => {
-        const wanted = missingOnly ? b.currentSelected || (!b.reason && b.incoming.factsKnown && !b.owners.some((o) => o.present)) : b.useIncoming
+        const wanted = keepCurrent ? b.currentSelected : missingOnly ? b.currentSelected || (!b.reason && b.incoming.factsKnown && !b.owners.some((o) => o.present)) : b.useIncoming
         if (!wanted || f.reason || disposition === 'later' || selected.has(bookKey(b.book))) return false
         selected.add(bookKey(b.book))
         return true
@@ -69,8 +75,11 @@ export function ReviewChoices(props: Props) {
   return <Choices key={preview.data.token} {...props} plan={preview.data} refresh={() => preview.refetch()} />
 }
 
-function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan, refresh }: Props & { plan: ReviewPlan; refresh: () => Promise<unknown> }) {
-  const defaults = initialChoices(plan, request)
+function Choices({ seriesID, request, applied, keepCurrent, single, onDirtyChange, onBusyChange, plan, refresh }: Props & { plan: ReviewPlan; refresh: () => Promise<unknown> }) {
+  const defaults = initialChoices(plan, request, false, keepCurrent)
+  // With several cards in play, every choice says which card it is for.
+  const severalCards = new Set(plan.files.flatMap((f) => f.books.map((b) => b.card))).size > 1
+  const forCard = (b: ReviewBookPlan) => (severalCards ? `${b.label} — ${b.card}` : b.label)
   const [choices, setChoices] = useState(defaults)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -128,7 +137,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
     const parts: string[] = []
     for (const b of f.books) {
       if (!using(i, b.book)) continue
-      parts.push(b.currentSelected ? `Keep ${b.label}` : b.owners.some((o) => o.present) ? `Use incoming instead for ${b.label}` : `Import ${b.label}`)
+      parts.push(b.currentSelected ? `Keep ${forCard(b)}` : b.owners.some((o) => o.present) ? `Use incoming instead for ${forCard(b)}` : `Import ${forCard(b)}`)
     }
     const d = choices[i].disposition
     parts.push(d === 'trash' ? 'Move to trash' : d === 'later' ? 'Leave for later' : choices[i].use.length ? 'Keep archive' : 'Keep unused file')
@@ -176,7 +185,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
   const to = Math.min(page * pageSize, plan.files.length)
   return (
     <Stack gap="sm">
-      <Text size="sm">Choose which copies to use. Existing copies stay selected unless you explicitly choose a replacement.</Text>
+      <Text size="sm">{single ? 'Tick the cards that should use this file. A card keeps the copy it has unless you choose this one instead.' : 'Choose which copies to use. Existing copies stay selected unless you explicitly choose a replacement.'}</Text>
       <Text size="sm" fw={500} role="status">Import {imports} · Keep existing {kept} · Replace {replacements} · Trash {trash} · Still missing {missing} · Left for later {later}</Text>
       {plan.files.length > 1 && <Group gap="xs">
         <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setChoices(initialChoices(plan, request, true))}>Import missing; keep existing</Button>
@@ -207,7 +216,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
             {f.books.map((b) => (
               <Stack key={bookKey(b.book)} gap={4}>
                 <Checkbox
-                  label={b.currentSelected ? `Keep this copy for ${b.label}` : b.owners.some((o) => o.present) ? `Use incoming instead for ${b.label}` : `Import ${b.label}`}
+                  label={b.currentSelected ? `Keep this copy for ${forCard(b)}` : b.owners.some((o) => o.present) ? `Use incoming instead for ${forCard(b)}` : `Import ${forCard(b)}`}
                   checked={using(i, b.book)}
                   disabled={busy || (!!b.reason && !b.currentSelected) || !!f.reason || choices[i].disposition === 'later'}
                   onChange={(event) => selectBook(i, b, event.currentTarget.checked)}
@@ -230,12 +239,12 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
               </Stack>
             ))}
             <Select
-              label={`After review: ${fileName(f.path)}`}
+              label={single ? 'The file itself' : `After review: ${fileName(f.path)}`}
               value={choices[i].disposition}
               disabled={busy}
               data={[
-                { value: 'keep', label: choices[i].use.length ? 'Keep archive for selected books' : 'Keep unused file' },
-                { value: 'trash', label: 'Move incoming file to trash', disabled: choices[i].use.length > 0 || !!f.trashReason },
+                { value: 'keep', label: choices[i].use.length ? (single ? 'Keep it for the ticked cards' : 'Keep archive for selected books') : (single ? 'Keep it, used by no card' : 'Keep unused file') },
+                { value: 'trash', label: single ? 'Move it to trash' : 'Move incoming file to trash', disabled: choices[i].use.length > 0 || !!f.trashReason },
                 { value: 'later', label: 'Leave for later' },
               ]}
               onChange={(v) => v && update(i, { disposition: v, ...(v === 'later' ? { use: [] } : {}) })}

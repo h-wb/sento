@@ -4,7 +4,7 @@ import { IconAlertTriangle, IconCircleCheck, IconCircleX, IconRefresh } from '@t
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, type TaskStatus } from '../api'
-import { fmtUntil, fmtWhen, notify, usePageTitle } from '../ui'
+import { fmtUntil, fmtWhen, notify, usePageTitle, versionLabel } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
 
@@ -67,7 +67,7 @@ export default function SystemPage() {
         <Card withBorder maw={420} mb="lg">
           <Group justify="space-between">
             <Text>Version</Text>
-            <Badge variant="light">{status.version}</Badge>
+            <Badge variant="light">{versionLabel(status)}</Badge>
           </Group>
           <Group justify="space-between" mt="xs">
             <Text>Database</Text>

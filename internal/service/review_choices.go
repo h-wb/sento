@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,6 +21,8 @@ type ReviewFileRequest struct {
 	Books    []store.BookRef `json:"books" tstype:"BookRef[] | null"`
 	Language *string         `json:"language,omitempty"`
 	Group    *string         `json:"group,omitempty"`
+	// Flags corrects flags by hand, as store.AssetFactPatch does.
+	Flags map[string]bool `json:"flags,omitempty"`
 }
 
 type ReviewPlanRequest struct {
@@ -40,14 +41,16 @@ type ReviewCopy struct {
 }
 
 type ReviewBookPlan struct {
-	Book                 store.BookRef `json:"book"`
-	Label                string        `json:"label"`
-	Incoming             FileScore     `json:"incoming"`
-	Owners               []ReviewCopy  `json:"owners"`
-	UseIncoming          bool          `json:"useIncoming"`
-	CurrentSelected      bool          `json:"currentSelected"`
-	RequestedReplacement bool          `json:"requestedReplacement"`
-	Reason               string        `json:"reason"`
+	Book  store.BookRef `json:"book"`
+	Label string        `json:"label"`
+	// Card names the card this choice is for, as the series page titles it.
+	Card                 string       `json:"card"`
+	Incoming             FileScore    `json:"incoming"`
+	Owners               []ReviewCopy `json:"owners"`
+	UseIncoming          bool         `json:"useIncoming"`
+	CurrentSelected      bool         `json:"currentSelected"`
+	RequestedReplacement bool         `json:"requestedReplacement"`
+	Reason               string       `json:"reason"`
 }
 
 type ReviewFilePlan struct {
@@ -219,7 +222,7 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 			keys[key] = true
 			ref.Ledger, ref.Number = col.Type, book.SequenceNum
 			prof := p.profiles.For(*version)
-			b := ReviewBookPlan{Book: ref, Label: col.Type + " " + book.SequenceStr, Owners: []ReviewCopy{}, Incoming: judgeMappedFile(*col, prof, p.profiles.Formats, f, store.AssetCoverage{Evidence: "manual"})}
+			b := ReviewBookPlan{Book: ref, Label: col.Type + " " + book.SequenceStr, Card: cardTitle(*col, *version, len(p.versions[col.ID])), Owners: []ReviewCopy{}, Incoming: judgeMappedFile(*col, prof, p.profiles.Formats, f, store.AssetCoverage{Evidence: "manual"})}
 			b.Reason = b.Incoming.Reason
 			for _, a := range cov {
 				if a.VersionID != ref.VersionID || a.BookID != ref.BookID {
@@ -271,7 +274,7 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 		}
 		for _, a := range cov {
 			if a.FileID == f.ID {
-				row.TrashReason = "This archive is currently selected by a book or version; keep it instead of moving it to trash"
+				row.TrashReason = "A card uses this file, so it cannot go to trash: untick it for every card first"
 			}
 		}
 		if slices.Contains(pins, f.ID) {
@@ -305,26 +308,28 @@ func reviewTokenTime(token string) (time.Time, bool) {
 	return time.Unix(0, nanos), true
 }
 
-func reviewCorrectedFacts(f store.AssetFacts, input ReviewFileRequest) store.AssetFacts {
-	f.Sources = maps.Clone(f.Sources)
-	if f.Sources == nil {
-		f.Sources = map[string]string{}
+// cardTitle names a card as the series page does: by its edition, and by
+// its own profile too when the edition has several cards.
+func cardTitle(e store.Edition, v store.CollectedVersion, cards int) string {
+	if cards > 1 && v.ProfileName != "" {
+		return e.EditionName + " · " + v.ProfileName
 	}
-	if input.Language != nil {
-		f.Language = strings.TrimSpace(*input.Language)
-		f.Sources["language"] = "manual"
-	}
-	if input.Group != nil {
-		f.Group = strings.TrimSpace(*input.Group)
-		f.Sources["group"] = "manual"
-	}
-	return f
+	return e.EditionName
 }
 
+func reviewCorrectedFacts(f store.AssetFacts, input ReviewFileRequest) store.AssetFacts {
+	return f.Corrected(store.AssetFactPatch{Language: input.Language, Group: input.Group, Flags: input.Flags})
+}
+
+// reviewSource says where a file came from: its site, a scan, or how it
+// was downloaded.
 func reviewSource(f store.File) string {
 	facts := backedFacts(f.Facts, f.Claims)
 	if facts.Site != "" {
 		return facts.Site
+	}
+	if f.Provenance == scanProvenance {
+		return "found by a scan"
 	}
 	return facts.Protocol
 }

@@ -239,6 +239,16 @@ export interface NamingPreview {
   errors: { [key: string]: string};
 }
 /**
+ * FilesFactsBody is PATCH /series/{id}/files/facts: one correction of what
+ * the named files are.
+ */
+export interface FilesFactsBody {
+  fileIds: number /* int64 */[];
+  language?: string;
+  group?: string;
+  flags?: { [key: string]: boolean};
+}
+/**
  * SplitBoxBody is POST /series/{id}/books/{bid}/split: how many volumes
  * the box holds.
  */

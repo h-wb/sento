@@ -59,3 +59,9 @@ export function usePageTitle(title: string) {
     }
   }, [title])
 }
+
+// A release is "v0.7.0"; any other build says which commit it is.
+export const versionLabel = (s: { version: string; commit?: string }) =>
+  /^\d/.test(s.version)
+    ? `v${s.version}`
+    : [s.version, s.commit?.slice(0, 7)].filter(Boolean).join(' · ')
