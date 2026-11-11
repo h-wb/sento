@@ -230,9 +230,18 @@ export interface NamingPreview {
   volumeFile: string;
   chapterFile: string;
   /**
+   * Paths are the sample books' paths, level by level, each tagged with
+   * the setting behind it.
+   */
+  paths: any /* service.PathExample */[];
+  /**
    * Reader is what readers show, per presented ComicInfo field.
    */
   reader: { [key: string]: ReaderPreview};
+  /**
+   * Readers is what Kavita and Komga would make of the sample copies.
+   */
+  readers: any /* service.ReaderCheck */[];
   /**
    * Errors says why saving would be refused, per settings field.
    */

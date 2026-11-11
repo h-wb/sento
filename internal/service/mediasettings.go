@@ -236,6 +236,57 @@ func PreviewMediaSettings(m MediaSettings) map[string]string {
 	}
 }
 
+// PathPart is one level of an example path and the setting that makes it:
+// volumesRoot or chaptersRoot, seriesFolder, bookFolder, volumeFile or
+// chapterFile.
+type PathPart struct {
+	Setting string `json:"setting"`
+	Text    string `json:"text"`
+}
+
+// PathExample is where one sample book lands, level by level.
+type PathExample struct {
+	Label string     `json:"label"`
+	Parts []PathPart `json:"parts"`
+}
+
+// PreviewPaths lays out where the sample books land, each level tagged with
+// the setting behind it: a volume, the same volume collected again as
+// "Colored" (where versions part ways on disk), and a chapter. They go
+// through the folder functions real placement uses.
+func PreviewPaths(m MediaSettings) []PathExample {
+	root := string(filepath.Separator) + "library"
+	first := store.CollectedVersion{ID: 81, EditionID: previewVolumes.ID, IsDefault: true}
+	colored := store.CollectedVersion{ID: 82, EditionID: previewVolumes.ID, Name: "Colored"}
+	chapters := store.CollectedVersion{ID: 83, EditionID: previewChapters.ID, IsDefault: true}
+	folders := editionFolders(root, &previewSeries, m, []store.Edition{previewVolumes, previewChapters}, []store.CollectedVersion{first, colored, chapters})
+	example := func(label string, e store.Edition, v store.CollectedVersion, rootSetting, fileSetting, fileTemplate string, volume, chapter int64) PathExample {
+		out := PathExample{Label: label}
+		rel, _ := filepath.Rel(root, folders[folderKey{e.ID, v.ID}])
+		levels := strings.Split(filepath.ToSlash(rel), "/")
+		for i, level := range levels {
+			setting := "seriesFolder"
+			if i < len(levels)-1 {
+				setting = rootSetting
+			}
+			out.Parts = append(out.Parts, PathPart{setting, level})
+		}
+		tokens := copyTokens(m, &previewSeries, e, &v)
+		for _, folder := range mediafile.RenderFolder(m.BookFolder, tokens) {
+			out.Parts = append(out.Parts, PathPart{"bookFolder", folder})
+		}
+		tokens.Group = "TCB Scans"
+		tokens.Volume, tokens.Chapter = volume, chapter
+		out.Parts = append(out.Parts, PathPart{fileSetting, mediafile.Render(fileTemplate, tokens)})
+		return out
+	}
+	return []PathExample{
+		example("Volume 112", previewVolumes, first, "volumesRoot", "volumeFile", m.VolumeFile, 11200, -1),
+		example("Volume 112, collected again as Colored", previewVolumes, colored, "volumesRoot", "volumeFile", m.VolumeFile, 11200, -1),
+		example("Chapter 1102.5", previewChapters, chapters, "chaptersRoot", "chapterFile", m.ChapterFile, -1, 110250),
+	}
+}
+
 // ReaderPreview is what readers would show for the sample edition, and
 // for a second card of it collected as "Colored"; Error says why saving
 // the field's template would be refused.
@@ -277,16 +328,30 @@ type ReaderFieldInfo struct {
 	Default string `json:"default"`
 }
 
+// ComicInfoSource is where the value of one or more ComicInfo fields Sento
+// writes comes from (mediafile.WrittenFields).
+type ComicInfoSource struct {
+	Fields []string `json:"fields"`
+	From   string   `json:"from"`
+}
+
 // MediaSchema is what the naming settings are made of: the tokens a
 // template can use and the reader fields that have one. It comes from the
 // lists the renderer itself uses (mediafile.Tokens, mediafile.PresentedFields).
 type MediaSchema struct {
 	Tokens       []NamingToken     `json:"tokens"`
 	ReaderFields []ReaderFieldInfo `json:"readerFields"`
+	// ComicInfo says where each field Sento writes into a book comes from.
+	ComicInfo []ComicInfoSource `json:"comicInfo"`
+	// Setups are the arrangements the page offers, recommended first.
+	Setups []NamingSetup `json:"setups"`
 }
 
 func MediaSettingsSchema() MediaSchema {
-	out := MediaSchema{}
+	out := MediaSchema{Setups: NamingSetups}
+	for _, w := range mediafile.WrittenFields {
+		out.ComicInfo = append(out.ComicInfo, ComicInfoSource{Fields: w.Fields, From: w.From})
+	}
 	for _, t := range mediafile.Tokens {
 		out.Tokens = append(out.Tokens, NamingToken{Syntax: t.Syntax, Help: t.Help, PerBook: t.PerBook})
 	}

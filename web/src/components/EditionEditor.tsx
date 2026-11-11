@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { IconChevronRight } from '@tabler/icons-react'
 import {
   Alert,
   Button,
@@ -120,6 +121,9 @@ export function EditionEditor({
                 variant="subtle"
                 size="compact-sm"
                 w="fit-content"
+                px={0}
+                leftSection={<IconChevronRight size={14} />}
+                aria-expanded={false}
                 onClick={() => setMore(true)}
               >
                 Publisher and medium
@@ -207,7 +211,7 @@ export function EditionEditor({
           {edit.error && <Alert color="red">{edit.error}</Alert>}
           <Group justify="space-between">
             {(v.syncState === 'linked' || v.syncState === 'stale') && (
-              <Button variant="subtle" disabled={edit.busy} onClick={() => void edit.run(reset)}>
+              <Button variant="default" disabled={edit.busy} onClick={() => void edit.run(reset)}>
                 Use MangaBaka’s values
               </Button>
             )}

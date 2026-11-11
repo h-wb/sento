@@ -1,0 +1,8 @@
+.tree { border: 1px solid var(--mantine-color-default-border); border-radius: var(--mantine-radius-md); padding: 6px 0; background: light-dark(#fbfbfa, #1f1f1d); }
+.root { padding: 2px 10px 4px; }
+.row { display: flex; align-items: baseline; gap: 8px; width: 100%; padding-top: 3px; padding-bottom: 3px; padding-right: 10px; border-radius: 4px; }
+.row:hover { background: var(--mantine-color-default-hover); }
+.icon { flex-shrink: 0; align-self: center; color: var(--mantine-color-dimmed); }
+.name { font-family: var(--mantine-font-family-monospace); font-size: 12px; overflow-wrap: anywhere; min-width: 0; }
+.setting { margin-left: auto; padding-left: 12px; font-size: 11px; color: var(--mantine-color-dimmed); white-space: nowrap; }
+@media (max-width: 36em) { .row { flex-wrap: wrap; } .name { flex: 1 1 0; } .setting { flex-basis: 100%; margin-left: 22px; padding-left: 0; white-space: normal; } }

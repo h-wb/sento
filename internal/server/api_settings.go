@@ -68,8 +68,10 @@ func (s *Server) handlePreviewMediaSettings(w http.ResponseWriter, r *http.Reque
 		VolumePath: p["volumePath"], ChapterPath: p["chapterPath"],
 		BookFolder:   p["bookFolder"],
 		SeriesFolder: p["seriesFolder"], VolumeFile: p["volumeFile"], ChapterFile: p["chapterFile"],
-		Reader: service.PreviewReaderFields(m),
-		Errors: service.MediaSettingsProblems(m),
+		Paths:   service.PreviewPaths(m),
+		Reader:  service.PreviewReaderFields(m),
+		Readers: service.CheckReaders(m),
+		Errors:  service.MediaSettingsProblems(m),
 	})
 }
 

@@ -240,20 +240,31 @@ test('series interactions work with keyboard and fit a mobile viewport', async (
 
 test('media settings preview the folder layout, including a split by type', async ({ page }, testInfo) => {
   await page.goto('/media')
+  const tree = page.getByTestId('path-tree')
+  const level = (name: string, setting: string) => tree.getByRole('button', { name: new RegExp(`^${name.replace(/[[\]().]/g, '\\$&')}: ${setting}`) })
   // Default: one folder per series, editions inside it.
-  await expect(
-    page.getByText('ONE PIECE [mangabaka-377]/Standard Edition [en]/ONE PIECE v112 [Standard Edition][en].cbz', { exact: true }),
-  ).toBeVisible()
+  await expect(level('ONE PIECE [mangabaka-377]', 'Series folder')).toHaveCount(1)
+  await expect(level('Standard Edition [en] (Colored)', 'Book folder')).toBeVisible()
+  await expect(level('ONE PIECE v112 [Standard Edition][en].cbz', 'Volume file')).toHaveCount(2)
+  await expect(page.getByText(/^Kavita shows ONE PIECE and ONE PIECE Colored, but from one series folder/)).toBeVisible()
   await page.getByRole('textbox', { name: 'Volumes top folder' }).fill('Volumes')
   await page.getByRole('textbox', { name: 'Chapters top folder' }).fill('Chapters')
-  await expect(page.getByText(/^Volumes\/ONE PIECE \[mangabaka-377\]\/Standard Edition \[en\]\/ONE PIECE v112/)).toBeVisible()
-  await expect(page.getByText(/^Chapters\/ONE PIECE \[mangabaka-377\]\/Standard Edition \[en\]\/ONE PIECE c1102\.5/)).toBeVisible()
+  await expect(level('Volumes', 'Volumes top folder')).toBeVisible()
+  await expect(level('Chapters', 'Chapters top folder')).toBeVisible()
+  // Picking a level goes to the setting that makes it.
+  await level('Chapters', 'Chapters top folder').click()
+  await expect(page.getByRole('textbox', { name: 'Chapters top folder' })).toBeFocused()
   // The type can go inside the series instead.
   await page.getByRole('textbox', { name: 'Volumes top folder' }).fill('')
   await page.getByRole('textbox', { name: 'Chapters top folder' }).fill('')
   await page.getByLabel('Folders inside a series').first().click()
   await page.getByRole('option', { name: /By type, then edition/ }).click()
-  await expect(page.getByText(/^ONE PIECE \[mangabaka-377\]\/Chapters\/Standard Edition \[en\]\/ONE PIECE c1102\.5/)).toBeVisible()
+  await expect(level('Chapters', 'Book folder')).toBeVisible()
+  // The reader setup gives every name in readers its own folder.
+  await page.getByRole('button', { name: /^Kavita or Komga/ }).click()
+  await expect(level('ONE PIECE Colored [mangabaka-377]', 'Series folder')).toBeVisible()
+  await expect(page.getByText(/^Kavita shows ONE PIECE and ONE PIECE Colored as two series/)).toBeVisible()
+  await expect(page.getByText(/Turn off Append volume to series title/)).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('media-layout.png'), fullPage: true })
 })
 

@@ -290,6 +290,7 @@ export default function AddEdition({
             variant="subtle"
             size="compact-sm"
             w="fit-content"
+            px={0}
             leftSection={more ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
             aria-expanded={more}
             onClick={() => setMore(!more)}

@@ -41,6 +41,40 @@ type ComicInfo struct {
 	Extra []ExtraElement `xml:",any"`
 }
 
+// WrittenField says where what Sento writes into ComicInfo fields comes
+// from, for the settings page. Every field of ComicInfo is described
+// (TestEveryComicInfoFieldIsDescribed); the presented fields are the
+// user's templates.
+type WrittenField struct {
+	Fields []string
+	From   string
+}
+
+// WrittenFields, in the order the settings page lists them: what the user
+// chooses first, then what describes the book, then bookkeeping.
+var WrittenFields = []WrittenField{
+	{[]string{"Series"}, "Series name in readers"},
+	{[]string{"SeriesGroup"}, "Series group"},
+	{[]string{"Volume"}, "a volume's number (a volume carries no Number, or Kavita lists it twice)"},
+	{[]string{"Number"}, "a chapter's number"},
+	{[]string{"Count"}, "the last volume or chapter, once the series is completed"},
+	{[]string{"Title"}, "the book's title in MangaBaka, or its label when it has no number"},
+	{[]string{"Summary"}, "the book's description in MangaBaka, or the series'"},
+	{[]string{"Year", "Month", "Day"}, "the book's release date"},
+	{[]string{"Writer", "Penciller"}, "MangaBaka's authors and artists"},
+	{[]string{"Genre", "Tags", "AgeRating"}, "MangaBaka's genres, tags and content rating"},
+	{[]string{"Web"}, "the series' page on MangaBaka"},
+	{[]string{"LanguageISO", "Publisher"}, "the edition's language and publisher"},
+	{[]string{"Translator"}, "the scanlation group, for a fan translation"},
+	{[]string{"Format"}, "the edition's kind: Omnibus, Deluxe, Box Set…"},
+	{[]string{"Manga"}, "right-to-left reading, for manga"},
+	{[]string{"ScanInformation"}, "the release group"},
+	{[]string{"GTIN"}, "the book's ISBN"},
+	{[]string{"PageCount"}, "the pages in the archive"},
+	{[]string{"Notes"}, "a line Sento recognises the file by after a rescan"},
+	{[]string{"LocalizedSeries", "Imprint"}, "kept as the file had them"},
+}
+
 // ExtraElement is one unmodelled ComicInfo element, carried verbatim.
 type ExtraElement struct {
 	XMLName xml.Name

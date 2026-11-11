@@ -160,8 +160,13 @@ type NamingPreview struct {
 	SeriesFolder string `json:"seriesFolder"`
 	VolumeFile   string `json:"volumeFile"`
 	ChapterFile  string `json:"chapterFile"`
+	// Paths are the sample books' paths, level by level, each tagged with
+	// the setting behind it.
+	Paths []service.PathExample `json:"paths"`
 	// Reader is what readers show, per presented ComicInfo field.
 	Reader map[string]service.ReaderPreview `json:"reader"`
+	// Readers is what Kavita and Komga would make of the sample copies.
+	Readers []service.ReaderCheck `json:"readers"`
 	// Errors says why saving would be refused, per settings field.
 	Errors map[string]string `json:"errors"`
 }

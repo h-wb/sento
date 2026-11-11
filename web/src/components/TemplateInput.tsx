@@ -4,6 +4,7 @@ import { Text, TextInput } from '@mantine/core'
 // error) underneath — the same input on the Media settings page and in the
 // edition editor.
 export function TemplateInput({
+  id,
   label,
   description,
   value,
@@ -14,6 +15,7 @@ export function TemplateInput({
   onChange,
   onFocus,
 }: {
+  id?: string
   label: string
   description?: string
   value: string
@@ -28,6 +30,7 @@ export function TemplateInput({
   return (
     <div>
       <TextInput
+        id={id}
         label={label}
         description={description}
         value={value}
@@ -36,9 +39,11 @@ export function TemplateInput({
         disabled={disabled}
         onChange={(e) => onChange(e.currentTarget.value)}
         onFocus={(e) => onFocus?.(e.currentTarget)}
+        // The template and its preview in one font, so they read alike.
+        styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)', fontSize: 12.5 } }}
       />
       {!error && (
-        <Text size="xs" c="dimmed" mt={2} style={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
+        <Text size="xs" c="dimmed" mt={4} style={{ fontFamily: 'var(--mantine-font-family-monospace)', overflowWrap: 'anywhere' }}>
           Preview: {preview ?? 'Loading…'}
         </Text>
       )}
