@@ -201,7 +201,7 @@ export default function AddEdition({
           </Group>
           <Text size="sm" c="dimmed">
             For a language or publication MangaBaka does not list. To keep another release group of
-            an edition you already have, add a collected version instead.
+            an edition you already have, collect that edition again with another profile instead.
           </Text>
           <SegmentedControl
             size="xs"

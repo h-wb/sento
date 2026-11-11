@@ -65,7 +65,7 @@ func (l *Library) FileScore(ctx context.Context, sid, vid, fid int64) (*FileScor
 		return nil, err
 	}
 	if col.SeriesID != sid {
-		return nil, apperr.NotFoundf("collected version not found")
+		return nil, apperr.NotFoundf("card not found")
 	}
 	files, err := l.store.ListFiles(ctx, sid)
 	if err != nil {

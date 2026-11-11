@@ -24,7 +24,7 @@ test('file cleanup previews protection, confirms retention, and restores from tr
     size: 8192,
     editions: ['Older edition', 'Collected edition'],
     category: '',
-    reason: 'Still selected by a collected version',
+    reason: 'A card still uses this file',
     eligible: false,
   }
   let moved = false

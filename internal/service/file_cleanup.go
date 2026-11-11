@@ -130,9 +130,9 @@ func (im *Importer) CleanupPreview(ctx context.Context, sid, eid int64) ([]Clean
 		}
 		switch {
 		case pinned[f.ID]:
-			c.Reason = "Pinned by a collected version"
+			c.Reason = "Pinned by a card"
 		case selected[f.ID]:
-			c.Reason = "Still selected by a collected version"
+			c.Reason = "A card still uses this file"
 		case f.NeedsReview || unverified[f.ID]:
 			c.Reason = "Finish reviewing this file first"
 		case pending[f.Facts.ReleaseKey] || pending[f.Claims.ReleaseKey]:
@@ -144,13 +144,13 @@ func (im *Importer) CleanupPreview(ctx context.Context, sid, eid int64) ([]Clean
 			switch {
 			case len(mapped[f.ID]) == 0:
 				c.Category = "unmapped"
-				c.Reason = "Unmapped file, already reviewed"
+				c.Reason = "Reviewed, holds no book"
 			case !active:
 				c.Category = "uncollected"
 				c.Reason = "Only used by editions you are not collecting"
 			default:
 				c.Category = "unselected"
-				c.Reason = "No collected version selects this copy"
+				c.Reason = "No card uses this copy"
 			}
 		}
 		out = append(out, c)

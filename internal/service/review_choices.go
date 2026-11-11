@@ -181,7 +181,7 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 				}
 				col := editionByID(p.editions, version.EditionID)
 				if col == nil {
-					return nil, "", nil, apperr.NotFoundf("collected version not found")
+					return nil, "", nil, apperr.NotFoundf("card not found")
 				}
 				var note string
 				refs, _, note, _ = p.matchSlots(f.ID, *col, version.ID)
@@ -206,7 +206,7 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 			}
 			col := editionByID(p.editions, version.EditionID)
 			if col == nil || col.ID != ref.EditionID {
-				return nil, "", nil, apperr.Invalidf("book mapping belongs to another series or version")
+				return nil, "", nil, apperr.Invalidf("book mapping belongs to another series or card")
 			}
 			var book *store.Book
 			for i := range p.books[col.ID] {
@@ -388,7 +388,7 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 			}
 			key := store.BookKey(b.Book.VersionID, b.Book.BookID)
 			if used[key] {
-				return nil, apperr.Invalidf("choose one incoming archive per book and version")
+				return nil, apperr.Invalidf("choose one incoming archive per book and card")
 			}
 			used[key] = true
 			w.Selected = append(w.Selected, b.Book)
