@@ -104,6 +104,7 @@ export function MappingEditor({
   // Numbers the file's own name carries, shown until an edition is picked;
   // picking one maps them onto its books, so no number is typed twice.
   const [pending, setPending] = useState<string[]>(hint?.numbers ?? [])
+  const [bookSearch, setBookSearch] = useState('')
   const booksOf = (id: number) => {
     const seen = new Set<number>()
     return books.filter(
@@ -191,12 +192,27 @@ export function MappingEditor({
           label="Books in this file"
           description={
             editionId
-              ? undefined
+              ? booksOf(editionId).length > 20
+                ? 'Type a range such as 1-30 and press Enter to add every book in it.'
+                : undefined
               : pending.length
                 ? `Its name says ${pending.join(', ')}. Pick the edition to match them.`
                 : 'Pick the edition first.'
           }
           searchable
+          searchValue={bookSearch}
+          onSearchChange={setBookSearch}
+          onKeyDown={(e) => {
+            const range = /^\s*(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*$/.exec(bookSearch)
+            if (e.key !== 'Enter' || !range || !editionId) return
+            e.preventDefault()
+            const [low, high] = [Number(range[1]), Number(range[2])].sort((a, b) => a - b)
+            const inRange = booksOf(editionId)
+              .filter((s) => s.book.numberKnown && s.book.sequenceNum >= low * 100 && s.book.sequenceNum <= high * 100)
+              .map((s) => s.book.id)
+            setBooks(editionId, [...new Set([...chosen, ...inRange])])
+            setBookSearch('')
+          }}
           disabled={busy || !editionId}
           data={
             editionId
