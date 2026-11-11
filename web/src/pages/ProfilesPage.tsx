@@ -148,7 +148,7 @@ export default function ProfilesPage() {
         <div>
           <Title order={3}>Release profiles</Title>
           <Text c="dimmed" size="sm">
-            A series or card uses the starred profile unless it chooses another.
+            A series or edition uses the starred profile unless it chooses another.
           </Text>
         </div>
         <Group gap="xs">

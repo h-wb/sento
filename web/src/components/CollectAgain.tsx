@@ -47,7 +47,7 @@ export function CollectAgain({
       <Stack>
         <Text size="sm" c="dimmed">
           The same books of {edition.editionName}, collected again for the releases another profile
-          accepts: a colored copy beside a black-and-white one, say. A file counts for every card
+          accepts: a colored copy beside a black-and-white one, say. A file counts for every copy
           whose profile accepts it.
         </Text>
         {profiles.data && available.length === 0 ? (
@@ -73,7 +73,7 @@ export function CollectAgain({
           <Alert variant="light" color="yellow" p="xs">
             <Text size="sm">
               {choice!.name} and {overlapping.map((p) => p!.name).join(', ')} accept some of the same
-              releases, and a file both accept counts for both cards. To keep them apart, have one
+              releases, and a file both accept counts for both. To keep them apart, have one
               refuse a format the other requires.
             </Text>
           </Alert>

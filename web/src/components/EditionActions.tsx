@@ -182,8 +182,8 @@ function MergePreview({
     >
       <Stack>
         <Text size="sm">
-          The destination edition keeps its metadata. Your cards, their settings, pins,
-          and confirmed file mappings are retained. Files stay in place.
+          The destination edition keeps its metadata. The profiles you collect it with, their
+          settings, pins and confirmed file mappings are kept. Files stay in place.
         </Text>
         <QueryFeedback
           pending={preview.isPending}
@@ -194,7 +194,7 @@ function MergePreview({
           <>
             <Text size="sm">
               {p.localBooks.length} books · {p.fileCount} files · {p.localVersions.length}{' '}
-              {p.localVersions.length === 1 ? 'card' : 'cards'}
+              {p.localVersions.length === 1 ? 'profile' : 'profiles'}
             </Text>
             {p.localBooks.map((w) => (
               <Text size="xs" key={w.id}>
@@ -206,7 +206,7 @@ function MergePreview({
             ))}
             {p.localVersions.map((t) => (
               <Text size="xs" key={t.id}>
-                Card: {t.name}
+                Collected as {t.name}
                 {t.profileId ? ` · profile ${t.profileId}` : ' · inherited profile'}
               </Text>
             ))}

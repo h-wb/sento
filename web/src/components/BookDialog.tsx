@@ -46,7 +46,7 @@ export type BookSelection = {
   monitored: boolean
   wanted: boolean
   fileIds: number[]
-  // Files of the book on disk that this card does not use.
+  // Files of the book on disk that this edition does not use.
   unusedFileIds?: number[]
   // Fire the streaming search as soon as the modal opens (the
   // interactive-search buttons; a plain row click opens quietly).
@@ -549,7 +549,7 @@ function Inner({
                         {/* Its score below says why. */}
                         {unused.includes(f) && (
                           <Text size="xs" c="orange" mt={2}>
-                            On disk, but this card doesn’t use it.
+                            On disk, but this edition doesn’t use it.
                           </Text>
                         )}
                         <FileScoreDetails seriesID={seriesID} versionID={sel.versionId} fileID={f.id} />

@@ -53,7 +53,7 @@ test('a mixed pack keeps the existing volume, trashes its duplicate, and support
     await page.goto('/queue')
     await page.getByRole('button', { name: 'Match whole release', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Match whole release', exact: true })
-    await dialog.getByRole('combobox', { name: 'Card', exact: true }).click()
+    await dialog.getByRole('combobox', { name: 'Edition', exact: true }).click()
     await page.getByRole('option', { name: 'en · Standard Edition', exact: true }).click()
     await expect(dialog.getByRole('checkbox', { name: 'Use incoming instead for volume 4', exact: true })).not.toBeChecked()
     await expect(dialog.getByText(`Keep existing: ${path.basename(old.path)}`, { exact: false })).toBeVisible()

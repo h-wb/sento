@@ -295,8 +295,8 @@ export default function EditionManager({
                                     confirm({
                                       title: `Stop collecting ${title} this way?`,
                                       message:
-                                        'The card goes; files stay on disk, and the edition’s other cards keep theirs.',
-                                      label: 'Remove card',
+                                        'Files stay on disk, and the edition’s other profiles keep theirs.',
+                                      label: 'Stop collecting',
                                       onConfirm: async () => {
                                         await api.deleteVersion(seriesID, t.id)
                                         await changed()
@@ -304,7 +304,7 @@ export default function EditionManager({
                                     })
                                   }
                                 >
-                                  Remove this card
+                                  Stop collecting this way…
                                 </Menu.Item>
                               )}
                               {c.custom && (

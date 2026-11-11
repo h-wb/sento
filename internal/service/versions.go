@@ -104,7 +104,7 @@ func bookState(f bookFacts) (state BookState, reason string, wanted bool) {
 	case f.OnDisk:
 		reason := f.Refused
 		if reason == "" {
-			reason = "A file of this book is on disk, but this card does not use it"
+			reason = "A file of this book is on disk, but this edition does not use it"
 		}
 		return StateUnsatisfactory, reason, true
 	default:

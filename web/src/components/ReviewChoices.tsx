@@ -234,7 +234,7 @@ function Choices({ seriesID, request, applied, keepCurrent, single, onDirtyChang
       disabled={busy}
       allowDeselect={false}
       data={[
-        { value: 'keep', label: choices[i].use.length ? (single ? 'Keep it for the ticked cards' : 'Keep for the ticked books') : (single ? 'Keep it, used by no card' : 'Keep, unused') },
+        { value: 'keep', label: choices[i].use.length ? (single ? 'Keep it for the ticked editions' : 'Keep for the ticked books') : (single ? 'Keep it, used by no edition' : 'Keep, unused') },
         { value: 'trash', label: 'Move to trash', disabled: choices[i].use.length > 0 || !!f.trashReason },
         { value: 'later', label: 'Leave for later' },
       ]}
@@ -243,7 +243,7 @@ function Choices({ seriesID, request, applied, keepCurrent, single, onDirtyChang
   )
   return (
     <Stack gap="sm">
-      <Text size="sm" c="dimmed">{single ? 'Tick the cards that should use this file. A card keeps the copy it has unless you choose this one instead.' : 'Choose which copies to use. Existing copies stay selected unless you explicitly choose a replacement.'}</Text>
+      <Text size="sm" c="dimmed">{single ? 'Tick the editions that should use this file. Each keeps the copy it has unless you choose this one instead.' : 'Choose which copies to use. Existing copies stay selected unless you explicitly choose a replacement.'}</Text>
       {!(single && nothingToApply) && <Text size="sm" fw={500} role="status">{summary}</Text>}
       {plan.files.length > 1 && <Group gap="xs">
         <Button size="compact-xs" variant="default" disabled={busy} onClick={() => setChoices(initialChoices(plan, request, true))}>Import missing; keep existing</Button>

@@ -170,7 +170,7 @@ export function MappingEditor({
           <Alert variant="light" p="xs">
             <Text size="sm">
               Proposed: <b>{proposal.label}</b> of {proposal.edition} ({proposal.evidence}). Check
-              the books, then the cards that should use the file.
+              the books, then the editions that should use the file.
             </Text>
           </Alert>
         )}
@@ -255,7 +255,7 @@ export function MappingEditor({
           </Group>
         )}
 
-        <Divider label="Which cards use it" labelPosition="left" />
+        <Divider label="Which editions use it" labelPosition="left" />
         <ReviewChoices
           seriesID={seriesID}
           request={{

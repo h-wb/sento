@@ -62,7 +62,7 @@ export default function SeriesFiles({
     if (review(f)) return 'Needs review'
     if (!books) return ''
     const uses = books.filter((b) => b.fileIds.includes(f.id))
-    if (uses.length === 0) return 'Not used by any card'
+    if (uses.length === 0) return 'Not used by any edition'
     const numbers = [...new Set(uses.map((b) => b.book.sequenceStr))]
     const cards = [...new Set(uses.map((b) => b.versionId))].flatMap((id) => {
       const t = versions.find((v) => v.id === id)
@@ -111,7 +111,7 @@ export default function SeriesFiles({
               Correct what they are…
             </Button>
             <Button size="xs" variant="default" disabled={!coverage || !books} onClick={() => setBulk('move')}>
-              Use for a card…
+              Use for an edition…
             </Button>
             <Button size="xs" variant="subtle" onClick={() => setSelected(new Set())}>
               Clear

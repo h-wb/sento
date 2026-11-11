@@ -3,7 +3,7 @@ import { IconAlertTriangle } from '@tabler/icons-react'
 import { bookRanges } from './bookRanges'
 import type { Refused } from './refusal'
 
-// Says which books are on disk but not used by the card, why, and the
+// Says which books are on disk but not used by the edition, why, and the
 // three ways out: the files were read wrong, they belong on a card with
 // another profile, or other releases should replace them.
 export function RefusedFilesNotice({
@@ -25,7 +25,7 @@ export function RefusedFilesNotice({
   return (
     <Alert color="orange" variant="default" p="sm" icon={<IconAlertTriangle size={18} color="var(--mantine-color-orange-filled)" />}>
       <Text size="sm" fw={500}>
-        {which} {n === 1 ? 'is' : 'are'} on disk, but this card doesn’t use {n === 1 ? 'its file' : 'their files'}
+        {which} {n === 1 ? 'is' : 'are'} on disk, but this edition doesn’t use {n === 1 ? 'its file' : 'their files'}
       </Text>
       {refused.reason && (
         <Text size="xs" c="dimmed" mt={2}>

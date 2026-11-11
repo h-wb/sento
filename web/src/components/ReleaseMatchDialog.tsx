@@ -30,10 +30,10 @@ export function ReleaseMatchDialog({ seriesID, title, files, close }: {
       <Stack>
         <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>{title}</Text>
         <Text size="xs" c="dimmed">{files.length} files waiting for review</Text>
-        {pending && <Text size="sm" c="dimmed">Loading the series’ cards…</Text>}
+        {pending && <Text size="sm" c="dimmed">Loading the series’ editions…</Text>}
         <QueryFeedback pending={pending} error={error} onRetry={() => { void detail.refetch(); void versions.refetch() }} />
         {data && <>
-          <Select label="Card" value={versionID} disabled={busy} onChange={setVersionID}
+          <Select label="Edition" value={versionID} disabled={busy} onChange={setVersionID}
             data={[
               { value: '0', label: 'Use proposed editions' },
               ...data.versions.map((t) => ({ value: String(t.id), label: cardLabel(data.editions.find((c) => c.id === t.editionId)!, t, data.versions) })),

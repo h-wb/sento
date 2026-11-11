@@ -126,7 +126,7 @@ identity ([metadata](metadata.md), D18).
   `Series`. The default already separates the versions of an edition. To
   show an edition as its own series, give it its own name in Edit edition.
 - **A reader that files by folders** (Komga) shows one series per folder.
-  The layout "One series folder per edition and card"
+  The layout "One series folder per edition and profile"
   (`{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}] ({version})`,
   flat book folder) gives every copy its own.
 - **Both at once**: "One folder per name in readers"
