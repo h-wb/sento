@@ -4,11 +4,10 @@ import path from 'node:path'
 import { reviewArchives } from './review-choice-fixtures'
 import type { CollectedVersion, File as SeriesFile, TrashedFile } from '../src/types/store'
 import type { BookStatus } from '../src/types/service'
+import { addSeries } from './helpers'
 
 test('a mixed pack keeps the existing volume, trashes its duplicate, and supports an explicit replacement', async ({ page, request }, testInfo) => {
-  const added = await request.post('/api/v1/series/', { data: { mangabakaId: 103, monitor: 'all' } })
-  expect(added.ok()).toBeTruthy()
-  const { id } = await added.json()
+  const id = await addSeries(request, 103)
   let profileId = 0
   let formatId = 0
   try {

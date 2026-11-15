@@ -4,6 +4,8 @@ import { Alert, Button, Group, Menu, Modal, Stack, Text } from '@mantine/core'
 import { IconDotsVertical, IconTrash } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { api, type Edition } from '../api'
+import { plural } from '../format'
+import { errorMessage } from '../ui'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
 import { editionDetails } from './editionText'
@@ -194,7 +196,7 @@ function MergePreview({
           <>
             <Text size="sm">
               {p.localBooks.length} books · {p.fileCount} files · {p.localVersions.length}{' '}
-              {p.localVersions.length === 1 ? 'profile' : 'profiles'}
+              {plural(p.localVersions.length, 'profile')}
             </Text>
             {p.localBooks.map((w) => (
               <Text size="xs" key={w.id}>
@@ -233,7 +235,7 @@ function MergePreview({
                 await api.mergeEditions(seriesID, edition.id, into.id)
                 done()
               } catch (e) {
-                setError(String(e))
+                setError(errorMessage(e))
               } finally {
                 setBusy(false)
               }

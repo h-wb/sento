@@ -1,5 +1,6 @@
 import type { ActivityData, ActivityDownload } from '../types/service'
 import type { ReviewItem } from '../types/store'
+import { parseServerTime, plural } from '../format'
 
 export type ActivityFilter = 'progress' | 'attention' | 'history'
 export type AttentionGroup = {
@@ -62,7 +63,7 @@ export function downloadLabel(d: ActivityDownload) {
   if (job.status === 'retry_wait') return 'Retry scheduled'
   if (job.status === 'dispatch_unknown') return 'Confirm download'
   if (d.files.length)
-    return `${d.files.length} ${d.files.length === 1 ? 'file needs' : 'files need'} ${d.files.some((f) => f.status === 'unavailable' || f.status === 'unknown') ? 'checking' : 'matching'}`
+    return `${d.files.length} ${plural(d.files.length, 'file needs', 'files need')} ${d.files.some((f) => f.status === 'unavailable' || f.status === 'unknown') ? 'checking' : 'matching'}`
   if (job.status === 'needs_review') return 'Needs attention'
   if (job.status === 'failed') return d.history ? 'Previous attempt' : 'Failed'
   if (job.status === 'cancelled') return 'Cancelled'
@@ -86,5 +87,5 @@ export function downloadLabel(d: ActivityDownload) {
 }
 
 export function activityTime(value: string) {
-  return Date.parse(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`) || 0
+  return parseServerTime(value).getTime() || 0
 }

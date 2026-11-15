@@ -19,7 +19,16 @@ import { IconChevronDown, IconChevronRight, IconSearch } from '@tabler/icons-rea
 import { Link } from 'react-router-dom'
 import classes from './CandidateList.module.css'
 import { useConfirmAction } from './ConfirmAction'
-import { fmtNum, fmtSize, type ReleaseCandidate } from '../api'
+import { fmtNum, fmtSize, plural } from '../format'
+import { errorMessage } from '../ui'
+import type { ReleaseCandidate } from '../api'
+import { factFlags } from './factFlags'
+import { usePaged } from './usePaged'
+
+// This screen words the flags its own way ("Color"); the keys are the
+// shared ones.
+const flagLabels: Record<string, string> = { colored: 'Color' }
+const flagLabel = (key: string) => flagLabels[key] ?? factFlags.find((f) => f.key === key)?.label ?? key
 
 const releaseKey = (c: ReleaseCandidate) => c.key || `${c.provider}/${c.siteId}/${c.guid}/${c.versionId ?? 0}`
 const rangeLabel = (label: string, ranges?: [number, number][]) =>
@@ -121,7 +130,6 @@ export default function CandidateList({
   const [toolsOpen, setToolsOpen] = useState(false)
   const activeTools = [filter !== '', site !== null, sort !== 'best', kind !== 'any'].filter(Boolean).length
   const tools = toolsOpen || activeTools > 0
-  const [page, setPage] = useState(1)
   const unique = [...new Map(candidates.map((c) => [releaseKey(c), c])).values()]
   const matches = unique.filter((c) => status(c) !== 'blocked')
   const blocked = unique.filter((c) => status(c) === 'blocked')
@@ -182,8 +190,7 @@ export default function CandidateList({
         releaseKey(a).localeCompare(releaseKey(b))
       )
     })
-  const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE))
-  const currentPage = Math.min(page, pages)
+  const { page, setPage, pages, slice } = usePaged(shown, PAGE_SIZE)
   const filtered = !!filter.trim() || !!site || kind !== 'any' || (state === 'blocked' && !!reason)
   const download = async (c: ReleaseCandidate, force: boolean) => {
     if (!onGrab || busy || downloading.current || queued.has(releaseKey(c))) return
@@ -194,7 +201,7 @@ export default function CandidateList({
       await onGrab(c, force)
       setQueued((prev) => new Set([...prev, releaseKey(c)]))
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorMessage(e))
       throw e
     } finally {
       downloading.current = false
@@ -219,7 +226,7 @@ export default function CandidateList({
     setActive(releaseKey(c))
     setError('')
     try { await onUnblock(c) }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    catch (e) { setError(errorMessage(e)) }
     finally { downloading.current = false; setActive('') }
   }
   return (
@@ -348,7 +355,7 @@ export default function CandidateList({
           {blocked.length > 0 && (
             <>
               <Text size="sm" c="dimmed" mt={4}>
-                {blocked.length} {blocked.length === 1 ? 'result was' : 'results were'} ruled out:
+                {blocked.length} {plural(blocked.length, 'result was', 'results were')} ruled out:
               </Text>
               <Stack gap={4} mt="xs">
                 {reasonGroups.map((g) => (
@@ -394,7 +401,7 @@ export default function CandidateList({
       )}
       {shown.length > 0 && (
         <div className={classes.rows}>
-          {shown.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map((c) => (
+          {slice.map((c) => (
             <ReleaseRow
               key={releaseKey(c)}
               c={c}
@@ -414,11 +421,11 @@ export default function CandidateList({
       )}
       <Group justify="space-between">
         <Text size="xs" c="dimmed">
-          {shown.length > 0 && `${shown.length} ${shown.length === 1 ? 'release' : 'releases'}`}
+          {shown.length > 0 && `${shown.length} ${plural(shown.length, 'release')}`}
           {shown.length > 0 && dropped > 0 && ' · '}
           {dropped > 0 && `${dropped} results for the other book type not shown`}
         </Text>
-        {pages > 1 && <Pagination size="sm" total={pages} value={currentPage} onChange={setPage} />}
+        {pages > 1 && <Pagination size="sm" total={pages} value={page} onChange={setPage} />}
       </Group>
       {confirmation}
     </Stack>
@@ -464,13 +471,13 @@ function ReleaseRow({
       ? c.parse.languages.map((l) => l.toUpperCase()).join('/')
       : c.parse.language?.toUpperCase() || 'Language unknown',
     c.parse.group || c.scanlator,
-    c.parse.quality.digital && 'Digital',
-    c.parse.quality.scan && 'Scan',
-    c.parse.quality.web && 'Web',
-    c.parse.edition.omnibus && 'Omnibus',
-    c.parse.edition.deluxe && 'Deluxe',
-    c.parse.edition.boxset && 'Box set',
-    c.parse.edition.colored && 'Color',
+    c.parse.quality.digital && flagLabel('digital'),
+    c.parse.quality.scan && flagLabel('scan'),
+    c.parse.quality.web && flagLabel('web'),
+    c.parse.edition.omnibus && flagLabel('omnibus'),
+    c.parse.edition.deluxe && flagLabel('deluxe'),
+    c.parse.edition.boxset && flagLabel('boxset'),
+    c.parse.edition.colored && flagLabel('colored'),
     c.parse.extra && 'Bonus / special',
     c.parse.version && `Revision ${c.parse.version}`,
   ].filter(Boolean)
@@ -527,7 +534,7 @@ function ReleaseRow({
                 <Text size="xs" c={state === 'review' ? 'orange' : 'dimmed'}>
                   {state === 'review' && `${reason}${more > 0 ? ` (+${more} more)` : ''} · `}
                   {matched > 0
-                    ? `${matched}${allBooks ? '' : ' wanted'} ${matched === 1 ? 'book' : 'books'}`
+                    ? `${matched}${allBooks ? '' : ' wanted'} ${plural(matched, 'book')}`
                     : decision?.kind || 'Unclassified'}
                   {state === 'ready' && ` · Rank score ${c.score}`}
                   {c.editionSnapshot && ` · ${c.editionSnapshot.editionName}`}

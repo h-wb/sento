@@ -3,6 +3,7 @@ import { Alert, Anchor, Button, Group, Select, Stack, Text } from '@mantine/core
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
+import { defaultProfileQuery, profilesQuery } from '../queries'
 import type { Edition, CollectedVersion } from '../types/store'
 import { EditorModal } from './EditorModal'
 import { useEditor } from './useEditor'
@@ -27,8 +28,8 @@ export function CollectAgain({
   save: () => Promise<void>
   close: () => void
 }) {
-  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
-  const def = useQuery({ queryKey: ['default-profile'], queryFn: api.defaultProfile })
+  const profiles = useQuery(profilesQuery)
+  const def = useQuery(defaultProfileQuery)
   const [picked, setPicked] = useState<string | null>(null)
   const edit = useEditor()
   const inherited = seriesProfileId || def.data?.profileId || 0

@@ -26,6 +26,9 @@ import {
 } from '@tabler/icons-react'
 import { useLocalStorage } from '@mantine/hooks'
 import { api } from '../api'
+import { seriesQueries } from '../queries'
+import { usePaged } from './usePaged'
+import { toHundredths } from '../format'
 import type {
   Edition,
   CollectedVersion,
@@ -167,7 +170,6 @@ export default function EditionBooks({
   const noun = c.type === 'chapter' ? 'chapter' : 'volume'
   const [filter, setFilter] = useState('all')
   const [viewChoice, setViewChoice] = useState<'grid' | 'list' | null>(null)
-  const [page, setPage] = useState(1)
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [anchor, setAnchor] = useState<number | null>(null)
@@ -181,10 +183,7 @@ export default function EditionBooks({
   const [split, setSplit] = useState<{ book: Book; count: string | number } | null>(null)
   const container = useRef<HTMLDivElement>(null)
 
-  const q = useQuery({
-    queryKey: ['series', seriesID, 'books', t.id],
-    queryFn: () => api.versionBooksOf(seriesID, t.id),
-  })
+  const q = useQuery(seriesQueries.books(seriesID, t.id))
   // Newest first by default: new and wanted books are what is looked for.
   // Remembered per ledger, volumes and chapters apart.
   const [order, setOrder] = useLocalStorage<'newest' | 'oldest'>({
@@ -198,10 +197,8 @@ export default function EditionBooks({
   const active = filters.find((f) => f.value === filter) ?? filters[0]
   const books = useMemo(() => all.filter(active.match), [all, active])
   const view = viewChoice ?? (all.length > GRID_FROM ? 'grid' : 'list')
-  const pages = Math.max(1, Math.ceil(books.length / PAGE_SIZE))
-  const current = Math.min(page, pages)
-  const shown =
-    view === 'list' ? books.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE) : books
+  const { page, setPage, pages, slice } = usePaged(books, PAGE_SIZE)
+  const shown = view === 'list' ? slice : books
   // A selection only ever acts on books that still exist.
   const picked = all.filter((s) => selected.has(s.book.id))
 
@@ -250,7 +247,7 @@ export default function EditionBooks({
     // The first book numbered at least that, in either order.
     const at = (list: BookStatus[]) => {
       const target = list
-        .filter((s) => s.book.numberKnown && s.book.sequenceNum >= Math.round(wantedNumber * 100))
+        .filter((s) => s.book.numberKnown && s.book.sequenceNum >= toHundredths(wantedNumber))
         .reduce<BookStatus | null>((low, s) => (!low || s.book.sequenceNum < low.book.sequenceNum ? s : low), null)
       return target ? list.indexOf(target) : -1
     }
@@ -280,8 +277,8 @@ export default function EditionBooks({
     const from = Number(range.from)
     const to = Number(range.to)
     if (range.from === '' || range.to === '' || Number.isNaN(from) || Number.isNaN(to)) return
-    const low = Math.round(Math.min(from, to) * 100)
-    const high = Math.round(Math.max(from, to) * 100)
+    const low = toHundredths(Math.min(from, to))
+    const high = toHundredths(Math.max(from, to))
     setSelected(
       new Set(
         all
@@ -599,7 +596,7 @@ export default function EditionBooks({
         </div>
       )}
       {view === 'list' && pages > 1 && (
-        <Pagination size="sm" total={pages} value={current} onChange={setPage} />
+        <Pagination size="sm" total={pages} value={page} onChange={setPage} />
       )}
       {split && (
         <Modal

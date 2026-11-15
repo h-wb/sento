@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { Alert, Button, Group, Modal, Stack, Text } from '@mantine/core'
+import { errorMessage } from '../ui'
 
 type Action = { title: string; message: ReactNode; label: string; onConfirm: () => Promise<unknown> }
 
@@ -15,7 +16,7 @@ export function useConfirmAction() {
     setPending(true)
     setError(null)
     try { await action.onConfirm(); setAction(null) }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    catch (e) { setError(errorMessage(e)) }
     finally { setPending(false) }
   }
   // Mounted only while asking: a dialog that is already mounted would also

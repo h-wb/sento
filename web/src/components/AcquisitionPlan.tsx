@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Alert, Anchor, Badge, Button, Checkbox, Group, NumberInput, Paper, Popover, Stack, Text, Tooltip, UnstyledButton } from '@mantine/core'
-import { api, fmtNum, fmtSize, type ReleaseCandidate } from '../api'
+import { api, type ReleaseCandidate } from '../api'
+import { fmtNum, fmtSize, plural } from '../format'
+import { errorMessage } from '../ui'
 import type { AcquisitionPlan as Plan, PlanBook, PlanOutcome, PlanPick, SearchScope } from '../types/service'
 import type { BookRef } from '../types/store'
 import CandidateList from './CandidateList'
@@ -30,7 +32,7 @@ const outcomeBadges: Record<string, [string, string]> = {
   skipped: ['gray', 'Skipped'],
   failed: ['red', 'Failed'],
 }
-const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
+const count = (n: number, noun: string) => `${n} ${plural(n, noun)}`
 
 export default function AcquisitionPlan({ plan, candidates, searching = false, seriesID, ledger, scope, busy, onGrab, onUnblock, onChanged, onBusyChange }: {
   plan: Plan
@@ -132,7 +134,7 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
       setOutcomes(response.outcomes ?? [])
       onChanged()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorMessage(e))
     } finally { setSending(false); onBusyChange(false) }
   }
   const total = plan.books.length

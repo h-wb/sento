@@ -25,6 +25,9 @@ import {
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
+import { invalidateLibrary, seriesQueries } from '../queries'
+import { plural } from '../format'
+import { errorMessage } from '../ui'
 import type {
   Edition,
   CollectedVersion,
@@ -76,22 +79,10 @@ export default function EditionManager({
 }: Props) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})
-  const versions = useQuery({
-    queryKey: ['series', seriesID, 'versions'],
-    queryFn: () => api.versions(seriesID),
-  })
-  const overview = useQuery({
-    queryKey: ['series', seriesID, 'edition-overview'],
-    queryFn: () => api.editionOverview(seriesID),
-  })
-  const coverage = useQuery({
-    queryKey: ['series', seriesID, 'coverage'],
-    queryFn: () => api.coverage(seriesID),
-  })
-  const readerNames = useQuery({
-    queryKey: ['series', seriesID, 'reader-names'],
-    queryFn: () => api.readerNames(seriesID),
-  })
+  const versions = useQuery(seriesQueries.versions(seriesID))
+  const overview = useQuery(seriesQueries.overview(seriesID))
+  const coverage = useQuery(seriesQueries.coverage(seriesID))
+  const readerNames = useQuery(seriesQueries.readerNames(seriesID))
   // A card's series name in readers, when it is not just the series title.
   const readerName = (versionId: number) => {
     const name = readerNames.data?.find((n) => n.versionId === versionId)?.fields.series
@@ -107,11 +98,7 @@ export default function EditionManager({
   const [busy, setBusy] = useState(false)
   const { confirm, confirmation } = useConfirmAction()
   const changed = async () => {
-    await Promise.all([
-      qc.invalidateQueries({ queryKey: ['series', seriesID] }),
-      qc.invalidateQueries({ queryKey: ['review'] }),
-      qc.invalidateQueries({ queryKey: ['activity'] }),
-    ])
+    await invalidateLibrary(qc)
   }
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true)
@@ -120,7 +107,7 @@ export default function EditionManager({
       await fn()
       await changed()
     } catch (e) {
-      setError(String(e))
+      setError(errorMessage(e))
     } finally {
       setBusy(false)
     }
@@ -133,10 +120,7 @@ export default function EditionManager({
         a.editionName.localeCompare(b.editionName),
     )
   const pending = versions.isPending || overview.isPending
-  const details = useQuery({
-    queryKey: ['series', seriesID, 'version-books'],
-    queryFn: () => api.versionBooks(seriesID),
-  })
+  const details = useQuery(seriesQueries.versionBooks(seriesID))
   const allBooks = Object.values(details.data ?? {}).flat()
   const refused = (versionId: number) => refusedFiles(versionId, allBooks)
   const [correcting, setCorrecting] = useState<{ fileIds: number[]; hint: string } | null>(null)
@@ -206,7 +190,7 @@ export default function EditionManager({
               const stats = summary(t.id)
               const owned = stats?.owned ?? 0
               const total = stats?.total ?? 0
-              const noun = (c.type === 'chapter' ? 'chapter' : 'volume') + (total === 1 ? '' : 's')
+              const noun = plural(total, c.type === 'chapter' ? 'chapter' : 'volume')
               // With one or two cards there is nothing to scan past, but a
               // card with nothing on disk and nothing wanted (chapters the
               // volumes already cover) is only a wall of paused numbers.

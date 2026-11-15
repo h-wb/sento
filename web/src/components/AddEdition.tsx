@@ -14,6 +14,8 @@ import {
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { api, type Edition } from '../api'
+import { seriesQueries } from '../queries'
+import { toHundredths } from '../format'
 import type { Series } from '../types/store'
 import type { SeriesPublisher } from '../types/service'
 import { EditorModal } from './EditorModal'
@@ -67,10 +69,7 @@ export default function AddEdition({
   const [cutoff, setCutoff] = useState<number | string>(0)
   const [more, setMore] = useState(false)
 
-  const versions = useQuery({
-    queryKey: ['series', seriesID, 'versions'],
-    queryFn: () => api.versions(seriesID),
-  })
+  const versions = useQuery(seriesQueries.versions(seriesID))
   // The catalog's edition names, when it can be reached; any name works.
   const catalogEditions =
     useQuery({
@@ -105,7 +104,7 @@ export default function AddEdition({
             type: ctype,
             basedOn: basedOn ? Number(basedOn) : 0,
             volumes: count,
-            cutoffNum: ctype === 'chapter' ? Math.round((Number(cutoff) || 0) * 100) : 0,
+            cutoffNum: ctype === 'chapter' ? toHundredths(Number(cutoff) || 0) : 0,
             monitored: true,
           })
           .then((e) => {

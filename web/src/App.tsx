@@ -47,6 +47,8 @@ import {
 import { useIsFetching, useQuery } from '@tanstack/react-query'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api'
+import { seriesQueries } from './queries'
+import { plural } from './format'
 import { versionLabel } from './ui'
 import classes from './App.module.css'
 import { AddSeriesCtx } from './addSeries'
@@ -117,7 +119,7 @@ export default function App() {
   const health = useQuery({ queryKey: ['health'], queryFn: api.healthChecks, refetchInterval: 60_000 })
   const activity = useActivity()
   // Cached library list, shared with LibraryPage — powers ⌘K series search.
-  const seriesList = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
+  const seriesList = useQuery(seriesQueries.list())
   const activityCount = activityCounts(activity.data)
   const active = activityCount.attention || activityCount.progress
   const healthy = !status.isError && status.data?.database.ok === true
@@ -203,7 +205,7 @@ export default function App() {
   ]
 
   const healthIssues = health.data?.issues ?? []
-  const healthSummary = `${healthIssues.length} health ${healthIssues.length === 1 ? 'issue' : 'issues'}`
+  const healthSummary = `${healthIssues.length} health ${plural(healthIssues.length, 'issue')}`
   // The count is announced as a description so the link keeps its name.
   const healthBadge =
     healthIssues.length > 0 ? (
@@ -231,7 +233,7 @@ export default function App() {
           healthBadge
         ) : undefined
       }
-      aria-description={l.to === '/system' && healthIssues.length > 0 ? healthSummary : l.to === '/queue' && activityCount.attention > 0 ? `${activityCount.attention} ${activityCount.attention === 1 ? 'issue needs' : 'issues need'} attention` : undefined}
+      aria-description={l.to === '/system' && healthIssues.length > 0 ? healthSummary : l.to === '/queue' && activityCount.attention > 0 ? `${activityCount.attention} ${plural(activityCount.attention, 'issue needs', 'issues need')} attention` : undefined}
       active={isActive(l.to)}
       onClick={closeNav}
     />

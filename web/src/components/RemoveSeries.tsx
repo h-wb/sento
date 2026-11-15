@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Alert, Button, Checkbox, Group, List, Modal, Stack, Text } from '@mantine/core'
 import { api } from '../api'
-import { notify } from '../ui'
+import { plural } from '../format'
+import { errorMessage, notify } from '../ui'
 
 // RemoveSeries asks before removing one or several series, and what goes
 // with them: their files (on by default), and their torrents (opt in:
@@ -25,7 +26,7 @@ export function RemoveSeries({
   const [error, setError] = useState('')
   // What was asked for but stayed; shown before the dialog closes.
   const [kept, setKept] = useState<string[] | null>(null)
-  const them = ids.length === 1 ? 'its' : 'their'
+  const them = plural(ids.length, 'its', 'their')
   const submit = async () => {
     setPending(true)
     setError('')
@@ -36,8 +37,8 @@ export function RemoveSeries({
       notify.ok(
         [
           ids.length === 1 ? `Removed ${name ?? 'the series'}` : `Removed ${ids.length} series`,
-          deleteFiles && `${files} file${files === 1 ? '' : 's'} deleted`,
-          removeDownloads && `${torrents} torrent${torrents === 1 ? '' : 's'} removed`,
+          deleteFiles && `${files} ${plural(files, 'file')} deleted`,
+          removeDownloads && `${torrents} ${plural(torrents, 'torrent')} removed`,
         ]
           .filter(Boolean)
           .join(' · '),
@@ -46,7 +47,7 @@ export function RemoveSeries({
       if (left.length) setKept(left)
       else removed()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorMessage(e))
     } finally {
       setPending(false)
     }

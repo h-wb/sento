@@ -16,8 +16,9 @@ import {
 import { useMediaQuery } from '@mantine/hooks'
 import { useQueryClient } from '@tanstack/react-query'
 import { IconFile, IconListSearch, IconRefresh, IconSearch, IconTrash } from '@tabler/icons-react'
-import { api, fmtNum, fmtSize, type ReleaseCandidate, type SeriesFile } from '../api'
-import { notify } from '../ui'
+import { api, type ReleaseCandidate, type SeriesFile } from '../api'
+import { fmtNum, fmtSize, plural } from '../format'
+import { errorMessage, notify } from '../ui'
 import CandidateList from './CandidateList'
 import AcquisitionPlan from './AcquisitionPlan'
 import type { EditionStart } from './AddEdition'
@@ -220,7 +221,7 @@ function Inner({
           prev
             ? {
                 ...prev,
-                errors: [...prev.errors, e instanceof Error ? e.message : String(e)],
+                errors: [...prev.errors, errorMessage(e)],
               }
             : prev,
         )
@@ -395,11 +396,11 @@ function Inner({
                     <Text size="sm" role="status">
                       {searching
                         ? result.pending.length > 0
-                          ? `Searching ${result.pending.length} of ${result.searched.length} ${result.searched.length === 1 ? 'source' : 'sources'}…`
+                          ? `Searching ${result.pending.length} of ${result.searched.length} ${plural(result.searched.length, 'source')}…`
                           : 'Searching…'
                         : result.stopped
                           ? 'Search stopped. Results already received are still available.'
-                          : `Searched ${result.searched.length} ${result.searched.length === 1 ? 'source' : 'sources'}`}
+                          : `Searched ${result.searched.length} ${plural(result.searched.length, 'source')}`}
                     </Text>
                     {result.queries.length > 0 && (
                       <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
@@ -425,7 +426,7 @@ function Inner({
                         aria-expanded={showProblems}
                         onClick={() => setProblemsOpen(!showProblems)}
                       >
-                        {problems.length} {problems.length === 1 ? 'source' : 'sources'} had
+                        {problems.length} {plural(problems.length, 'source')} had
                         problems
                       </Button>
                     )}

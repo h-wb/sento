@@ -32,7 +32,9 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMediaQuery } from '@mantine/hooks'
 import { api, type Condition, type Format, type Profile, type ProfileDoc } from '../api'
+import { defaultProfileQuery, formatsQuery, invalidateProfiles, profilesQuery } from '../queries'
 import { notify, usePageTitle } from '../ui'
+import { factFlags } from '../components/factFlags'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { EmptyState } from '../components/EmptyState'
 import { useConfirmAction } from '../components/ConfirmAction'
@@ -49,19 +51,7 @@ const conditionTypes = [
   { value: 'resolution', label: 'Min resolution (px)' },
 ]
 
-const flagValues = [
-  'digital',
-  'scan',
-  'web',
-  'premium',
-  'colored',
-  'omnibus',
-  'deluxe',
-  'boxset',
-  'official',
-  'raw',
-  'complete',
-]
+const flagValues = factFlags.map((f) => f.key)
 
 // condText renders a condition compactly: "title ~ \bLQ\b", "NOT flag:raw".
 function condText(c: Condition): string {
@@ -86,16 +76,10 @@ export default function ProfilesPage() {
   usePageTitle('Profiles')
   const { confirm, confirmation } = useConfirmAction()
   const qc = useQueryClient()
-  const profiles = useQuery({
-    queryKey: ['profiles'],
-    queryFn: api.listProfiles,
-  })
-  const formats = useQuery({ queryKey: ['formats'], queryFn: api.listFormats })
+  const profiles = useQuery(profilesQuery)
+  const formats = useQuery(formatsQuery)
   const formatName = (id: number) => formats.data?.find((f) => f.id === id)?.name ?? `format ${id}`
-  const defaultProfile = useQuery({
-    queryKey: ['default-profile'],
-    queryFn: api.defaultProfile,
-  })
+  const defaultProfile = useQuery(defaultProfileQuery)
 
   const [editProfile, setEditProfile] = useState<Profile | 'new' | null>(null)
   // ?profile=<id> opens that profile (a search's "Open profile" link).
@@ -110,9 +94,7 @@ export default function ProfilesPage() {
   const [importOpen, setImportOpen] = useState(false)
 
   const invalidate = () => {
-    void qc.invalidateQueries({ queryKey: ['profiles'] })
-    void qc.invalidateQueries({ queryKey: ['formats'] })
-    void qc.invalidateQueries({ queryKey: ['default-profile'] })
+    void invalidateProfiles(qc)
   }
   const fail = (e: Error) => notify.err(e)
 

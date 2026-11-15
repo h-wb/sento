@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { fixtureURL } from '../playwright.config'
 import type { ReleaseCandidate } from '../src/types/service'
 import type { BlocklistEntry, QueueItem } from '../src/types/store'
+import { addSeries } from './helpers'
 
 test('blocked releases can be reconsidered in search, selected, or cleared together', async ({ page, request }, testInfo) => {
   const indexer = await request.post('/api/v1/indexers', { data: {
@@ -10,9 +11,7 @@ test('blocked releases can be reconsidered in search, selected, or cleared toget
   } })
   expect(indexer.ok()).toBeTruthy()
   const { id: indexerID } = await indexer.json()
-  const added = await request.post('/api/v1/series/', { data: { mangabakaId: 103, monitor: 'all' } })
-  expect(added.ok()).toBeTruthy()
-  const { id } = await added.json()
+  const id = await addSeries(request, 103)
   const blocks = async (): Promise<BlocklistEntry[]> => (await request.get('/api/v1/blocklist')).json()
   try {
     const search = await request.post(`/api/v1/series/${id}/search`, { data: { ledger: 'volume', dryRun: true } })

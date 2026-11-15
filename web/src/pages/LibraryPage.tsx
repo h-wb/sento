@@ -41,8 +41,10 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api'
+import { seriesQueries } from '../queries'
 import type { Series } from '../types/store'
-import { fmtWhen, notify, usePageTitle } from '../ui'
+import { fmtWhen } from '../format'
+import { notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { useAddSeries } from '../addSeries'
 import { RemoveSeries } from '../components/RemoveSeries'
@@ -71,7 +73,7 @@ export default function LibraryPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const openAddSeries = useAddSeries()
-  const { data: series, error, isPending, refetch } = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
+  const { data: series, error, isPending, refetch } = useQuery(seriesQueries.list())
   // Under ['series'], so whatever refreshes the list refreshes these too.
   const { data: progressRows } = useQuery({ queryKey: ['series', 'progress'], queryFn: api.libraryProgress })
   const progress = new Map((progressRows ?? []).map((p) => [p.seriesId, p]))

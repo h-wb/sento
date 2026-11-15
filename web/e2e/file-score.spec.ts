@@ -3,11 +3,10 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { CollectedVersion, File as SeriesFile } from '../src/types/store'
 import type { BookStatus } from '../src/types/service'
+import { addSeries } from './helpers'
 
 test('file details show current profile scores and refresh after profile or fact changes', async ({ page, request }) => {
-  const added = await request.post('/api/v1/series/', { data: { mangabakaId: 103, monitor: 'all' } })
-  expect(added.ok()).toBeTruthy()
-  const { id } = await added.json()
+  const id = await addSeries(request, 103)
   let profileId = 0
   let formatId = 0
   try {

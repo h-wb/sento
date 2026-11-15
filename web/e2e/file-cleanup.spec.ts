@@ -1,14 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { addSeries } from './helpers'
 
 test('file cleanup previews protection, confirms retention, and restores from trash', async ({
   page,
   request,
 }) => {
-  const added = await request.post('/api/v1/series/', {
-    data: { mangabakaId: 104, monitor: 'all' },
-  })
-  expect(added.ok()).toBeTruthy()
-  const { id } = await added.json()
+  const id = await addSeries(request, 104)
   const eligible = {
     fileId: 20001,
     path: '/library/Example/old.cbz',

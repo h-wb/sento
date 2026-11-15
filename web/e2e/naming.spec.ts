@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { addSeries } from './helpers'
 
 const idle = { queued: false, running: false, total: 0, done: 0, renamed: 0, retagged: 0, series: [] }
 
@@ -68,9 +69,7 @@ test('media settings check templates and lead from a save to organizing', async 
 // save leads straight to the preview of the files that still carry the old
 // name, and the card says what readers will show.
 test('an edition named for readers offers to organize its files', async ({ page, request }) => {
-  const added = await request.post('/api/v1/series/', { data: { mangabakaId: 103, monitor: 'all' } })
-  expect(added.ok()).toBeTruthy()
-  const { id } = await added.json()
+  const id = await addSeries(request, 103)
   try {
     const file = {
       id: 1,

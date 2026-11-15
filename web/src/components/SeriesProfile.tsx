@@ -2,12 +2,13 @@ import { Button, Menu } from '@mantine/core'
 import { IconAdjustmentsHorizontal } from '@tabler/icons-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
+import { defaultProfileQuery, profilesQuery } from '../queries'
 import { notify } from '../ui'
 
 // ProfileBarButton shows the series' release profile in the action bar
 // and switches it from a dropdown. profileId 0 = the instance default.
 export function ProfileBarButton({ seriesID, profileId }: { seriesID: number; profileId: number }) {
-  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
+  const profiles = useQuery(profilesQuery)
   const current = profiles.data?.find((p) => p.id === profileId)
   return (
     <Menu position="bottom-start" withinPortal>
@@ -33,8 +34,8 @@ export function ProfileBarButton({ seriesID, profileId }: { seriesID: number; pr
 // ProfileMenuItems picks the series' release profile.
 export function ProfileMenuItems({ seriesID, profileId }: { seriesID: number; profileId: number }) {
   const qc = useQueryClient()
-  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
-  const def = useQuery({ queryKey: ['default-profile'], queryFn: api.defaultProfile })
+  const profiles = useQuery(profilesQuery)
+  const def = useQuery(defaultProfileQuery)
   const effective = profileId || def.data?.profileId || 0
   const assign = (id: number) =>
     api

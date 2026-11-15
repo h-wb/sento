@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Text } from '@mantine/core'
-import { api } from '../api'
+import { invalidateLibrary, seriesQueries } from '../queries'
 import type { ReviewItem } from '../types/store'
 import { EditorModal } from './EditorModal'
 import { MappingEditor } from './MappingEditor'
@@ -9,11 +9,11 @@ import { QueryFeedback } from './QueryFeedback'
 export function FileReviewDialog({ item, close }: { item: ReviewItem; close: () => void }) {
   const qc = useQueryClient()
   // Shared series caches, so opening from the series page is instant.
-  const detail = useQuery({ queryKey: ['series', item.seriesId], queryFn: () => api.getSeries(item.seriesId) })
-  const files = useQuery({ queryKey: ['series', item.seriesId, 'files'], queryFn: () => api.files(item.seriesId) })
-  const versions = useQuery({ queryKey: ['series', item.seriesId, 'versions'], queryFn: () => api.versions(item.seriesId) })
-  const coverage = useQuery({ queryKey: ['series', item.seriesId, 'coverage'], queryFn: () => api.coverage(item.seriesId) })
-  const books = useQuery({ queryKey: ['series', item.seriesId, 'version-books'], queryFn: () => api.versionBooks(item.seriesId) })
+  const detail = useQuery(seriesQueries.detail(item.seriesId))
+  const files = useQuery(seriesQueries.files(item.seriesId))
+  const versions = useQuery(seriesQueries.versions(item.seriesId))
+  const coverage = useQuery(seriesQueries.coverage(item.seriesId))
+  const books = useQuery(seriesQueries.versionBooks(item.seriesId))
   const queries = [detail, files, versions, coverage, books]
   const file = files.data?.find((f) => f.id === item.itemId)
   const error =
@@ -51,11 +51,7 @@ export function FileReviewDialog({ item, close }: { item: ReviewItem; close: () 
       proposal={item.proposal}
       hint={item.hint}
       applied={async () => {
-        await Promise.all(
-          ['activity', 'review', 'queue', 'series'].map((key) =>
-            qc.invalidateQueries({ queryKey: [key] }),
-          ),
-        )
+        await invalidateLibrary(qc)
         close()
       }}
       close={close}

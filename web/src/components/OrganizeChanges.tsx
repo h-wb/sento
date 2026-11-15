@@ -1,4 +1,5 @@
 import { Stack, Text } from '@mantine/core'
+import { plural } from '../format'
 import type { FileChange } from '../types/service'
 
 // What an organize run would do to each file, for the changes the user
@@ -52,7 +53,7 @@ export function SkippedFiles({ changes }: { changes: FileChange[] }) {
   if (skipped === 0) return null
   return (
     <Text size="xs" c="dimmed">
-      {skipped} {skipped === 1 ? 'file is' : 'files are'} left alone:{' '}
+      {skipped} {plural(skipped, 'file is', 'files are')} left alone:{' '}
       {[...reasons]
         .map(([reason, n]) => `${reason.replace(/\.$/, '')}${reasons.size > 1 ? ` (${n})` : ''}`)
         .join(' · ')}

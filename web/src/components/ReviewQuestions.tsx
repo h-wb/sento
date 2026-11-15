@@ -3,12 +3,13 @@ import { Alert, Button, Group, Stack, Text } from '@mantine/core'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
+import { invalidateLibrary } from '../queries'
 import type { Edition, ReviewItem } from '../types/store'
 import { CatalogLink } from './CatalogLink'
 import { fileName } from './editionText'
 import { useReviewDialogs } from './reviewDialogs'
 import { useConfirmAction } from './ConfirmAction'
-import { notify } from '../ui'
+import { errorMessage, notify } from '../ui'
 
 // One release's files waiting for review: pack-level actions above the
 // per-file questions, which stay visible and answerable on their own.
@@ -77,19 +78,14 @@ export default function ReviewQuestions({
     try {
       await fn()
     } catch (e) {
-      setError(String(e))
+      setError(errorMessage(e))
     } finally {
       await invalidate()
       setBusy(false)
     }
   }
   const invalidate = async () => {
-    await Promise.all([
-      qc.invalidateQueries({ queryKey: ['review'] }),
-      qc.invalidateQueries({ queryKey: ['activity'] }),
-      qc.invalidateQueries({ queryKey: ['series'] }),
-      qc.invalidateQueries({ queryKey: ['queue'] }),
-    ])
+    await invalidateLibrary(qc)
   }
   const chapters = items.filter((i) => i.kind === 'chapter')
   const proposed = items.filter((i) => i.proposal)
@@ -378,11 +374,7 @@ export default function ReviewQuestions({
           catalogId={link.item.relatedId}
           done={async () => {
             setLink(null)
-            await Promise.all([
-              qc.invalidateQueries({ queryKey: ['review'] }),
-              qc.invalidateQueries({ queryKey: ['activity'] }),
-              qc.invalidateQueries({ queryKey: ['series'] }),
-            ])
+            await invalidateLibrary(qc)
           }}
           close={() => setLink(null)}
         />

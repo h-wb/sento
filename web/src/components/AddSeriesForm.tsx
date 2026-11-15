@@ -3,6 +3,8 @@ import { Anchor, Badge, Button, Card, Divider, Group, Image, Select, Stack, Text
 import { IconBooks, IconSearch } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type LookupResult } from '../api'
+import { profilesQuery, seriesQueries } from '../queries'
+import { plural } from '../format'
 import { notify } from '../ui'
 import { EmptyState } from './EmptyState'
 import { QueryFeedback } from './QueryFeedback'
@@ -16,8 +18,8 @@ export function AddSeriesForm({ onDone, onOpenImporter }: {
   const [monitor, setMonitor] = useState('default')
   const [profileId, setProfileId] = useState(0)
   const [searchedQuery, setSearchedQuery] = useState('')
-  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
-  const existing = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
+  const profiles = useQuery(profilesQuery)
+  const existing = useQuery(seriesQueries.list())
   const inLibrary = new Map((existing.data ?? []).map((s) => [s.mangabakaId, s.id]))
   const lookup = useMutation({ mutationFn: (q: string) => api.lookup(q) })
   const add = useMutation({
@@ -67,7 +69,7 @@ export function AddSeriesForm({ onDone, onOpenImporter }: {
       <QueryFeedback pending={lookup.isPending} error={lookup.error} onRetry={search} />
       {!lookup.isPending && !lookup.error && lookup.data && (
         <Stack gap="sm" aria-live="polite">
-          <Text size="xs" c="dimmed">{lookup.data.length} {lookup.data.length === 1 ? 'result' : 'results'} for “{searchedQuery}”</Text>
+          <Text size="xs" c="dimmed">{lookup.data.length} {plural(lookup.data.length, 'result')} for “{searchedQuery}”</Text>
           {lookup.data.map((r) => {
             const existingID = inLibrary.get(r.mangabakaId)
             return (

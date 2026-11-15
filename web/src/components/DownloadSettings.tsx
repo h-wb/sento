@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Alert, Button, Checkbox, Group, NumberInput, Select, Stack, Switch } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '../api'
+import { profilesQuery } from '../queries'
+import { fromHundredths, toHundredths } from '../format'
 import type { CollectedVersion } from '../types/store'
 import { EditorModal } from './EditorModal'
 import { useEditor } from './useEditor'
@@ -20,7 +21,7 @@ export function DownloadSettings({
   close: () => void
 }) {
   const [v, set] = useState(value)
-  const q = useQuery({ queryKey: ['profiles'], queryFn: api.listProfiles })
+  const q = useQuery(profilesQuery)
   const edit = useEditor()
   return (
     <EditorModal
@@ -55,10 +56,10 @@ export function DownloadSettings({
                 <NumberInput
                   label="Skip through chapter"
                   description="Skip this chapter and earlier ones. Use 0 to skip through chapter 0."
-                  value={v.cutoffNum / 100}
+                  value={fromHundredths(v.cutoffNum)}
                   min={0}
                   decimalScale={2}
-                  onChange={(n) => set({ ...v, cutoffNum: Math.round(Number(n) * 100) })}
+                  onChange={(n) => set({ ...v, cutoffNum: toHundredths(Number(n)) })}
                 />
               )}
               <Checkbox

@@ -3,6 +3,7 @@ import { Alert, Button, Checkbox, Group, Modal, Stack, Text, UnstyledButton } fr
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
+import { plural } from '../format'
 import { useOrganizeRun } from '../useOrganizeRun'
 import { OrganizeChanges, SkippedFiles } from './OrganizeChanges'
 import OrganizeRunStatus from './OrganizeRunStatus'
@@ -129,7 +130,7 @@ export default function OrganizeLibrary({
               loading={apply.isPending}
               disabled={selected === 0}
             >
-              Apply to {selected} {selected === 1 ? 'file' : 'files'}
+              Apply to {selected} {plural(selected, 'file')}
             </Button>
           )}
         </Group>

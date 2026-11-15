@@ -1,11 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { activityFixture } from './activity-fixtures'
+import { addSeries } from './helpers'
 
 for (const width of [390, 1280]) {
   test(`download plan edits coverage and reports partial outcomes at ${width}px`, async ({ page, request }, testInfo) => {
-    const added = await request.post('/api/v1/series/', { data: { mangabakaId: 103, monitor: 'all' } })
-    expect(added.ok()).toBeTruthy()
-    const { id } = await added.json()
+    const id = await addSeries(request, 103)
     try {
       await page.setViewportSize({ width, height: 844 })
       let submitted: { picks: { key: string; books: { bookId: number }[]; requestedReplacements?: { bookId: number }[] }[] } | undefined
@@ -94,9 +93,7 @@ test('looking for a replacement leaves the stalled download alone', async ({ pag
 })
 
 test('a local edition is offered the catalog edition that matches it', async ({ page, request }) => {
-  const added = await request.post('/api/v1/series/', { data: { mangabakaId: 103, monitor: 'all' } })
-  expect(added.ok()).toBeTruthy()
-  const { id } = await added.json()
+  const id = await addSeries(request, 103)
   try {
     const detail = await (await request.get(`/api/v1/series/${id}/`)).json()
     const catalog = detail.editions.find((e: { editionName: string; type: string }) => e.editionName === 'Standard Edition' && e.type === 'volume')

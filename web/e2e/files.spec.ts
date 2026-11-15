@@ -3,15 +3,14 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { CollectedVersion, File as SeriesFile } from '../src/types/store'
 import { reviewArchives } from './review-choice-fixtures'
+import { addSeries } from './helpers'
 
 // Files whose names say "Colored" land on a card whose profile refuses
 // color. The card says so and offers the ways out; saying the files were
 // read wrong gives them to the card at once, and the Files table shows what
 // each file is used for and acts on a selection.
 test('a card explains refused files, and they can be corrected and moved together', async ({ page, request }) => {
-  const added = await request.post('/api/v1/series/', { data: { mangabakaId: 103, monitor: 'all' } })
-  expect(added.ok()).toBeTruthy()
-  const { id } = await added.json()
+  const id = await addSeries(request, 103)
   let profileId = 0
   try {
     const detail = await (await request.get(`/api/v1/series/${id}/`)).json()

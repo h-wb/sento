@@ -20,6 +20,7 @@ import { IconChevronDown, IconChevronRight, IconPlus, IconX } from '@tabler/icon
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, type Edition, type SeriesIndexerView } from '../api'
+import { plural } from '../format'
 import { QueryFeedback } from './QueryFeedback'
 import { EmptyState } from './EmptyState'
 import classes from './SeriesSources.module.css'
@@ -125,7 +126,7 @@ export function SeriesSources({
               <Text size="sm" c="dimmed">
                 {showDefaults
                   ? 'Hide indexers on their defaults'
-                  : `${defaults.length} on ${defaults.length === 1 ? 'its' : 'their'} defaults (${defaultsOn} enabled)`}
+                  : `${defaults.length} on ${plural(defaults.length, 'its', 'their')} defaults (${defaultsOn} enabled)`}
               </Text>
             </UnstyledButton>
           )}

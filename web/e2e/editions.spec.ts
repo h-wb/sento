@@ -1,14 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { addSeries } from './helpers'
 
 test('editions retain independent versions, editable books, and mobile layout', async ({
   page,
   request,
 }, testInfo) => {
-  const added = await request.post('/api/v1/series/', {
-    data: { mangabakaId: 103, monitor: 'all' },
-  })
-  expect(added.ok()).toBeTruthy()
-  const { id } = await added.json()
+  const id = await addSeries(request, 103)
   try {
     await page.goto(`/series/${id}`)
     await expect(page.getByRole('tab', { name: 'Editions', exact: true })).toHaveAttribute(
@@ -155,11 +152,7 @@ test('a long chapter edition is browsed as a grid with filters, ranges and jump'
   page,
   request,
 }, testInfo) => {
-  const added = await request.post('/api/v1/series/', {
-    data: { mangabakaId: 103, monitor: 'all' },
-  })
-  expect(added.ok()).toBeTruthy()
-  const { id } = await added.json()
+  const id = await addSeries(request, 103)
   try {
     await page.goto(`/series/${id}`)
     // Chapters the volumes cover are all paused: the card opens folded.
@@ -220,11 +213,7 @@ test('organize files previews renames and metadata updates before applying', asy
   page,
   request,
 }, testInfo) => {
-  const added = await request.post('/api/v1/series/', {
-    data: { mangabakaId: 103, monitor: 'all' },
-  })
-  expect(added.ok()).toBeTruthy()
-  const { id } = await added.json()
+  const id = await addSeries(request, 103)
   try {
     const file = {
       id: 1,
@@ -290,11 +279,7 @@ test('an edition groups its catalog collections, which can be separated and merg
   page,
   request,
 }, testInfo) => {
-  const added = await request.post('/api/v1/series/', {
-    data: { mangabakaId: 103, monitor: 'all' },
-  })
-  expect(added.ok()).toBeTruthy()
-  const { id } = await added.json()
+  const id = await addSeries(request, 103)
   const standard = async () =>
     (
       (await (await request.get(`/api/v1/series/${id}/`)).json()) as {
@@ -413,11 +398,7 @@ test('a book shows its MangaBaka copies and marks what was edited', async ({
   page,
   request,
 }, testInfo) => {
-  const added = await request.post('/api/v1/series/', {
-    data: { mangabakaId: 103, monitor: 'all' },
-  })
-  expect(added.ok()).toBeTruthy()
-  const { id } = await added.json()
+  const id = await addSeries(request, 103)
   try {
     await page.goto(`/series/${id}`)
     const card = page.locator('.mantine-Card-root').filter({ hasText: 'Standard Edition' }).first()

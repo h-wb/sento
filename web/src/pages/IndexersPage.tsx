@@ -39,9 +39,10 @@ import {
   type ProwlarrIndexer,
   type Source,
 } from '../api'
+import { connectionsQuery, extensionsQuery, invalidateExtensions } from '../queries'
 import SourcePrefsFields from '../components/SourcePrefsFields'
 import { IndexerSearchTest } from '../components/IndexerSearchTest'
-import { notify, usePageTitle } from '../ui'
+import { errorMessage, notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { EmptyState } from '../components/EmptyState'
@@ -58,18 +59,13 @@ export default function IndexersPage() {
   // The sidecar's extension catalog: drives the version/update line on
   // extension-source rows and the Manage extensions dialog. Undefined
   // (query failed) when no sidecar is configured — then neither shows.
-  const extensions = useQuery({ queryKey: ['extensions'], queryFn: api.extensions })
+  const extensions = useQuery(extensionsQuery)
   const extByPkg = new Map((extensions.data ?? []).map((e) => [e.pkgName, e]))
   const [editing, setEditing] = useState<IndexerView | 'new' | null>(null)
   const [duplicating, setDuplicating] = useState<IndexerView | null>(null)
   const [managing, setManaging] = useState(false)
   const [searchTesting, setSearchTesting] = useState<IndexerView | null>(null)
-  const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['health'] })
-    // Saving an entry may have installed its extension on the host.
-    queryClient.invalidateQueries({ queryKey: ['extensions'] })
-    return queryClient.invalidateQueries({ queryKey: ['indexers'] })
-  }
+  const refresh = () => invalidateExtensions(queryClient)
 
   const patch = useMutation({
     mutationFn: ({ id, p }: { id: number; p: Parameters<typeof api.patchIndexer>[1] }) =>
@@ -283,14 +279,11 @@ export default function IndexersPage() {
 function ManageExtensionsModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient()
   const extensions = useQuery({
-    queryKey: ['extensions'],
-    queryFn: api.extensions,
+    ...extensionsQuery,
     refetchOnMount: 'always',
   })
   const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['extensions'] })
-    queryClient.invalidateQueries({ queryKey: ['indexers'] })
-    queryClient.invalidateQueries({ queryKey: ['health'] })
+    invalidateExtensions(queryClient)
   }
   const update = useMutation({
     mutationFn: (pkg: string) => api.installExtension(pkg),
@@ -468,7 +461,7 @@ function IndexerModal({
     language: init?.language ?? '',
     downloadClient: init?.downloadClient ?? '',
   })
-  const connections = useQuery({ queryKey: ['connections'], queryFn: api.connections })
+  const connections = useQuery(connectionsQuery)
   const downloadClients = connections.data?.downloadClients ?? []
   const [source, setSource] = useState<SourceForm>({
     sourceId: init?.sourceId ?? '',
@@ -483,8 +476,7 @@ function IndexerModal({
   // sources come with the catalog, so nothing is installed until the
   // indexer is actually added.
   const extensions = useQuery({
-    queryKey: ['extensions'],
-    queryFn: api.extensions,
+    ...extensionsQuery,
     enabled: protocol === 'source' && !isEdit,
   })
   // Adding a repo from inside the dialog, for the case where the catalog
@@ -508,8 +500,7 @@ function IndexerModal({
             : '',
       )
       setNewRepo('')
-      queryClient.invalidateQueries({ queryKey: ['extensions'] })
-      queryClient.invalidateQueries({ queryKey: ['extension-repos'] })
+      invalidateExtensions(queryClient)
     },
     onError: notify.err,
   })
@@ -764,7 +755,7 @@ function IndexerModal({
           // No host answering: nothing can be listed, and the fix is on
           // another page.
           <Alert color="yellow" title="Extension sources are not available">
-            <Text size="sm">{String(extensions.error)}</Text>
+            <Text size="sm">{errorMessage(extensions.error)}</Text>
             <Text size="sm" mt={4}>
               Connect the extensions sidecar on the{' '}
               <Link to="/connections" onClick={onClose}>

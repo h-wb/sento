@@ -1,4 +1,5 @@
 import { Alert, Button, Skeleton, Stack, Text } from '@mantine/core'
+import { errorMessage } from '../ui'
 
 // Loading and failure are distinct from a successfully loaded empty list.
 export function QueryFeedback({ pending, error, onRetry }: {
@@ -8,7 +9,7 @@ export function QueryFeedback({ pending, error, onRetry }: {
 }) {
   if (error) return (
     <Alert color="red" title="Couldn't load this data" mb="md">
-      <Text size="sm">{error instanceof Error ? error.message : String(error)}</Text>
+      <Text size="sm">{errorMessage(error)}</Text>
       {onRetry && <Button variant="white" color="red" size="xs" mt="sm" onClick={onRetry}>Try again</Button>}
     </Alert>
   )

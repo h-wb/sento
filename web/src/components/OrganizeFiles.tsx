@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Alert, Button, Checkbox, Group, Modal, Stack, Text } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
+import { plural } from '../format'
 import { useOrganizeRun } from '../useOrganizeRun'
 import { OrganizeChanges, SkippedFiles } from './OrganizeChanges'
 import OrganizeRunStatus from './OrganizeRunStatus'
@@ -84,7 +85,7 @@ export default function OrganizeFiles({
               loading={apply.isPending}
               disabled={selected.length === 0}
             >
-              Apply to {selected.length} {selected.length === 1 ? 'file' : 'files'}
+              Apply to {selected.length} {plural(selected.length, 'file')}
             </Button>
           )}
         </Group>

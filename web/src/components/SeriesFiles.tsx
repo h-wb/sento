@@ -10,7 +10,7 @@ import {
   Text,
   TextInput,
 } from '@mantine/core'
-import { fmtSize } from '../api'
+import { fmtSize } from '../format'
 import type {
   AssetCoverage,
   CollectedVersion,
@@ -22,6 +22,7 @@ import { BulkFactsDialog } from './BulkFactsDialog'
 import { MoveFilesDialog } from './MoveFilesDialog'
 import { cardTitle, fileName } from './editionText'
 import { fileOrigin, flagLabels } from './factFlags'
+import { usePaged } from './usePaged'
 
 const pageSize = 20
 
@@ -48,7 +49,6 @@ export default function SeriesFiles({
   changed: () => Promise<void>
 }) {
   const [filter, setFilter] = useState('')
-  const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [bulk, setBulk] = useState<'facts' | 'move' | null>(null)
 
@@ -76,7 +76,7 @@ export default function SeriesFiles({
   const list = files
     .filter((f) => f.path.toLowerCase().includes(filter.toLowerCase()))
     .sort((a, b) => Number(review(b)) - Number(review(a)))
-  const shown = list.slice((page - 1) * pageSize, page * pageSize)
+  const { page, setPage, pages, slice: shown } = usePaged(list, pageSize)
   const picked = files.filter((f) => selected.has(f.id))
   const toggle = (id: number) =>
     setSelected((v) => {
@@ -204,7 +204,7 @@ export default function SeriesFiles({
       {list.length > pageSize && (
         <Pagination
           size="sm"
-          total={Math.ceil(list.length / pageSize)}
+          total={pages}
           value={page}
           onChange={setPage}
         />

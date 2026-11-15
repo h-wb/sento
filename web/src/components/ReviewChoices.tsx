@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { Alert, Badge, Button, Card, Checkbox, Group, Pagination, Select, Stack, Text, UnstyledButton } from '@mantine/core'
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import type { FileScore, ReviewBookPlan, ReviewFileOutcome, ReviewFilePlan, ReviewPlan, ReviewPlanRequest } from '../types/service'
+import { plural } from '../format'
 import { QueryFeedback } from './QueryFeedback'
 import { fileName } from './editionText'
 import { bookKey, initialChoices, useReviewChoices, useReviewPlan } from './useReviewChoices'
+import { usePaged } from './usePaged'
 
 type Props = {
   seriesID: number
@@ -59,7 +61,7 @@ export function ReviewChoices(props: Props) {
   if (!preview.data || preview.isFetching) return (
     <Stack gap="sm">
       <Text size="sm" c="dimmed">
-        Checking {props.request.files.length} incoming {props.request.files.length === 1 ? 'archive' : 'archives'} — a large pack takes a moment the first time.
+        Checking {props.request.files.length} incoming {plural(props.request.files.length, 'archive')} — a large pack takes a moment the first time.
       </Text>
       <QueryFeedback pending={preview.isPending || preview.isFetching} error={preview.error} onRetry={() => void preview.refetch()} />
     </Stack>
@@ -73,12 +75,12 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
   // With several editions in play, every choice says which one it is for.
   const severalCards = new Set(plan.files.flatMap((f) => f.books.map((b) => b.card))).size > 1
   const forCard = (b: ReviewBookPlan) => (severalCards ? `${b.label} — ${b.card}` : b.label)
-  const [page, setPage] = useState(1)
   // Big packs open as one-line summaries; a single page opens expanded,
   // where every choice is already on screen.
   const [collapsed, setCollapsed] = useState<Set<number>>(
     () => new Set(plan.files.length > pageSize ? plan.files.map((f) => f.fileId) : []),
   )
+  const { page, setPage, pages, slice } = usePaged(plan.files, pageSize)
   const { imports, kept, replacements, trash, missing, later } = counts
   // Only what will happen: six counters, five of them zero, read as noise.
   const summary = ([[imports, 'Import'], [kept, 'Keep existing'], [replacements, 'Replace'], [trash, 'Trash'], [missing, 'Still missing'], [later, 'Left for later']] as const)
@@ -170,7 +172,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
         ))}>Trash unused incoming files</Button>
       </Group>}
       {collapsible && <Text size="xs" c="dimmed">Showing {from}–{to} of {plan.files.length} files. Expand an archive to choose its books and its fate.</Text>}
-      {plan.files.slice((page - 1) * pageSize, page * pageSize).map((f, offset) => {
+      {slice.map((f, offset) => {
         const i = (page - 1) * pageSize + offset
         const open = !collapsible || !collapsed.has(f.fileId)
         const origin = [f.source, f.group].filter(Boolean).join(' · ')
@@ -195,7 +197,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
         </Card>
         )
       })}
-      {collapsible && <Pagination total={Math.ceil(plan.files.length / pageSize)} value={page} onChange={setPage} size="sm" />}
+      {collapsible && <Pagination total={pages} value={page} onChange={setPage} size="sm" />}
       {trash > 0 && <Text size="xs" c="dimmed">Only the selected incoming archives move to recoverable trash for 30 days. Download-client payloads stay in place.</Text>}
       {error && <Alert color="red">{error}<Button size="xs" variant="subtle" onClick={() => void refresh()}>Refresh preview</Button></Alert>}
       {nothingToApply && (

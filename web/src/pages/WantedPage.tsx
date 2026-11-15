@@ -4,6 +4,8 @@ import { IconCircleCheck, IconRefresh, IconSearch } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
+import { invalidateLibrary, seriesQueries } from '../queries'
+import { plural } from '../format'
 import type { WantedRow } from '../types/service'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
@@ -18,7 +20,7 @@ type Kind = 'missing' | 'upcoming' | 'upgrade'
 const kindOf = (r: WantedRow): Kind =>
   r.state === 'upgrade_eligible' ? 'upgrade' : r.availability === 'upcoming' ? 'upcoming' : 'missing'
 const kindLabel = (kind: Kind, n: number) =>
-  kind === 'upgrade' ? `${n} upgrade${n === 1 ? '' : 's'} due` : kind === 'upcoming' ? `${n} not out yet` : `${n} missing`
+  kind === 'upgrade' ? `${n} ${plural(n, 'upgrade')} due` : kind === 'upcoming' ? `${n} not out yet` : `${n} missing`
 
 // "Vol. 4–12, 14 · Extra 1": main books as ranges, anything else by name.
 function booksText(rows: WantedRow[]) {
@@ -47,9 +49,7 @@ function SeriesWanted({ rows, coverUrl }: { rows: WantedRow[]; coverUrl?: string
           ? `Queued ${queued} release${queued > 1 ? 's' : ''} for ${first.seriesTitle}`
           : `No usable release found for ${first.seriesTitle}`,
       )
-      void client.invalidateQueries({ queryKey: ['queue'] })
-      void client.invalidateQueries({ queryKey: ['activity'] })
-      void client.invalidateQueries({ queryKey: ['wanted'] })
+      void invalidateLibrary(client)
     },
     onError: notify.err,
   })
@@ -121,7 +121,7 @@ export default function WantedPage() {
     refetchInterval: 60_000,
   })
   // Already loaded by the shell for search; here only for the covers.
-  const { data: series } = useQuery({ queryKey: ['series'], queryFn: api.listSeries })
+  const { data: series } = useQuery(seriesQueries.list())
   const covers = new Map((series ?? []).map((s) => [s.id, s.coverUrl]))
 
   const rows = useMemo(() => {

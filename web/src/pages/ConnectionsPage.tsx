@@ -20,6 +20,8 @@ import { IconLock, IconPlus } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, type ConnectionSettings, type ConnectionTest } from '../api'
+import { connectionsQuery, invalidateExtensions } from '../queries'
+import { plural } from '../format'
 import type { RepoStatus } from '../types/extensions'
 import type { DownloadClientConn } from '../types/service'
 import { notify, usePageTitle } from '../ui'
@@ -46,7 +48,7 @@ export default function ConnectionsPage() {
   usePageTitle('Connections')
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState<Editing | null>(null)
-  const settings = useQuery({ queryKey: ['connections'], queryFn: api.connections })
+  const settings = useQuery(connectionsQuery)
   // Live state of what is saved, probed on load — no button to press to
   // find out whether a service is actually reachable.
   const status = useQuery({
@@ -66,11 +68,8 @@ export default function ConnectionsPage() {
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['connections'] })
     // The provider set changed: site lists and status are stale.
-    queryClient.invalidateQueries({ queryKey: ['indexer-settings'] })
+    invalidateExtensions(queryClient)
     queryClient.invalidateQueries({ queryKey: ['status'] })
-    queryClient.invalidateQueries({ queryKey: ['health'] })
-    queryClient.invalidateQueries({ queryKey: ['extensions'] })
-    queryClient.invalidateQueries({ queryKey: ['extension-repos'] })
   }
   const onSaved = () => {
     setEditing(null)
@@ -798,7 +797,7 @@ function RepoRow({
               variant="light"
               style={{ flexShrink: 0, textTransform: 'none' }}
             >
-              {repo.extensions.toLocaleString()} {repo.extensions === 1 ? 'extension' : 'extensions'}
+              {repo.extensions.toLocaleString()} {plural(repo.extensions, 'extension')}
             </Badge>
           )}
         </Group>

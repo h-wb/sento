@@ -25,6 +25,9 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
+import { invalidateLibrary } from '../queries'
+import { plural } from '../format'
+import { usePaged } from './usePaged'
 import type { ActivityDownload } from '../types/service'
 import BookDialog, { type BookSelection } from './BookDialog'
 import { QueryFeedback } from './QueryFeedback'
@@ -257,7 +260,6 @@ function BlockedReleases() {
   const { confirm, confirmation } = useConfirmAction()
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [filter, setFilter] = useState('')
-  const [page, setPage] = useState(1)
   const q = useQuery({ queryKey: ['blocklist'], queryFn: api.blocklist })
   const unblock = useMutation({
     mutationFn: (ids: number[] | 'all') => ids === 'all' ? api.unblockAll() : api.unblockReleases({ ids }),
@@ -270,9 +272,7 @@ function BlockedReleases() {
   })
   const entries = q.data ?? []
   const shown = entries.filter((b) => `${b.title ?? ''} ${b.key} ${b.reason}`.toLowerCase().includes(filter.trim().toLowerCase()))
-  const pages = Math.max(1, Math.ceil(shown.length / 25))
-  const currentPage = Math.min(page, pages)
-  const visible = shown.slice((currentPage - 1) * 25, currentPage * 25)
+  const { page, setPage, pages, slice: visible } = usePaged(shown, 25)
   const selectedIDs = entries.filter((b) => selected.has(b.id)).map((b) => b.id)
   const toggle = (ids: number[], checked: boolean) => setSelected((prev) => {
     const next = new Set(prev)
@@ -284,12 +284,12 @@ function BlockedReleases() {
       <QueryFeedback pending={q.isPending} error={q.error} onRetry={() => void q.refetch()} />
       {entries.length > 0 && <>
         <Group justify="space-between">
-          <Text size="sm">{entries.length} blocked {entries.length === 1 ? 'release' : 'releases'}</Text>
+          <Text size="sm">{entries.length} blocked {plural(entries.length, 'release')}</Text>
           <Group gap="xs">
             <Button size="compact-xs" variant="default" disabled={!selectedIDs.length || unblock.isPending}
               onClick={() => unblock.mutate(selectedIDs)}>Unblock selected ({selectedIDs.length})</Button>
             <Button size="compact-xs" variant="default" disabled={unblock.isPending} onClick={() => confirm({
-              title: `Unblock all ${entries.length} ${entries.length === 1 ? 'release' : 'releases'}?`,
+              title: `Unblock all ${entries.length} ${plural(entries.length, 'release')}?`,
               message: 'This clears every block, including manual blocks and releases outside the current filters. These releases become eligible for normal searches and automatic acquisition again. Previous failed attempts stay in History.',
               label: 'Unblock all',
               onConfirm: () => unblock.mutateAsync('all'),
@@ -332,7 +332,7 @@ function BlockedReleases() {
           </Button>
         </Group>
       ))}
-      {pages > 1 && <Pagination size="sm" total={pages} value={currentPage} onChange={setPage} />}
+      {pages > 1 && <Pagination size="sm" total={pages} value={page} onChange={setPage} />}
       {confirmation}
     </Stack>
   )
@@ -358,7 +358,6 @@ export default function ActivityPanel({
       ? value
       : (legacyFilter ?? (counts.attention > 0 ? 'attention' : 'progress'))
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
   const [blockedOpen, setBlockedOpen] = useState(false)
   const [recovery, setRecovery] = useState<{ seriesID: number; sel: BookSelection } | null>(null)
   const [attach, setAttach] = useState<ActivityDownload | null>(null)
@@ -369,11 +368,7 @@ export default function ActivityPanel({
   const [remoteID, setRemoteID] = useState('')
   const { confirm, confirmation } = useConfirmAction()
   const refresh = async () => {
-    await Promise.all(
-      ['activity', 'queue', 'series', 'review', 'blocklist'].map((key) =>
-        qc.invalidateQueries({ queryKey: [key] }),
-      ),
-    )
+    await invalidateLibrary(qc)
   }
   const mutation = useMutation({
     mutationFn: async (work: () => Promise<unknown>) => work(),
@@ -477,7 +472,7 @@ export default function ActivityPanel({
         activityTime(b.job.updatedAt || b.job.createdAt) -
           activityTime(a.job.updatedAt || a.job.createdAt) || b.job.id - a.job.id,
     )
-  const historyPage = Math.min(page, Math.max(1, Math.ceil(history.length / 30)))
+  const { page, setPage, slice: historySlice } = usePaged(history, 30)
   const shown =
     filter === 'attention'
       ? attention.length
@@ -588,7 +583,7 @@ export default function ActivityPanel({
                         {groups[0].title}
                       </Anchor>
                       <Text size="xs" c="dimmed">
-                        {groups.length} {groups.length === 1 ? 'issue' : 'issues'}
+                        {groups.length} {plural(groups.length, 'issue')}
                       </Text>
                     </Group>
                   )}
@@ -611,7 +606,7 @@ export default function ActivityPanel({
               <>
                 {history.length > 0 && (
                   <div className={classes.rows}>
-                    {history.slice((historyPage - 1) * 30, historyPage * 30).map((d) => (
+                    {historySlice.map((d) => (
                       <DownloadActivityRow
                         key={d.job.id}
                         download={d}
@@ -624,7 +619,7 @@ export default function ActivityPanel({
                 {history.length > 30 && (
                   <Pagination
                     total={Math.ceil(history.length / 30)}
-                    value={historyPage}
+                    value={page}
                     onChange={setPage}
                     size="sm"
                   />
