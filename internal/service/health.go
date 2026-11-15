@@ -59,12 +59,13 @@ func runParallel[T any](ctx context.Context, timeout time.Duration, probes []fun
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			pctx := ctx
 			if timeout > 0 {
 				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, timeout)
+				pctx, cancel = context.WithTimeout(ctx, timeout)
 				defer cancel()
 			}
-			out[i] = probe(ctx)
+			out[i] = probe(pctx)
 		}()
 	}
 	wg.Wait()

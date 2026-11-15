@@ -288,11 +288,11 @@ func TestQueueAndActivityPinLiveProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	stale := time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339)
-	update := `UPDATE queue_items SET provider_id='torrent', observed_at=?, download_progress=0.42, stalled=1 WHERE id=?`
+	update := `UPDATE queue_items SET provider_id='torrent', observed_at=?, download_progress=0.42, stalled=? WHERE id=?`
 	if dialect == "postgres" {
-		update = `UPDATE queue_items SET provider_id='torrent', observed_at=$1, download_progress=0.42, stalled=1 WHERE id=$2`
+		update = `UPDATE queue_items SET provider_id='torrent', observed_at=$1, download_progress=0.42, stalled=$2 WHERE id=$3`
 	}
-	if _, err := conn.ExecContext(ctx, update, stale, id); err != nil {
+	if _, err := conn.ExecContext(ctx, update, stale, true, id); err != nil {
 		t.Fatal(err)
 	}
 
