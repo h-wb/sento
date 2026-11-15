@@ -298,3 +298,26 @@ func (l *Library) UpdateEdition(ctx context.Context, seriesID, editionID int64, 
 	}
 	return nil
 }
+
+// SaveVersion saves a way of collecting an edition, as a person sets it:
+// an edition is collected once per release profile (two of its cards with
+// one profile would want the same releases for the same books), and
+// release restrictions live in the profile, never here. A card beside the
+// first is named after its profile: the name is its folder.
+func (l *Library) SaveVersion(ctx context.Context, seriesID int64, t store.CollectedVersion) (int64, error) {
+	taken, err := l.store.ProfileTaken(ctx, t.EditionID, t.ID, t.ProfileID)
+	if err != nil {
+		return 0, err
+	}
+	if taken {
+		return 0, apperr.Conflictf("this edition is already collected with that release profile")
+	}
+	if !t.IsDefault && t.ProfileID > 0 {
+		p, err := l.store.GetProfile(ctx, t.ProfileID)
+		if err != nil {
+			return 0, err
+		}
+		t.Name = p.Name
+	}
+	return l.store.SaveVersion(ctx, seriesID, t)
+}

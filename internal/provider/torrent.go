@@ -220,11 +220,6 @@ func (p *TorrentProvider) Search(ctx context.Context, req SearchRequest) ([]Cand
 	return out, errors.Join(searchErrors...)
 }
 
-// Test verifies one entry's endpoint (caps request).
-func (p *TorrentProvider) Test(ctx context.Context, e IndexerEntry) error {
-	return torznab.New(e.URL, e.APIKey).Ping(ctx)
-}
-
 func (p *TorrentProvider) Grab(ctx context.Context, c Candidate) (string, error) {
 	if c.Torrent == nil {
 		return "", fmt.Errorf("torrent: candidate has no torrent ref")

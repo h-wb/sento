@@ -431,15 +431,6 @@ func (c *ReleaseCandidate) evalFormats(prof *profile.Profile, formats []profile.
 	}
 }
 
-func editionByID(cols []store.Edition, id int64) *store.Edition {
-	for i := range cols {
-		if cols[i].ID == id {
-			return &cols[i]
-		}
-	}
-	return nil
-}
-
 // Publishers that only release in English: their rip tag is language
 // evidence. Publishers that also print in Japanese (Kodansha, Shonen Jump,
 // Square Enix) and multilingual platforms are left out.
@@ -454,38 +445,6 @@ func englishPublisher(names []string) bool {
 	return false
 }
 
-// parseFlags reads the boolean parse facts named in profile.Flags.
-func parseFlags(p parse.Result) map[string]bool {
-	flags := make(map[string]bool, len(profile.Flags))
-	for _, f := range profile.Flags {
-		switch f {
-		case "digital":
-			flags[f] = p.Quality.Digital
-		case "scan":
-			flags[f] = p.Quality.Scan
-		case "web":
-			flags[f] = p.Quality.Web
-		case "premium":
-			flags[f] = p.Quality.Premium
-		case "colored":
-			flags[f] = p.Edition.Colored
-		case "omnibus":
-			flags[f] = p.Edition.Omnibus
-		case "deluxe":
-			flags[f] = p.Edition.Deluxe
-		case "boxset":
-			flags[f] = p.Edition.BoxSet
-		case "official":
-			flags[f] = p.Edition.Official
-		case "raw":
-			flags[f] = p.Edition.Raw
-		case "complete":
-			flags[f] = p.Complete
-		}
-	}
-	return flags
-}
-
 // betterRelease orders releases: the profile's score decides; between
 // equal scores, the indexer with the higher priority (the lower number)
 // wins. Priority is a property of the indexer, never part of the score.
@@ -494,19 +453,4 @@ func betterRelease(a, b ReleaseCandidate) bool {
 		return a.Score > b.Score
 	}
 	return a.IndexerPriority < b.IndexerPriority
-}
-
-func languageCompatible(p parse.Result, want string) bool {
-	if want == "" {
-		return true
-	}
-	if len(p.Languages) > 0 {
-		for _, lang := range p.Languages {
-			if profile.BaseLang(lang) == profile.BaseLang(want) {
-				return true
-			}
-		}
-		return false
-	}
-	return p.Language == "" || p.Language == "multi" || profile.BaseLang(p.Language) == profile.BaseLang(want)
 }

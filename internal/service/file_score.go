@@ -99,3 +99,57 @@ func (l *Library) FileScore(ctx context.Context, sid, vid, fid int64) (*FileScor
 	out := judgeMappedFile(*col, profiles.For(*version), profiles.Formats, *file, mapping)
 	return &out, nil
 }
+
+// backedFacts is what a file is judged on: its own facts, with the
+// release's claims backing the fields the facts do not carry. Organizing
+// and importing name a file after its books ("Volume 1.cbz"), which drops
+// the digital/group/resolution evidence the release itself carried; the
+// claims are that evidence, so a good copy is not forgotten. A field the
+// facts do carry always wins over the offer, and a file without claims
+// (a folder scan) keeps scoring from its own name alone.
+func backedFacts(facts, claims store.AssetFacts) store.AssetFacts {
+	if !claims.FactsKnown && claims.Title == "" {
+		return facts
+	}
+	if facts.Group == "" && facts.Sources["group"] != "manual" {
+		facts.Group = claims.Group
+	}
+	if facts.Language == "" && facts.Sources["language"] != "manual" {
+		facts.Language = claims.Language
+	}
+	if facts.Site == "" {
+		facts.Site = claims.Site
+	}
+	if facts.Protocol == "" {
+		facts.Protocol = claims.Protocol
+	}
+	if facts.Resolution == 0 {
+		facts.Resolution = claims.Resolution
+	}
+	// A flag a person turned off stays off, whatever the release claimed.
+	if claims.Digital && !facts.Digital && !facts.ManualFlag("digital") {
+		facts.Digital = true
+	}
+	var backed []string
+	for flag, set := range claims.Flags {
+		if set && !facts.Flags[flag] && !facts.ManualFlag(flag) {
+			backed = append(backed, flag)
+		}
+	}
+	if len(backed) > 0 {
+		flags := maps.Clone(facts.Flags)
+		if flags == nil {
+			flags = map[string]bool{}
+		}
+		for _, flag := range backed {
+			flags[flag] = true
+		}
+		facts.Flags = flags
+	}
+	facts.FactsKnown = facts.FactsKnown || claims.FactsKnown
+	return facts
+}
+
+func assetJudgement(f store.AssetFacts, p *profile.Profile, formats []profile.Format) profile.Judgement {
+	return p.Judge(profile.Input{Title: f.Title, Group: f.Group, Language: f.Language, Protocol: f.Protocol, Site: f.Site, Resolution: f.Resolution, Flags: f.Flags}, formats)
+}

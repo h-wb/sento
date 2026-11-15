@@ -20,6 +20,43 @@ export interface Binding {
 //////////
 // source: blocklist.go
 
+/**
+ * BlocklistEntry bans one release (by protocol + external key) from ever
+ * being grabbed again.
+ */
+export interface BlocklistEntry {
+  /**
+   * Title and release aliases are retained independently of queue history.
+   */
+  title?: string;
+  id: number /* int64 */;
+  protocol: string;
+  key: string;
+  reason: string;
+  createdAt: string;
+}
+
+//////////
+// source: book_overrides.go
+
+export interface BookOverride {
+  VersionID: number /* int64 */;
+  BookID: number /* int64 */;
+  Monitored: boolean;
+}
+
+//////////
+// source: books.go
+
+export interface BookObservation {
+  id: number /* int64 */;
+  editionId: number /* int64 */;
+  source: string;
+  externalKey: string;
+  label: string;
+  number: number /* int64 */;
+  state: string;
+}
 
 //////////
 // source: calendar.go
@@ -39,19 +76,6 @@ export interface CalendarEntry {
   sequenceStr: string;
   releaseDate: string;
   owned: boolean;
-}
-
-//////////
-// source: catalog.go
-
-export interface BookObservation {
-  id: number /* int64 */;
-  editionId: number /* int64 */;
-  source: string;
-  externalKey: string;
-  label: string;
-  number: number /* int64 */;
-  state: string;
 }
 
 //////////
@@ -96,7 +120,7 @@ export interface LinkSuggestion {
 }
 
 //////////
-// source: collections.go
+// source: catalog_sync.go
 
 /**
  * Collection is a catalog collection filed under the edition it belongs to.
@@ -143,6 +167,39 @@ export interface Work {
  * JSON object of the edited values.
  */
 export type FieldList = string[];
+
+//////////
+// source: coverage.go
+
+export interface AssetCoverage {
+  evidence: string;
+  fileId: number /* int64 */;
+  versionId: number /* int64 */;
+  bookId: number /* int64 */;
+  verified: boolean;
+  pinned: boolean;
+}
+/**
+ * BookOwner is one file currently holding a book: who owns it, whether the
+ * hold is verified and pinned, and the file's parsed facts for scoring.
+ */
+export interface BookOwner {
+  evidence: string;
+  path: string;
+  facts: AssetFacts;
+  claims: AssetFacts;
+  fileId: number /* int64 */;
+  bookId: number /* int64 */;
+  verified: boolean;
+  pinned: boolean;
+  present: boolean;
+}
+export interface AssetContent {
+  fileId: number /* int64 */;
+  bookId: number /* int64 */;
+  verified: boolean;
+  evidence: string;
+}
 
 //////////
 // source: editions.go
@@ -228,6 +285,36 @@ export interface Book {
  * ReaderFields maps a presented ComicInfo field to its template.
  */
 export type ReaderFields = { [key: string]: string};
+
+//////////
+// source: facts.go
+
+export interface AssetFacts {
+  sources?: { [key: string]: string};
+  title?: string;
+  site?: string;
+  protocol?: string;
+  flags?: { [key: string]: boolean};
+  factsKnown: boolean;
+  language?: string;
+  group?: string;
+  format?: string;
+  formatScore: number /* int */;
+  resolution: number /* int */;
+  revision: number /* int */;
+  digital: boolean;
+  profileId?: number /* int64 */;
+  releaseKey?: string;
+}
+/**
+ * AssetFactPatch is a person's correction of what a file is. A flag named
+ * in Flags is set to that value by hand; the others are left as read.
+ */
+export interface AssetFactPatch {
+  language?: string;
+  group?: string;
+  flags?: { [key: string]: boolean};
+}
 
 //////////
 // source: file_review.go
@@ -335,21 +422,6 @@ export interface DecisionBody {
    */
   by?: 'schedule' | 'you';
 }
-/**
- * BlocklistEntry bans one release (by protocol + external key) from ever
- * being grabbed again.
- */
-export interface BlocklistEntry {
-  /**
-   * Title and release aliases are retained independently of queue history.
-   */
-  title?: string;
-  id: number /* int64 */;
-  protocol: string;
-  key: string;
-  reason: string;
-  createdAt: string;
-}
 
 //////////
 // source: indexers.go
@@ -385,22 +457,11 @@ export interface Indexer {
 
 
 //////////
-// source: presence.go
+// source: profiles.go
 
-export interface AssetContent {
-  fileId: number /* int64 */;
-  bookId: number /* int64 */;
-  verified: boolean;
-  evidence: string;
-}
-export interface BookOverride {
-  VersionID: number /* int64 */;
-  BookID: number /* int64 */;
-  Monitored: boolean;
-}
 
 //////////
-// source: profiles.go
+// source: query.go
 
 
 //////////
@@ -640,53 +701,4 @@ export interface CollectedVersion {
   profileName: string;
   cutoffNum: number /* int64 */;
   acquireUnknown: boolean;
-}
-export interface AssetFacts {
-  sources?: { [key: string]: string};
-  title?: string;
-  site?: string;
-  protocol?: string;
-  flags?: { [key: string]: boolean};
-  factsKnown: boolean;
-  language?: string;
-  group?: string;
-  format?: string;
-  formatScore: number /* int */;
-  resolution: number /* int */;
-  revision: number /* int */;
-  digital: boolean;
-  profileId?: number /* int64 */;
-  releaseKey?: string;
-}
-export interface AssetCoverage {
-  evidence: string;
-  fileId: number /* int64 */;
-  versionId: number /* int64 */;
-  bookId: number /* int64 */;
-  verified: boolean;
-  pinned: boolean;
-}
-/**
- * BookOwner is one file currently holding a book: who owns it, whether the
- * hold is verified and pinned, and the file's parsed facts for scoring.
- */
-export interface BookOwner {
-  evidence: string;
-  path: string;
-  facts: AssetFacts;
-  claims: AssetFacts;
-  fileId: number /* int64 */;
-  bookId: number /* int64 */;
-  verified: boolean;
-  pinned: boolean;
-  present: boolean;
-}
-/**
- * AssetFactPatch is a person's correction of what a file is. A flag named
- * in Flags is set to that value by hand; the others are left as read.
- */
-export interface AssetFactPatch {
-  language?: string;
-  group?: string;
-  flags?: { [key: string]: boolean};
 }
