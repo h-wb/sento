@@ -318,3 +318,9 @@ func (s *Store) LowestOwnedChapters(ctx context.Context, seriesID int64) (map[in
 func BookKey(versionID, bookID int64) string {
 	return fmt.Sprintf("%d/%d", versionID, bookID)
 }
+
+// SetFileLocation records where a library file now lives after it was
+// renamed or rewritten, with its new size and content fingerprint.
+func (s *Store) SetFileLocation(ctx context.Context, fileID int64, path string, size int64, hash string) error {
+	return s.touch(ctx, `UPDATE files SET path=?, size=?, hash=?, hash_stat='', modified_at=? WHERE id=?`, path, size, hash, utcNow(), fileID)
+}

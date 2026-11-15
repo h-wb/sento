@@ -159,16 +159,6 @@ func (s *Store) PreviewMerge(ctx context.Context, seriesID, fromID, intoID int64
 	return p, nil
 }
 
-// sameLabel says whether two editions of a series can be the same
-// publication: one type, one language, and one MangaBaka edition when
-// both name one.
-func sameLabel(a, b *Edition) bool {
-	if a.Type != b.Type || a.Language != b.Language {
-		return false
-	}
-	return a.ProviderEditionID == "" || b.ProviderEditionID == "" || a.ProviderEditionID == b.ProviderEditionID
-}
-
 func (s *Store) previewBooks(ctx context.Context, seriesID, localID, catalogID int64) (*CatalogLinkPreview, error) {
 	local, err := s.GetEdition(ctx, localID)
 	if err != nil {
@@ -244,25 +234,6 @@ func (s *Store) previewBooks(ctx context.Context, seriesID, localID, catalogID i
 		out.Pending = out.Pending || pending
 	}
 	return out, nil
-}
-
-// sameBook says whether two books of different editions are the same book:
-// the same number, and no ISBN that says otherwise.
-func sameBook(a, b Book) bool {
-	return sameNumber(a, b) && (a.ISBN == "" || b.ISBN == "" || a.ISBN == b.ISBN)
-}
-
-// sameNumber compares what a book is called: the same number when both
-// have one (labels vary: "1", "01"), otherwise the same label; and never
-// across kinds or revisions.
-func sameNumber(a, b Book) bool {
-	if a.CountType != b.CountType || a.Revision != b.Revision || a.NumberKnown != b.NumberKnown {
-		return false
-	}
-	if a.NumberKnown {
-		return a.SequenceNum == b.SequenceNum
-	}
-	return a.SequenceStr == b.SequenceStr
 }
 
 // LinkCatalog turns a local edition into the catalog edition it stood in

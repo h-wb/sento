@@ -117,3 +117,19 @@ func (s *Store) ListingWorked(ctx context.Context, bindingID int64) error {
 	_, err := s.db.ExecContext(ctx, s.q(`UPDATE source_bindings SET dead_streak=0 WHERE id=? AND dead_streak>0`), bindingID)
 	return err
 }
+
+func (s *Store) SetBindingEdition(ctx context.Context, seriesID, bindingID, cid int64) error {
+	if cid > 0 {
+		if _, err := s.editionOf(ctx, seriesID, cid); err != nil {
+			return err
+		}
+	}
+	// Placing a match on a chapter edition verifies it: its new chapters
+	// are trusted until someone says otherwise. Anywhere else, or nowhere,
+	// nothing is.
+	return s.touch(ctx, `UPDATE source_bindings SET trust_chapters=EXISTS(SELECT 1 FROM editions WHERE id=? AND type='chapter'),edition_id=? WHERE id=? AND series_id=?`, cid, cid, bindingID, seriesID)
+}
+
+func (s *Store) SetBindingTrust(ctx context.Context, sid, bid int64, trust bool) error {
+	return s.touch(ctx, `UPDATE source_bindings SET trust_chapters=? WHERE id=? AND series_id=? AND state='active' AND edition_id IN(SELECT id FROM editions WHERE type='chapter')`, trust, bid, sid)
+}

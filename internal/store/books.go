@@ -5,53 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/h-wb/sento/internal/apperr"
 )
-
-// EnsureModels creates default targets and explicitly inferred chapter books. It never adopts local metadata or touches bytes.
-func (s *Store) EnsureModels(ctx context.Context, seriesID int64) error {
-	series, err := s.GetSeries(ctx, seriesID)
-	if err != nil {
-		return err
-	}
-	cols, err := s.ListEditions(ctx, seriesID)
-	if err != nil {
-		return err
-	}
-	return s.inTx(ctx, func(tx *sql.Tx) error {
-		for _, c := range cols {
-			if !c.Custom && c.SyncState == "local" {
-				if _, err := tx.ExecContext(ctx, s.q(`UPDATE editions SET sync_state='linked' WHERE id=?`), c.ID); err != nil {
-					return err
-				}
-			}
-			if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored,cutoff_num) SELECT ?,'Default',TRUE,?,? WHERE NOT EXISTS(SELECT 1 FROM versions WHERE edition_id=? AND is_default=TRUE) ON CONFLICT DO NOTHING`), c.ID, c.Monitored, c.CutoffNum, c.ID); err != nil {
-				return err
-			}
-			// Metadata's chapter count is a compatibility bound, not an observation.
-			// Explicit chapter memberships always remain, including fractions/extras.
-			if c.Type == "chapter" && c.NumberingSource == "series_count" && series.TotalChapters <= 10000 {
-				var bound int
-				if err := tx.QueryRowContext(ctx, s.q(`SELECT generated_bound FROM editions WHERE id=?`), c.ID).Scan(&bound); err != nil {
-					return err
-				}
-				for n := bound + 1; n <= series.TotalChapters; n++ {
-					if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO books(edition_id,sequence_num,sequence_string,count_type,sync_state) SELECT ?,?,?,'main','inferred' WHERE NOT EXISTS(SELECT 1 FROM books WHERE edition_id=? AND sequence_num=? AND count_type='main')`), c.ID, n*100, strconv.Itoa(n), c.ID, n*100); err != nil {
-						return err
-					}
-				}
-				if _, err := tx.ExecContext(ctx, s.q(`UPDATE editions SET generated_bound=? WHERE id=?`), max(bound, series.TotalChapters), c.ID); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	})
-}
 
 func (s *Store) GetBook(ctx context.Context, id int64) (*Book, error) {
 	return get[Book](ctx, s, `SELECT `+bookColumns+` FROM books WHERE id=?`, id)
@@ -144,6 +102,7 @@ func (s *Store) SaveBook(ctx context.Context, seriesID int64, w Book) (int64, er
 	}
 	return w.ID, tx.Commit()
 }
+
 func (s *Store) DeleteBook(ctx context.Context, seriesID, id int64) error {
 	w, err := s.GetBook(ctx, id)
 	if err != nil {
@@ -220,9 +179,11 @@ func (s *Store) ObserveBook(ctx context.Context, seriesID int64, o BookObservati
 	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO book_observations(edition_id,source,external_key,label,number) VALUES(?,?,?,?,?) ON CONFLICT(edition_id,source,external_key) DO NOTHING`), o.EditionID, o.Source, o.ExternalKey, o.Label, o.Number)
 	return err
 }
+
 func (s *Store) ListObservations(ctx context.Context, seriesID int64) ([]BookObservation, error) {
 	return list[BookObservation](ctx, s, `SELECT id,edition_id,source,external_key,label,number,state FROM book_observations WHERE edition_id IN(SELECT id FROM editions WHERE series_id=?) ORDER BY id DESC LIMIT 500`, seriesID)
 }
+
 func (s *Store) ResolveObservation(ctx context.Context, seriesID, id int64, accept bool) error {
 	o, err := get[BookObservation](ctx, s, `SELECT id,edition_id,source,external_key,label,number,state FROM book_observations WHERE id=?`, id)
 	if err != nil {
@@ -260,18 +221,6 @@ func (s *Store) ResolveObservation(ctx context.Context, seriesID, id int64, acce
 	})
 }
 
-func (s *Store) SetBindingEdition(ctx context.Context, seriesID, bindingID, cid int64) error {
-	if cid > 0 {
-		if _, err := s.editionOf(ctx, seriesID, cid); err != nil {
-			return err
-		}
-	}
-	// Placing a match on a chapter edition verifies it: its new chapters
-	// are trusted until someone says otherwise. Anywhere else, or nowhere,
-	// nothing is.
-	return s.touch(ctx, `UPDATE source_bindings SET trust_chapters=EXISTS(SELECT 1 FROM editions WHERE id=? AND type='chapter'),edition_id=? WHERE id=? AND series_id=?`, cid, cid, bindingID, seriesID)
-}
-
 func (s *Store) ResetBook(ctx context.Context, seriesID, id int64) error {
 	w, err := s.GetBook(ctx, id)
 	if err != nil {
@@ -294,9 +243,6 @@ func (s *Store) ResetBook(ctx context.Context, seriesID, id int64) error {
 	return s.touch(ctx, `UPDATE books SET overrides_json='{}',sync_state='linked' WHERE id=?`, id)
 }
 
-func (s *Store) SetBindingTrust(ctx context.Context, sid, bid int64, trust bool) error {
-	return s.touch(ctx, `UPDATE source_bindings SET trust_chapters=? WHERE id=? AND series_id=? AND state='active' AND edition_id IN(SELECT id FROM editions WHERE type='chapter')`, trust, bid, sid)
-}
 func (s *Store) AcceptTrustedObservation(ctx context.Context, sid int64, o BookObservation) error {
 	id, err := get[int64](ctx, s, `SELECT id FROM book_observations WHERE edition_id=? AND source=? AND external_key=? AND state='pending'`, o.EditionID, o.Source, o.ExternalKey)
 	if err == ErrNotFound {
@@ -306,4 +252,8 @@ func (s *Store) AcceptTrustedObservation(ctx context.Context, sid int64, o BookO
 		return err
 	}
 	return s.ResolveObservation(ctx, sid, *id, true)
+}
+
+func (s *Store) SeriesBooks(ctx context.Context, seriesID int64) ([]Book, error) {
+	return list[Book](ctx, s, `SELECT `+bookColumns+` FROM books WHERE edition_id IN(SELECT id FROM editions WHERE series_id=?) ORDER BY sequence_num,count_type,id`, seriesID)
 }

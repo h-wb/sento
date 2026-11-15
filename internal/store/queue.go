@@ -6,10 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/h-wb/sento/internal/apperr"
-	"sort"
-	"strings"
 	"time"
+
+	"github.com/h-wb/sento/internal/apperr"
 )
 
 // JSONText is raw JSON that scans from a TEXT column (json.RawMessage
@@ -190,110 +189,6 @@ func (s *Store) GetQueueItem(ctx context.Context, id int64) (*QueueItem, error) 
 	return get[QueueItem](ctx, s, `SELECT `+queueColumns+` FROM queue_items WHERE id = ?`, id)
 }
 
-// SetSeriesChapterPath records the separate chapter folder ("" = chapters
-// share the series folder).
-func (s *Store) SetSeriesChapterPath(ctx context.Context, seriesID int64, path string) error {
-	_, err := s.db.ExecContext(ctx, s.q(`UPDATE series SET chapter_path = ? WHERE id = ?`), path, seriesID)
-	return err
-}
-
-func (s *Store) SetSeriesPath(ctx context.Context, seriesID int64, path string) error {
-	_, err := s.db.ExecContext(ctx, s.q(`UPDATE series SET path = ? WHERE id = ?`), path, seriesID)
-	return err
-}
-
-// seriesNames is a series' primary title and the names MangaBaka gives it.
-type seriesNames struct {
-	NativeTitle    string `json:"native_title"`
-	RomanizedTitle string `json:"romanized_title"`
-	Titles         []struct {
-		Title string `json:"title"`
-	} `json:"titles"`
-	Secondary map[string][]struct {
-		Title string `json:"title"`
-	} `json:"secondary_titles"`
-}
-
-func (s *Store) seriesNames(ctx context.Context, seriesID int64) (string, seriesNames, error) {
-	row, err := get[struct {
-		Title   string
-		RawJSON string `db:"raw_json"`
-	}](ctx, s, `SELECT title, COALESCE(raw_json,'') AS raw_json FROM series WHERE id = ?`, seriesID)
-	if err != nil {
-		return "", seriesNames{}, err
-	}
-	var raw seriesNames
-	_ = json.Unmarshal([]byte(row.RawJSON), &raw)
-	return row.Title, raw, nil
-}
-
-// titleList collects titles once each, in order, ignoring case.
-type titleList []string
-
-func (l *titleList) add(t string) {
-	t = strings.TrimSpace(t)
-	if t == "" {
-		return
-	}
-	for _, ex := range *l {
-		if strings.EqualFold(ex, t) {
-			return
-		}
-	}
-	*l = append(*l, t)
-}
-
-// SeriesTitles returns the primary title plus every alias from the cached
-// provider payload — anchoring and source binding match releases named in
-// any language (Japscan lists French titles, raws use kana, …).
-func (s *Store) SeriesTitles(ctx context.Context, seriesID int64, preferredLanguage ...string) ([]string, error) {
-	title, raw, err := s.seriesNames(ctx, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	titles := titleList{title}
-	for _, lang := range preferredLanguage {
-		for _, t := range raw.Secondary[lang] {
-			titles.add(t.Title)
-		}
-	}
-	titles.add(raw.NativeTitle)
-	titles.add(raw.RomanizedTitle)
-	for _, t := range raw.Titles {
-		titles.add(t.Title)
-	}
-	languages := make([]string, 0, len(raw.Secondary))
-	for lang := range raw.Secondary {
-		languages = append(languages, lang)
-	}
-	sort.Strings(languages)
-	for _, lang := range languages {
-		for _, t := range raw.Secondary[lang] {
-			titles.add(t.Title)
-		}
-	}
-	return titles, nil
-}
-
-// QueryTitles are the names worth searching an indexer by for editions in
-// the given languages: the primary title, the titles in those languages,
-// and the romanized one. Other languages' aliases ("budak getah") only
-// find other languages' releases.
-func (s *Store) QueryTitles(ctx context.Context, seriesID int64, languages ...string) ([]string, error) {
-	title, raw, err := s.seriesNames(ctx, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	titles := titleList{title}
-	for _, lang := range languages {
-		for _, t := range raw.Secondary[lang] {
-			titles.add(t.Title)
-		}
-	}
-	titles.add(raw.RomanizedTitle)
-	return titles, nil
-}
-
 // PendingBookStates retains the phase of each reservation. File review can
 // hold an unfinished pack without hiding books it already imported. An
 // overlapping transfer takes precedence over review-only work.
@@ -448,6 +343,7 @@ func (s *Store) ReserveQueue(ctx context.Context, q QueueItem, slots []BookRef) 
 	}
 	return id, created, nil
 }
+
 func (s *Store) SetQueueExternalID(ctx context.Context, id int64, key string) error {
 	return s.touch(ctx, `UPDATE queue_items SET external_id=?,status='queued',retry_count=0,retry_at='' WHERE id=? AND status NOT IN('cancelled','imported')`, key, id)
 }
@@ -492,6 +388,7 @@ func (s *Store) DeferQueueUntil(ctx context.Context, q QueueItem, reason string,
 	at = at.Add(time.Second - time.Nanosecond).Truncate(time.Second)
 	return s.touch(ctx, `UPDATE queue_items SET status='retry_wait',error=?,retry_count=retry_count+1,retry_at=?,updated_at=?,progress_at='',stalled=FALSE WHERE id=? AND status NOT IN('cancelled','imported')`, reason, at.Format("2006-01-02 15:04:05"), utcNow(), q.ID)
 }
+
 func (s *Store) ResumeQueue(ctx context.Context, id int64, remoteID string) error {
 	if remoteID != "" {
 		return s.touch(ctx, `UPDATE queue_items SET status='queued',external_id=?,error='',retry_at='',retry_count=0 WHERE id=? AND status IN('needs_review','retry_wait','dispatch_unknown')`, remoteID, id)

@@ -183,3 +183,45 @@ func (s *Store) ClearBlocklist(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM blocklist`)
 	return err
 }
+
+// BlocklistEntry bans one release (by protocol + external key) from ever
+// being grabbed again.
+type BlocklistEntry struct {
+	// Title and release aliases are retained independently of queue history.
+	Title     string `json:"title,omitempty"`
+	ID        int64  `json:"id"`
+	Protocol  string `json:"protocol"`
+	Key       string `json:"key"`
+	Reason    string `json:"reason"`
+	CreatedAt string `json:"createdAt"`
+}
+
+func (s *Store) AddBlocklist(ctx context.Context, protocol, key, reason string) error {
+	_, err := s.db.ExecContext(ctx, s.q(`
+		INSERT INTO blocklist (protocol, key, reason) VALUES (?,?,?)
+		ON CONFLICT(protocol, key) DO UPDATE SET reason = excluded.reason`),
+		protocol, key, reason)
+	return err
+}
+
+func (s *Store) ListBlocklist(ctx context.Context) ([]BlocklistEntry, error) {
+	return list[BlocklistEntry](ctx, s, `
+		SELECT id, protocol, key, COALESCE(reason,'') AS reason, created_at, title FROM blocklist ORDER BY id DESC`)
+}
+
+func (s *Store) DeleteBlocklist(ctx context.Context, id int64) error {
+	return s.UnblockReleases(ctx, []int64{id}, "", nil)
+}
+
+// BlockedKeys returns the active ban set keyed "protocol/key".
+func (s *Store) BlockedKeys(ctx context.Context) (map[string]bool, error) {
+	rows, err := list[BlocklistEntry](ctx, s, `SELECT id, protocol, key, COALESCE(reason,'') AS reason, created_at FROM blocklist`)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, e := range rows {
+		out[e.Protocol+"/"+e.Key] = true
+	}
+	return out, nil
+}

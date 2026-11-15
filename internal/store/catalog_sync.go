@@ -7,12 +7,29 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/metadata"
 )
+
+// ReconcileMetadata applies a complete catalog snapshot of a series.
+// Collections and works are matched by their catalog ids first. Local
+// editions are never silently adopted; LinkSuggestions offers the link
+// instead. Entries the snapshot no longer lists become stale without
+// losing their books, versions, coverage or edits.
+func (s *Store) ReconcileMetadata(ctx context.Context, seriesID int64, md *metadata.Series, collections []metadata.Collection, works map[string][]metadata.Work) error {
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, s.q(`UPDATE series SET title=?,sort_title=?,type=?,status=?,content_rating=?,year=?,total_chapters=?,final_volume=?,description=?,cover_url=?,raw_json=?,raw_schema_version=1,refreshed_at=? WHERE id=?`), md.Title, sortTitle(md.Title), md.Type, md.Status, md.ContentRating, md.Year, md.TotalChapters, md.FinalVolume, md.Description, md.CoverURL, string(md.RawJSON), utcNow(), seriesID); err != nil {
+			return err
+		}
+		return s.syncCatalog(ctx, tx, seriesID, collections, works)
+	})
+	if err != nil {
+		return err
+	}
+	return s.EnsureModels(ctx, seriesID)
+}
 
 // The catalog is mirrored under MangaBaka's own names and fields, so a
 // change on their side is a change in one place here.
@@ -92,27 +109,6 @@ func (f *FieldList) Scan(src any) error {
 	}
 	slices.Sort(*f)
 	return nil
-}
-
-// mediumOrder is which copy of a book speaks for it when several exist:
-// its ISBN, page count and the edition's publisher. Release quality is the
-// profile's business, not this order's.
-var mediumOrder = []string{"digital", "paperback", "hardcover"}
-
-func mediumRank(medium string) int {
-	if i := slices.Index(mediumOrder, medium); i >= 0 {
-		return i
-	}
-	return len(mediumOrder)
-}
-
-// preferred orders catalog rows: present in the catalog first, then by medium.
-func preferred(aState, aMedium string, aID int64, bState, bMedium string, bID int64) int {
-	return cmp.Or(
-		cmp.Compare(b2i(aState != "linked"), b2i(bState != "linked")),
-		cmp.Compare(mediumRank(aMedium), mediumRank(bMedium)),
-		cmp.Compare(aID, bID),
-	)
 }
 
 func b2i(b bool) int {
@@ -315,16 +311,6 @@ func (s *Store) setUnlessOverridden(ctx context.Context, tx *sql.Tx, table strin
 		}
 	}
 	return nil
-}
-
-// numberKnown says whether a catalog work has a number at all: a numeric
-// sequence, or a label that reads as one (volume 0 is a number).
-func numberKnown(w metadata.Work) bool {
-	if w.NumberKnown || w.SequenceNum != 0 {
-		return true
-	}
-	_, err := strconv.ParseFloat(w.SequenceStr, 64)
-	return err == nil
 }
 
 // syncWork records a catalog work under the book of its edition that
@@ -583,22 +569,6 @@ func (s *Store) foldEdition(ctx context.Context, tx *sql.Tx, from, into int64, m
 		return err
 	}
 	return s.deriveEdition(ctx, tx, into)
-}
-
-// pairBooks matches each book of one edition with the first unclaimed
-// book of another that carries the same number.
-func pairBooks(from, into []Book) map[int64]int64 {
-	out := map[int64]int64{}
-	used := map[int64]bool{}
-	for _, a := range from {
-		for _, b := range into {
-			if !used[b.ID] && sameNumber(a, b) {
-				out[a.ID], used[b.ID] = b.ID, true
-				break
-			}
-		}
-	}
-	return out
 }
 
 // detach gives one collection an edition of its own, copied from the one

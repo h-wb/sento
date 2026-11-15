@@ -1,6 +1,8 @@
 package store
 
-import "context"
+import (
+	"context"
+)
 
 // CatalogPayloads returns the raw MangaBaka documents behind a book: its
 // series and, when the book is linked to the catalog, the book itself.
@@ -24,10 +26,4 @@ func (s *Store) CatalogPayloads(ctx context.Context, seriesID, bookID int64) (se
 		return "", "", err
 	}
 	return series, row.RawJSON, nil
-}
-
-// SetFileLocation records where a library file now lives after it was
-// renamed or rewritten, with its new size and content fingerprint.
-func (s *Store) SetFileLocation(ctx context.Context, fileID int64, path string, size int64, hash string) error {
-	return s.touch(ctx, `UPDATE files SET path=?, size=?, hash=?, hash_stat='', modified_at=? WHERE id=?`, path, size, hash, utcNow(), fileID)
 }
