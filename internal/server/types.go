@@ -236,3 +236,98 @@ type ExtensionRepos struct {
 	// cannot be edited (response only).
 	Managed bool `json:"managed"`
 }
+
+// CatalogLinkBody is POST /series/{id}/editions/{eid}/catalog-link.
+type CatalogLinkBody struct {
+	CatalogID int64 `json:"catalogId"`
+}
+
+// FileMappingBody is PUT /series/{id}/files/{fid}/mapping.
+type FileMappingBody struct {
+	Books []store.BookRef `json:"books"`
+	// Replace forces the upgrade path: this file takes the books even when
+	// it does not outscore the current owner.
+	Replace bool `json:"replace,omitempty"`
+}
+
+// FileCleanupBody is POST /series/{id}/files/cleanup.
+type FileCleanupBody struct {
+	EditionID     int64   `json:"editionId"`
+	FileIDs       []int64 `json:"fileIds"`
+	RetentionDays int     `json:"retentionDays"`
+}
+
+// ReviewResolveBody is POST /series/{id}/review/resolve.
+type ReviewResolveBody struct {
+	FileIDs []int64 `json:"fileIds"`
+}
+
+// ReviewMatchBody is POST /series/{id}/review/match.
+type ReviewMatchBody struct {
+	VersionID int64   `json:"versionId"`
+	FileIDs   []int64 `json:"fileIds"`
+}
+
+// ObservationReviewBody is PUT /series/{id}/observations/{oid}.
+type ObservationReviewBody struct {
+	Accept bool `json:"accept"`
+}
+
+// BookMonitorBody is PUT /series/{id}/book-monitor.
+type BookMonitorBody struct {
+	VersionID int64 `json:"versionId"`
+	BookID    int64 `json:"bookId"`
+	Monitored bool  `json:"monitored"`
+}
+
+// BulkMonitorBody is POST /series/{id}/versions/{vid}/monitor.
+type BulkMonitorBody struct {
+	BookIDs   []int64 `json:"bookIds"`
+	Monitored bool    `json:"monitored"`
+}
+
+// IndexerSearchTestBody is POST /indexers/{iid}/search-test.
+type IndexerSearchTestBody struct {
+	Query string `json:"query"`
+}
+
+// QueueRetryBody is POST /queue/{qid}/retry.
+type QueueRetryBody struct {
+	RemoteID string `json:"remoteId"`
+}
+
+// QueueAnotherBody is POST /queue/another.
+type QueueAnotherBody struct {
+	IDs []int64 `json:"ids"`
+}
+
+// SetDefaultProfileBody is PUT /profiles/default.
+type SetDefaultProfileBody struct {
+	ProfileID int64 `json:"profileId"`
+}
+
+// StatusMessage is a bare {"status": ...} reply, e.g. POST
+// /series/{id}/refresh.
+type StatusMessage struct {
+	Status string `json:"status"`
+}
+
+// IDResponse is a bare {"id": ...} reply, e.g. POST /series/{id}/bindings.
+type IDResponse struct {
+	ID int64 `json:"id"`
+}
+
+// SeparateCollectionResponse is POST /series/{id}/collections/{cid}/separate.
+type SeparateCollectionResponse struct {
+	EditionID int64 `json:"editionId"`
+}
+
+// DefaultProfileResponse is GET /profiles/default.
+type DefaultProfileResponse struct {
+	ProfileID int64 `json:"profileId"`
+}
+
+// QueueProcessResponse is POST /queue/process.
+type QueueProcessResponse struct {
+	Processed int `json:"processed"`
+}

@@ -84,13 +84,11 @@ func (s *Server) handleGetDefaultProfile(w http.ResponseWriter, r *http.Request)
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]int64{"profileId": id})
+	writeJSON(w, http.StatusOK, DefaultProfileResponse{ProfileID: id})
 }
 
 func (s *Server) handleSetDefaultProfile(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		ProfileID int64 `json:"profileId"`
-	}
+	var body SetDefaultProfileBody
 	if !decodeBody(w, r, &body) {
 		return
 	}

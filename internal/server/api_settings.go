@@ -10,6 +10,24 @@ import (
 
 // Settings and sidecar-extension handlers.
 
+// mountSettingsAPI registers the settings and extension routes.
+func (s *Server) mountSettingsAPI(r chi.Router) {
+	r.Get("/settings/media", s.handleGetMediaSettings)
+	r.Put("/settings/media", s.handlePutMediaSettings)
+	r.Post("/settings/media/preview", s.handlePreviewMediaSettings)
+	r.Get("/settings/media/schema", s.handleMediaSchema)
+	r.Get("/settings/connections", s.handleGetConnections)
+	r.Put("/settings/connections", s.handlePutConnections)
+	r.Post("/settings/connections/test", s.handleTestConnections)
+	r.Get("/extensions", s.handleListExtensions)
+	r.Get("/extensions/{pkg}/sources", s.handleExtensionSources)
+	r.Get("/extensions/repos", s.handleGetExtensionRepos)
+	r.Put("/extensions/repos", s.handleSetExtensionRepos)
+	r.Post("/extensions/{pkg}", s.handleInstallExtension)
+	r.Get("/extensions/sources/{sid}/preferences", s.handleSourcePreferences)
+	r.Put("/extensions/sources/{sid}/preferences", s.handleSetSourcePreference)
+}
+
 // --- media settings ---
 
 func (s *Server) handleGetMediaSettings(w http.ResponseWriter, r *http.Request) {
