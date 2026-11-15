@@ -8,8 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/georgysavva/scany/v2/sqlscan"
-
 	"github.com/h-wb/sento/internal/apperr"
 )
 
@@ -31,11 +29,11 @@ func (a releaseAliases) root(id releaseIdentity) releaseIdentity {
 }
 
 func (s *Store) loadReleaseBlocks(ctx context.Context, tx *sql.Tx) ([]BlocklistEntry, releaseAliases, map[releaseIdentity]string, error) {
-	var rows []struct {
+	rows, err := listQ[struct {
 		BlocklistEntry
 		Aliases JSONText `db:"aliases_json"`
-	}
-	if err := sqlscan.Select(ctx, tx, &rows, `SELECT id, protocol, key, COALESCE(reason,'') AS reason, created_at, title, aliases_json FROM blocklist ORDER BY id DESC`); err != nil {
+	}](ctx, tx, `SELECT id, protocol, key, COALESCE(reason,'') AS reason, created_at, title, aliases_json FROM blocklist ORDER BY id DESC`)
+	if err != nil {
 		return nil, nil, nil, err
 	}
 	aliases := releaseAliases{}
@@ -72,116 +70,112 @@ func (s *Store) AddReleaseBlocklist(ctx context.Context, protocol string, keys [
 	if len(keys) == 0 {
 		return apperr.Invalidf("this release has no identity to block")
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	_, aliases, titles, err := s.loadReleaseBlocks(ctx, tx)
-	if err != nil {
-		return err
-	}
-	selected := map[releaseIdentity]bool{}
-	for _, key := range keys {
-		root := aliases.root(releaseIdentity{protocol, key})
-		selected[root] = true
-		if title == "" {
-			title = titles[root]
-		}
-	}
-	// Preserve aliases learned during earlier attempts, including keys
-	// connected through an identifier shared with the current attempt.
-	keys = nil
-	for id := range aliases {
-		if selected[aliases.root(id)] {
-			keys = append(keys, id.key)
-		}
-	}
-	slices.Sort(keys)
-	raw, err := json.Marshal(keys)
-	if err != nil {
-		return err
-	}
-	for _, key := range keys {
-		if _, err := tx.ExecContext(ctx, s.q(`
-			INSERT INTO blocklist (protocol, key, reason, title, aliases_json) VALUES (?,?,?,?,?)
-			ON CONFLICT(protocol, key) DO UPDATE SET reason=excluded.reason, title=excluded.title, aliases_json=excluded.aliases_json`),
-			protocol, key, reason, title, string(raw)); err != nil {
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		_, aliases, titles, err := s.loadReleaseBlocks(ctx, tx)
+		if err != nil {
 			return err
 		}
-	}
-	return tx.Commit()
+		selected := map[releaseIdentity]bool{}
+		for _, key := range keys {
+			root := aliases.root(releaseIdentity{protocol, key})
+			selected[root] = true
+			if title == "" {
+				title = titles[root]
+			}
+		}
+		// Preserve aliases learned during earlier attempts, including keys
+		// connected through an identifier shared with the current attempt.
+		keys = nil
+		for id := range aliases {
+			if selected[aliases.root(id)] {
+				keys = append(keys, id.key)
+			}
+		}
+		slices.Sort(keys)
+		raw, err := json.Marshal(keys)
+		if err != nil {
+			return err
+		}
+		for _, key := range keys {
+			if _, err := tx.ExecContext(ctx, s.q(`
+				INSERT INTO blocklist (protocol, key, reason, title, aliases_json) VALUES (?,?,?,?,?)
+				ON CONFLICT(protocol, key) DO UPDATE SET reason=excluded.reason, title=excluded.title, aliases_json=excluded.aliases_json`),
+				protocol, key, reason, title, string(raw)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return err
 }
 
 // ListBlockedReleases groups aliases into one row per release. It returns
 // the complete list so older blocks can be selected or cleared too.
 func (s *Store) ListBlockedReleases(ctx context.Context) ([]BlocklistEntry, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	entries, aliases, titles, err := s.loadReleaseBlocks(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-	seen := map[releaseIdentity]bool{}
 	var releases []BlocklistEntry
-	for _, entry := range entries {
-		id := releaseIdentity{entry.Protocol, entry.Key}
-		root := aliases.root(id)
-		if seen[root] {
-			continue
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		entries, aliases, titles, err := s.loadReleaseBlocks(ctx, tx)
+		if err != nil {
+			return err
 		}
-		seen[root] = true
-		entry.Title = titles[root]
-		releases = append(releases, entry)
+		seen := map[releaseIdentity]bool{}
+		for _, entry := range entries {
+			id := releaseIdentity{entry.Protocol, entry.Key}
+			root := aliases.root(id)
+			if seen[root] {
+				continue
+			}
+			seen[root] = true
+			entry.Title = titles[root]
+			releases = append(releases, entry)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return releases, tx.Commit()
+	return releases, nil
 }
 
 // UnblockReleases removes every known alias of selected entries or release
 // keys in one transaction. It never changes historical jobs or reservations.
 func (s *Store) UnblockReleases(ctx context.Context, ids []int64, protocol string, keys []string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	entries, aliases, _, err := s.loadReleaseBlocks(ctx, tx)
-	if err != nil {
-		return err
-	}
-	byID := map[int64]releaseIdentity{}
-	for _, entry := range entries {
-		byID[entry.ID] = releaseIdentity{entry.Protocol, entry.Key}
-	}
-	selected := map[releaseIdentity]bool{}
-	for _, id := range ids {
-		identity, ok := byID[id]
-		if !ok {
-			return ErrNotFound
-		}
-		selected[aliases.root(identity)] = true
-	}
-	for _, key := range keys {
-		selected[aliases.root(releaseIdentity{protocol, key})] = true
-	}
-	var remove []any
-	for _, entry := range entries {
-		if selected[aliases.root(releaseIdentity{entry.Protocol, entry.Key})] {
-			remove = append(remove, entry.ID)
-		}
-	}
-	// Keep each statement within both databases' parameter limits.
-	for len(remove) > 0 {
-		n := min(len(remove), 400)
-		if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM blocklist WHERE id IN (`+strings.TrimSuffix(strings.Repeat("?,", n), ",")+`)`), remove[:n]...); err != nil {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		entries, aliases, _, err := s.loadReleaseBlocks(ctx, tx)
+		if err != nil {
 			return err
 		}
-		remove = remove[n:]
-	}
-	return tx.Commit()
+		byID := map[int64]releaseIdentity{}
+		for _, entry := range entries {
+			byID[entry.ID] = releaseIdentity{entry.Protocol, entry.Key}
+		}
+		selected := map[releaseIdentity]bool{}
+		for _, id := range ids {
+			identity, ok := byID[id]
+			if !ok {
+				return ErrNotFound
+			}
+			selected[aliases.root(identity)] = true
+		}
+		for _, key := range keys {
+			selected[aliases.root(releaseIdentity{protocol, key})] = true
+		}
+		var remove []any
+		for _, entry := range entries {
+			if selected[aliases.root(releaseIdentity{entry.Protocol, entry.Key})] {
+				remove = append(remove, entry.ID)
+			}
+		}
+		// Keep each statement within both databases' parameter limits.
+		for len(remove) > 0 {
+			n := min(len(remove), 400)
+			if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM blocklist WHERE id IN (`+strings.TrimSuffix(strings.Repeat("?,", n), ",")+`)`), remove[:n]...); err != nil {
+				return err
+			}
+			remove = remove[n:]
+		}
+		return nil
+	})
 }
 
 // ClearBlocklist clears all blocks, including entries outside a displayed page.

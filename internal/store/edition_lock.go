@@ -3,9 +3,9 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
-	"github.com/h-wb/sento/internal/apperr"
 	"sort"
+
+	"github.com/h-wb/sento/internal/apperr"
 )
 
 // All operations that change edition identity and all new reservations use the
@@ -16,35 +16,21 @@ func (s *Store) lockEditions(ctx context.Context, tx *sql.Tx, allowPending bool,
 		if i > 0 && ids[i-1] == id {
 			continue
 		}
-		var sid int64
-		query := `SELECT series_id FROM editions WHERE id=?`
-		if s.pg {
-			query += ` FOR UPDATE`
-		} else {
-			if _, err := tx.ExecContext(ctx, s.q(`UPDATE editions SET id=id WHERE id=?`), id); err != nil {
-				return err
-			}
-		}
-		if err := tx.QueryRowContext(ctx, s.q(query), id).Scan(&sid); err != nil {
+		sid, err := s.lockRow(ctx, tx, "editions", "series_id", id)
+		if err != nil {
 			return err
 		}
 		if allowPending {
 			continue
 		}
-		rows, err := tx.QueryContext(ctx, s.q(`SELECT books_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`), sid)
+		rows, err := s.pendingRefs(ctx, tx, sid)
 		if err != nil {
 			return err
 		}
 		pending := false
-		for rows.Next() {
-			var raw string
-			if err = rows.Scan(&raw); err != nil {
-				_ = rows.Close()
-				return err
-			}
-			var slots []BookRef
-			if err = json.Unmarshal([]byte(raw), &slots); err != nil {
-				_ = rows.Close()
+		for _, row := range rows {
+			slots, err := row.bookRefs()
+			if err != nil {
 				return err
 			}
 			for _, sl := range slots {
@@ -53,14 +39,25 @@ func (s *Store) lockEditions(ctx context.Context, tx *sql.Tx, allowPending bool,
 				}
 			}
 		}
-		err = rows.Err()
-		_ = rows.Close()
-		if err != nil {
-			return err
-		}
 		if pending {
 			return apperr.Conflictf("finish or cancel this edition's pending downloads first")
 		}
 	}
 	return nil
+}
+
+// lockRow takes the dialect's write lock on one row and returns the selected
+// column; table and column are fixed call-site strings, never caller input.
+func (s *Store) lockRow(ctx context.Context, tx *sql.Tx, table, column string, id int64) (int64, error) {
+	query := `SELECT ` + column + ` FROM ` + table + ` WHERE id=?`
+	if s.pg {
+		query += ` FOR UPDATE`
+	} else if _, err := tx.ExecContext(ctx, s.q(`UPDATE `+table+` SET id=id WHERE id=?`), id); err != nil {
+		return 0, err
+	}
+	var v int64
+	if err := tx.QueryRowContext(ctx, s.q(query), id).Scan(&v); err != nil {
+		return 0, err
+	}
+	return v, nil
 }

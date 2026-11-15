@@ -33,79 +33,56 @@ func (s *Store) GetFileTrash(ctx context.Context, fid int64) (*TrashedFile, erro
 // BeginFileTrash journals the move before touching disk. The same edition
 // locks as mapping/monitoring make stale previews safe to reject.
 func (s *Store) BeginFileTrash(ctx context.Context, sid, fid int64, path, trashPath, digest, at, expiry string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	rows, err := tx.QueryContext(ctx, s.q(`SELECT id FROM editions WHERE series_id=? ORDER BY id`), sid)
-	if err != nil {
-		return err
-	}
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		if err = rows.Scan(&id); err != nil {
-			_ = rows.Close()
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		ids, err := listQ[int64](ctx, tx, s.q(`SELECT id FROM editions WHERE series_id=? ORDER BY id`), sid)
+		if err != nil {
 			return err
 		}
-		ids = append(ids, id)
-	}
-	err = rows.Err()
-	_ = rows.Close()
-	if err != nil {
-		return err
-	}
-	if err = s.lockEditions(ctx, tx, true, ids...); err != nil {
-		return err
-	}
-	var facts, claims AssetFacts
-	if err = tx.QueryRowContext(ctx, s.q(`SELECT facts_json,claims_json FROM files WHERE id=? AND series_id=?`), fid, sid).Scan(&facts, &claims); err != nil {
-		return err
-	}
-	var pending int
-	if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')
+		if err := s.lockEditions(ctx, tx, true, ids...); err != nil {
+			return err
+		}
+		var facts, claims AssetFacts
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT facts_json,claims_json FROM files WHERE id=? AND series_id=?`), fid, sid).Scan(&facts, &claims); err != nil {
+			return err
+		}
+		var pending int
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM queue_items WHERE series_id=? AND status IN`+activeQueueStatuses+`
  AND ((release_key<>'' AND release_key IN(?,?)) OR (external_id<>'' AND external_id IN(?,?)))
  AND NOT(status='needs_review' AND EXISTS(SELECT 1 FROM files WHERE id=? AND review_action='trash' AND needs_review=FALSE))`), sid, facts.ReleaseKey, claims.ReleaseKey, facts.ReleaseKey, claims.ReleaseKey, fid).Scan(&pending); err != nil {
-		return err
-	}
-	if pending > 0 {
-		return apperr.Conflictf("finish this file's download before cleanup")
-	}
-	var valid int
-	err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM files f WHERE f.id=? AND f.series_id=? AND f.path=? AND f.needs_review=FALSE
+			return err
+		}
+		if pending > 0 {
+			return apperr.Conflictf("finish this file's download before cleanup")
+		}
+		var valid int
+		err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM files f WHERE f.id=? AND f.series_id=? AND f.path=? AND f.needs_review=FALSE
  AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=f.id)
  AND NOT EXISTS(SELECT 1 FROM asset_coverage WHERE file_id=f.id AND pinned=TRUE)
  AND NOT EXISTS(SELECT 1 FROM asset_contents c WHERE c.file_id=f.id AND c.verified=FALSE)
  AND NOT EXISTS(SELECT 1 FROM asset_contents c JOIN books b ON b.id=c.book_id JOIN versions v ON v.edition_id=b.edition_id
  LEFT JOIN asset_coverage a ON a.file_id=c.file_id AND a.book_id=c.book_id AND a.version_id=v.id
  WHERE c.file_id=f.id AND (v.monitored=TRUE OR f.review_action='trash') AND COALESCE(a.selected,TRUE)=TRUE)`), fid, sid, path).Scan(&valid)
-	if err != nil {
+		if err != nil {
+			return err
+		}
+		if valid != 1 {
+			return apperr.Conflictf("file changed or is protected; refresh the cleanup preview")
+		}
+		_, err = tx.ExecContext(ctx, s.q(`INSERT INTO file_trash(file_id,trash_path,digest,trashed_at,purge_after) VALUES(?,?,?,?,?)`), fid, trashPath, digest, at, expiry)
 		return err
-	}
-	if valid != 1 {
-		return apperr.Conflictf("file changed or is protected; refresh the cleanup preview")
-	}
-	_, err = tx.ExecContext(ctx, s.q(`INSERT INTO file_trash(file_id,trash_path,digest,trashed_at,purge_after) VALUES(?,?,?,?,?)`), fid, trashPath, digest, at, expiry)
-	if err != nil {
-		return err
-	}
-	return tx.Commit()
+	})
 }
 
 func (s *Store) RestoreFileRecord(ctx context.Context, fid int64) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM file_trash WHERE file_id=?`), fid); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET presence='present',presence_error='',checked_at=?,review_action=CASE WHEN review_action IN('trash','trashed') THEN 'keep' ELSE review_action END WHERE id=?`), utcNow(), fid); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM file_trash WHERE file_id=?`), fid); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, s.q(`UPDATE files SET presence='present',presence_error='',checked_at=?,review_action=CASE WHEN review_action IN('trash','trashed') THEN 'keep' ELSE review_action END WHERE id=?`), utcNow(), fid); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 // Aborting an unsuccessful move keeps a review's recorded trash intent, so

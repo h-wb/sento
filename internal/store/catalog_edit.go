@@ -21,12 +21,9 @@ type EditionMetadataPatch struct {
 }
 
 func (s *Store) EditEdition(ctx context.Context, seriesID, cid int64, p EditionMetadataPatch) error {
-	c, err := s.GetEdition(ctx, cid)
+	c, err := s.editionOf(ctx, seriesID, cid)
 	if err != nil {
 		return err
-	}
-	if c.SeriesID != seriesID {
-		return ErrNotFound
 	}
 	pending, err := s.EditionPending(ctx, cid)
 	if err != nil {
@@ -44,77 +41,74 @@ func (s *Store) EditEdition(ctx context.Context, seriesID, cid int64, p EditionM
 		return err
 	}
 	fields := map[string]*string{"edition_name": p.EditionName, "language": p.Language, "publisher": p.Publisher, "medium": p.Medium}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err = s.lockEditions(ctx, tx, false, cid); err != nil {
-		return err
-	}
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := s.lockEditions(ctx, tx, false, cid); err != nil {
+			return err
+		}
 
-	if p.MakeLocal {
-		// The collections go and their works with them; the books stay.
-		if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM collections WHERE edition_id=?`), cid); err != nil {
-			return err
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`UPDATE editions SET custom=TRUE,sync_state='local',numbering_source='manual' WHERE id=?`), cid); err != nil {
-			return err
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`UPDATE books SET provider_id=NULL,sync_state=CASE WHEN sync_state='retired' THEN 'retired' ELSE 'local' END WHERE edition_id=?`), cid); err != nil {
-			return err
-		}
-	}
-	if p.NumberingSource != nil {
-		v := *p.NumberingSource
-		if v != "manual" && v != "series_count" && v != "catalog" {
-			return apperr.Invalidf("unknown numbering source")
-		}
-		if v == "series_count" && (c.Type != "chapter" || !c.Custom) {
-			return apperr.Invalidf("series counts apply only to local chapter editions")
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`UPDATE editions SET numbering_source=? WHERE id=?`), v, cid); err != nil {
-			return err
-		}
-	}
-	// A change of language sends the edition's files back to review.
-	identityChanged := false
-	for k, v := range fields {
-		if v == nil {
-			continue
-		}
-		text := strings.TrimSpace(*v)
-		if (k == "language" || k == "edition_name") && text == "" {
-			return apperr.Invalidf("name and language are required")
-		}
-		before := map[string]string{"edition_name": c.EditionName, "language": c.Language, "publisher": c.Publisher, "medium": c.Medium}
-		if before[k] != text {
-			if k == "language" {
-				identityChanged = true
+		if p.MakeLocal {
+			// The collections go and their works with them; the books stay.
+			if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM collections WHERE edition_id=?`), cid); err != nil {
+				return err
 			}
-			overrides[k] = text
+			if _, err := tx.ExecContext(ctx, s.q(`UPDATE editions SET custom=TRUE,sync_state='local',numbering_source='manual' WHERE id=?`), cid); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, s.q(`UPDATE books SET provider_id=NULL,sync_state=CASE WHEN sync_state='retired' THEN 'retired' ELSE 'local' END WHERE edition_id=?`), cid); err != nil {
+				return err
+			}
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`UPDATE editions SET `+k+`=? WHERE id=?`), text, cid); err != nil {
-			return err
+		if p.NumberingSource != nil {
+			v := *p.NumberingSource
+			if v != "manual" && v != "series_count" && v != "catalog" {
+				return apperr.Invalidf("unknown numbering source")
+			}
+			if v == "series_count" && (c.Type != "chapter" || !c.Custom) {
+				return apperr.Invalidf("series counts apply only to local chapter editions")
+			}
+			if _, err := tx.ExecContext(ctx, s.q(`UPDATE editions SET numbering_source=? WHERE id=?`), v, cid); err != nil {
+				return err
+			}
 		}
-	}
-	if identityChanged {
-		if err = s.invalidateEditionCoverage(ctx, tx, cid); err != nil {
-			return err
+		// A change of language sends the edition's files back to review.
+		identityChanged := false
+		for k, v := range fields {
+			if v == nil {
+				continue
+			}
+			text := strings.TrimSpace(*v)
+			if (k == "language" || k == "edition_name") && text == "" {
+				return apperr.Invalidf("name and language are required")
+			}
+			before := map[string]string{"edition_name": c.EditionName, "language": c.Language, "publisher": c.Publisher, "medium": c.Medium}
+			if before[k] != text {
+				if k == "language" {
+					identityChanged = true
+				}
+				overrides[k] = text
+			}
+			if _, err := tx.ExecContext(ctx, s.q(`UPDATE editions SET `+k+`=? WHERE id=?`), text, cid); err != nil {
+				return err
+			}
 		}
-	}
+		if identityChanged {
+			if err := s.invalidateEditionCoverage(ctx, tx, cid); err != nil {
+				return err
+			}
+		}
 
-	for _, k := range p.Reset {
-		if _, ok := fields[k]; !ok {
-			return apperr.Invalidf("unknown override field")
+		for _, k := range p.Reset {
+			if _, ok := fields[k]; !ok {
+				return apperr.Invalidf("unknown override field")
+			}
+			delete(overrides, k)
 		}
-		delete(overrides, k)
-	}
-	body, _ := json.Marshal(overrides)
-	if _, err = tx.ExecContext(ctx, s.q(`UPDATE editions SET overrides_json=? WHERE id=?`), string(body), cid); err != nil {
-		return err
-	}
-	return tx.Commit()
+		body, _ := json.Marshal(overrides)
+		if _, err := tx.ExecContext(ctx, s.q(`UPDATE editions SET overrides_json=? WHERE id=?`), string(body), cid); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 type CatalogLinkPreview struct {
@@ -296,38 +290,32 @@ func (s *Store) LinkCatalog(ctx context.Context, seriesID, localID, catalogID in
 			return apperr.Conflictf("this edition is collected with several profiles; stop collecting it with the extra ones before linking")
 		}
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err = s.lockEditions(ctx, tx, false, localID, catalogID); err != nil {
-		return err
-	}
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := s.lockEditions(ctx, tx, false, localID, catalogID); err != nil {
+			return err
+		}
 
-	// The link is the person's confirmation of identity, so the catalog's
-	// name is adopted here, without sending files back to review. A name
-	// edited by hand keeps its edit.
-	var raw string
-	if err = tx.QueryRowContext(ctx, s.q(`SELECT overrides_json FROM editions WHERE id=?`), localID).Scan(&raw); err != nil {
-		return err
-	}
-	if err = s.setUnlessOverridden(ctx, tx, "editions", localID, raw, map[string]any{"edition_name": p.Catalog.EditionName}); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, s.q(`UPDATE editions SET custom=FALSE,provider_edition_id=?,provider_edition_name=?,sync_state='linked',numbering_source='catalog',split=? WHERE id=?`), p.Catalog.ProviderEditionID, p.Catalog.ProviderEditionName, p.Catalog.Split, localID); err != nil {
-		return err
-	}
-	// Matched catalog books hand their works to the local ones; the rest
-	// join the edition now instead of waiting for the next refresh.
-	pairs := map[int64]int64{}
-	for local, catalog := range p.Mapping {
-		pairs[catalog] = local
-	}
-	if err = s.foldEdition(ctx, tx, catalogID, localID, pairs); err != nil {
-		return err
-	}
-	return tx.Commit()
+		// The link is the person's confirmation of identity, so the catalog's
+		// name is adopted here, without sending files back to review. A name
+		// edited by hand keeps its edit.
+		var raw string
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT overrides_json FROM editions WHERE id=?`), localID).Scan(&raw); err != nil {
+			return err
+		}
+		if err := s.setUnlessOverridden(ctx, tx, "editions", localID, raw, map[string]any{"edition_name": p.Catalog.EditionName}); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, s.q(`UPDATE editions SET custom=FALSE,provider_edition_id=?,provider_edition_name=?,sync_state='linked',numbering_source='catalog',split=? WHERE id=?`), p.Catalog.ProviderEditionID, p.Catalog.ProviderEditionName, p.Catalog.Split, localID); err != nil {
+			return err
+		}
+		// Matched catalog books hand their works to the local ones; the rest
+		// join the edition now instead of waiting for the next refresh.
+		pairs := map[int64]int64{}
+		for local, catalog := range p.Mapping {
+			pairs[catalog] = local
+		}
+		return s.foldEdition(ctx, tx, catalogID, localID, pairs)
+	})
 }
 
 // LinkSuggestion is a catalog edition that looks like the one a local
@@ -393,16 +381,12 @@ func (s *Store) LinkSuggestions(ctx context.Context, seriesID int64) ([]LinkSugg
 
 // DeclineCatalogLink records that a catalog edition is not the local one.
 func (s *Store) DeclineCatalogLink(ctx context.Context, seriesID, localID, catalogID int64) error {
-	local, err := s.GetEdition(ctx, localID)
-	if err != nil {
+	if _, err := s.editionOf(ctx, seriesID, localID); err != nil {
 		return err
 	}
-	catalog, err := s.GetEdition(ctx, catalogID)
+	catalog, err := s.editionOf(ctx, seriesID, catalogID)
 	if err != nil {
 		return err
-	}
-	if local.SeriesID != seriesID || catalog.SeriesID != seriesID {
-		return ErrNotFound
 	}
 	if catalog.Custom {
 		return apperr.Invalidf("choose a catalog edition")

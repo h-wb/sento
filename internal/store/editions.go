@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -112,13 +113,16 @@ func (s *Store) GetEdition(ctx context.Context, id int64) (*Edition, error) {
 	return &one[0], nil
 }
 
+// editionOf reads one edition's plain row (no collections load) for the
+// ownership guard; ErrNotFound covers both a missing edition and another
+// series' edition, as the GetEdition guard did.
+func (s *Store) editionOf(ctx context.Context, seriesID, editionID int64) (*Edition, error) {
+	return get[Edition](ctx, s, `SELECT `+editionColumns+` FROM editions WHERE id = ? AND series_id = ?`, editionID, seriesID)
+}
+
 func (s *Store) SetEditionMonitored(ctx context.Context, seriesID, editionID int64, monitored bool) error {
-	c, err := s.GetEdition(ctx, editionID)
-	if err != nil {
+	if _, err := s.editionOf(ctx, seriesID, editionID); err != nil {
 		return err
-	}
-	if c.SeriesID != seriesID {
-		return ErrNotFound
 	}
 	if _, err := s.db.ExecContext(ctx, s.q(`UPDATE versions SET monitored=? WHERE is_default=TRUE AND edition_id IN(SELECT id FROM editions WHERE id=? AND series_id=?)`), monitored, editionID, seriesID); err != nil {
 		return err
@@ -129,12 +133,8 @@ func (s *Store) SetEditionMonitored(ctx context.Context, seriesID, editionID int
 // SetEditionReaderFields replaces the edition's own reader field
 // templates; none left means it follows the media settings throughout.
 func (s *Store) SetEditionReaderFields(ctx context.Context, seriesID, editionID int64, fields ReaderFields) error {
-	c, err := s.GetEdition(ctx, editionID)
-	if err != nil {
+	if _, err := s.editionOf(ctx, seriesID, editionID); err != nil {
 		return err
-	}
-	if c.SeriesID != seriesID {
-		return ErrNotFound
 	}
 	if fields == nil {
 		fields = ReaderFields{}
@@ -167,64 +167,64 @@ func (f *ReaderFields) Scan(src any) error {
 // be cloned or generated explicitly; chapter editions start with explicit books.
 // Catalog refresh never adopts local editions without an explicit link.
 func (s *Store) AddCustomEdition(ctx context.Context, c Edition, basedOn int64, volumes int) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	var duplicate int
-	if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM editions WHERE series_id=? AND custom=TRUE AND edition_name=? AND language=? AND publisher=? AND medium=? AND type=?`), c.SeriesID, c.EditionName, c.Language, c.Publisher, c.Medium, orDefault(c.Type, "volume")).Scan(&duplicate); err != nil {
-		return 0, err
-	}
-	if duplicate > 0 {
-		return 0, apperr.Conflictf("a local edition with these details already exists; collect it again with another profile instead")
-	}
-	ctype := orDefault(c.Type, "volume")
 	var colID int64
-	err = tx.QueryRowContext(ctx, s.q(`
-		INSERT INTO editions (series_id, provider_edition_id, provider_edition_name, edition_name, language, publisher, medium,
-			type, custom, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,TRUE,?) RETURNING id`),
-		c.SeriesID, c.ProviderEditionID, c.ProviderEditionName, c.EditionName, c.Language, c.Publisher, c.Medium, ctype,
-		utcNow()).Scan(&colID)
-	if err != nil {
-		if c := conflict(err, "an edition with this name/language/publisher/medium already exists"); c != err {
-			return 0, c
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		var duplicate int
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM editions WHERE series_id=? AND custom=TRUE AND edition_name=? AND language=? AND publisher=? AND medium=? AND type=?`), c.SeriesID, c.EditionName, c.Language, c.Publisher, c.Medium, orDefault(c.Type, "volume")).Scan(&duplicate); err != nil {
+			return err
 		}
-		return 0, fmt.Errorf("inserting local edition: %w", err)
-	}
+		if duplicate > 0 {
+			return apperr.Conflictf("a local edition with these details already exists; collect it again with another profile instead")
+		}
+		ctype := orDefault(c.Type, "volume")
+		e := tx.QueryRowContext(ctx, s.q(`
+			INSERT INTO editions (series_id, provider_edition_id, provider_edition_name, edition_name, language, publisher, medium,
+				type, custom, updated_at)
+			VALUES (?,?,?,?,?,?,?,?,TRUE,?) RETURNING id`),
+			c.SeriesID, c.ProviderEditionID, c.ProviderEditionName, c.EditionName, c.Language, c.Publisher, c.Medium, ctype,
+			utcNow()).Scan(&colID)
+		if e != nil {
+			if c := conflict(e, "an edition with this name/language/publisher/medium already exists"); c != e {
+				return c
+			}
+			return fmt.Errorf("inserting local edition: %w", e)
+		}
 
-	if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored,cutoff_num) VALUES(?,'Default',TRUE,?,?)`), colID, c.Monitored, c.CutoffNum); err != nil {
-		return 0, err
-	}
+		if err := s.insertDefaultVersion(ctx, tx, colID, c.Monitored, c.CutoffNum); err != nil {
+			return err
+		}
 
-	if basedOn > 0 {
-		var sourceType string
-		if err := tx.QueryRowContext(ctx, s.q(`SELECT type FROM editions WHERE id=? AND series_id=?`), basedOn, c.SeriesID).Scan(&sourceType); err != nil {
-			return 0, ErrNotFound
-		}
-		if sourceType != ctype {
-			return 0, apperr.Invalidf("clone must have the same book type")
-		}
-		if _, err := tx.ExecContext(ctx, s.q(`
-			INSERT INTO books (edition_id, sequence_num, sequence_string, count_type, number_known, revision)
-			SELECT ?, sequence_num, sequence_string, count_type, number_known, revision
-			FROM books WHERE edition_id = ?
-			  AND edition_id IN (SELECT id FROM editions WHERE series_id = ?)`),
-			colID, basedOn, c.SeriesID); err != nil {
-			return 0, fmt.Errorf("cloning works: %w", err)
-		}
-	} else if ctype == "volume" {
-		for i := 1; i <= volumes; i++ {
+		if basedOn > 0 {
+			var sourceType string
+			if err := tx.QueryRowContext(ctx, s.q(`SELECT type FROM editions WHERE id=? AND series_id=?`), basedOn, c.SeriesID).Scan(&sourceType); err != nil {
+				return ErrNotFound
+			}
+			if sourceType != ctype {
+				return apperr.Invalidf("clone must have the same book type")
+			}
 			if _, err := tx.ExecContext(ctx, s.q(`
-				INSERT INTO books (edition_id, sequence_num, sequence_string, count_type)
-				VALUES (?,?,?,'main')`), colID, int64(i)*100, fmt.Sprintf("%d", i)); err != nil {
-				return 0, fmt.Errorf("generating work %d: %w", i, err)
+				INSERT INTO books (edition_id, sequence_num, sequence_string, count_type, number_known, revision)
+				SELECT ?, sequence_num, sequence_string, count_type, number_known, revision
+				FROM books WHERE edition_id = ?
+				  AND edition_id IN (SELECT id FROM editions WHERE series_id = ?)`),
+				colID, basedOn, c.SeriesID); err != nil {
+				return fmt.Errorf("cloning works: %w", err)
+			}
+		} else if ctype == "volume" {
+			for i := 1; i <= volumes; i++ {
+				if _, err := tx.ExecContext(ctx, s.q(`
+					INSERT INTO books (edition_id, sequence_num, sequence_string, count_type)
+					VALUES (?,?,?,'main')`), colID, int64(i)*100, fmt.Sprintf("%d", i)); err != nil {
+					return fmt.Errorf("generating work %d: %w", i, err)
+				}
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
 	}
-	return colID, tx.Commit()
+	return colID, nil
 }
 
 // MergeEditions folds one edition into another of the same series: a
@@ -250,44 +250,42 @@ func (s *Store) MergeEditions(ctx context.Context, seriesID, fromID, intoID int6
 	if err != nil {
 		return nil, err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := s.lockEditions(ctx, tx, false, fromID, intoID); err != nil {
+			return err
+		}
+
+		// Preserve acquisition policies as independent versions rather than
+		// combining different policies into one default.
+		for _, t := range versions {
+			if t.EditionID != fromID {
+				continue
+			}
+			name := t.Name + " (merged " + fmt.Sprint(t.ID) + ")"
+			if _, err := tx.ExecContext(ctx, s.q(`UPDATE versions SET edition_id=?,name=?,is_default=FALSE WHERE id=?`), intoID, name, t.ID); err != nil {
+				return err
+			}
+		}
+		if err := s.foldEdition(ctx, tx, fromID, intoID, p.Mapping); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, s.q(`UPDATE editions SET split=FALSE WHERE id=?`), intoID); err != nil {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = tx.Rollback() }()
-	if err = s.lockEditions(ctx, tx, false, fromID, intoID); err != nil {
-		return nil, err
-	}
-
-	// Preserve acquisition policies as independent versions rather than
-	// combining different policies into one default.
-	for _, t := range versions {
-		if t.EditionID != fromID {
-			continue
-		}
-		name := t.Name + " (merged " + fmt.Sprint(t.ID) + ")"
-		if _, err = tx.ExecContext(ctx, s.q(`UPDATE versions SET edition_id=?,name=?,is_default=FALSE WHERE id=?`), intoID, name, t.ID); err != nil {
-			return nil, err
-		}
-	}
-	if err = s.foldEdition(ctx, tx, fromID, intoID, p.Mapping); err != nil {
-		return nil, err
-	}
-	if _, err = tx.ExecContext(ctx, s.q(`UPDATE editions SET split=FALSE WHERE id=?`), intoID); err != nil {
-		return nil, err
-	}
-	return []int64{}, tx.Commit()
+	return []int64{}, nil
 }
 
 // DeleteCustomEdition removes a custom collection and its book links
 // (files themselves stay in the library).
 func (s *Store) DeleteCustomEdition(ctx context.Context, seriesID, editionID int64) error {
-	col, err := s.GetEdition(ctx, editionID)
+	col, err := s.editionOf(ctx, seriesID, editionID)
 	if err != nil {
 		return err
-	}
-	if col.SeriesID != seriesID {
-		return ErrNotFound
 	}
 	if !col.Custom {
 		return apperr.Invalidf("only local editions can be deleted")
@@ -306,22 +304,19 @@ func (s *Store) DeleteCustomEdition(ctx context.Context, seriesID, editionID int
 	if *n > 0 {
 		return apperr.Conflictf("unlink owned files before deleting this edition")
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err = s.lockEditions(ctx, tx, false, editionID); err != nil {
-		return err
-	}
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := s.lockEditions(ctx, tx, false, editionID); err != nil {
+			return err
+		}
 
-	if _, err = tx.ExecContext(ctx, s.q(`UPDATE source_bindings SET edition_id=0 WHERE edition_id=?`), editionID); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM editions WHERE id = ?`), editionID); err != nil {
-		return err
-	}
-	return tx.Commit()
+		if _, err := tx.ExecContext(ctx, s.q(`UPDATE source_bindings SET edition_id=0 WHERE edition_id=?`), editionID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM editions WHERE id = ?`), editionID); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func (s *Store) ListBooks(ctx context.Context, editionID int64) ([]Book, error) {
@@ -330,12 +325,8 @@ func (s *Store) ListBooks(ctx context.Context, editionID int64) ([]Book, error) 
 
 // SetEditionCutoff changes the default version’s exclusive chapter cutoff.
 func (s *Store) SetEditionCutoff(ctx context.Context, seriesID, editionID, cutoff int64) error {
-	c, err := s.GetEdition(ctx, editionID)
-	if err != nil {
+	if _, err := s.editionOf(ctx, seriesID, editionID); err != nil {
 		return err
-	}
-	if c.SeriesID != seriesID {
-		return ErrNotFound
 	}
 	if err := s.touch(ctx, `UPDATE versions SET cutoff_num=? WHERE edition_id=? AND is_default=TRUE`, cutoff, editionID); err != nil && err != ErrNotFound {
 		return err

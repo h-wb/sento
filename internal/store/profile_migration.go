@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -10,6 +11,15 @@ import (
 
 	"github.com/h-wb/sento/internal/profile"
 )
+
+// uniqueName picks a name taken() does not have: base, then "base (2)", …
+func uniqueName(base string, taken func(string) bool) string {
+	name := base
+	for n := 2; taken(name); n++ {
+		name = fmt.Sprintf("%s (%d)", base, n)
+	}
+	return name
+}
 
 // MigrateCopyRules moves legacy copy restrictions into reusable profiles.
 // All writes commit together; clearing the old fields makes reruns a no-op.
@@ -54,123 +64,99 @@ func (s *Store) MigrateCopyRules(ctx context.Context) error {
 		}
 		bases[v.ID] = id
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	ensureFormat := func(name string, conditions ...profile.Condition) (int64, error) {
-		for _, f := range formats {
-			if reflect.DeepEqual(f.Conditions, conditions) {
-				return f.ID, nil
-			}
-		}
-		base := name
-		for n := 2; ; n++ {
-			used := false
+	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		ensureFormat := func(name string, conditions ...profile.Condition) (int64, error) {
 			for _, f := range formats {
-				if f.Name == name {
-					used = true
+				if reflect.DeepEqual(f.Conditions, conditions) {
+					return f.ID, nil
+				}
+			}
+			name = uniqueName(name, func(n string) bool {
+				return slices.ContainsFunc(formats, func(f profile.Format) bool { return f.Name == n })
+			})
+			body, e := json.Marshal(conditions)
+			if e != nil {
+				return 0, e
+			}
+			var id int64
+			e = tx.QueryRowContext(ctx, s.q(`INSERT INTO custom_formats(name,conditions_json) VALUES(?,?) RETURNING id`), name, string(body)).Scan(&id)
+			if e == nil {
+				formats = append(formats, profile.Format{ID: id, Name: name, Conditions: conditions})
+			}
+			return id, e
+		}
+		for _, v := range versions {
+			p := profile.Profile{Name: "Standard", MinFormatScore: profile.MinScoreOff}
+			p.Volume, p.Chapter = profile.DefaultRules()
+			for _, ex := range profiles {
+				if ex.ID == bases[v.ID] {
+					p = ex
 					break
 				}
 			}
-			if !used {
-				break
-			}
-			name = fmt.Sprintf("%s (%d)", base, n)
-		}
-		body, e := json.Marshal(conditions)
-		if e != nil {
-			return 0, e
-		}
-		var id int64
-		e = tx.QueryRowContext(ctx, s.q(`INSERT INTO custom_formats(name,conditions_json) VALUES(?,?) RETURNING id`), name, string(body)).Scan(&id)
-		if e == nil {
-			formats = append(formats, profile.Format{ID: id, Name: name, Conditions: conditions})
-		}
-		return id, e
-	}
-	for _, v := range versions {
-		p := profile.Profile{Name: "Standard", MinFormatScore: profile.MinScoreOff}
-		p.Volume, p.Chapter = profile.DefaultRules()
-		for _, ex := range profiles {
-			if ex.ID == bases[v.ID] {
-				p = ex
-				break
-			}
-		}
-		p.Required = slices.Clone(p.Required)
-		name := p.Name
-		if v.RequiredGroup != "" {
-			conditions := []profile.Condition{{Type: profile.CondGroup, Value: "(?i)" + v.RequiredGroup}}
-			re, e := regexp.Compile("(?i)" + v.RequiredGroup)
-			if e != nil {
-				return fmt.Errorf("copy %d group rule: %w", v.ID, e)
-			}
-			// Legacy regexes could also accept an unstated group. Preserve that
-			// alternative without changing normal group-format semantics.
-			if re.MatchString("") {
-				conditions = append(conditions, profile.Condition{Type: profile.CondGroup, Value: ".*", Negate: true})
-			}
-			id, e := ensureFormat("Group: "+v.RequiredGroup, conditions...)
-			if e != nil {
-				return e
-			}
-			if !slices.Contains(p.Required, id) {
-				p.Required = append(p.Required, id)
-			}
-			name += " · " + v.RequiredGroup
-		}
-		if !v.AllowUnknown {
-			id, e := ensureFormat("Stated language", profile.Condition{Type: profile.CondLanguage, Value: profile.AnyLanguage})
-			if e != nil {
-				return e
-			}
-			if !slices.Contains(p.Required, id) {
-				p.Required = append(p.Required, id)
-			}
-			name += " · stated language"
-		}
-		body, e := encodeProfileBody(p)
-		if e != nil {
-			return e
-		}
-		var id int64
-		for _, ex := range profiles {
-			existing, e := encodeProfileBody(ex)
-			if e != nil {
-				return e
-			}
-			if existing == body {
-				id = ex.ID
-				break
-			}
-		}
-		if id == 0 {
-			base := name
-			for n := 2; ; n++ {
-				used := false
-				for _, ex := range profiles {
-					if ex.Name == name {
-						used = true
-						break
-					}
+			p.Required = slices.Clone(p.Required)
+			name := p.Name
+			if v.RequiredGroup != "" {
+				conditions := []profile.Condition{{Type: profile.CondGroup, Value: "(?i)" + v.RequiredGroup}}
+				re, e := regexp.Compile("(?i)" + v.RequiredGroup)
+				if e != nil {
+					return fmt.Errorf("copy %d group rule: %w", v.ID, e)
 				}
-				if !used {
+				// Legacy regexes could also accept an unstated group. Preserve that
+				// alternative without changing normal group-format semantics.
+				if re.MatchString("") {
+					conditions = append(conditions, profile.Condition{Type: profile.CondGroup, Value: ".*", Negate: true})
+				}
+				id, e := ensureFormat("Group: "+v.RequiredGroup, conditions...)
+				if e != nil {
+					return e
+				}
+				if !slices.Contains(p.Required, id) {
+					p.Required = append(p.Required, id)
+				}
+				name += " · " + v.RequiredGroup
+			}
+			if !v.AllowUnknown {
+				id, e := ensureFormat("Stated language", profile.Condition{Type: profile.CondLanguage, Value: profile.AnyLanguage})
+				if e != nil {
+					return e
+				}
+				if !slices.Contains(p.Required, id) {
+					p.Required = append(p.Required, id)
+				}
+				name += " · stated language"
+			}
+			body, e := encodeProfileBody(p)
+			if e != nil {
+				return e
+			}
+			var id int64
+			for _, ex := range profiles {
+				existing, e := encodeProfileBody(ex)
+				if e != nil {
+					return e
+				}
+				if existing == body {
+					id = ex.ID
 					break
 				}
-				name = fmt.Sprintf("%s (%d)", base, n)
 			}
-			e = tx.QueryRowContext(ctx, s.q(`INSERT INTO profiles(name,body_json) VALUES(?,?) RETURNING id`), name, body).Scan(&id)
-			if e != nil {
+			if id == 0 {
+				name = uniqueName(name, func(n string) bool {
+					return slices.ContainsFunc(profiles, func(ex profile.Profile) bool { return ex.Name == n })
+				})
+				e = tx.QueryRowContext(ctx, s.q(`INSERT INTO profiles(name,body_json) VALUES(?,?) RETURNING id`), name, body).Scan(&id)
+				if e != nil {
+					return e
+				}
+				p.ID, p.Name = id, name
+				profiles = append(profiles, p)
+			}
+			if _, e = tx.ExecContext(ctx, s.q(`UPDATE versions SET profile_id=?,required_group='',allow_unknown=TRUE WHERE id=?`), id, v.ID); e != nil {
 				return e
 			}
-			p.ID, p.Name = id, name
-			profiles = append(profiles, p)
 		}
-		if _, e = tx.ExecContext(ctx, s.q(`UPDATE versions SET profile_id=?,required_group='',allow_unknown=TRUE WHERE id=?`), id, v.ID); e != nil {
-			return e
-		}
-	}
-	return tx.Commit()
+		return nil
+	})
+	return err
 }

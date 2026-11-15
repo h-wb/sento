@@ -108,83 +108,59 @@ type FileReviewWrite struct {
 // validate checks external evidence after acquiring the decision locks and
 // before changing any rows. It must not access the store while its tx is open.
 func (s *Store) CommitFileReviews(ctx context.Context, sid int64, revision string, writes []FileReviewWrite, validate func() error) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	// Inherited policy lives on the series itself. Lock it before editions
-	// (the same order as catalog refresh) so direct profile/path updates cannot
-	// change the decision snapshot between its revision check and commit.
-	query := `SELECT id FROM series WHERE id=?`
-	if s.pg {
-		query += ` FOR UPDATE`
-	} else if _, err = tx.ExecContext(ctx, s.q(`UPDATE series SET id=id WHERE id=?`), sid); err != nil {
-		return err
-	}
-	var lockedID int64
-	if err = tx.QueryRowContext(ctx, s.q(query), sid).Scan(&lockedID); err != nil {
-		return err
-	}
-	rows, err := tx.QueryContext(ctx, s.q(`SELECT id FROM editions WHERE series_id=? ORDER BY id`), sid)
-	if err != nil {
-		return err
-	}
-	var eids []int64
-	for rows.Next() {
-		var id int64
-		if err = rows.Scan(&id); err != nil {
-			_ = rows.Close()
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		// Inherited policy lives on the series itself. Lock it before editions
+		// (the same order as catalog refresh) so direct profile/path updates cannot
+		// change the decision snapshot between its revision check and commit.
+		if _, err := s.lockRow(ctx, tx, "series", "id", sid); err != nil {
 			return err
 		}
-		eids = append(eids, id)
-	}
-	err = rows.Err()
-	_ = rows.Close()
-	if err != nil {
-		return err
-	}
-	if err = s.lockEditions(ctx, tx, true, eids...); err != nil {
-		return err
-	}
-	if s.pg {
-		// Configuration writers do not take edition locks. Keep the profile,
-		// format and default-setting snapshot stable until selection commits.
-		if _, err = tx.ExecContext(ctx, `LOCK TABLE profiles,custom_formats,settings IN SHARE MODE`); err != nil {
+		eids, err := listQ[int64](ctx, tx, s.q(`SELECT id FROM editions WHERE series_id=? ORDER BY id`), sid)
+		if err != nil {
 			return err
 		}
-	}
-	fresh, err := s.reviewRevision(ctx, tx, sid)
-	if err != nil {
-		return err
-	}
-	if revision != fresh {
-		return apperr.Conflictf("review changed; refresh the preview before applying choices")
-	}
-	// Check protection against the original selections across the whole batch.
-	// An earlier write must not deselect an owner to make a later trash safe.
-	for _, w := range writes {
-		if w.Disposition == "trash" {
-			uses, e := s.reviewFileUses(ctx, tx, w.FileID)
-			if e != nil {
-				return e
-			}
-			if uses > 0 {
-				return apperr.Conflictf("this archive is currently selected; keep it instead of moving it to trash")
+		if err := s.lockEditions(ctx, tx, true, eids...); err != nil {
+			return err
+		}
+		if s.pg {
+			// Configuration writers do not take edition locks. Keep the profile,
+			// format and default-setting snapshot stable until selection commits.
+			if _, err := tx.ExecContext(ctx, `LOCK TABLE profiles,custom_formats,settings IN SHARE MODE`); err != nil {
+				return err
 			}
 		}
-	}
-	if validate != nil {
-		if err = validate(); err != nil {
+		fresh, err := s.reviewRevision(ctx, tx, sid)
+		if err != nil {
 			return err
 		}
-	}
-	for _, w := range writes {
-		if err = s.writeFileReview(ctx, tx, sid, w); err != nil {
-			return err
+		if revision != fresh {
+			return apperr.Conflictf("review changed; refresh the preview before applying choices")
 		}
-	}
-	return tx.Commit()
+		// Check protection against the original selections across the whole batch.
+		// An earlier write must not deselect an owner to make a later trash safe.
+		for _, w := range writes {
+			if w.Disposition == "trash" {
+				uses, e := s.reviewFileUses(ctx, tx, w.FileID)
+				if e != nil {
+					return e
+				}
+				if uses > 0 {
+					return apperr.Conflictf("this archive is currently selected; keep it instead of moving it to trash")
+				}
+			}
+		}
+		if validate != nil {
+			if err := validate(); err != nil {
+				return err
+			}
+		}
+		for _, w := range writes {
+			if err := s.writeFileReview(ctx, tx, sid, w); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) writeFileReview(ctx context.Context, tx *sql.Tx, sid int64, w FileReviewWrite) error {
@@ -198,21 +174,7 @@ func (s *Store) writeFileReview(ctx context.Context, tx *sql.Tx, sid int64, w Fi
 	if err := s.rejectTrashEdit(ctx, tx, w.FileID); err != nil {
 		return err
 	}
-	pins := map[string]bool{}
-	rows, err := tx.QueryContext(ctx, s.q(`SELECT version_id,book_id FROM asset_coverage WHERE file_id=? AND pinned=TRUE`), w.FileID)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var vid, bid int64
-		if err = rows.Scan(&vid, &bid); err != nil {
-			_ = rows.Close()
-			return err
-		}
-		pins[BookKey(vid, bid)] = true
-	}
-	err = rows.Err()
-	_ = rows.Close()
+	pins, err := s.filePins(ctx, tx, w.FileID)
 	if err != nil {
 		return err
 	}
@@ -297,16 +259,13 @@ func (s *Store) CompleteReviewTrash(ctx context.Context, fid int64) error {
 // The caller has verified that no archive exists at the journal's destination.
 // Reopen the changed original for review without renewing consent for its bytes.
 func (s *Store) ReopenReviewTrash(ctx context.Context, fid int64) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM file_trash WHERE file_id=?`), fid); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=TRUE WHERE id=? AND review_action='trash'`), fid); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM file_trash WHERE file_id=?`), fid); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=TRUE WHERE id=? AND review_action='trash'`), fid); err != nil {
+			return err
+		}
+		return nil
+	})
 }

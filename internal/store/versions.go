@@ -34,6 +34,44 @@ type CollectedVersion struct {
 
 const versionColumns = `id,edition_id,name,is_default,monitored,COALESCE(profile_id,0) AS profile_id,COALESCE((SELECT name FROM profiles WHERE profiles.id=versions.profile_id),'') AS profile_name,cutoff_num,required_group,allow_unknown,acquire_unknown,include_extras`
 
+// insertDefaultVersion adds an edition's default version row.
+func (s *Store) insertDefaultVersion(ctx context.Context, tx *sql.Tx, editionID int64, monitored bool, cutoff int64) error {
+	_, err := tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored,cutoff_num) VALUES(?,'Default',TRUE,?,?)`), editionID, monitored, cutoff)
+	return err
+}
+
+// bookInVersion reports whether the book is in the version in the edition of
+// the series.
+func (s *Store) bookInVersion(ctx context.Context, q querier, seriesID, bookID, versionID, editionID int64) (bool, error) {
+	n, err := getQ[int](ctx, q, s.q(`SELECT COUNT(*) FROM books w JOIN versions t ON t.edition_id=w.edition_id JOIN editions c ON c.id=w.edition_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), bookID, versionID, editionID, seriesID)
+	if err != nil {
+		return false, err
+	}
+	return *n == 1, nil
+}
+
+// upsertBookOverride sets one book's monitored flag in one version.
+func (s *Store) upsertBookOverride(ctx context.Context, e execer, versionID, bookID int64, monitored bool) error {
+	_, err := e.ExecContext(ctx, s.q(`INSERT INTO book_overrides(version_id,book_id,monitored) VALUES(?,?,?) ON CONFLICT(version_id,book_id) DO UPDATE SET monitored=excluded.monitored`), versionID, bookID, monitored)
+	return err
+}
+
+// filePins loads the book keys of a file's pinned coverage rows.
+func (s *Store) filePins(ctx context.Context, q querier, fileID int64) (map[string]bool, error) {
+	rows, err := listQ[struct {
+		VersionID int64 `db:"version_id"`
+		BookID    int64 `db:"book_id"`
+	}](ctx, q, s.q(`SELECT version_id,book_id FROM asset_coverage WHERE file_id=? AND pinned=TRUE`), fileID)
+	if err != nil {
+		return nil, err
+	}
+	pins := map[string]bool{}
+	for _, r := range rows {
+		pins[BookKey(r.VersionID, r.BookID)] = true
+	}
+	return pins, nil
+}
+
 func (s *Store) ListVersions(ctx context.Context, seriesID int64) ([]CollectedVersion, error) {
 	return list[CollectedVersion](ctx, s, `SELECT `+versionColumns+` FROM versions WHERE edition_id IN(SELECT id FROM editions WHERE series_id=?) ORDER BY edition_id,is_default DESC,id`, seriesID)
 }
@@ -41,12 +79,9 @@ func (s *Store) GetVersion(ctx context.Context, id int64) (*CollectedVersion, er
 	return get[CollectedVersion](ctx, s, `SELECT `+versionColumns+` FROM versions WHERE id=?`, id)
 }
 func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVersion) (int64, error) {
-	c, err := s.GetEdition(ctx, t.EditionID)
+	c, err := s.editionOf(ctx, seriesID, t.EditionID)
 	if err != nil {
 		return 0, err
-	}
-	if c.SeriesID != seriesID {
-		return 0, ErrNotFound
 	}
 	t.Name = strings.TrimSpace(t.Name)
 	if t.CutoffNum < 0 {
@@ -64,20 +99,21 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 	}
 
 	if t.ID == 0 {
-		tx, e := s.db.BeginTx(ctx, nil)
-		if e != nil {
-			return 0, e
-		}
-		defer func() { _ = tx.Rollback() }()
-		if e = s.lockEditions(ctx, tx, true, c.ID); e != nil {
-			return 0, e
-		}
 		var id int64
-		e = tx.QueryRowContext(ctx, s.q(`INSERT INTO versions(edition_id,name,monitored,profile_id,cutoff_num,acquire_unknown,include_extras) VALUES(?,?,?,?,?,?,?) RETURNING id`), t.EditionID, t.Name, t.Monitored, prof, t.CutoffNum, t.AcquireUnknown, t.IncludeExtras).Scan(&id)
+		e := s.inTx(ctx, func(tx *sql.Tx) error {
+			if err := s.lockEditions(ctx, tx, true, c.ID); err != nil {
+				return err
+			}
+			err := tx.QueryRowContext(ctx, s.q(`INSERT INTO versions(edition_id,name,monitored,profile_id,cutoff_num,acquire_unknown,include_extras) VALUES(?,?,?,?,?,?,?) RETURNING id`), t.EditionID, t.Name, t.Monitored, prof, t.CutoffNum, t.AcquireUnknown, t.IncludeExtras).Scan(&id)
+			if err != nil {
+				return conflict(err, "this edition is already collected under that name")
+			}
+			return nil
+		})
 		if e != nil {
-			return 0, conflict(e, "this edition is already collected under that name")
+			return 0, e
 		}
-		return id, tx.Commit()
+		return id, nil
 	}
 
 	old, err := s.GetVersion(ctx, t.ID)
@@ -94,20 +130,14 @@ func (s *Store) SaveVersion(ctx context.Context, seriesID int64, t CollectedVers
 	if pending && (t.Name != old.Name || t.ProfileID != old.ProfileID || t.CutoffNum != old.CutoffNum || t.AcquireUnknown != old.AcquireUnknown || t.IncludeExtras != old.IncludeExtras) {
 		return 0, apperr.Conflictf("finish pending downloads before changing how this edition is collected")
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback() }()
 	monitorOnly := t.Name == old.Name && t.ProfileID == old.ProfileID && t.CutoffNum == old.CutoffNum && t.AcquireUnknown == old.AcquireUnknown && t.IncludeExtras == old.IncludeExtras
-	if err = s.lockEditions(ctx, tx, monitorOnly, c.ID); err != nil {
-		return 0, err
-	}
-	_, err = tx.ExecContext(ctx, s.q(`UPDATE versions SET name=?,monitored=?,profile_id=?,cutoff_num=?,acquire_unknown=?,include_extras=? WHERE id=?`), t.Name, t.Monitored, prof, t.CutoffNum, t.AcquireUnknown, t.IncludeExtras, t.ID)
-	if err == nil {
-		err = tx.Commit()
-	}
-
+	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := s.lockEditions(ctx, tx, monitorOnly, c.ID); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, s.q(`UPDATE versions SET name=?,monitored=?,profile_id=?,cutoff_num=?,acquire_unknown=?,include_extras=? WHERE id=?`), t.Name, t.Monitored, prof, t.CutoffNum, t.AcquireUnknown, t.IncludeExtras, t.ID)
+		return err
+	})
 	return t.ID, err
 }
 
@@ -124,12 +154,9 @@ func (s *Store) DeleteVersion(ctx context.Context, seriesID, id int64) error {
 	if err != nil {
 		return err
 	}
-	c, err := s.GetEdition(ctx, t.EditionID)
+	c, err := s.editionOf(ctx, seriesID, t.EditionID)
 	if err != nil {
 		return err
-	}
-	if c.SeriesID != seriesID {
-		return ErrNotFound
 	}
 	// Any way an edition is collected can be removed but the last: that
 	// one is switched off instead, and the edition stays in the library.
@@ -148,25 +175,22 @@ func (s *Store) DeleteVersion(ctx context.Context, seriesID, id int64) error {
 		return apperr.Conflictf("edition has pending downloads")
 	}
 	// Version deletion drops references, never assets or files.
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err = s.lockEditions(ctx, tx, false, c.ID); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM versions WHERE id=?`), id); err != nil {
-		return err
-	}
-	// The edition's remaining oldest way of collecting it becomes its
-	// default (it carries the edition's catalog-link and scan defaults).
-	if t.IsDefault {
-		if _, err = tx.ExecContext(ctx, s.q(`UPDATE versions SET is_default=TRUE WHERE id=(SELECT MIN(id) FROM versions WHERE edition_id=?)`), c.ID); err != nil {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := s.lockEditions(ctx, tx, false, c.ID); err != nil {
 			return err
 		}
-	}
-	return tx.Commit()
+		if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM versions WHERE id=?`), id); err != nil {
+			return err
+		}
+		// The edition's remaining oldest way of collecting it becomes its
+		// default (it carries the edition's catalog-link and scan defaults).
+		if t.IsDefault {
+			if _, err := tx.ExecContext(ctx, s.q(`UPDATE versions SET is_default=TRUE WHERE id=(SELECT MIN(id) FROM versions WHERE edition_id=?)`), c.ID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 type AssetFacts struct {
@@ -206,25 +230,19 @@ func (s *Store) PinCoverage(ctx context.Context, seriesID int64, a AssetCoverage
 	if err != nil {
 		return err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err = s.lockEditions(ctx, tx, true, version.EditionID); err != nil {
-		return err
-	}
-	if err = s.rejectTrashEdit(ctx, tx, a.FileID); err != nil {
-		return err
-	}
-	_, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,pinned)
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := s.lockEditions(ctx, tx, true, version.EditionID); err != nil {
+			return err
+		}
+		if err := s.rejectTrashEdit(ctx, tx, a.FileID); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,pinned)
  SELECT c.file_id,t.id,c.book_id,? FROM asset_contents c JOIN books w ON w.id=c.book_id JOIN versions t ON t.edition_id=w.edition_id JOIN files f ON f.id=c.file_id
  WHERE c.file_id=? AND t.id=? AND c.book_id=? AND f.series_id=?
  ON CONFLICT(file_id,version_id,book_id) DO UPDATE SET pinned=excluded.pinned`), a.Pinned, a.FileID, a.VersionID, a.BookID, seriesID)
-	if err != nil {
 		return err
-	}
-	return tx.Commit()
+	})
 }
 func (s *Store) SetAssetFacts(ctx context.Context, id int64, f AssetFacts, hash string) error {
 	raw, err := json.Marshal(f)
@@ -254,81 +272,63 @@ func (s *Store) MapFile(ctx context.Context, seriesID, fileID int64, slots []Boo
 		if err != nil {
 			return err
 		}
-		c, err := s.GetEdition(ctx, w.EditionID)
+		c, err := s.editionOf(ctx, seriesID, w.EditionID)
 		if err != nil {
 			return err
 		}
-		if t.EditionID != c.ID || c.SeriesID != seriesID {
+		if t.EditionID != c.ID {
 			return apperr.Invalidf("file mapping must belong to this series and version")
 		}
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	cids := []int64{}
-	for _, sl := range slots {
-		cids = append(cids, sl.EditionID)
-	}
-	if err = s.lockEditions(ctx, tx, true, cids...); err != nil {
-		return err
-	}
-	if err = s.rejectTrashEdit(ctx, tx, fileID); err != nil {
-		return err
-	}
-	for _, sl := range slots {
-		var valid int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM books w JOIN versions t ON t.edition_id=w.edition_id JOIN editions c ON c.id=w.edition_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), sl.BookID, sl.VersionID, sl.EditionID, seriesID).Scan(&valid); err != nil {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		cids := []int64{}
+		for _, sl := range slots {
+			cids = append(cids, sl.EditionID)
+		}
+		if err := s.lockEditions(ctx, tx, true, cids...); err != nil {
 			return err
 		}
-		if valid != 1 {
-			return apperr.Invalidf("book mapping changed; reopen this file to review it")
-		}
-	}
-	pins := map[string]bool{}
-	rows, err := tx.QueryContext(ctx, s.q(`SELECT version_id,book_id,pinned FROM asset_coverage WHERE file_id=?`), fileID)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var tid, wid int64
-		var pinned bool
-		if err = rows.Scan(&tid, &wid, &pinned); err != nil {
-			_ = rows.Close()
+		if err := s.rejectTrashEdit(ctx, tx, fileID); err != nil {
 			return err
 		}
-		pins[BookKey(tid, wid)] = pinned
-	}
-	err = rows.Err()
-	_ = rows.Close()
-	if err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_coverage WHERE file_id=?`), fileID); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_contents WHERE file_id=?`), fileID); err != nil {
-		return err
-	}
-	for _, sl := range slots {
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,book_id,verified,evidence) VALUES(?,?,TRUE,'manual') ON CONFLICT DO NOTHING`), fileID, sl.BookID); err != nil {
+		for _, sl := range slots {
+			valid, err := s.bookInVersion(ctx, tx, seriesID, sl.BookID, sl.VersionID, sl.EditionID)
+			if err != nil {
+				return err
+			}
+			if !valid {
+				return apperr.Invalidf("book mapping changed; reopen this file to review it")
+			}
+		}
+		pins, err := s.filePins(ctx, tx, fileID)
+		if err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,pinned,evidence) VALUES(?,?,?,? ,'manual') ON CONFLICT DO NOTHING`), fileID, sl.VersionID, sl.BookID, pins[BookKey(sl.VersionID, sl.BookID)]); err != nil {
+		if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM asset_coverage WHERE file_id=?`), fileID); err != nil {
 			return err
 		}
-	}
-	// Explicit mapping choices may exclude existing versions; future versions can still reuse content.
-	if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,selected)
+		if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM asset_contents WHERE file_id=?`), fileID); err != nil {
+			return err
+		}
+		for _, sl := range slots {
+			if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,book_id,verified,evidence) VALUES(?,?,TRUE,'manual') ON CONFLICT DO NOTHING`), fileID, sl.BookID); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,pinned,evidence) VALUES(?,?,?,? ,'manual') ON CONFLICT DO NOTHING`), fileID, sl.VersionID, sl.BookID, pins[BookKey(sl.VersionID, sl.BookID)]); err != nil {
+				return err
+			}
+		}
+		// Explicit mapping choices may exclude existing versions; future versions can still reuse content.
+		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,selected)
  SELECT c.file_id,t.id,c.book_id,FALSE FROM asset_contents c JOIN books w ON w.id=c.book_id JOIN versions t ON t.edition_id=w.edition_id
  WHERE c.file_id=? ON CONFLICT DO NOTHING`), fileID); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=FALSE,unrequested=? WHERE id=?`), len(slots) == 0, fileID); err != nil {
-		return err
-	}
-	return tx.Commit()
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=FALSE,unrequested=? WHERE id=?`), len(slots) == 0, fileID); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 // BookOwner is one file currently holding a book: who owns it, whether the
@@ -388,15 +388,14 @@ func (s *Store) SetBookMonitored(ctx context.Context, seriesID, versionID, bookI
 	if err != nil {
 		return err
 	}
-	c, err := s.GetEdition(ctx, t.EditionID)
+	c, err := s.editionOf(ctx, seriesID, t.EditionID)
 	if err != nil {
 		return err
 	}
-	if c.SeriesID != seriesID || w.EditionID != c.ID {
+	if w.EditionID != c.ID {
 		return ErrNotFound
 	}
-	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO book_overrides(version_id,book_id,monitored) VALUES(?,?,?) ON CONFLICT(version_id,book_id) DO UPDATE SET monitored=excluded.monitored`), versionID, bookID, monitored)
-	return err
+	return s.upsertBookOverride(ctx, s.db, versionID, bookID, monitored)
 }
 func (f *AssetFacts) Scan(src any) error {
 	switch v := src.(type) {
@@ -421,34 +420,28 @@ func (s *Store) BulkMonitor(ctx context.Context, sid, tid int64, ids []int64, mo
 	if err != nil {
 		return err
 	}
-	c, err := s.GetEdition(ctx, t.EditionID)
+	c, err := s.editionOf(ctx, sid, t.EditionID)
 	if err != nil {
 		return err
 	}
-	if c.SeriesID != sid {
-		return ErrNotFound
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err = s.lockEditions(ctx, tx, true, c.ID); err != nil {
-		return err
-	}
-	for _, id := range ids {
-		var count int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM books WHERE id=? AND edition_id=?`), id, c.ID).Scan(&count); err != nil {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := s.lockEditions(ctx, tx, true, c.ID); err != nil {
 			return err
 		}
-		if count != 1 {
-			return apperr.Invalidf("book belongs to another edition")
+		for _, id := range ids {
+			var count int
+			if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM books WHERE id=? AND edition_id=?`), id, c.ID).Scan(&count); err != nil {
+				return err
+			}
+			if count != 1 {
+				return apperr.Invalidf("book belongs to another edition")
+			}
+			if err := s.upsertBookOverride(ctx, tx, tid, id, monitored); err != nil {
+				return err
+			}
 		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO book_overrides(version_id,book_id,monitored) VALUES(?,?,?) ON CONFLICT(version_id,book_id) DO UPDATE SET monitored=excluded.monitored`), tid, id, monitored); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
+		return nil
+	})
 }
 
 // FactFlags are the flags a file's facts carry, as profiles' custom formats
@@ -549,30 +542,27 @@ func (s *Store) CorrectFilesFacts(ctx context.Context, sid int64, ids []int64, p
 	if err := p.Validate(); err != nil {
 		return err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	for _, fid := range ids {
-		var seriesID int64
-		var raw string
-		if err := tx.QueryRowContext(ctx, s.q(`SELECT series_id,facts_json FROM files WHERE id=?`), fid).Scan(&seriesID, &raw); errors.Is(err, sql.ErrNoRows) || (err == nil && seriesID != sid) {
-			return ErrNotFound
-		} else if err != nil {
-			return err
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		for _, fid := range ids {
+			var seriesID int64
+			var raw string
+			if err := tx.QueryRowContext(ctx, s.q(`SELECT series_id,facts_json FROM files WHERE id=?`), fid).Scan(&seriesID, &raw); errors.Is(err, sql.ErrNoRows) || (err == nil && seriesID != sid) {
+				return ErrNotFound
+			} else if err != nil {
+				return err
+			}
+			var facts AssetFacts
+			if err := json.Unmarshal([]byte(raw), &facts); err != nil {
+				return err
+			}
+			corrected, err := json.Marshal(facts.Corrected(p))
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, s.q(`UPDATE files SET facts_json=?,modified_at=? WHERE id=?`), string(corrected), utcNow(), fid); err != nil {
+				return err
+			}
 		}
-		var facts AssetFacts
-		if err := json.Unmarshal([]byte(raw), &facts); err != nil {
-			return err
-		}
-		corrected, err := json.Marshal(facts.Corrected(p))
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, s.q(`UPDATE files SET facts_json=?,modified_at=? WHERE id=?`), string(corrected), utcNow(), fid); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
+		return nil
+	})
 }

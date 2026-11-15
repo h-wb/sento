@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/georgysavva/scany/v2/sqlscan"
-
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/metadata"
 )
@@ -216,11 +214,7 @@ func (s *Store) syncCatalog(ctx context.Context, tx *sql.Tx, seriesID int64, col
 	if err := s.groupEditions(ctx, tx, seriesID); err != nil {
 		return err
 	}
-	rows, err := tx.QueryContext(ctx, s.q(`SELECT id FROM editions WHERE series_id=? AND custom=FALSE ORDER BY id`), seriesID)
-	if err != nil {
-		return err
-	}
-	ids, err := scanIDs(rows)
+	ids, err := listQ[int64](ctx, tx, s.q(`SELECT id FROM editions WHERE series_id=? AND custom=FALSE ORDER BY id`), seriesID)
 	if err != nil {
 		return err
 	}
@@ -230,19 +224,6 @@ func (s *Store) syncCatalog(ctx context.Context, tx *sql.Tx, seriesID int64, col
 		}
 	}
 	return nil
-}
-
-func scanIDs(rows *sql.Rows) ([]int64, error) {
-	defer func() { _ = rows.Close() }()
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
 }
 
 // editionFor finds the edition a new collection belongs to: the series'
@@ -386,8 +367,8 @@ type workRow struct {
 // pages; its date is the earliest any copy came out, since a book that
 // exists in print exists. Fields edited by hand are left alone.
 func (s *Store) deriveEdition(ctx context.Context, tx *sql.Tx, edID int64) error {
-	var cols []Collection
-	if err := sqlscan.Select(ctx, tx, &cols, s.q(`SELECT `+collectionColumns+` FROM collections c WHERE c.edition_id=? ORDER BY c.id`), edID); err != nil {
+	cols, err := listQ[Collection](ctx, tx, s.q(`SELECT `+collectionColumns+` FROM collections c WHERE c.edition_id=? ORDER BY c.id`), edID)
+	if err != nil {
 		return err
 	}
 	if len(cols) == 0 {
@@ -421,8 +402,8 @@ func (s *Store) deriveEdition(ctx context.Context, tx *sql.Tx, edID int64) error
 		return err
 	}
 
-	var works []workRow
-	if err := sqlscan.Select(ctx, tx, &works, s.q(`SELECT `+workColumns+`,w.raw_json FROM works w JOIN collections c ON c.id=w.collection_id WHERE c.edition_id=? ORDER BY w.id`), edID); err != nil {
+	works, err := listQ[workRow](ctx, tx, s.q(`SELECT `+workColumns+`,w.raw_json FROM works w JOIN collections c ON c.id=w.collection_id WHERE c.edition_id=? ORDER BY w.id`), edID)
+	if err != nil {
 		return err
 	}
 	slices.SortStableFunc(works, func(a, b workRow) int {
@@ -478,14 +459,14 @@ func (s *Store) groupEditions(ctx context.Context, tx *sql.Tx, seriesID int64) e
 		Busy              bool
 		Monitored         bool
 	}
-	var rows []row
-	if err := sqlscan.Select(ctx, tx, &rows, s.q(`SELECT e.id,e.language,e.type,e.provider_edition_id,e.edition_name AS name,
+	rows, err := listQ[row](ctx, tx, s.q(`SELECT e.id,e.language,e.type,e.provider_edition_id,e.edition_name AS name,
 		(EXISTS(SELECT 1 FROM asset_contents a JOIN books b ON b.id=a.book_id WHERE b.edition_id=e.id)
 		 OR EXISTS(SELECT 1 FROM asset_coverage a JOIN books b ON b.id=a.book_id WHERE b.edition_id=e.id)
 		 OR EXISTS(SELECT 1 FROM book_reservations r JOIN books b ON b.id=r.book_id WHERE b.edition_id=e.id)
 		 OR (SELECT COUNT(*) FROM versions v WHERE v.edition_id=e.id)>1) AS busy,
 		EXISTS(SELECT 1 FROM versions v WHERE v.edition_id=e.id AND v.monitored=TRUE) AS monitored
-		FROM editions e WHERE e.series_id=? AND e.custom=FALSE AND e.split=FALSE AND COALESCE(e.provider_edition_id,'')<>'' ORDER BY e.id`), seriesID); err != nil {
+		FROM editions e WHERE e.series_id=? AND e.custom=FALSE AND e.split=FALSE AND COALESCE(e.provider_edition_id,'')<>'' ORDER BY e.id`), seriesID)
+	if err != nil {
 		return err
 	}
 	groups := map[[3]string][]row{}
@@ -534,26 +515,21 @@ func (s *Store) groupEditions(ctx context.Context, tx *sql.Tx, seriesID int64) e
 
 // pendingEditions lists the editions of a series with downloads under way.
 func (s *Store) pendingEditions(ctx context.Context, tx *sql.Tx, seriesID int64) (map[int64]bool, error) {
-	rows, err := tx.QueryContext(ctx, s.q(`SELECT books_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`), seriesID)
+	rows, err := s.pendingRefs(ctx, tx, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
 	out := map[int64]bool{}
-	for rows.Next() {
-		var raw string
-		if err = rows.Scan(&raw); err != nil {
-			return nil, err
-		}
-		var books []BookRef
-		if err = json.Unmarshal([]byte(raw), &books); err != nil {
+	for _, row := range rows {
+		books, err := row.bookRefs()
+		if err != nil {
 			return nil, err
 		}
 		for _, b := range books {
 			out[b.EditionID] = true
 		}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // foldEdition empties one edition into another and deletes it. mapping
@@ -562,12 +538,13 @@ func (s *Store) pendingEditions(ctx context.Context, tx *sql.Tx, seriesID int64)
 // choices to its counterpart; an unpaired one moves over whole. The
 // versions of from are the caller's to move first, or they go with it.
 func (s *Store) foldEdition(ctx context.Context, tx *sql.Tx, from, into int64, mapping map[int64]int64) error {
-	var fromBooks, intoBooks []Book
-	if err := sqlscan.Select(ctx, tx, &fromBooks, s.q(`SELECT `+bookColumns+` FROM books WHERE edition_id=? ORDER BY sequence_num,id`), from); err != nil {
+	fromBooks, err := listQ[Book](ctx, tx, s.q(`SELECT `+bookColumns+` FROM books WHERE edition_id=? ORDER BY sequence_num,id`), from)
+	if err != nil {
 		return err
 	}
+	var intoBooks []Book
 	if mapping == nil {
-		if err := sqlscan.Select(ctx, tx, &intoBooks, s.q(`SELECT `+bookColumns+` FROM books WHERE edition_id=? ORDER BY sequence_num,id`), into); err != nil {
+		if intoBooks, err = listQ[Book](ctx, tx, s.q(`SELECT `+bookColumns+` FROM books WHERE edition_id=? ORDER BY sequence_num,id`), into); err != nil {
 			return err
 		}
 		mapping = pairBooks(fromBooks, intoBooks)
@@ -639,8 +616,8 @@ func (s *Store) detach(ctx context.Context, tx *sql.Tx, colID, edID int64, ctype
 	if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored) VALUES(?,'Default',TRUE,FALSE)`), newID); err != nil {
 		return 0, err
 	}
-	var works []Work
-	if err := sqlscan.Select(ctx, tx, &works, s.q(`SELECT `+workColumns+` FROM works w JOIN collections c ON c.id=w.collection_id WHERE w.collection_id=? ORDER BY w.id`), colID); err != nil {
+	works, err := listQ[Work](ctx, tx, s.q(`SELECT `+workColumns+` FROM works w JOIN collections c ON c.id=w.collection_id WHERE w.collection_id=? ORDER BY w.id`), colID)
+	if err != nil {
 		return 0, err
 	}
 	for _, w := range works {
@@ -689,17 +666,17 @@ func (s *Store) SeparateCollection(ctx context.Context, seriesID, collectionID i
 	if len(ed.Collections) < 2 {
 		return 0, apperr.Invalidf("this is the edition's only collection")
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	var id int64
+	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := s.lockEditions(ctx, tx, false, ed.ID); err != nil {
+			return err
+		}
+		var err error
+		id, err = s.detach(ctx, tx, collectionID, ed.ID, ed.Type, true)
+		return err
+	})
 	if err != nil {
 		return 0, err
 	}
-	defer func() { _ = tx.Rollback() }()
-	if err = s.lockEditions(ctx, tx, false, ed.ID); err != nil {
-		return 0, err
-	}
-	id, err := s.detach(ctx, tx, collectionID, ed.ID, ed.Type, true)
-	if err != nil {
-		return 0, err
-	}
-	return id, tx.Commit()
+	return id, nil
 }

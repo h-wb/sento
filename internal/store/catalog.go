@@ -2,9 +2,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/georgysavva/scany/v2/sqlscan"
 	"strconv"
 	"strings"
 	"time"
@@ -22,38 +22,35 @@ func (s *Store) EnsureModels(ctx context.Context, seriesID int64) error {
 	if err != nil {
 		return err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	for _, c := range cols {
-		if !c.Custom && c.SyncState == "local" {
-			if _, err = tx.ExecContext(ctx, s.q(`UPDATE editions SET sync_state='linked' WHERE id=?`), c.ID); err != nil {
-				return err
-			}
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored,cutoff_num) SELECT ?,'Default',TRUE,?,? WHERE NOT EXISTS(SELECT 1 FROM versions WHERE edition_id=? AND is_default=TRUE) ON CONFLICT DO NOTHING`), c.ID, c.Monitored, c.CutoffNum, c.ID); err != nil {
-			return err
-		}
-		// Metadata's chapter count is a compatibility bound, not an observation.
-		// Explicit chapter memberships always remain, including fractions/extras.
-		if c.Type == "chapter" && c.NumberingSource == "series_count" && series.TotalChapters <= 10000 {
-			var bound int
-			if err = tx.QueryRowContext(ctx, s.q(`SELECT generated_bound FROM editions WHERE id=?`), c.ID).Scan(&bound); err != nil {
-				return err
-			}
-			for n := bound + 1; n <= series.TotalChapters; n++ {
-				if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO books(edition_id,sequence_num,sequence_string,count_type,sync_state) SELECT ?,?,?,'main','inferred' WHERE NOT EXISTS(SELECT 1 FROM books WHERE edition_id=? AND sequence_num=? AND count_type='main')`), c.ID, n*100, strconv.Itoa(n), c.ID, n*100); err != nil {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		for _, c := range cols {
+			if !c.Custom && c.SyncState == "local" {
+				if _, err := tx.ExecContext(ctx, s.q(`UPDATE editions SET sync_state='linked' WHERE id=?`), c.ID); err != nil {
 					return err
 				}
 			}
-			if _, err = tx.ExecContext(ctx, s.q(`UPDATE editions SET generated_bound=? WHERE id=?`), max(bound, series.TotalChapters), c.ID); err != nil {
+			if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored,cutoff_num) SELECT ?,'Default',TRUE,?,? WHERE NOT EXISTS(SELECT 1 FROM versions WHERE edition_id=? AND is_default=TRUE) ON CONFLICT DO NOTHING`), c.ID, c.Monitored, c.CutoffNum, c.ID); err != nil {
 				return err
 			}
+			// Metadata's chapter count is a compatibility bound, not an observation.
+			// Explicit chapter memberships always remain, including fractions/extras.
+			if c.Type == "chapter" && c.NumberingSource == "series_count" && series.TotalChapters <= 10000 {
+				var bound int
+				if err := tx.QueryRowContext(ctx, s.q(`SELECT generated_bound FROM editions WHERE id=?`), c.ID).Scan(&bound); err != nil {
+					return err
+				}
+				for n := bound + 1; n <= series.TotalChapters; n++ {
+					if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO books(edition_id,sequence_num,sequence_string,count_type,sync_state) SELECT ?,?,?,'main','inferred' WHERE NOT EXISTS(SELECT 1 FROM books WHERE edition_id=? AND sequence_num=? AND count_type='main')`), c.ID, n*100, strconv.Itoa(n), c.ID, n*100); err != nil {
+						return err
+					}
+				}
+				if _, err := tx.ExecContext(ctx, s.q(`UPDATE editions SET generated_bound=? WHERE id=?`), max(bound, series.TotalChapters), c.ID); err != nil {
+					return err
+				}
+			}
 		}
-	}
-	return tx.Commit()
+		return nil
+	})
 }
 
 func (s *Store) GetBook(ctx context.Context, id int64) (*Book, error) {
@@ -86,12 +83,9 @@ func (s *Store) BookRawPayloads(ctx context.Context, seriesID int64) (map[int64]
 const bookColumns = `id,edition_id,COALESCE(provider_id,'') AS provider_id,sequence_num,COALESCE(sequence_string,'') AS sequence_string,count_type,COALESCE(release_date,'') AS release_date,COALESCE(isbn,'') AS isbn,COALESCE(pages,0) AS pages,number_known,revision,sync_state,overrides_json,(SELECT COUNT(*) FROM works x WHERE x.book_id=books.id AND x.sync_state='linked') AS copies`
 
 func (s *Store) SaveBook(ctx context.Context, seriesID int64, w Book) (int64, error) {
-	c, err := s.GetEdition(ctx, w.EditionID)
+	c, err := s.editionOf(ctx, seriesID, w.EditionID)
 	if err != nil {
 		return 0, err
-	}
-	if c.SeriesID != seriesID {
-		return 0, ErrNotFound
 	}
 	w.SequenceStr = strings.TrimSpace(w.SequenceStr)
 	if w.SequenceNum < 0 {
@@ -124,8 +118,8 @@ func (s *Store) SaveBook(ctx context.Context, seriesID int64, w Book) (int64, er
 		}
 		return id, tx.Commit()
 	}
-	var old Book
-	if err = sqlscan.Get(ctx, tx, &old, s.q(`SELECT `+bookColumns+` FROM books WHERE id=? AND edition_id=?`), w.ID, c.ID); err != nil {
+	old, err := getQ[Book](ctx, tx, s.q(`SELECT `+bookColumns+` FROM books WHERE id=? AND edition_id=?`), w.ID, c.ID)
+	if err != nil {
 		return 0, err
 	}
 	var previous string
@@ -155,37 +149,29 @@ func (s *Store) DeleteBook(ctx context.Context, seriesID, id int64) error {
 	if err != nil {
 		return err
 	}
-	c, err := s.GetEdition(ctx, w.EditionID)
+	c, err := s.editionOf(ctx, seriesID, w.EditionID)
 	if err != nil {
 		return err
 	}
-	if c.SeriesID != seriesID {
-		return ErrNotFound
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := s.lockEditions(ctx, tx, false, c.ID); err != nil {
+			return err
+		}
+		var n int
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM asset_contents WHERE book_id=?`), id).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			return apperr.Conflictf("unlink owned files before deleting this book")
+		}
+		var err error
+		if w.ProviderID != "" {
+			_, err = tx.ExecContext(ctx, s.q(`UPDATE books SET sync_state='retired' WHERE id=? AND edition_id=?`), id, c.ID)
+		} else {
+			_, err = tx.ExecContext(ctx, s.q(`DELETE FROM books WHERE id=? AND edition_id=?`), id, c.ID)
+		}
 		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err = s.lockEditions(ctx, tx, false, c.ID); err != nil {
-		return err
-	}
-	var n int
-	if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM asset_contents WHERE book_id=?`), id).Scan(&n); err != nil {
-		return err
-	}
-	if n > 0 {
-		return apperr.Conflictf("unlink owned files before deleting this book")
-	}
-	if w.ProviderID != "" {
-		_, err = tx.ExecContext(ctx, s.q(`UPDATE books SET sync_state='retired' WHERE id=? AND edition_id=?`), id, c.ID)
-	} else {
-		_, err = tx.ExecContext(ctx, s.q(`DELETE FROM books WHERE id=? AND edition_id=?`), id, c.ID)
-	}
-	if err != nil {
-		return err
-	}
-	return tx.Commit()
+	})
 }
 
 func (s *Store) EditionPending(ctx context.Context, cid int64) (bool, error) {
@@ -193,13 +179,13 @@ func (s *Store) EditionPending(ctx context.Context, cid int64) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	raws, err := list[string](ctx, s, `SELECT books_json FROM queue_items WHERE series_id=? AND status IN('queued','downloading','importing','needs_review','retry_wait','dispatch_unknown')`, c.SeriesID)
+	rows, err := s.pendingRefs(ctx, s.db, c.SeriesID)
 	if err != nil {
 		return false, err
 	}
-	for _, raw := range raws {
-		var slots []BookRef
-		if err = json.Unmarshal([]byte(raw), &slots); err != nil {
+	for _, row := range rows {
+		slots, err := row.bookRefs()
+		if err != nil {
 			return false, fmt.Errorf("invalid pending download mapping: %w", err)
 		}
 		for _, sl := range slots {
@@ -222,12 +208,8 @@ type BookObservation struct {
 }
 
 func (s *Store) ObserveBook(ctx context.Context, seriesID int64, o BookObservation) error {
-	c, err := s.GetEdition(ctx, o.EditionID)
-	if err != nil {
+	if _, err := s.editionOf(ctx, seriesID, o.EditionID); err != nil {
 		return err
-	}
-	if c.SeriesID != seriesID {
-		return ErrNotFound
 	}
 	if o.Number < 0 {
 		return apperr.Invalidf("observation number cannot be negative")
@@ -235,7 +217,7 @@ func (s *Store) ObserveBook(ctx context.Context, seriesID int64, o BookObservati
 	if o.Source == "" || o.ExternalKey == "" || o.Label == "" {
 		return apperr.Invalidf("source, external key and label are required")
 	}
-	_, err = s.db.ExecContext(ctx, s.q(`INSERT INTO book_observations(edition_id,source,external_key,label,number) VALUES(?,?,?,?,?) ON CONFLICT(edition_id,source,external_key) DO NOTHING`), o.EditionID, o.Source, o.ExternalKey, o.Label, o.Number)
+	_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO book_observations(edition_id,source,external_key,label,number) VALUES(?,?,?,?,?) ON CONFLICT(edition_id,source,external_key) DO NOTHING`), o.EditionID, o.Source, o.ExternalKey, o.Label, o.Number)
 	return err
 }
 func (s *Store) ListObservations(ctx context.Context, seriesID int64) ([]BookObservation, error) {
@@ -246,53 +228,42 @@ func (s *Store) ResolveObservation(ctx context.Context, seriesID, id int64, acce
 	if err != nil {
 		return err
 	}
-	c, err := s.GetEdition(ctx, o.EditionID)
+	c, err := s.editionOf(ctx, seriesID, o.EditionID)
 	if err != nil {
 		return err
-	}
-	if c.SeriesID != seriesID {
-		return ErrNotFound
 	}
 	if o.State != "pending" {
 		return apperr.Conflictf("observation already reviewed")
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	state := "rejected"
-	if accept {
-		state = "accepted"
-	}
-	res, err := tx.ExecContext(ctx, s.q(`UPDATE book_observations SET state=? WHERE id=? AND state='pending'`), state, id)
-	if err != nil {
-		return err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n != 1 {
-		return apperr.Conflictf("observation already reviewed")
-	}
-	if accept {
-		_, err = tx.ExecContext(ctx, s.q(`INSERT INTO books(edition_id,sequence_num,sequence_string,count_type,number_known) SELECT ?,?,?,'main',TRUE WHERE NOT EXISTS(SELECT 1 FROM books WHERE edition_id=? AND sequence_num=? AND count_type='main')`), c.ID, o.Number, o.Label, c.ID, o.Number)
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		state := "rejected"
+		if accept {
+			state = "accepted"
+		}
+		res, err := tx.ExecContext(ctx, s.q(`UPDATE book_observations SET state=? WHERE id=? AND state='pending'`), state, id)
 		if err != nil {
 			return err
 		}
-	}
-	return tx.Commit()
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n != 1 {
+			return apperr.Conflictf("observation already reviewed")
+		}
+		if accept {
+			if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO books(edition_id,sequence_num,sequence_string,count_type,number_known) SELECT ?,?,?,'main',TRUE WHERE NOT EXISTS(SELECT 1 FROM books WHERE edition_id=? AND sequence_num=? AND count_type='main')`), c.ID, o.Number, o.Label, c.ID, o.Number); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) SetBindingEdition(ctx context.Context, seriesID, bindingID, cid int64) error {
 	if cid > 0 {
-		c, err := s.GetEdition(ctx, cid)
-		if err != nil {
+		if _, err := s.editionOf(ctx, seriesID, cid); err != nil {
 			return err
-		}
-		if c.SeriesID != seriesID {
-			return ErrNotFound
 		}
 	}
 	// Placing a match on a chapter edition verifies it: its new chapters
@@ -306,12 +277,9 @@ func (s *Store) ResetBook(ctx context.Context, seriesID, id int64) error {
 	if err != nil {
 		return err
 	}
-	c, err := s.GetEdition(ctx, w.EditionID)
+	c, err := s.editionOf(ctx, seriesID, w.EditionID)
 	if err != nil {
 		return err
-	}
-	if c.SeriesID != seriesID {
-		return ErrNotFound
 	}
 	if w.ProviderID == "" {
 		return apperr.Invalidf("book has no catalog link")

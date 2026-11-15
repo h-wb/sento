@@ -132,11 +132,11 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 		return 0, err
 	}
 	for _, l := range links {
-		var valid int
-		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM books w JOIN versions t ON t.edition_id=w.edition_id JOIN editions c ON c.id=w.edition_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), l.BookID, l.VersionID, l.EditionID, f.SeriesID).Scan(&valid); err != nil {
+		valid, err := s.bookInVersion(ctx, tx, f.SeriesID, l.BookID, l.VersionID, l.EditionID)
+		if err != nil {
 			return 0, err
 		}
-		if valid != 1 {
+		if !valid {
 			return 0, apperr.Invalidf("file mapping does not belong to this edition/version")
 		}
 		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,evidence) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`), fileID, l.VersionID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {

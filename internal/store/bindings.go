@@ -30,12 +30,8 @@ func (s *Store) ListBindings(ctx context.Context, seriesID int64) ([]Binding, er
 // An active binding obsoletes any "unmatched" sentinel of the same site.
 func (s *Store) AddBinding(ctx context.Context, b Binding) (int64, error) {
 	if b.EditionID > 0 {
-		c, e := s.GetEdition(ctx, b.EditionID)
-		if e != nil {
+		if _, e := s.editionOf(ctx, b.SeriesID, b.EditionID); e != nil {
 			return 0, e
-		}
-		if c.SeriesID != b.SeriesID {
-			return 0, ErrNotFound
 		}
 	}
 	state := orDefault(b.State, "active")
