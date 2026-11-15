@@ -37,21 +37,31 @@ type AddSeriesRequest struct {
 	ProfileID     int64    `json:"profileId"`     // 0 = instance default
 }
 
+// fetchCatalog loads the provider's series, collections and works records
+// for one MangaBaka id.
+func (l *Library) fetchCatalog(ctx context.Context, mangabakaID int64) (*metadata.Series, []metadata.Collection, map[string][]metadata.Work, error) {
+	series, err := l.provider.GetSeries(ctx, mangabakaID)
+	if err != nil {
+		return nil, nil, nil, apperr.Upstreamf("fetching series %d: %w", mangabakaID, err)
+	}
+	collections, err := l.provider.GetCollections(ctx, series.MangaBakaID)
+	if err != nil {
+		return nil, nil, nil, apperr.Upstreamf("fetching collections: %w", err)
+	}
+	works, err := l.provider.GetWorks(ctx, series.MangaBakaID)
+	if err != nil {
+		return nil, nil, nil, apperr.Upstreamf("fetching works: %w", err)
+	}
+	return series, collections, works, nil
+}
+
 func (l *Library) AddSeries(ctx context.Context, req AddSeriesRequest) (int64, error) {
 	if req.MangaBakaID == 0 {
 		return 0, apperr.Invalidf("mangabakaId is required")
 	}
-	series, err := l.provider.GetSeries(ctx, req.MangaBakaID)
+	series, collections, works, err := l.fetchCatalog(ctx, req.MangaBakaID)
 	if err != nil {
-		return 0, apperr.Upstreamf("fetching series %d: %w", req.MangaBakaID, err)
-	}
-	collections, err := l.provider.GetCollections(ctx, series.MangaBakaID)
-	if err != nil {
-		return 0, apperr.Upstreamf("fetching collections: %w", err)
-	}
-	works, err := l.provider.GetWorks(ctx, series.MangaBakaID)
-	if err != nil {
-		return 0, apperr.Upstreamf("fetching works: %w", err)
+		return 0, err
 	}
 
 	monitorAll := req.Monitor == "all"
@@ -111,17 +121,9 @@ func (l *Library) Refresh(ctx context.Context, seriesID int64) error {
 	if err != nil {
 		return err
 	}
-	series, err := l.provider.GetSeries(ctx, existing.MangaBakaID)
+	series, collections, works, err := l.fetchCatalog(ctx, existing.MangaBakaID)
 	if err != nil {
-		return apperr.Upstreamf("fetching series %d: %w", existing.MangaBakaID, err)
-	}
-	collections, err := l.provider.GetCollections(ctx, series.MangaBakaID)
-	if err != nil {
-		return apperr.Upstreamf("fetching collections: %w", err)
-	}
-	works, err := l.provider.GetWorks(ctx, series.MangaBakaID)
-	if err != nil {
-		return apperr.Upstreamf("fetching works: %w", err)
+		return err
 	}
 	return l.store.ReconcileMetadata(ctx, seriesID, series, collections, works)
 }

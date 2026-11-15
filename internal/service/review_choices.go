@@ -142,37 +142,10 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 		if f.Presence != "present" {
 			row.Reason, row.TrashReason = "Recheck file storage before applying choices", "Recheck file storage before moving this archive"
 		} else {
-			// Stat before hashing, so a write during or after the hash
-			// changes the signature the commit compares.
-			info, e := statArchive(f.Path)
-			if e != nil {
-				return nil, "", nil, fmt.Errorf("read incoming archive: %w", e)
+			f, err = p.reviewFingerprint(ctx, st, f, digests, since, bound)
+			if err != nil {
+				return nil, "", nil, err
 			}
-			sig := trustedSignature(info, since)
-			p.stats[f.ID] = sig
-			if f.Hash != "" && sig != "" && (sig == f.HashStat || bound) {
-				digests[f.ID] = f.Hash
-			} else {
-				digests[f.ID], err = fileHash(f.Path)
-				if err != nil {
-					return nil, "", nil, fmt.Errorf("read incoming archive: %w", err)
-				}
-				if f.Hash != "" && f.Hash != digests[f.ID] {
-					return nil, "", nil, apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
-				}
-				// Record the signature the fingerprint was just read under, as
-				// a scan does, so later previews trust it instead of re-reading
-				// the archive. The write is guarded by the hash and only a
-				// settled signature is recorded.
-				if sig != "" && digests[f.ID] != "" {
-					if err = st.SetFileHashStat(ctx, f.ID, digests[f.ID], sig); err != nil {
-						return nil, "", nil, err
-					}
-				}
-			}
-			// Legacy files may have no fingerprint yet. A known fingerprint
-			// must match the evidence, never be renewed by confirmation.
-			f.Hash = digests[f.ID]
 			p.files[f.ID] = f
 		}
 		refs := input.Books
@@ -203,75 +176,9 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 		}
 		keys := map[string]bool{}
 		for _, ref := range refs {
-			version, e := st.GetVersion(ctx, ref.VersionID)
+			b, e := p.bookChoice(f, ref, cov, row.Reason, keys, selected)
 			if e != nil {
 				return nil, "", nil, e
-			}
-			col := editionByID(p.editions, version.EditionID)
-			if col == nil || col.ID != ref.EditionID {
-				return nil, "", nil, apperr.Invalidf("book mapping belongs to another series or card")
-			}
-			var book *store.Book
-			for i := range p.books[col.ID] {
-				if p.books[col.ID][i].ID == ref.BookID {
-					book = &p.books[col.ID][i]
-					break
-				}
-			}
-			key := store.BookKey(ref.VersionID, ref.BookID)
-			if book == nil || keys[key] {
-				return nil, "", nil, apperr.Invalidf("book is missing or selected more than once")
-			}
-			keys[key] = true
-			ref.Ledger, ref.Number = col.Type, book.SequenceNum
-			prof := p.profiles.For(*version)
-			b := ReviewBookPlan{Book: ref, Label: col.Type + " " + book.SequenceStr, Card: cardTitle(*col, *version, len(p.versions[col.ID])), Owners: []ReviewCopy{}, Incoming: judgeMappedFile(*col, prof, p.profiles.Formats, f, store.AssetCoverage{Evidence: "manual"})}
-			b.Reason = b.Incoming.Reason
-			for _, a := range cov {
-				if a.VersionID != ref.VersionID || a.BookID != ref.BookID {
-					continue
-				}
-				if a.FileID == f.ID {
-					b.CurrentSelected = f.Presence == "present" && !f.NeedsReview
-					continue
-				}
-				owner := p.files[a.FileID]
-				b.Owners = append(b.Owners, ReviewCopy{FileID: owner.ID, Path: owner.Path, Group: backedFacts(owner.Facts, owner.Claims).Group, Source: reviewSource(owner), Pinned: a.Pinned, Present: owner.Presence == "present", Score: judgeMappedFile(*col, prof, p.profiles.Formats, owner, a)})
-				if a.Pinned {
-					b.Reason = "Unpin the existing copy before replacing it"
-				}
-				if owner.Presence == "unknown" || owner.Presence == "unavailable" || !a.Verified || owner.NeedsReview {
-					b.Reason = "Recheck or finish reviewing the existing copy before replacing it"
-				}
-			}
-			if job, ok := p.jobs[f.Facts.ReleaseKey]; ok {
-				var snap ReleaseCandidate
-				_ = json.Unmarshal(job.Snapshot, &snap)
-				b.RequestedReplacement = slices.ContainsFunc(snap.RequestedReplacements, func(v store.BookRef) bool { return v.VersionID == ref.VersionID && v.BookID == ref.BookID })
-			}
-			b.UseIncoming = b.Reason == "" && (b.CurrentSelected || !slices.ContainsFunc(b.Owners, func(o ReviewCopy) bool { return o.Present }) || b.RequestedReplacement)
-			slices.SortFunc(b.Owners, func(a, b ReviewCopy) int {
-				if a.FileID < b.FileID {
-					return -1
-				}
-				if a.FileID > b.FileID {
-					return 1
-				}
-				return 0
-			})
-			if !b.Incoming.FactsKnown {
-				b.UseIncoming = false
-			}
-			// Editing confirmed contents is not consent to adopt a copy that
-			// was deselected, including files reviewed before review_action.
-			if !f.NeedsReview {
-				b.UseIncoming = b.CurrentSelected
-			}
-			// Several incoming archives may contain the same book. Choose at
-			// most one by default; every other archive remains available.
-			b.UseIncoming = b.UseIncoming && row.Reason == "" && !selected[key]
-			if b.UseIncoming {
-				selected[key] = true
 			}
 			row.Books = append(row.Books, b)
 		}
@@ -300,6 +207,127 @@ func reviewChoices(ctx context.Context, st *store.Store, sid int64, req ReviewPl
 	hash := sha256.Sum256(raw)
 	out.Token = strconv.FormatInt(since.UnixNano(), 10) + "." + hex.EncodeToString(hash[:])
 	return out, revision, p, nil
+}
+
+// reviewFingerprint reads one present file's fingerprint for the preview:
+// the recorded hash when its signature is trusted, else a fresh read. The
+// signature the read ran under is recorded, as a scan does.
+func (p *proposer) reviewFingerprint(ctx context.Context, st *store.Store, f store.File, digests map[int64]string, since time.Time, bound bool) (store.File, error) {
+	// Stat before hashing, so a write during or after the hash
+	// changes the signature the commit compares.
+	info, e := statArchive(f.Path)
+	if e != nil {
+		return f, fmt.Errorf("read incoming archive: %w", e)
+	}
+	sig := trustedSignature(info, since)
+	p.stats[f.ID] = sig
+	if f.Hash != "" && sig != "" && (sig == f.HashStat || bound) {
+		digests[f.ID] = f.Hash
+	} else {
+		digest, err := fingerprint(f.Path)
+		if err != nil {
+			return f, fmt.Errorf("read incoming archive: %w", err)
+		}
+		digests[f.ID] = digest
+		if f.Hash != "" && f.Hash != digests[f.ID] {
+			return f, apperr.Conflictf("archive contents changed; rescan the file before reviewing it")
+		}
+		// Record the signature the fingerprint was just read under, as
+		// a scan does, so later previews trust it instead of re-reading
+		// the archive. The write is guarded by the hash and only a
+		// settled signature is recorded.
+		if sig != "" && digests[f.ID] != "" {
+			if err = st.SetFileHashStat(ctx, f.ID, digests[f.ID], sig); err != nil {
+				return f, err
+			}
+		}
+	}
+	// Legacy files may have no fingerprint yet. A known fingerprint
+	// must match the evidence, never be renewed by confirmation.
+	f.Hash = digests[f.ID]
+	return f, nil
+}
+
+// bookChoice builds the plan for one book reference of an incoming file,
+// from the series' already loaded versions.
+func (p *proposer) bookChoice(f store.File, ref store.BookRef, cov []store.AssetCoverage, rowReason string, keys, selected map[string]bool) (ReviewBookPlan, error) {
+	var version *store.CollectedVersion
+	for _, vs := range p.versions {
+		for i := range vs {
+			if vs[i].ID == ref.VersionID {
+				version = &vs[i]
+			}
+		}
+	}
+	var col *store.Edition
+	if version != nil {
+		col = editionByID(p.editions, version.EditionID)
+	}
+	if col == nil || col.ID != ref.EditionID {
+		return ReviewBookPlan{}, apperr.Invalidf("book mapping belongs to another series or card")
+	}
+	var book *store.Book
+	for i := range p.books[col.ID] {
+		if p.books[col.ID][i].ID == ref.BookID {
+			book = &p.books[col.ID][i]
+			break
+		}
+	}
+	key := store.BookKey(ref.VersionID, ref.BookID)
+	if book == nil || keys[key] {
+		return ReviewBookPlan{}, apperr.Invalidf("book is missing or selected more than once")
+	}
+	keys[key] = true
+	ref.Ledger, ref.Number = col.Type, book.SequenceNum
+	prof := p.profiles.For(*version)
+	b := ReviewBookPlan{Book: ref, Label: col.Type + " " + book.SequenceStr, Card: cardTitle(*col, *version, len(p.versions[col.ID])), Owners: []ReviewCopy{}, Incoming: judgeMappedFile(*col, prof, p.profiles.Formats, f, store.AssetCoverage{Evidence: "manual"})}
+	b.Reason = b.Incoming.Reason
+	for _, a := range cov {
+		if a.VersionID != ref.VersionID || a.BookID != ref.BookID {
+			continue
+		}
+		if a.FileID == f.ID {
+			b.CurrentSelected = f.Presence == "present" && !f.NeedsReview
+			continue
+		}
+		owner := p.files[a.FileID]
+		b.Owners = append(b.Owners, ReviewCopy{FileID: owner.ID, Path: owner.Path, Group: backedFacts(owner.Facts, owner.Claims).Group, Source: reviewSource(owner), Pinned: a.Pinned, Present: owner.Presence == "present", Score: judgeMappedFile(*col, prof, p.profiles.Formats, owner, a)})
+		if a.Pinned {
+			b.Reason = "Unpin the existing copy before replacing it"
+		}
+		if owner.Presence == "unknown" || owner.Presence == "unavailable" || !a.Verified || owner.NeedsReview {
+			b.Reason = "Recheck or finish reviewing the existing copy before replacing it"
+		}
+	}
+	if job, ok := p.jobs[f.Facts.ReleaseKey]; ok {
+		snap := jobSnapshot(job)
+		b.RequestedReplacement = slices.ContainsFunc(snap.RequestedReplacements, func(v store.BookRef) bool { return v.VersionID == ref.VersionID && v.BookID == ref.BookID })
+	}
+	b.UseIncoming = b.Reason == "" && (b.CurrentSelected || !slices.ContainsFunc(b.Owners, func(o ReviewCopy) bool { return o.Present }) || b.RequestedReplacement)
+	slices.SortFunc(b.Owners, func(a, b ReviewCopy) int {
+		if a.FileID < b.FileID {
+			return -1
+		}
+		if a.FileID > b.FileID {
+			return 1
+		}
+		return 0
+	})
+	if !b.Incoming.FactsKnown {
+		b.UseIncoming = false
+	}
+	// Editing confirmed contents is not consent to adopt a copy that
+	// was deselected, including files reviewed before review_action.
+	if !f.NeedsReview {
+		b.UseIncoming = b.CurrentSelected
+	}
+	// Several incoming archives may contain the same book. Choose at
+	// most one by default; every other archive remains available.
+	b.UseIncoming = b.UseIncoming && rowReason == "" && !selected[key]
+	if b.UseIncoming {
+		selected[key] = true
+	}
+	return b, nil
 }
 
 // reviewTokenTime is the time the preview that issued token read its archives.
@@ -473,7 +501,7 @@ func validateReviewFiles(ctx context.Context, writes []store.FileReviewWrite, fi
 			}
 			continue
 		}
-		digest, err := fileHash(path)
+		digest, err := fingerprint(path)
 		if err != nil {
 			return err
 		}

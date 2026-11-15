@@ -28,10 +28,7 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 	if err != nil {
 		return nil, err
 	}
-	series, err := l.store.GetSeries(ctx, sid)
-	if err != nil {
-		return nil, err
-	}
+	series := v.Series
 	out := &EditionOverview{Versions: []VersionSummary{}}
 	unique := map[int64]bool{}
 	for _, t := range v.Versions {
@@ -57,18 +54,14 @@ func (l *Library) EditionOverview(ctx context.Context, sid int64) (*EditionOverv
 				row.Wanted++
 				out.WantedCopies++
 			}
-			if sl.State == "needs_review" || sl.State == "storage_unavailable" {
+			if sl.State == StateNeedsReview || sl.State == StateStorageUnavailable {
 				row.Review++
 			}
 		}
 		out.Versions = append(out.Versions, row)
 	}
 	out.BooksOnDisk = len(unique)
-	files, err := l.store.ListFiles(ctx, sid)
-	if err != nil {
-		return nil, err
-	}
-	for _, f := range files {
+	for _, f := range v.Files {
 		if f.NeedsReview {
 			out.ReviewFiles++
 		}

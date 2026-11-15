@@ -8,10 +8,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 )
+
+// mediafile.RenderPlainNum renders the hundredths numbers review shows
+// ("0", "0.05", "0.5", "1", "1.5", "10.5", "1000").
+func TestRenderPlainNumTable(t *testing.T) {
+	for _, tc := range []struct {
+		n    int64
+		want string
+	}{{0, "0"}, {5, "0.05"}, {50, "0.5"}, {100, "1"}, {150, "1.5"}, {1050, "10.5"}, {100000, "1000"}} {
+		if got := mediafile.RenderPlainNum(tc.n); got != tc.want {
+			t.Errorf("RenderPlainNum(%d) = %q, want %q", tc.n, got, tc.want)
+		}
+	}
+}
 
 // A file waiting for review is proposed the books its own name gives,
 // read against every edition; a number with no volume or chapter marker

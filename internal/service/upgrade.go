@@ -201,7 +201,7 @@ func (im *Importer) exileToReview(ctx context.Context, seriesID int64, f store.F
 	}
 	hash := f.Hash
 	if hash == "" {
-		if h, err := fileHash(f.Path); err == nil {
+		if h, err := fingerprint(f.Path); err == nil {
 			hash = h
 		}
 	}

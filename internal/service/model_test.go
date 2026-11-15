@@ -435,7 +435,7 @@ func TestModelAtomicInstallCannotClobber(t *testing.T) {
 	if err := os.WriteFile(dst, []byte("retained"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	hash, _ := fileHash(src)
+	hash, _ := fingerprint(src)
 	for _, copy := range []bool{false, true} {
 		if err := installAsset(src, dst, hash, copy); err == nil {
 			t.Fatal("different bytes accepted at occupied destination")
@@ -545,7 +545,7 @@ func TestModelPackStaysOneAssetAcrossUnitsAndVersions(t *testing.T) {
 	}
 	// Still one archive with the same pages; tagged at series level only,
 	// since no single number describes two volumes.
-	if want, _ := fileHash(filepath.Join(dir, name)); fs[0].Hash != want {
+	if want, _ := fingerprint(filepath.Join(dir, name)); fs[0].Hash != want {
 		t.Fatal("pack pages changed")
 	}
 	if _, info := readBook(t, fs[0].Path); info == nil || info.Series != "ONE PIECE" || info.Number != "" || info.Volume != "" {

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/h-wb/sento/internal/apperr"
+	"github.com/h-wb/sento/internal/profile"
 )
 
 type AssetFacts struct {
@@ -56,7 +57,7 @@ func (f *AssetFacts) Scan(src any) error {
 
 // FactFlags are the flags a file's facts carry, as profiles' custom formats
 // test them and a person can set them.
-var FactFlags = []string{"digital", "scan", "web", "premium", "colored", "omnibus", "deluxe", "boxset", "official", "raw", "complete"}
+var FactFlags = profile.Flags
 
 // manualSource marks a fact a person set: no re-read, re-scan or release
 // claim replaces it.

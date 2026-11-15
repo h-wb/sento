@@ -106,7 +106,7 @@ func (s *SearchService) Grab(ctx context.Context, seriesID int64, searchLedger s
 
 func (s *SearchService) grabClaims(ctx context.Context, seriesID int64, searchLedger string, c ReleaseCandidate, slots []store.BookRef, force bool) (int64, error) {
 	for _, r := range c.Rejections {
-		if hardRejections[r] {
+		if rejectionRules[r].Hard {
 			return 0, apperr.Invalidf("candidate is rejected: %s", r)
 		}
 		if !force {
@@ -196,6 +196,20 @@ func queueBooks(q *store.QueueItem) []store.BookRef {
 	var refs []store.BookRef
 	_ = json.Unmarshal(q.Books, &refs)
 	return refs
+}
+
+// queueBooksErr is queueBooks with the decode error.
+func queueBooksErr(q *store.QueueItem) ([]store.BookRef, error) {
+	var refs []store.BookRef
+	err := json.Unmarshal(q.Books, &refs)
+	return refs, err
+}
+
+// jobSnapshot decodes a queue item's candidate snapshot, ignoring a bad one.
+func jobSnapshot(item store.QueueItem) ReleaseCandidate {
+	var snap ReleaseCandidate
+	_ = json.Unmarshal(item.Snapshot, &snap)
+	return snap
 }
 
 type scheduledKey struct{}

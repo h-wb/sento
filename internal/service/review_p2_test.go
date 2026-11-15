@@ -212,7 +212,7 @@ func TestScanNoticesAReplacedArchive(t *testing.T) {
 	if err != nil || len(after) != 1 {
 		t.Fatalf("after: %+v, %v", after, err)
 	}
-	current, _ := fileHash(path)
+	current, _ := fingerprint(path)
 	if res.Changed != 1 || after[0].Hash != current || after[0].Hash == before[0].Hash {
 		t.Fatalf("replaced archive kept its old record: changed=%d hash=%s", res.Changed, after[0].Hash)
 	}

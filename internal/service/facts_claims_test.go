@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -252,7 +253,7 @@ func fileByID(t *testing.T, st *store.Store, sid, fid int64) store.File {
 
 // Every flag the parser produces can be corrected.
 func TestFactFlagsCoverTheParsersFlags(t *testing.T) {
-	for flag := range candidateFlags(ReleaseCandidate{}) {
+	for flag := range parseFlags(parse.Result{}) {
 		if !slices.Contains(store.FactFlags, flag) {
 			t.Errorf("flag %q is read from names but cannot be corrected", flag)
 		}

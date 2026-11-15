@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,9 +15,9 @@ import (
 	"github.com/h-wb/sento/internal/store"
 )
 
-// fileHash identifies a book by its pages (mediafile.Fingerprint), so a
+// fingerprint identifies a book by its pages (mediafile.Fingerprint), so a
 // download and its processed, tagged library copy are the same asset.
-func fileHash(path string) (string, error) { return mediafile.Fingerprint(path) }
+func fingerprint(path string) (string, error) { return mediafile.Fingerprint(path) }
 
 // errAssetNeedsReview marks an asset that was recorded but whose observed
 // facts break the requested release profile: the file is in place (exiled
@@ -30,9 +29,8 @@ var errAssetNeedsReview = errors.New("file's observed facts do not meet the requ
 // format: what the file is taken to be until its own name says otherwise,
 // and the claims it keeps beside its own facts.
 func offerFacts(item store.QueueItem, format string) store.AssetFacts {
-	var snap ReleaseCandidate
-	_ = json.Unmarshal(item.Snapshot, &snap)
-	facts := store.AssetFacts{Title: snap.Title, Site: snap.Site, Protocol: item.Protocol, FactsKnown: snap.Title != "", Flags: candidateFlags(snap), Language: snap.Parse.Language, Group: snap.Parse.Group, Format: format, FormatScore: snap.FormatScore, Resolution: snap.Parse.Quality.Resolution, Revision: snap.Parse.Version, Digital: snap.Parse.Quality.Digital, ProfileID: snap.ProfileID, ReleaseKey: item.ReleaseKey}
+	snap := jobSnapshot(item)
+	facts := store.AssetFacts{Title: snap.Title, Site: snap.Site, Protocol: item.Protocol, FactsKnown: snap.Title != "", Flags: parseFlags(snap.Parse), Language: snap.Parse.Language, Group: snap.Parse.Group, Format: format, FormatScore: snap.FormatScore, Resolution: snap.Parse.Quality.Resolution, Revision: snap.Parse.Version, Digital: snap.Parse.Quality.Digital, ProfileID: snap.ProfileID, ReleaseKey: item.ReleaseKey}
 	if facts.Group == "" {
 		facts.Group = snap.Scanlator
 	}
@@ -63,7 +61,7 @@ func verifyDestination(path, hash string) error {
 	} else if err != nil {
 		return err
 	}
-	got, err := fileHash(path)
+	got, err := fingerprint(path)
 	if err != nil {
 		return err
 	}
@@ -104,8 +102,8 @@ func installProcessed(src, dest, hash string, info mediafile.ComicInfo) error {
 }
 
 func (im *Importer) normalizeExpected(ctx context.Context, item store.QueueItem) ([]store.BookRef, error) {
-	var slots []store.BookRef
-	if err := json.Unmarshal(item.Books, &slots); err != nil {
+	slots, err := queueBooksErr(&item)
+	if err != nil {
 		return nil, err
 	}
 	if len(slots) == 0 {
@@ -151,7 +149,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		facts.Title = filepath.Base(path)
 		facts.Group = actual.Group
 		facts.Language = actual.Language
-		facts.Flags = candidateFlags(ReleaseCandidate{Parse: actual})
+		facts.Flags = parseFlags(actual)
 		facts.Resolution = actual.Quality.Resolution
 		facts.Revision = actual.Version
 		facts.Digital = actual.Quality.Digital
@@ -160,7 +158,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 	// Stat before hashing, so a write during or after the hash changes the
 	// signature recorded with it. Recording the signature lets review
 	// previews trust the fingerprint instead of re-reading the archive.
-	hash, err := fileHash(path)
+	hash, err := fingerprint(path)
 	if err != nil {
 		return err
 	}
@@ -271,7 +269,7 @@ func installAsset(src, dest, hash string, alwaysCopy bool) error {
 
 // Unmatched archives are retained for human mapping without claiming coverage.
 func (im *Importer) importReviewFile(ctx context.Context, item store.QueueItem, root, src string, parsed any, copy bool) error {
-	hash, err := fileHash(src)
+	hash, err := fingerprint(src)
 	if err != nil {
 		return err
 	}
@@ -284,14 +282,13 @@ func (im *Importer) importReviewFile(ctx context.Context, item store.QueueItem, 
 	if err != nil {
 		return err
 	}
-	var snap ReleaseCandidate
-	_ = json.Unmarshal(item.Snapshot, &snap)
+	snap := jobSnapshot(item)
 	claims := store.AssetFacts{Title: snap.Title, Language: snap.Parse.Language, Group: snap.Parse.Group, ReleaseKey: item.ReleaseKey, Sources: map[string]string{"language": "offer", "group": "offer"}}
 	facts := store.AssetFacts{Title: filepath.Base(src), Format: strings.TrimPrefix(filepath.Ext(src), "."), Protocol: item.Protocol, ReleaseKey: item.ReleaseKey, Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}}
 	if p, ok := parsed.(parse.Result); ok {
 		facts.Language = p.Language
 		facts.Group = p.Group
-		facts.Flags = candidateFlags(ReleaseCandidate{Parse: p})
+		facts.Flags = parseFlags(p)
 		facts.FactsKnown = true
 		facts.Resolution = p.Quality.Resolution
 		facts.Revision = p.Version

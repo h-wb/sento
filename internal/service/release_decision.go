@@ -17,18 +17,59 @@ type ReleaseReason struct {
 	Owner string `json:"owner" tstype:"'book' | 'profile' | 'confirm' | 'other'"`
 }
 
-// reasonOwners files every rejection under the one thing that decides it.
-var reasonOwners = map[string]string{
-	"rejected.series_match": "book", "rejected.content_type": "book", "rejected.language": "book",
-	"rejected.edition_routing": "book", "rejected.numbers_unknown": "book", "rejected.book_ambiguous": "book",
-	"rejected.profile_rule": "profile", "rejected.format_score": "profile", "rejected.size": "profile",
-	"rejected.seeders": "profile", "rejected.pack_threshold": "profile", "rejected.no_upgrade": "profile",
-	"rejected.edition_ambiguous": "confirm", "rejected.pack_unverified": "confirm",
+// rejectionRule is everything known about one rejection code: whether a
+// force-grab can override it, who decides it, and the label the UI shows.
+type rejectionRule struct {
+	Hard  bool
+	Owner string
+	Label func(*ReleaseCandidate) string
+}
+
+// rejectionRules is the one table keyed by rejection code. Owner "other" is
+// the default for codes not listed (this search: not needed, blocklisted).
+var rejectionRules = map[string]rejectionRule{
+	"rejected.series_match": {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string {
+		return "The release name does not identify this series unambiguously."
+	}},
+	"rejected.content_type": {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string {
+		return "Classified as " + string(c.Parse.ContentType) + ", not manga."
+	}},
+	"rejected.language":        {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string { return "The stated language does not match this edition." }},
+	"rejected.edition_routing": {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string { return "The release states a different edition than this one." }},
+	"rejected.numbers_unknown": {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string { return "No confirmed volume or chapter numbers were found." }},
+	"rejected.book_ambiguous": {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string {
+		return "Several books share this number. Search from the specific book to disambiguate."
+	}},
+	"rejected.profile_rule": {Hard: true, Owner: "profile", Label: func(c *ReleaseCandidate) string { return "The release breaks a required or refused format rule." }},
+	"rejected.no_upgrade":   {Hard: true, Owner: "profile", Label: func(c *ReleaseCandidate) string { return "This release does not improve the file on disk enough." }},
+	"rejected.no_coverage": {Hard: true, Owner: "other", Label: func(c *ReleaseCandidate) string {
+		return "No books in this release need a download in the current selection."
+	}},
+	"rejected.blocklisted": {Hard: true, Owner: "other", Label: func(c *ReleaseCandidate) string { return "This release is on your blocklist." }},
+	"rejected.previous_download": {Hard: true, Owner: "other", Label: func(c *ReleaseCandidate) string {
+		return "This is the download you are looking to replace. It is excluded from this search only."
+	}},
+	"rejected.format_score": {Hard: false, Owner: "profile", Label: func(c *ReleaseCandidate) string {
+		return "The release does not meet the profile’s minimum format score."
+	}},
+	"rejected.size": {Hard: false, Owner: "profile", Label: func(c *ReleaseCandidate) string {
+		return "The estimated size per book is outside the profile’s limits."
+	}},
+	"rejected.seeders": {Hard: false, Owner: "profile", Label: func(c *ReleaseCandidate) string { return "The torrent has fewer seeders than the profile requires." }},
+	"rejected.pack_threshold": {Hard: false, Owner: "profile", Label: func(c *ReleaseCandidate) string {
+		return fmt.Sprintf("Only %d of %d represented books are wanted; automatic packs require at least half.", len(c.Coverage), c.RepresentedBooks)
+	}},
+	"rejected.edition_ambiguous": {Hard: false, Owner: "confirm", Label: func(c *ReleaseCandidate) string {
+		return "This release also fits another edition you collect. Confirm it belongs to this one."
+	}},
+	"rejected.pack_unverified": {Hard: false, Owner: "confirm", Label: func(c *ReleaseCandidate) string {
+		return "Nothing in the name says which books this pack holds. Confirm it is the whole edition; the import checks what is inside."
+	}},
 }
 
 func reasonOwner(code string) string {
-	if o, ok := reasonOwners[code]; ok {
-		return o
+	if r, ok := rejectionRules[code]; ok {
+		return r.Owner
 	}
 	return "other"
 }
@@ -88,25 +129,6 @@ func (c *ReleaseCandidate) explain() {
 	if !c.Parse.Quality.Digital && !c.Parse.Quality.Scan && !c.Parse.Quality.Web {
 		d.Warnings = append(d.Warnings, "Release quality is unspecified.")
 	}
-	labels := map[string]string{
-		"rejected.previous_download": "This is the download you are looking to replace. It is excluded from this search only.",
-		"rejected.content_type":      "Classified as " + string(c.Parse.ContentType) + ", not manga.",
-		"rejected.series_match":      "The release name does not identify this series unambiguously.",
-		"rejected.edition_routing":   "The release states a different edition than this one.",
-		"rejected.edition_ambiguous": "This release also fits another edition you collect. Confirm it belongs to this one.",
-		"rejected.no_coverage":       "No books in this release need a download in the current selection.",
-		"rejected.numbers_unknown":   "No confirmed volume or chapter numbers were found.",
-		"rejected.pack_unverified":   "Nothing in the name says which books this pack holds. Confirm it is the whole edition; the import checks what is inside.",
-		"rejected.blocklisted":       "This release is on your blocklist.",
-		"rejected.language":          "The stated language does not match this edition.",
-		"rejected.book_ambiguous":    "Several books share this number. Search from the specific book to disambiguate.",
-		"rejected.no_upgrade":        "This release does not improve the file on disk enough.",
-		"rejected.profile_rule":      "The release breaks a required or refused format rule.",
-		"rejected.format_score":      "The release does not meet the profile’s minimum format score.",
-		"rejected.pack_threshold":    fmt.Sprintf("Only %d of %d represented books are wanted; automatic packs require at least half.", len(c.Coverage), c.RepresentedBooks),
-		"rejected.size":              "The estimated size per book is outside the profile’s limits.",
-		"rejected.seeders":           "The torrent has fewer seeders than the profile requires.",
-	}
 	hard := false
 	seen := map[string]bool{}
 	for _, code := range c.Rejections {
@@ -114,7 +136,11 @@ func (c *ReleaseCandidate) explain() {
 			continue
 		}
 		seen[code] = true
-		message := labels[code]
+		rule := rejectionRules[code]
+		message := ""
+		if rule.Label != nil {
+			message = rule.Label(c)
+		}
 		if code == "rejected.profile_rule" && c.profileWhy != "" {
 			message = c.profileWhy
 		}
@@ -124,7 +150,7 @@ func (c *ReleaseCandidate) explain() {
 		if message == "" {
 			message = "Does not meet rule: " + strings.TrimPrefix(code, "rejected.")
 		}
-		override := !hardRejections[code]
+		override := !rule.Hard
 		hard = hard || !override
 		d.Reasons = append(d.Reasons, ReleaseReason{Code: code, Message: message, Override: override, Owner: reasonOwner(code)})
 	}

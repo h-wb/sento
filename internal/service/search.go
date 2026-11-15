@@ -419,8 +419,8 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 	}
 	var languages []string
 	for _, v := range run.versions {
-		if col := editionByID(run.editions, v.EditionID); col != nil && !slices.Contains(languages, baseLang(col.Language)) {
-			languages = append(languages, baseLang(col.Language))
+		if col := editionByID(run.editions, v.EditionID); col != nil && !slices.Contains(languages, profile.BaseLang(col.Language)) {
+			languages = append(languages, profile.BaseLang(col.Language))
 		}
 	}
 	if run.queryTitles, err = s.store.QueryTitles(ctx, seriesID, languages...); err != nil {
@@ -430,7 +430,7 @@ func (s *SearchService) prepare(ctx context.Context, seriesID int64, searchLedge
 		for _, v := range run.versions {
 			if v.ID == version.VersionID {
 				if col := editionByID(run.editions, v.EditionID); col != nil {
-					run.titles, err = s.store.SeriesTitles(ctx, seriesID, baseLang(col.Language))
+					run.titles, err = s.store.SeriesTitles(ctx, seriesID, profile.BaseLang(col.Language))
 					if err != nil {
 						return nil, err
 					}

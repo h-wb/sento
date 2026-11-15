@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/parse"
+	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -76,7 +78,7 @@ func (s *shelf) siblings(e store.Edition) []store.Edition {
 	}
 	var out []store.Edition
 	for _, o := range s.editions {
-		if o.ID != e.ID && o.Type == e.Type && baseLang(o.Language) == baseLang(e.Language) {
+		if o.ID != e.ID && o.Type == e.Type && profile.BaseLang(o.Language) == profile.BaseLang(e.Language) {
 			out = append(out, o)
 		}
 	}
@@ -134,10 +136,10 @@ func (s *shelf) judge(p parse.Result, e store.Edition, evidence int64) (fitVerdi
 		return verdict, reason
 	}
 	if last := lastVolume(p); e.Type == LedgerVolume && last > e.LastNumber && completedNumbering(e) {
-		return fitUnsure, fmt.Sprintf("The release goes to volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", hundredths(parse.Num(last)), hundredths(parse.Num(e.LastNumber)))
+		return fitUnsure, fmt.Sprintf("The release goes to volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", mediafile.RenderPlainNum(last), mediafile.RenderPlainNum(e.LastNumber))
 	}
 	if last := lastVolume(p); e.Type == LedgerVolume && last > 0 && last < e.LastNumber && p.Complete && !p.CompleteInferred && completedNumbering(e) {
-		return fitUnsure, fmt.Sprintf("The release calls itself complete at volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", hundredths(parse.Num(last)), hundredths(parse.Num(e.LastNumber)))
+		return fitUnsure, fmt.Sprintf("The release calls itself complete at volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", mediafile.RenderPlainNum(last), mediafile.RenderPlainNum(e.LastNumber))
 	}
 	return verdict, reason
 }
@@ -153,7 +155,7 @@ func (s *shelf) judgeIdentity(p parse.Result, e store.Edition, evidence int64) (
 	if last := lastVolume(p); e.Type == LedgerVolume && e.LastNumber > 0 && last > e.LastNumber+newVolumeSlack {
 		for _, o := range siblings {
 			if o.LastNumber >= last {
-				return fitNo, fmt.Sprintf("The release goes to volume %s; %s ends at %s.", hundredths(parse.Num(last)), e.EditionName, hundredths(parse.Num(e.LastNumber)))
+				return fitNo, fmt.Sprintf("The release goes to volume %s; %s ends at %s.", mediafile.RenderPlainNum(last), e.EditionName, mediafile.RenderPlainNum(e.LastNumber))
 			}
 		}
 	}
@@ -239,7 +241,7 @@ func lastVolume(p parse.Result) int64 {
 // English.
 func (s *shelf) prefer(p parse.Result, eds []store.Edition) []store.Edition {
 	for _, e := range eds {
-		if baseLang(e.Language) != baseLang(eds[0].Language) {
+		if profile.BaseLang(e.Language) != profile.BaseLang(eds[0].Language) {
 			return eds
 		}
 	}
@@ -308,7 +310,7 @@ func (run *searchRun) ambiguousEdition(p parse.Result, col store.Edition) string
 		if other == "" {
 			other = c.EditionName
 		}
-		if baseLang(c.Language) != baseLang(col.Language) {
+		if profile.BaseLang(c.Language) != profile.BaseLang(col.Language) {
 			return c.EditionName
 		}
 		fits = append(fits, c)

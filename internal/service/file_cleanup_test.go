@@ -199,7 +199,7 @@ func TestExpiredTrashPurgeAndInterruptedMoveRecovery(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	digest, err := fileHash(path)
+	digest, err := fingerprint(path)
 	if err != nil {
 		t.Fatal(err)
 	}

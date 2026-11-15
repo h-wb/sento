@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -65,8 +64,7 @@ func (im *Importer) TakeSearches() []SearchTarget {
 
 // jobTargets are the series' ledgers a job's books belong to.
 func jobTargets(item store.QueueItem) []SearchTarget {
-	var books []store.BookRef
-	_ = json.Unmarshal(item.Books, &books)
+	books := queueBooks(&item)
 	var out []SearchTarget
 	for _, book := range books {
 		if t := (SearchTarget{SeriesID: item.SeriesID, Ledger: book.Ledger}); !slices.Contains(out, t) {
@@ -348,7 +346,7 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	if _, err = mediafile.ImportCBZ(stream, stagePath, writeInfo); err != nil {
 		return err
 	}
-	hash, err := fileHash(stagePath)
+	hash, err := fingerprint(stagePath)
 	if err != nil {
 		return err
 	}
@@ -414,7 +412,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 			continue
 		}
 		if len(preservedHashes) > 0 {
-			hash, e := fileHash(archive.path)
+			hash, e := fingerprint(archive.path)
 			if e != nil {
 				return e
 			}
@@ -501,10 +499,7 @@ func releaseCoverage(key string, expected []store.BookRef, view *ledgerView, fil
 		}
 	}
 	for _, sl := range expected {
-		for _, book := range view.Status[sl.VersionID] {
-			if book.Book.ID != sl.BookID {
-				continue
-			}
+		if book := view.book(sl.VersionID, sl.BookID); book != nil {
 			for _, fid := range book.FileIDs {
 				if belongs[fid] {
 					linked[store.BookKey(sl.VersionID, sl.BookID)] = true
@@ -534,7 +529,7 @@ func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, pla
 	if len(covered) == 0 {
 		return nil, im.importReviewFile(ctx, item, seriesDir, src, res, ms.AlwaysCopy)
 	}
-	hash, err := fileHash(src)
+	hash, err := fingerprint(src)
 	if err != nil {
 		return nil, err
 	}
@@ -596,7 +591,7 @@ func (im *Importer) seriesDir(ctx context.Context, series *store.Series, ms Medi
 }
 
 func parseTime(s string) time.Time {
-	for _, layout := range []string{"2006-01-02 15:04:05", time.RFC3339} {
+	for _, layout := range []string{dbTimeLayout, time.RFC3339} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t
 		}
@@ -633,10 +628,7 @@ func (im *Importer) blockRelease(ctx context.Context, item store.QueueItem, reas
 	}
 	// The feed guid the candidate was listed under: a later search may
 	// surface the same release without an infohash, keyed by guid alone.
-	var snap struct {
-		GUID string `json:"guid"`
-	}
-	if _ = json.Unmarshal(item.Snapshot, &snap); snap.GUID != "" && !slices.Contains(keys, snap.GUID) {
+	if snap := jobSnapshot(item); snap.GUID != "" && !slices.Contains(keys, snap.GUID) {
 		keys = append(keys, snap.GUID)
 	}
 	return im.store.AddReleaseBlocklist(ctx, item.Protocol, keys, item.Title, reason)
@@ -651,8 +643,8 @@ func (im *Importer) reviewedJobComplete(ctx context.Context, item store.QueueIte
 	if err := im.store.CheckFilePresence(ctx, item.SeriesID); err != nil {
 		return false, err
 	}
-	var plan []store.BookRef
-	if err := json.Unmarshal(item.Books, &plan); err != nil {
+	plan, err := queueBooksErr(&item)
+	if err != nil {
 		return false, err
 	}
 	if len(plan) == 0 {
@@ -680,12 +672,10 @@ func (im *Importer) reviewedJobComplete(ctx context.Context, item store.QueueIte
 	}
 	for _, sl := range plan {
 		found := false
-		for _, book := range view.Status[sl.VersionID] {
-			if book.Book.ID == sl.BookID {
-				for _, fid := range book.FileIDs {
-					if belongs[fid] {
-						found = true
-					}
+		if book := view.book(sl.VersionID, sl.BookID); book != nil {
+			for _, fid := range book.FileIDs {
+				if belongs[fid] {
+					found = true
 				}
 			}
 		}
@@ -726,8 +716,7 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 		if waiting || len(delivered) == 0 {
 			continue
 		}
-		var plan []store.BookRef
-		_ = json.Unmarshal(job.Books, &plan)
+		plan := queueBooks(&job)
 		linked, _, err := im.alreadyImported(ctx, job, plan)
 		if err != nil {
 			return err
@@ -740,12 +729,8 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 		}
 		for _, ref := range plan {
 			if !linked[store.BookKey(ref.VersionID, ref.BookID)] {
-				owned := false
-				for _, book := range view.Status[ref.VersionID] {
-					if book.Book.ID == ref.BookID && len(book.FileIDs) > 0 {
-						owned = true
-					}
-				}
+				book := view.book(ref.VersionID, ref.BookID)
+				owned := book != nil && len(book.FileIDs) > 0
 				if owned {
 					kept = append(kept, im.bookName(ctx, ref))
 				} else {
@@ -779,7 +764,7 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 func (im *Importer) bookName(ctx context.Context, ref store.BookRef) string {
 	book, err := im.store.GetBook(ctx, ref.BookID)
 	if err != nil {
-		return ref.Ledger + " " + hundredths(parse.Num(ref.Number))
+		return ref.Ledger + " " + mediafile.RenderPlainNum(ref.Number)
 	}
 	name := ref.Ledger + " " + book.SequenceStr
 	if ed, err := im.store.GetEdition(ctx, book.EditionID); err == nil {
@@ -800,9 +785,7 @@ func jobListing(item store.QueueItem) int64 {
 	if item.Protocol != provider.ProtocolSource {
 		return 0
 	}
-	var snap ReleaseCandidate
-	_ = json.Unmarshal(item.Snapshot, &snap)
-	return snap.BindingID
+	return jobSnapshot(item).BindingID
 }
 
 // listingFailed counts a release its listing could not give, and records

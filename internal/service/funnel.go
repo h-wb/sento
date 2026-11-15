@@ -9,7 +9,6 @@ import (
 	"slices"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
@@ -419,7 +418,7 @@ func (c *ReleaseCandidate) evalFormats(prof *profile.Profile, formats []profile.
 	in := profile.Input{
 		Title: title, Group: group, Language: c.Parse.Language,
 		Protocol: c.Protocol, Site: c.Site, Resolution: c.Parse.Quality.Resolution,
-		Flags: candidateFlags(*c),
+		Flags: parseFlags(c.Parse),
 	}
 	j := prof.Judge(in, formats)
 	c.FormatScore = j.Score
@@ -430,26 +429,6 @@ func (c *ReleaseCandidate) evalFormats(prof *profile.Profile, formats []profile.
 		c.Rejections = append(c.Rejections, "rejected.profile_rule")
 		c.profileWhy = j.Broken
 	}
-}
-
-func baseLang(lang string) string {
-	base, _, _ := strings.Cut(lang, "-")
-	return strings.ToLower(base)
-}
-
-// Rejections that survive a force-grab (decision-engine.md §7).
-var hardRejections = map[string]bool{
-	"rejected.profile_rule":      true,
-	"rejected.previous_download": true,
-	"rejected.numbers_unknown":   true,
-	"rejected.language":          true,
-	"rejected.book_ambiguous":    true,
-	"rejected.no_upgrade":        true,
-	"rejected.content_type":      true,
-	"rejected.series_match":      true,
-	"rejected.edition_routing":   true,
-	"rejected.no_coverage":       true,
-	"rejected.blocklisted":       true,
 }
 
 func editionByID(cols []store.Edition, id int64) *store.Edition {
@@ -475,8 +454,36 @@ func englishPublisher(names []string) bool {
 	return false
 }
 
-func candidateFlags(c ReleaseCandidate) map[string]bool {
-	return map[string]bool{"digital": c.Parse.Quality.Digital, "scan": c.Parse.Quality.Scan, "web": c.Parse.Quality.Web, "premium": c.Parse.Quality.Premium, "colored": c.Parse.Edition.Colored, "omnibus": c.Parse.Edition.Omnibus, "deluxe": c.Parse.Edition.Deluxe, "boxset": c.Parse.Edition.BoxSet, "official": c.Parse.Edition.Official, "raw": c.Parse.Edition.Raw, "complete": c.Parse.Complete}
+// parseFlags reads the boolean parse facts named in profile.Flags.
+func parseFlags(p parse.Result) map[string]bool {
+	flags := make(map[string]bool, len(profile.Flags))
+	for _, f := range profile.Flags {
+		switch f {
+		case "digital":
+			flags[f] = p.Quality.Digital
+		case "scan":
+			flags[f] = p.Quality.Scan
+		case "web":
+			flags[f] = p.Quality.Web
+		case "premium":
+			flags[f] = p.Quality.Premium
+		case "colored":
+			flags[f] = p.Edition.Colored
+		case "omnibus":
+			flags[f] = p.Edition.Omnibus
+		case "deluxe":
+			flags[f] = p.Edition.Deluxe
+		case "boxset":
+			flags[f] = p.Edition.BoxSet
+		case "official":
+			flags[f] = p.Edition.Official
+		case "raw":
+			flags[f] = p.Edition.Raw
+		case "complete":
+			flags[f] = p.Complete
+		}
+	}
+	return flags
 }
 
 // betterRelease orders releases: the profile's score decides; between
@@ -495,11 +502,11 @@ func languageCompatible(p parse.Result, want string) bool {
 	}
 	if len(p.Languages) > 0 {
 		for _, lang := range p.Languages {
-			if baseLang(lang) == baseLang(want) {
+			if profile.BaseLang(lang) == profile.BaseLang(want) {
 				return true
 			}
 		}
 		return false
 	}
-	return p.Language == "" || p.Language == "multi" || baseLang(p.Language) == baseLang(want)
+	return p.Language == "" || p.Language == "multi" || profile.BaseLang(p.Language) == profile.BaseLang(want)
 }

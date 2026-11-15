@@ -30,7 +30,7 @@ func twoCopies(t *testing.T) (im *Importer, st *store.Store, sid int64, standard
 			t.Fatal(err)
 		}
 		writeCBZ(t, path, name)
-		hash, err := fileHash(path)
+		hash, err := fingerprint(path)
 		if err != nil {
 			t.Fatal(err)
 		}

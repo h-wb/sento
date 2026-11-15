@@ -27,7 +27,7 @@ func judgeMappedFile(col store.Edition, prof *profile.Profile, formats []profile
 	if prof != nil {
 		out.ProfileID, out.ProfileName = prof.ID, prof.Name
 	}
-	if mapping.Evidence != "manual" && facts.Language != "" && facts.Language != "multi" && baseLang(facts.Language) != baseLang(col.Language) {
+	if mapping.Evidence != "manual" && facts.Language != "" && facts.Language != "multi" && profile.BaseLang(facts.Language) != profile.BaseLang(col.Language) {
 		out.Reason = "The file on disk is in another language"
 	}
 	if mapping.Evidence == "manual" {

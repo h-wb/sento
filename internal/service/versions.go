@@ -132,6 +132,17 @@ type ledgerView struct {
 	Books    map[int64][]store.Book
 	Status   map[int64][]BookStatus
 	Profiles map[int64]*profile.Profile
+	Files    []store.File
+}
+
+// book finds one book's status in the view, or nil.
+func (v *ledgerView) book(versionID, bookID int64) *BookStatus {
+	for i := range v.Status[versionID] {
+		if v.Status[versionID][i].Book.ID == bookID {
+			return &v.Status[versionID][i]
+		}
+	}
+	return nil
 }
 
 // cardFiles is what a card's profile makes of the files mapped to it:
@@ -238,7 +249,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	for _, c := range contents {
 		idx.contents[c.BookID] = append(idx.contents[c.BookID], c)
 	}
-	view := &ledgerView{Series: series, Versions: versions, Editions: cols, Books: map[int64][]store.Book{}, Status: map[int64][]BookStatus{}, Profiles: map[int64]*profile.Profile{}}
+	view := &ledgerView{Series: series, Versions: versions, Editions: cols, Books: map[int64][]store.Book{}, Status: map[int64][]BookStatus{}, Profiles: map[int64]*profile.Profile{}, Files: files}
 	for _, w := range works {
 		view.Books[w.EditionID] = append(view.Books[w.EditionID], w)
 	}
@@ -440,24 +451,23 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 				continue
 			}
 			// A book reserved by the download being replaced is still wanted.
-			if sl.Wanted && sl.State != "pending" || sl.State == "pending" && run.replacing[store.BookKey(t.ID, sl.Book.ID)] {
+			if sl.Wanted && sl.State != StatePending || sl.State == StatePending && run.replacing[store.BookKey(t.ID, sl.Book.ID)] {
 				run.wanted[store.BookKey(t.ID, sl.Book.ID)] = true
 			}
 			selected := sl.Wanted
 			if run.scope != nil && run.scope.AllBooks && run.scope.BookID == 0 {
-				selected = sl.State != "storage_unavailable" && sl.State != "needs_review" && sl.State != "pending"
+				selected = sl.State != StateStorageUnavailable && sl.State != StateNeedsReview && sl.State != StatePending
 			}
 			if run.scope != nil && run.scope.BookID != 0 {
 				selected = run.scope.BookID == sl.Book.ID
 				if selected {
 					found = true
 				}
-				if sl.State == "storage_unavailable" || sl.State == "needs_review" || sl.State == "pending" {
+				if sl.State == StateStorageUnavailable || sl.State == StateNeedsReview || sl.State == StatePending {
 					selected = false
 				}
 			}
-			// A book reserved by the download being replaced is still wanted.
-			if sl.State == "pending" && run.replacing[store.BookKey(t.ID, sl.Book.ID)] &&
+			if sl.State == StatePending && run.replacing[store.BookKey(t.ID, sl.Book.ID)] &&
 				(run.scope.BookID == 0 || run.scope.BookID == sl.Book.ID) {
 				selected = true
 			}
@@ -468,7 +478,7 @@ func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) err
 					Label: sl.Book.SequenceStr, Ownership: sl.State,
 				})
 			}
-			if sl.State == "upgrade_eligible" {
+			if sl.State == StateUpgradeEligible {
 				run.ownedScores[t.ID][sl.Book.ID] = sl.CurrentScore
 			}
 		}

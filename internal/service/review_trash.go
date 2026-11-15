@@ -68,7 +68,7 @@ func (im *Importer) resumeReviewTrash(ctx context.Context, f store.File) error {
 		if !original.Mode().IsRegular() {
 			return apperr.Conflictf("original path is not a regular archive")
 		}
-		digest, e := fileHash(f.Path)
+		digest, e := fingerprint(f.Path)
 		if e != nil {
 			return e
 		}
@@ -86,7 +86,7 @@ func (im *Importer) resumeReviewTrash(ctx context.Context, f store.File) error {
 		if !trash.Mode().IsRegular() {
 			return apperr.Conflictf("trash entry is not a regular archive")
 		}
-		digest, e := fileHash(entry.TrashPath)
+		digest, e := fingerprint(entry.TrashPath)
 		if e != nil {
 			return e
 		}

@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 
+	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
@@ -197,14 +197,7 @@ func (p *proposer) hint(fileID int64) *store.FileHint {
 	if len(ranges) == 0 {
 		return nil
 	}
-	h := &store.FileHint{Ledger: ledger}
-	for _, r := range ranges {
-		s := hundredths(r.From)
-		if r.To != r.From {
-			s += "–" + hundredths(r.To)
-		}
-		h.Numbers = append(h.Numbers, s)
-	}
+	h := &store.FileHint{Ledger: ledger, Numbers: strings.Split(rangeText(ranges), ", ")}
 	return h
 }
 
@@ -312,9 +305,7 @@ func (p *proposer) bareLedger(parsed parse.Result, job store.QueueItem, fromJob 
 	if !fromJob || len(parsed.Bare) == 0 {
 		return "", ""
 	}
-	var snap ReleaseCandidate
-	_ = json.Unmarshal(job.Snapshot, &snap)
-	release := snap.Parse
+	release := jobSnapshot(job).Parse
 	inVol, inCh := covers(release.Volumes, parsed.Bare), covers(release.Chapters, parsed.Bare)
 	switch {
 	case inVol && !inCh:
@@ -324,8 +315,8 @@ func (p *proposer) bareLedger(parsed parse.Result, job store.QueueItem, fromJob 
 	case len(release.Volumes)+len(release.Chapters) > 0:
 		return "", ""
 	}
-	var plan []store.BookRef
-	if json.Unmarshal(job.Books, &plan) != nil || len(plan) == 0 {
+	plan, err := queueBooksErr(&job)
+	if err != nil || len(plan) == 0 {
 		return "", ""
 	}
 	// A number zero-padded to three or more digits ("001") is written the
@@ -401,20 +392,13 @@ func covers(ranges, want []parse.Range) bool {
 func rangeText(ranges []parse.Range) string {
 	var parts []string
 	for _, r := range ranges {
-		s := hundredths(r.From)
+		s := mediafile.RenderPlainNum(int64(r.From))
 		if r.To != r.From {
-			s += "–" + hundredths(r.To)
+			s += "–" + mediafile.RenderPlainNum(int64(r.To))
 		}
 		parts = append(parts, s)
 	}
 	return strings.Join(parts, ", ")
-}
-
-func hundredths(n parse.Num) string {
-	if n%100 == 0 {
-		return fmt.Sprint(n / 100)
-	}
-	return strings.TrimRight(fmt.Sprintf("%d.%02d", n/100, n%100), "0")
 }
 
 // bookLabel names a run of books: "chapter 67", "volumes 1–7".
