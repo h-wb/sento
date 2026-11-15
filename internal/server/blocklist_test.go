@@ -17,7 +17,7 @@ func TestUnblockEndpoints(t *testing.T) {
 	cfg := config.Default()
 	cfg.Library.Path = t.TempDir()
 	conn, dialect := dbtest.Open(t)
-	srv := New(cfg, conn, dialect, noMetadata{})
+	srv := New(cfg, store.New(conn, dialect), conn, noMetadata{})
 	h := srv.Handler()
 	for _, key := range []string{"selected", "search-result", "keep"} {
 		if err := srv.store.AddBlocklist(ctx, "source", key, "old failure"); err != nil {

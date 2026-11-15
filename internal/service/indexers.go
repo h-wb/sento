@@ -14,7 +14,6 @@ import (
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/prowlarr"
 	"github.com/h-wb/sento/internal/store"
-	"github.com/h-wb/sento/internal/torznab"
 )
 
 // TorznabSettings configures one torznab indexer entry.
@@ -38,19 +37,36 @@ type SourceSettings struct {
 	PkgName  string `json:"pkgName,omitempty"`
 }
 
+// torznabSettings decodes a torznab entry's settings JSON.
+func torznabSettings(ix store.Indexer) (TorznabSettings, error) {
+	var ts TorznabSettings
+	err := json.Unmarshal(ix.Settings, &ts)
+	return ts, err
+}
+
+// sourceSettings decodes a source entry's settings JSON.
+func sourceSettings(ix store.Indexer) (SourceSettings, error) {
+	var ss SourceSettings
+	err := json.Unmarshal(ix.Settings, &ss)
+	return ss, err
+}
+
+// SourceSettingsOf is the API layer's accessor for sourceSettings.
+func SourceSettingsOf(ix store.Indexer) (SourceSettings, error) { return sourceSettings(ix) }
+
 func parseEntry(ix store.Indexer) (provider.IndexerEntry, error) {
 	e := provider.IndexerEntry{ID: ix.ID, Name: ix.Name, Enabled: ix.Enabled}
 	switch ix.Protocol {
 	case store.IndexerTorznab:
-		var ts TorznabSettings
-		if err := json.Unmarshal(ix.Settings, &ts); err != nil {
+		ts, err := torznabSettings(ix)
+		if err != nil {
 			return e, fmt.Errorf("indexer %d settings: %w", ix.ID, err)
 		}
 		e.URL, e.APIKey, e.Language = ts.URL, ts.APIKey, strings.ToLower(strings.TrimSpace(ts.Language))
 		e.DownloadClient = ts.DownloadClient
 	case store.IndexerSource:
-		var ss SourceSettings
-		if err := json.Unmarshal(ix.Settings, &ss); err != nil {
+		ss, err := sourceSettings(ix)
+		if err != nil {
 			return e, fmt.Errorf("indexer %d settings: %w", ix.ID, err)
 		}
 		e.SourceID = ss.SourceID
@@ -93,8 +109,8 @@ func ValidateIndexer(ix store.Indexer) error {
 	}
 	switch ix.Protocol {
 	case store.IndexerTorznab:
-		var ts TorznabSettings
-		if err := json.Unmarshal(ix.Settings, &ts); err != nil {
+		ts, err := torznabSettings(ix)
+		if err != nil {
 			return apperr.Invalidf("settings: %w", err)
 		}
 		if !strings.HasPrefix(ts.URL, "http://") && !strings.HasPrefix(ts.URL, "https://") {
@@ -104,8 +120,8 @@ func ValidateIndexer(ix store.Indexer) error {
 			return apperr.Invalidf("default language must be a language code such as en, fr or pt-BR")
 		}
 	case store.IndexerSource:
-		var ss SourceSettings
-		if err := json.Unmarshal(ix.Settings, &ss); err != nil {
+		ss, err := sourceSettings(ix)
+		if err != nil {
 			return apperr.Invalidf("settings: %w", err)
 		}
 		if ss.SourceID == "" {
@@ -126,24 +142,12 @@ func TestIndexer(ctx context.Context, ix store.Indexer, host extensions.Host) er
 	}
 	switch ix.Protocol {
 	case store.IndexerTorznab:
-		if err := torznab.New(e.URL, e.APIKey).Ping(ctx); err != nil {
+		if err := probeTorznab(ctx, ix); err != nil {
 			return apperr.Upstreamf("%w", err)
 		}
 		return nil
 	case store.IndexerSource:
-		if host == nil {
-			return apperr.Unavailablef("no extensions sidecar is configured")
-		}
-		sources, err := host.Sources(ctx)
-		if err != nil {
-			return apperr.Upstreamf("%w", err)
-		}
-		for _, s := range sources {
-			if s.ID == e.SourceID {
-				return nil
-			}
-		}
-		return apperr.Upstreamf("source %s is not present on the host (extension uninstalled?)", e.SourceID)
+		return probeSource(ctx, host, e.SourceID)
 	}
 	return nil
 }

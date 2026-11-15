@@ -47,8 +47,7 @@ type Server struct {
 // endpoints can report and trigger its loops.
 func (s *Server) SetScheduler(sched *scheduler.Scheduler) { s.sched = sched }
 
-func New(cfg config.Config, db *sql.DB, dialect string, mdProvider metadata.Provider) *Server {
-	st := store.New(db, dialect)
+func New(cfg config.Config, st *store.Store, db *sql.DB, mdProvider metadata.Provider) *Server {
 	s := &Server{
 		cfg:      cfg,
 		db:       db,
@@ -72,9 +71,6 @@ func New(cfg config.Config, db *sql.DB, dialect string, mdProvider metadata.Prov
 	s.extensions.ManageRepos(cfg.Extensions.Repos)
 	s.profiles = service.NewProfiles(st)
 	s.health = service.NewHealthService(st, s.conns, cfg.Library.Path)
-	if err := s.profiles.EnsureDefaults(context.Background()); err != nil {
-		slog.Warn("seeding default profile failed", "error", err)
-	}
 	s.reconcileExtensions()
 	return s
 }

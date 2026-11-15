@@ -253,18 +253,18 @@ func TestConnections(ctx context.Context, cs ConnectionSettings) []ConnectionTes
 
 	type probe struct {
 		service string
-		run     func() (string, error)
+		run     func(context.Context) (string, error)
 	}
 	var probes []probe
 	for _, dc := range normalizeClients(cs.DownloadClients) {
 		qb := qbittorrent.New(dc.URL, dc.Username, dc.Password)
-		probes = append(probes, probe{"downloadClient:" + dc.ID, func() (string, error) {
+		probes = append(probes, probe{"downloadClient:" + dc.ID, func(ctx context.Context) (string, error) {
 			return qb.Version(ctx)
 		}})
 	}
 	if cs.Extensions.URL != "" {
 		hc := extensions.NewClient(cs.Extensions.URL)
-		probes = append(probes, probe{"extensions", func() (string, error) {
+		probes = append(probes, probe{"extensions", func(ctx context.Context) (string, error) {
 			sources, err := hc.Sources(ctx)
 			detail := fmt.Sprintf("%d sources", len(sources))
 			if len(sources) == 1 {
@@ -274,19 +274,16 @@ func TestConnections(ctx context.Context, cs ConnectionSettings) []ConnectionTes
 		}})
 	}
 
-	results := make([]ConnectionTest, len(probes))
-	var wg sync.WaitGroup
+	runs := make([]func(context.Context) ConnectionTest, len(probes))
 	for i, p := range probes {
-		wg.Add(1)
-		go func(i int, p probe) {
-			defer wg.Done()
-			detail, err := p.run()
-			results[i] = ConnectionTest{Service: p.service, OK: err == nil, Detail: detail}
+		runs[i] = func(ctx context.Context) ConnectionTest {
+			detail, err := p.run(ctx)
+			result := ConnectionTest{Service: p.service, OK: err == nil, Detail: detail}
 			if err != nil {
-				results[i].Error = err.Error()
+				result.Error = err.Error()
 			}
-		}(i, p)
+			return result
+		}
 	}
-	wg.Wait()
-	return results
+	return runParallel(ctx, 0, runs)
 }

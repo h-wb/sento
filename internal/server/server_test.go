@@ -15,6 +15,7 @@ import (
 	"github.com/h-wb/sento/internal/db/dbtest"
 	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/service"
+	"github.com/h-wb/sento/internal/store"
 )
 
 // noMetadata is a metadata provider that knows nothing.
@@ -53,7 +54,7 @@ func testServer(t *testing.T) (http.Handler, string) {
 	cfg.Library.Path = t.TempDir()
 	cfg.Downloads.Dir = t.TempDir()
 	conn, dialect := dbtest.Open(t)
-	return New(cfg, conn, dialect, noMetadata{}).Handler(), static
+	return New(cfg, store.New(conn, dialect), conn, noMetadata{}).Handler(), static
 }
 
 func do(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {

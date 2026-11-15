@@ -325,139 +325,127 @@ func (c *Client) getSeries(ctx context.Context, id int64, hops int) (*metadata.S
 	return out, nil
 }
 
-func (c *Client) GetCollections(ctx context.Context, seriesID int64) ([]metadata.Collection, error) {
-	next := fmt.Sprintf("%s/series/%d/collections", c.baseURL, seriesID)
-	var cols []metadata.Collection
+// eachPage walks a paginated endpoint from first, passing every row of
+// every page to fn; a repeated page URL is an error.
+func (c *Client) eachPage(ctx context.Context, first string, fn func(json.RawMessage) error) error {
+	next := first
 	seen := map[string]bool{}
 	for next != "" {
 		if seen[next] {
-			return nil, fmt.Errorf("catalog pagination repeats a page")
+			return fmt.Errorf("catalog pagination repeats a page")
 		}
 		seen[next] = true
 		env, err := c.get(ctx, c.lookupLimit, next)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		var rows []json.RawMessage
 		if err := json.Unmarshal(env.Data, &rows); err != nil {
-			return nil, err
+			return err
 		}
-
 		for _, raw := range rows {
-			var mc mbCollection
-			if err := json.Unmarshal(raw, &mc); err != nil {
-				return nil, fmt.Errorf("invalid collection in catalog snapshot: %w", err)
+			if err := fn(raw); err != nil {
+				return err
 			}
-			if mc.ID == "" {
-				return nil, fmt.Errorf("catalog collection is missing its ID")
-			}
-			cols = append(cols, metadata.Collection{
-				ProviderID:  mc.ID,
-				EditionID:   mc.Edition.ID,
-				EditionName: mc.Edition.Name,
-				Format:      mc.Format,
-				Status:      mc.Status,
-				RelatedID:   mc.Related,
-				Language:    mc.Language.ISO,
-				Publisher:   mc.Publisher.Name,
-				Medium:      mc.Medium,
-				Type:        mc.Type,
-				CountMain:   mc.CountMain,
-				CountExtra:  mc.CountExt,
-				CountOther:  mc.CountOth,
-				StartDate:   mc.StartDate,
-				EndDate:     mc.EndDate,
-				RawJSON:     raw,
-			})
 		}
 		next = ""
 		if env.Pagination != nil && env.Pagination.Next != nil {
 			next = *env.Pagination.Next
 		}
 	}
+	return nil
+}
+
+func (c *Client) GetCollections(ctx context.Context, seriesID int64) ([]metadata.Collection, error) {
+	var cols []metadata.Collection
+	err := c.eachPage(ctx, fmt.Sprintf("%s/series/%d/collections", c.baseURL, seriesID), func(raw json.RawMessage) error {
+		var mc mbCollection
+		if err := json.Unmarshal(raw, &mc); err != nil {
+			return fmt.Errorf("invalid collection in catalog snapshot: %w", err)
+		}
+		if mc.ID == "" {
+			return fmt.Errorf("catalog collection is missing its ID")
+		}
+		cols = append(cols, metadata.Collection{
+			ProviderID:  mc.ID,
+			EditionID:   mc.Edition.ID,
+			EditionName: mc.Edition.Name,
+			Format:      mc.Format,
+			Status:      mc.Status,
+			RelatedID:   mc.Related,
+			Language:    mc.Language.ISO,
+			Publisher:   mc.Publisher.Name,
+			Medium:      mc.Medium,
+			Type:        mc.Type,
+			CountMain:   mc.CountMain,
+			CountExtra:  mc.CountExt,
+			CountOther:  mc.CountOth,
+			StartDate:   mc.StartDate,
+			EndDate:     mc.EndDate,
+			RawJSON:     raw,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
 	return cols, nil
 }
 
 func (c *Client) GetEditions(ctx context.Context) ([]metadata.Edition, error) {
-	next := c.baseURL + "/editions/all?limit=50"
 	var out []metadata.Edition
-	seen := map[string]bool{}
-	for next != "" {
-		if seen[next] {
-			return nil, fmt.Errorf("catalog pagination repeats a page")
+	err := c.eachPage(ctx, c.baseURL+"/editions/all?limit=50", func(raw json.RawMessage) error {
+		var e metadata.Edition
+		if err := json.Unmarshal(raw, &e); err != nil {
+			return err
 		}
-		seen[next] = true
-		env, err := c.get(ctx, c.lookupLimit, next)
-		if err != nil {
-			return nil, err
-		}
-		var rows []metadata.Edition
-		if err := json.Unmarshal(env.Data, &rows); err != nil {
-			return nil, err
-		}
-		out = append(out, rows...)
-		next = ""
-		if env.Pagination != nil && env.Pagination.Next != nil {
-			next = *env.Pagination.Next
-		}
+		out = append(out, e)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }
 
 func (c *Client) GetWorks(ctx context.Context, seriesID int64) (map[string][]metadata.Work, error) {
 	out := map[string][]metadata.Work{}
-	next := fmt.Sprintf("%s/series/%d/works", c.baseURL, seriesID)
-	seen := map[string]bool{}
-	for next != "" {
-		if seen[next] {
-			return nil, fmt.Errorf("catalog pagination repeats a page")
+	err := c.eachPage(ctx, fmt.Sprintf("%s/series/%d/works", c.baseURL, seriesID), func(raw json.RawMessage) error {
+		var w mbWork
+		if err := json.Unmarshal(raw, &w); err != nil {
+			return fmt.Errorf("invalid work in catalog snapshot: %w", err)
 		}
-		seen[next] = true
-		env, err := c.get(ctx, c.lookupLimit, next)
-		if err != nil {
-			return nil, err
+		if w.ID == "" {
+			return fmt.Errorf("catalog work is missing its ID")
 		}
-		var rows []json.RawMessage
-		if err := json.Unmarshal(env.Data, &rows); err != nil {
-			return nil, err
+		work := metadata.Work{
+			ProviderID:  w.ID,
+			SequenceNum: seqToNum(w.SeqNumeric, w.SeqString),
+			NumberKnown: w.SeqNumeric.String() != "" && w.SeqNumeric.String() != "null",
+			Revision:    w.Revision,
+			SubTitle:    w.SubTitle,
+			SequenceStr: w.SeqString,
+			CountType:   w.CountType,
+			ReleaseDate: w.ReleaseDate,
+			Pages:       w.Pages,
+			RawJSON:     raw,
 		}
-		for _, raw := range rows {
-			var w mbWork
-			if err := json.Unmarshal(raw, &w); err != nil {
-				return nil, fmt.Errorf("invalid work in catalog snapshot: %w", err)
-			}
-			if w.ID == "" {
-				return nil, fmt.Errorf("catalog work is missing its ID")
-			}
-			work := metadata.Work{
-				ProviderID:  w.ID,
-				SequenceNum: seqToNum(w.SeqNumeric, w.SeqString),
-				NumberKnown: w.SeqNumeric.String() != "" && w.SeqNumeric.String() != "null",
-				Revision:    w.Revision,
-				SubTitle:    w.SubTitle,
-				SequenceStr: w.SeqString,
-				CountType:   w.CountType,
-				ReleaseDate: w.ReleaseDate,
-				Pages:       w.Pages,
-				RawJSON:     raw,
-			}
-			if work.SequenceStr == "" && work.NumberKnown {
-				work.SequenceStr = strconv.FormatFloat(float64(work.SequenceNum)/100, 'f', -1, 64)
-			}
-			for _, ident := range w.Identifiers {
-				if ident.Name == "isbn" {
-					work.ISBN = ident.ID
-					break
-				}
-			}
-			for _, col := range w.Collections {
-				out[col.ID] = append(out[col.ID], work)
+		if work.SequenceStr == "" && work.NumberKnown {
+			work.SequenceStr = strconv.FormatFloat(float64(work.SequenceNum)/100, 'f', -1, 64)
+		}
+		for _, ident := range w.Identifiers {
+			if ident.Name == "isbn" {
+				work.ISBN = ident.ID
+				break
 			}
 		}
-		next = ""
-		if env.Pagination != nil && env.Pagination.Next != nil {
-			next = *env.Pagination.Next
+		for _, col := range w.Collections {
+			out[col.ID] = append(out[col.ID], work)
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }

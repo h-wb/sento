@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/qbittorrent"
 	"github.com/h-wb/sento/internal/store"
@@ -42,6 +43,53 @@ type HealthReport struct {
 // probeTimeout bounds one remote probe, so a hung service costs a check
 // run seconds rather than the request timeout.
 const probeTimeout = 10 * time.Second
+
+// runParallel runs probes concurrently — each bounded by timeout when
+// positive — and returns their results in probe order.
+func runParallel[T any](ctx context.Context, timeout time.Duration, probes []func(context.Context) T) []T {
+	out := make([]T, len(probes))
+	var wg sync.WaitGroup
+	for i, probe := range probes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if timeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, timeout)
+				defer cancel()
+			}
+			out[i] = probe(ctx)
+		}()
+	}
+	wg.Wait()
+	return out
+}
+
+// probeSource checks that a source is present on the extensions host.
+func probeSource(ctx context.Context, host extensions.Host, sourceID string) error {
+	if host == nil {
+		return apperr.Unavailablef("no extensions sidecar is configured")
+	}
+	sources, err := host.Sources(ctx)
+	if err != nil {
+		return apperr.Upstreamf("%w", err)
+	}
+	for _, s := range sources {
+		if s.ID == sourceID {
+			return nil
+		}
+	}
+	return apperr.Upstreamf("source %s is not present on the host (extension uninstalled?)", sourceID)
+}
+
+// probeTorznab pings one torznab entry (settings decode included).
+func probeTorznab(ctx context.Context, ix store.Indexer) error {
+	e, err := parseEntry(ix)
+	if err == nil {
+		err = torznab.New(e.URL, e.APIKey).Ping(ctx)
+	}
+	return err
+}
 
 // HealthService probes what Sento depends on — the library folder, the
 // download client, the extensions sidecar and every enabled indexer — and keeps
@@ -140,19 +188,7 @@ func (h *HealthService) collect(ctx context.Context) []HealthIssue {
 	for _, ix := range torznabs {
 		probes = append(probes, func(ctx context.Context) []HealthIssue { return checkTorznab(ctx, ix) })
 	}
-	found := make([][]HealthIssue, len(probes))
-	var wg sync.WaitGroup
-	for i, probe := range probes {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			ctx, cancel := context.WithTimeout(ctx, probeTimeout)
-			defer cancel()
-			found[i] = probe(ctx)
-		}()
-	}
-	wg.Wait()
-	for _, f := range found {
+	for _, f := range runParallel(ctx, probeTimeout, probes) {
 		issues = append(issues, f...)
 	}
 	// Errors first; the stable sort keeps the check order within a level.
@@ -201,23 +237,20 @@ func checkDownloadClients(ctx context.Context, clients []DownloadClientConn, tor
 			Message: "No download client is configured, so torrent releases cannot be downloaded",
 		}}
 	}
-	found := make([][]HealthIssue, len(clients))
-	var wg sync.WaitGroup
+	probes := make([]func(context.Context) []HealthIssue, len(clients))
 	for i, dc := range clients {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		probes[i] = func(ctx context.Context) []HealthIssue {
 			if err := qbittorrent.New(dc.URL, dc.Username, dc.Password).Ping(ctx); err != nil {
-				found[i] = []HealthIssue{{
+				return []HealthIssue{{
 					Source: "download-client", Level: HealthError, Link: "/connections",
 					Message: fmt.Sprintf("Download client %s is unavailable", dc.Name), Detail: err.Error(),
 				}}
 			}
-		}()
+			return nil
+		}
 	}
-	wg.Wait()
 	var issues []HealthIssue
-	for _, f := range found {
+	for _, f := range runParallel(ctx, 0, probes) {
 		issues = append(issues, f...)
 	}
 	known := map[string]bool{"": true}
@@ -248,36 +281,28 @@ func checkSources(ctx context.Context, host extensions.Host, indexers []store.In
 			Message: "No extensions sidecar is configured, so source indexers cannot be searched",
 		}}
 	}
-	sources, err := host.Sources(ctx)
-	if err != nil {
+	if _, err := host.Sources(ctx); err != nil {
 		return []HealthIssue{{
 			Source: "extensions", Level: HealthError, Link: "/connections",
 			Message: "The extensions sidecar is unavailable", Detail: err.Error(),
 		}}
 	}
-	present := map[string]bool{}
-	for _, s := range sources {
-		present[s.ID] = true
-	}
 	var issues []HealthIssue
 	for _, ix := range indexers {
 		e, err := parseEntry(ix)
-		switch {
-		case err != nil:
+		if err != nil {
 			issues = append(issues, indexerIssue(ix, err.Error()))
-		case !present[e.SourceID]:
-			issues = append(issues, indexerIssue(ix, fmt.Sprintf("source %s is not present on the host (extension uninstalled?)", e.SourceID)))
+			continue
+		}
+		if err := probeSource(ctx, host, e.SourceID); err != nil {
+			issues = append(issues, indexerIssue(ix, err.Error()))
 		}
 	}
 	return issues
 }
 
 func checkTorznab(ctx context.Context, ix store.Indexer) []HealthIssue {
-	e, err := parseEntry(ix)
-	if err == nil {
-		err = torznab.New(e.URL, e.APIKey).Ping(ctx)
-	}
-	if err != nil {
+	if err := probeTorznab(ctx, ix); err != nil {
 		return []HealthIssue{indexerIssue(ix, err.Error())}
 	}
 	return nil

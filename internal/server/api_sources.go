@@ -484,8 +484,8 @@ func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	var ss service.SourceSettings
-	if err := json.Unmarshal(ix.Settings, &ss); err != nil || ss.SourceID == "" {
+	ss, err := service.SourceSettingsOf(*ix)
+	if err != nil || ss.SourceID == "" {
 		writeError(w, http.StatusBadRequest, "indexer is not an extension source")
 		return
 	}

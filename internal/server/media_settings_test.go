@@ -8,6 +8,7 @@ import (
 	"github.com/h-wb/sento/internal/config"
 	"github.com/h-wb/sento/internal/db/dbtest"
 	"github.com/h-wb/sento/internal/service"
+	"github.com/h-wb/sento/internal/store"
 )
 
 // The settings page reads its token table and reader fields from the
@@ -16,7 +17,7 @@ func TestMediaSchemaAndPreviewErrors(t *testing.T) {
 	cfg := config.Default()
 	cfg.Library.Path = t.TempDir()
 	conn, dialect := dbtest.Open(t)
-	h := New(cfg, conn, dialect, noMetadata{}).Handler()
+	h := New(cfg, store.New(conn, dialect), conn, noMetadata{}).Handler()
 
 	rec := do(t, h, http.MethodGet, "/api/v1/settings/media/schema", "")
 	var schema service.MediaSchema

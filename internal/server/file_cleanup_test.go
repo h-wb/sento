@@ -20,7 +20,7 @@ func TestFileCleanupAPIRequiresSelectionAndScopesRecovery(t *testing.T) {
 	cfg := config.Default()
 	cfg.Library.Path = t.TempDir()
 	conn, dialect := dbtest.Open(t)
-	s := New(cfg, conn, dialect, noMetadata{})
+	s := New(cfg, store.New(conn, dialect), conn, noMetadata{})
 	h := s.Handler()
 	sid, err := s.store.AddSeries(ctx, store.AddSeriesParams{Series: &metadata.Series{MangaBakaID: 123456, Title: "Example"}})
 	if err != nil {

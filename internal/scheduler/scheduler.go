@@ -75,6 +75,7 @@ type Scheduler struct {
 	importer   *service.Importer
 	scanner    *service.Scanner
 	extensions *service.ExtensionService
+	health     *service.HealthService
 	intervals  Intervals
 	tasks      []*task
 
@@ -95,12 +96,12 @@ const stateKey = "scheduler"
 
 func New(st *store.Store, lib *service.Library, search *service.SearchService,
 	importer *service.Importer, scanner *service.Scanner,
-	extensions *service.ExtensionService, intervals Intervals,
+	extensions *service.ExtensionService, health *service.HealthService, intervals Intervals,
 ) *Scheduler {
 	s := &Scheduler{
 		store: st, libraries: lib, search: search,
-		importer: importer, scanner: scanner, extensions: extensions, intervals: intervals,
-		startupGrace: 30 * time.Second,
+		importer: importer, scanner: scanner, extensions: extensions, health: health,
+		intervals: intervals, startupGrace: 30 * time.Second,
 	}
 	s.tasks = append(s.tasks, &task{
 		slug: "queue-process", name: "Process Download Queue",
@@ -146,6 +147,15 @@ func New(st *store.Store, lib *service.Library, search *service.SearchService,
 		slug: "housekeeping", name: "Empty Expired Trash & Prune History",
 		interval: 24 * time.Hour, tick: s.tickHousekeeping,
 	})
+	if health != nil {
+		s.tasks = append(s.tasks, &task{
+			slug: "health-check", name: "Check Health",
+			interval: 15 * time.Minute, tick: func(ctx context.Context) error {
+				health.Check(ctx)
+				return nil
+			},
+		})
+	}
 	return s
 }
 
@@ -167,12 +177,6 @@ func (s *Scheduler) tickHousekeeping(ctx context.Context) error {
 		slog.Info("pruned old decisions", "count", n)
 	}
 	return trashErr
-}
-
-// Register adds a loop owned by another component (the health checks).
-// Call it before Start.
-func (s *Scheduler) Register(slug, name string, interval time.Duration, tick func(context.Context) error) {
-	s.tasks = append(s.tasks, &task{slug: slug, name: name, interval: interval, tick: tick})
 }
 
 // Start launches all loops; they stop when ctx is cancelled.

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -117,14 +116,12 @@ func entryID(id int64) string {
 func summary(ix store.Indexer) string {
 	switch ix.Protocol {
 	case store.IndexerTorznab:
-		var ts TorznabSettings
-		_ = json.Unmarshal(ix.Settings, &ts)
+		ts, _ := torznabSettings(ix)
 		return hostString(ts.URL)
 	case store.IndexerSource:
 		// The source id is a number only the host understands; the
 		// extension's package says which one it is.
-		var ss SourceSettings
-		_ = json.Unmarshal(ix.Settings, &ss)
+		ss, _ := sourceSettings(ix)
 		if i := strings.LastIndex(ss.PkgName, "."); i >= 0 && i < len(ss.PkgName)-1 {
 			return "extension: " + ss.PkgName[i+1:]
 		}
