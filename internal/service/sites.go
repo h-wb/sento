@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/h-wb/sento/internal/apperr"
+	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
@@ -14,11 +16,12 @@ import (
 // reachability, plus per-series override views.
 type SiteService struct {
 	store    *store.Store
+	conns    *Connections
 	registry *provider.Registry
 }
 
-func NewSiteService(st *store.Store, registry *provider.Registry) *SiteService {
-	return &SiteService{store: st, registry: registry}
+func NewSiteService(st *store.Store, conns *Connections) *SiteService {
+	return &SiteService{store: st, conns: conns, registry: conns.Registry()}
 }
 
 // IndexerView is one entry with live reachability and a display summary.
@@ -152,6 +155,84 @@ func (s *SiteService) List(ctx context.Context) ([]IndexerView, error) {
 		return out[i].Name < out[j].Name
 	})
 	return out, nil
+}
+
+// Add validates and stores a new indexer entry.
+func (s *SiteService) Add(ctx context.Context, ix store.Indexer) (store.Indexer, error) {
+	if err := ValidateIndexer(ix); err != nil {
+		return ix, err
+	}
+	id, err := s.store.AddIndexer(ctx, ix)
+	if err != nil {
+		return ix, err
+	}
+	ix.ID = id
+	return ix, nil
+}
+
+// Update replaces one entry; the protocol is immutable.
+func (s *SiteService) Update(ctx context.Context, iid int64, ix store.Indexer) (store.Indexer, error) {
+	existing, err := s.store.GetIndexer(ctx, iid)
+	if err != nil {
+		return ix, err
+	}
+	ix.ID = iid
+	ix.Protocol = existing.Protocol // protocol is immutable
+	if err := ValidateIndexer(ix); err != nil {
+		return ix, err
+	}
+	if err := s.store.UpdateIndexer(ctx, ix); err != nil {
+		return ix, err
+	}
+	return ix, nil
+}
+
+// Patch applies inline field toggles to one entry (nil = keep). Unlike Add
+// and Update it does not re-validate: the switches only flip fields of an
+// existing entry.
+func (s *SiteService) Patch(ctx context.Context, iid int64, enabled, useVolumes, useChapters *bool, priority *int) (store.Indexer, error) {
+	ix, err := s.store.GetIndexer(ctx, iid)
+	if err != nil {
+		return store.Indexer{}, err
+	}
+	if enabled != nil {
+		ix.Enabled = *enabled
+	}
+	if useVolumes != nil {
+		ix.UseVolumes = *useVolumes
+	}
+	if useChapters != nil {
+		ix.UseChapters = *useChapters
+	}
+	if priority != nil {
+		ix.Priority = *priority
+	}
+	if err := s.store.UpdateIndexer(ctx, *ix); err != nil {
+		return store.Indexer{}, err
+	}
+	return *ix, nil
+}
+
+// SearchSource searches one source entry's manga catalog on the host (the
+// manual bind UI).
+func (s *SiteService) SearchSource(ctx context.Context, iid int64, q string) ([]extensions.Manga, error) {
+	host, err := s.conns.RequireHost()
+	if err != nil {
+		return nil, err
+	}
+	ix, err := s.store.GetIndexer(ctx, iid)
+	if err != nil {
+		return nil, err
+	}
+	ss, err := sourceSettings(*ix)
+	if err != nil || ss.SourceID == "" {
+		return nil, apperr.Invalidf("indexer is not an extension source")
+	}
+	mangas, err := host.Search(ctx, ss.SourceID, q)
+	if err != nil {
+		return nil, apperr.Upstreamf("%w", err)
+	}
+	return mangas, nil
 }
 
 // Effective returns entries with the series overrides applied + bindings.

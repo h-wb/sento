@@ -32,7 +32,7 @@ func TestRemoveSeriesTakesItsFilesAndOwnTorrents(t *testing.T) {
 	other := testProvider()
 	other.series.MangaBakaID, other.series.Title = 900, "The Enigma of Amigara Fault"
 	other.collections = nil
-	oid, err := NewLibrary(st, other).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 900})
+	oid, err := NewLibrary(st, other, provider.NewRegistry()).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 900})
 	if err != nil {
 		t.Fatal(err)
 	}

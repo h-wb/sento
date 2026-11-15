@@ -364,6 +364,21 @@ func (s *Scheduler) Tasks() []TaskStatus {
 	return out
 }
 
+// TaskIssues reports one health warning per loop whose last run failed
+// (the health report merges these into its issues).
+func (s *Scheduler) TaskIssues() []service.HealthIssue {
+	issues := []service.HealthIssue{}
+	for _, t := range s.Tasks() {
+		if t.LastError != "" {
+			issues = append(issues, service.HealthIssue{
+				Source: "task", Level: service.HealthWarning, Link: "/system",
+				Message: fmt.Sprintf("Scheduled task %s failed on its last run", t.Name), Detail: t.LastError,
+			})
+		}
+	}
+	return issues
+}
+
 // Run triggers one loop now; the ticker cadence is unchanged.
 func (s *Scheduler) Run(slug string) error {
 	s.mu.Lock()

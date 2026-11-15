@@ -150,17 +150,9 @@ func (s *Server) handleUpdateSeries(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &patch) {
 		return
 	}
-	if patch.Monitored != nil {
-		if err := s.store.SetSeriesMonitored(r.Context(), id, *patch.Monitored); err != nil {
-			writeErr(w, err)
-			return
-		}
-	}
-	if patch.ProfileID != nil {
-		if err := s.store.SetSeriesProfile(r.Context(), id, *patch.ProfileID); err != nil {
-			writeErr(w, err)
-			return
-		}
+	if err := s.library.UpdateSeries(r.Context(), id, patch.Monitored, patch.ProfileID); err != nil {
+		writeErr(w, err)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -329,31 +321,7 @@ func (s *Server) handleUpdateBinding(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &patch) {
 		return
 	}
-	if patch.TrustChapters != nil {
-		if err := s.store.SetBindingTrust(r.Context(), id, bid, *patch.TrustChapters); err != nil {
-			writeErr(w, err)
-			return
-		}
-		if patch.EditionID == nil && patch.State == "" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-	}
-	if patch.EditionID != nil {
-		if err := s.store.SetBindingEdition(r.Context(), id, bid, *patch.EditionID); err != nil {
-			writeErr(w, err)
-			return
-		}
-		if patch.State == "" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-	}
-	if patch.State != "active" && patch.State != "disabled" {
-		writeError(w, http.StatusBadRequest, "state must be active or disabled")
-		return
-	}
-	if err := s.store.SetBindingState(r.Context(), id, bid, patch.State); err != nil {
+	if err := s.library.UpdateBinding(r.Context(), id, bid, patch.TrustChapters, patch.EditionID, patch.State); err != nil {
 		writeErr(w, err)
 		return
 	}

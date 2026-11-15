@@ -14,6 +14,7 @@ import (
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/db/dbtest"
 	"github.com/h-wb/sento/internal/profile"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -281,7 +282,7 @@ func TestMatchReleaseRemapsImportClaimsToAnotherVersion(t *testing.T) {
 	t.Parallel()
 	conn, dialect := dbtest.Open(t)
 	st := store.New(conn, dialect)
-	lib := NewLibrary(st, testProvider())
+	lib := NewLibrary(st, testProvider(), provider.NewRegistry())
 	ctx := context.Background()
 	sid, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
 	if err != nil {

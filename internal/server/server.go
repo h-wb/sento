@@ -53,7 +53,6 @@ func New(cfg config.Config, st *store.Store, db *sql.DB, mdProvider metadata.Pro
 		db:       db,
 		store:    st,
 		provider: mdProvider,
-		library:  service.NewLibrary(st, mdProvider),
 		scanner:  service.NewScanner(st, cfg.Library.Path),
 	}
 
@@ -62,17 +61,27 @@ func New(cfg config.Config, st *store.Store, db *sql.DB, mdProvider metadata.Pro
 	s.conns = service.NewConnections(st, cfg)
 	s.conns.Apply(s.conns.Load(context.Background()))
 	s.registry = s.conns.Registry()
+	s.library = service.NewLibrary(st, mdProvider, s.registry)
 
 	// Everything downstream of here is provider-agnostic.
 	s.search = service.NewSearchService(st, s.registry)
-	s.sites = service.NewSiteService(st, s.registry)
+	s.sites = service.NewSiteService(st, s.conns)
 	s.importer = service.NewImporter(st, s.registry, cfg.Library.Path, cfg.Library.PathMappings)
 	s.extensions = service.NewExtensionService(st, s.conns.Host)
 	s.extensions.ManageRepos(cfg.Extensions.Repos)
 	s.profiles = service.NewProfiles(st)
-	s.health = service.NewHealthService(st, s.conns, cfg.Library.Path)
+	s.health = service.NewHealthService(st, s.conns, cfg.Library.Path, s)
 	s.reconcileExtensions()
 	return s
+}
+
+// TaskIssues adapts the scheduler (wired in after construction via
+// SetScheduler) to the health report's task-issue source.
+func (s *Server) TaskIssues() []service.HealthIssue {
+	if s.sched == nil {
+		return nil
+	}
+	return s.sched.TaskIssues()
 }
 
 // reconcileExtensions converges the host's installed extensions with the

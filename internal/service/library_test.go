@@ -9,6 +9,7 @@ import (
 
 	"github.com/h-wb/sento/internal/db/dbtest"
 	"github.com/h-wb/sento/internal/metadata"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -82,7 +83,7 @@ func setup(t *testing.T) (*Library, *store.Store) {
 	t.Helper()
 	conn, dialect := dbtest.Open(t)
 	st := store.New(conn, dialect)
-	return NewLibrary(st, testProvider()), st
+	return NewLibrary(st, testProvider(), provider.NewRegistry()), st
 }
 
 func TestAddSeriesDefaultMonitor(t *testing.T) {
@@ -325,7 +326,7 @@ func TestAddSeriesChapterCutoffFollowsVolumes(t *testing.T) {
 	oneShot := testProvider()
 	oneShot.series.MangaBakaID, oneShot.series.Title, oneShot.series.TotalChapters, oneShot.series.FinalVolume = 900, "The Enigma of Amigara Fault", 1, 0
 	oneShot.collections = nil
-	id, err = NewLibrary(st, oneShot).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 900})
+	id, err = NewLibrary(st, oneShot, provider.NewRegistry()).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 900})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +376,7 @@ func TestQueryTitlesKeepToTheEditionsLanguage(t *testing.T) {
 	conn, dialect := dbtest.Open(t)
 	st := store.New(conn, dialect)
 	ctx := context.Background()
-	id, err := NewLibrary(st, p).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	id, err := NewLibrary(st, p, provider.NewRegistry()).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
 	if err != nil {
 		t.Fatal(err)
 	}

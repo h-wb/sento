@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/scheduler"
-	"github.com/h-wb/sento/internal/service"
 )
 
 func (s *Server) mountAPI(r chi.Router) {
@@ -62,28 +60,11 @@ func (s *Server) handleRunTask(w http.ResponseWriter, r *http.Request) {
 // plus scheduled tasks whose last run failed — those are live state, not
 // part of the cached report.
 func (s *Server) handleHealthChecks(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.withTaskFailures(s.health.Report(r.Context())))
+	writeJSON(w, http.StatusOK, s.health.Report(r.Context()))
 }
 
 func (s *Server) handleRunHealthChecks(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.withTaskFailures(s.health.Check(r.Context())))
-}
-
-func (s *Server) withTaskFailures(report service.HealthReport) service.HealthReport {
-	if s.sched == nil {
-		return report
-	}
-	issues := append([]service.HealthIssue{}, report.Issues...)
-	for _, t := range s.sched.Tasks() {
-		if t.LastError != "" {
-			issues = append(issues, service.HealthIssue{
-				Source: "task", Level: service.HealthWarning, Link: "/system",
-				Message: fmt.Sprintf("Scheduled task %s failed on its last run", t.Name), Detail: t.LastError,
-			})
-		}
-	}
-	report.Issues = issues
-	return report
+	writeJSON(w, http.StatusOK, s.health.Check(r.Context()))
 }
 
 // invalidateHealth marks the health report stale after a change to what

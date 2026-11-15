@@ -125,18 +125,7 @@ func (s *Server) handleBookWorks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	book, err := s.store.GetBook(r.Context(), bid)
-	if err == nil {
-		var edition *store.Edition
-		if edition, err = s.store.GetEdition(r.Context(), book.EditionID); err == nil && edition.SeriesID != id {
-			err = store.ErrNotFound
-		}
-	}
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	works, err := s.store.ListWorks(r.Context(), bid)
+	works, err := s.library.BookWorks(r.Context(), id, bid)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -153,11 +142,7 @@ func (s *Server) handleResetBook(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.store.ResetBook(r.Context(), id, bid); err != nil {
-		writeErr(w, err)
-		return
-	}
-	if err := s.library.Refresh(r.Context(), id); err != nil {
+	if err := s.library.ResetBook(r.Context(), id, bid); err != nil {
 		writeErr(w, err)
 		return
 	}

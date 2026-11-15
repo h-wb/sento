@@ -33,9 +33,9 @@ func (s *Server) mountIndexerAPI(r chi.Router) {
 // --- extensions endpoints (binding fix-ups) ---
 
 func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
-	host := s.conns.Host()
-	if host == nil {
-		writeErr(w, apperr.Unavailablef("no extensions sidecar is configured"))
+	host, err := s.conns.RequireHost()
+	if err != nil {
+		writeErr(w, err)
 		return
 	}
 	sources, err := host.Sources(r.Context())
@@ -49,11 +49,6 @@ func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 // handleSourceSearch searches one source indexer entry's manga catalog
 // (the manual bind UI). {sid} is the indexer entry id.
 func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
-	host := s.conns.Host()
-	if host == nil {
-		writeErr(w, apperr.Unavailablef("no extensions sidecar is configured"))
-		return
-	}
 	q := r.URL.Query().Get("q")
 	if q == "" {
 		writeError(w, http.StatusBadRequest, "missing query parameter q")
@@ -63,19 +58,9 @@ func (s *Server) handleSourceSearch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ix, err := s.store.GetIndexer(r.Context(), iid)
+	mangas, err := s.sites.SearchSource(r.Context(), iid, q)
 	if err != nil {
 		writeErr(w, err)
-		return
-	}
-	ss, err := service.SourceSettingsOf(*ix)
-	if err != nil || ss.SourceID == "" {
-		writeError(w, http.StatusBadRequest, "indexer is not an extension source")
-		return
-	}
-	mangas, err := host.Search(r.Context(), ss.SourceID, q)
-	if err != nil {
-		writeErr(w, apperr.Upstreamf("%w", err))
 		return
 	}
 	respondList(w, mangas, nil)
@@ -105,17 +90,11 @@ func (s *Server) handleAddIndexer(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	ix := indexerFromBody(body)
-	if err := service.ValidateIndexer(ix); err != nil {
-		writeErr(w, err)
-		return
-	}
-	id, err := s.store.AddIndexer(r.Context(), ix)
+	ix, err := s.sites.Add(r.Context(), indexerFromBody(body))
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	ix.ID = id
 	writeJSON(w, http.StatusCreated, ix)
 }
 
@@ -124,23 +103,12 @@ func (s *Server) handleUpdateIndexer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	existing, err := s.store.GetIndexer(r.Context(), iid)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
 	var body IndexerBody
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	ix := indexerFromBody(body)
-	ix.ID = iid
-	ix.Protocol = existing.Protocol // protocol is immutable
-	if err := service.ValidateIndexer(ix); err != nil {
-		writeErr(w, err)
-		return
-	}
-	if err := s.store.UpdateIndexer(r.Context(), ix); err != nil {
+	ix, err := s.sites.Update(r.Context(), iid, indexerFromBody(body))
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -153,28 +121,12 @@ func (s *Server) handlePatchIndexer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ix, err := s.store.GetIndexer(r.Context(), iid)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
 	var body IndexerPatch
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if body.Enabled != nil {
-		ix.Enabled = *body.Enabled
-	}
-	if body.UseVolumes != nil {
-		ix.UseVolumes = *body.UseVolumes
-	}
-	if body.UseChapters != nil {
-		ix.UseChapters = *body.UseChapters
-	}
-	if body.Priority != nil {
-		ix.Priority = *body.Priority
-	}
-	if err := s.store.UpdateIndexer(r.Context(), *ix); err != nil {
+	ix, err := s.sites.Patch(r.Context(), iid, body.Enabled, body.UseVolumes, body.UseChapters, body.Priority)
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -241,15 +193,10 @@ func (s *Server) handleBrowseProwlarr(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	indexers, err := service.BrowseProwlarr(r.Context(), body.URL, body.APIKey)
+	indexers, err := s.conns.BrowseProwlarr(r.Context(), body.URL, body.APIKey)
 	if err != nil {
 		writeErr(w, err)
 		return
-	}
-	cs := s.conns.Load(r.Context())
-	if cs.Prowlarr.URL != body.URL || cs.Prowlarr.APIKey != body.APIKey {
-		cs.Prowlarr.URL, cs.Prowlarr.APIKey = body.URL, body.APIKey
-		_ = s.conns.Save(r.Context(), cs)
 	}
 	respondList(w, indexers, nil)
 }

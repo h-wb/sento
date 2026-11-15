@@ -40,6 +40,12 @@ type HealthReport struct {
 	Issues    []HealthIssue `json:"issues"`
 }
 
+// taskStatusSource supplies the health issues raised by background tasks
+// whose last run failed (the scheduler is one). A nil source reports none.
+type taskStatusSource interface {
+	TaskIssues() []HealthIssue
+}
+
 // probeTimeout bounds one remote probe, so a hung service costs a check
 // run seconds rather than the request timeout.
 const probeTimeout = 10 * time.Second
@@ -99,6 +105,7 @@ type HealthService struct {
 	store       *store.Store
 	conns       *Connections
 	libraryPath string
+	tasks       taskStatusSource // optional
 
 	run sync.Mutex // one check run at a time
 
@@ -107,8 +114,8 @@ type HealthService struct {
 	fresh  bool
 }
 
-func NewHealthService(st *store.Store, conns *Connections, libraryPath string) *HealthService {
-	return &HealthService{store: st, conns: conns, libraryPath: libraryPath}
+func NewHealthService(st *store.Store, conns *Connections, libraryPath string, tasks taskStatusSource) *HealthService {
+	return &HealthService{store: st, conns: conns, libraryPath: libraryPath, tasks: tasks}
 }
 
 // Invalidate marks the report stale after a settings change; the next
@@ -125,10 +132,10 @@ func (h *HealthService) Report(ctx context.Context) HealthReport {
 	h.mu.RLock()
 	report, fresh := h.report, h.fresh
 	h.mu.RUnlock()
-	if fresh {
-		return report
+	if !fresh {
+		return h.Check(ctx)
 	}
-	return h.Check(ctx)
+	return h.withTaskFailures(report)
 }
 
 // Check runs every check now and stores the report.
@@ -143,6 +150,18 @@ func (h *HealthService) Check(ctx context.Context) HealthReport {
 	h.mu.Lock()
 	h.report, h.fresh = report, true
 	h.mu.Unlock()
+	return h.withTaskFailures(report)
+}
+
+// withTaskFailures merges the background tasks whose last run failed into
+// the report — live state, not part of the cached report.
+func (h *HealthService) withTaskFailures(report HealthReport) HealthReport {
+	if h.tasks == nil {
+		return report
+	}
+	issues := append([]HealthIssue{}, report.Issues...)
+	issues = append(issues, h.tasks.TaskIssues()...)
+	report.Issues = issues
 	return report
 }
 

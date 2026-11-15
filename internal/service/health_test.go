@@ -40,7 +40,7 @@ func TestHealthChecks(t *testing.T) {
 	cfg := config.Default()
 	conns := NewConnections(st, cfg)
 	library := filepath.Join(t.TempDir(), "library")
-	health := NewHealthService(st, conns, library)
+	health := NewHealthService(st, conns, library, nil)
 
 	// A fresh install: nothing to search with, and a library folder that
 	// has not been created yet is not a problem.

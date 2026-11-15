@@ -152,6 +152,31 @@ func (c *Connections) Host() extensions.Host {
 	return c.host
 }
 
+// RequireHost returns the current source backend, or an error when no
+// extensions sidecar is configured.
+func (c *Connections) RequireHost() (extensions.Host, error) {
+	if host := c.Host(); host != nil {
+		return host, nil
+	}
+	return nil, apperr.Unavailablef("no extensions sidecar is configured")
+}
+
+// BrowseProwlarr lists a Prowlarr's indexers as ready-to-add Torznab
+// endpoints (the Add Indexer assist), remembering the entered credentials
+// in the connection settings for next time.
+func (c *Connections) BrowseProwlarr(ctx context.Context, baseURL, apiKey string) ([]ProwlarrIndexer, error) {
+	indexers, err := BrowseProwlarr(ctx, baseURL, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	cs := c.Load(ctx)
+	if cs.Prowlarr.URL != baseURL || cs.Prowlarr.APIKey != apiKey {
+		cs.Prowlarr.URL, cs.Prowlarr.APIKey = baseURL, apiKey
+		_ = c.Save(ctx, cs)
+	}
+	return indexers, nil
+}
+
 // Load returns the stored settings, falling back to file/env defaults.
 func (c *Connections) Load(ctx context.Context) ConnectionSettings {
 	if raw, err := c.store.GetSetting(ctx, connectionsKey); err == nil {

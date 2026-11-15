@@ -7,10 +7,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-
-	"github.com/h-wb/sento/internal/provider"
-	"github.com/h-wb/sento/internal/service"
-	"github.com/h-wb/sento/internal/store"
 )
 
 // Queue, download history, activity and blocklist handlers.
@@ -67,25 +63,7 @@ func (s *Server) handleUnblockReleases(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	byID := len(body.IDs) > 0 && body.Protocol == "" && len(body.Keys) == 0
-	byKey := len(body.IDs) == 0 && (body.Protocol == provider.ProtocolSource || body.Protocol == provider.ProtocolTorrent) && len(body.Keys) > 0
-	if !byID && !byKey {
-		writeError(w, http.StatusBadRequest, "select blocklist IDs or release keys with a protocol")
-		return
-	}
-	for _, id := range body.IDs {
-		if id <= 0 {
-			writeError(w, http.StatusBadRequest, "blocklist IDs must be positive")
-			return
-		}
-	}
-	for _, key := range body.Keys {
-		if key == "" {
-			writeError(w, http.StatusBadRequest, "release keys must not be empty")
-			return
-		}
-	}
-	if err := s.store.UnblockReleases(r.Context(), body.IDs, body.Protocol, body.Keys); err != nil {
+	if err := s.importer.UnblockReleases(r.Context(), body.IDs, body.Protocol, body.Keys); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -122,30 +100,8 @@ func (s *Server) handleQueueBlocklist(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 	active := r.URL.Query().Get("all") == ""
-	items, err := s.store.ListQueueItems(r.Context(), active)
-	if err != nil {
-		respondList(w, items, err)
-		return
-	}
-	files := map[int64][]store.File{}
-	for i := range items {
-		item := &items[i]
-		if item.Status != store.QueueFailed && item.Status != store.QueueNeedsReview && item.Status != store.QueueRetryWait {
-			continue
-		}
-		if _, ok := files[item.SeriesID]; !ok {
-			files[item.SeriesID], err = s.store.ListFiles(r.Context(), item.SeriesID)
-			if err != nil {
-				writeErr(w, err)
-				return
-			}
-		}
-		item.CanTryAnother = service.CanTryAnother(*item, files[item.SeriesID])
-	}
-	for i := range items {
-		s.enrichQueueProgress(&items[i])
-	}
-	respondList(w, items, nil)
+	items, err := s.importer.QueueView(r.Context(), active)
+	respondList(w, items, err)
 }
 
 func (s *Server) handleQueueProcess(w http.ResponseWriter, r *http.Request) {
@@ -210,25 +166,6 @@ func (s *Server) handleQueueAnother(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) enrichQueueProgress(item *store.QueueItem) {
-	observed, _ := time.Parse(time.RFC3339, item.ObservedAt)
-	if time.Since(observed) > 5*time.Minute {
-		item.Stalled = false
-	}
-	if item.Status != store.QueueDownloading {
-		return
-	}
-	if item.ObservedAt != "" {
-		item.Progress = &item.DownloadProgress
-	}
-	prov := s.registry.Get(item.ProviderID)
-	if pr, ok := prov.(provider.Progresser); ok {
-		if frac, ok := pr.Progress(item.ExternalID); ok {
-			item.Progress = &frac
-		}
-	}
-}
-
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 	sid, ok := queryID(r, "seriesId")
 	if !ok {
@@ -239,9 +176,6 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, err)
 		return
-	}
-	for i := range data.Downloads {
-		s.enrichQueueProgress(&data.Downloads[i].Job)
 	}
 	writeJSON(w, http.StatusOK, data)
 }

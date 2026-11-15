@@ -11,6 +11,7 @@ import (
 	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -310,7 +311,7 @@ func TestModelFractionalZeroExtrasAndUnknownDates(t *testing.T) {
 	if _, err := st.SaveVersion(ctx, id, version); err != nil {
 		t.Fatal(err)
 	}
-	slots, err := NewLibrary(st, nil).BooksByVersion(ctx, id)
+	slots, err := NewLibrary(st, nil, provider.NewRegistry()).BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +409,7 @@ func TestModelQualifyingAssetReusedAcrossVersions(t *testing.T) {
 	}
 	other.ID = tid
 	ownedModelFile(t, st, id, c, ws[0], version)
-	slots, err := NewLibrary(st, nil).BooksByVersion(ctx, id)
+	slots, err := NewLibrary(st, nil, provider.NewRegistry()).BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}

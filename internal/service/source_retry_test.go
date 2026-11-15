@@ -21,7 +21,7 @@ func TestSourceFailureQueueRecovery(t *testing.T) {
 			ctx := context.Background()
 			conn, dialect := dbtest.Open(t)
 			st := store.New(conn, dialect)
-			lib := NewLibrary(st, testProvider())
+			lib := NewLibrary(st, testProvider(), provider.NewRegistry())
 			sid, err := lib.AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
 			if err != nil {
 				t.Fatal(err)

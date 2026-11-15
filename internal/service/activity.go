@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/h-wb/sento/internal/store"
 )
@@ -100,10 +99,7 @@ func (l *Library) activityRow(ctx context.Context, data *ActivityData, job store
 			return err
 		}
 	}
-	observed, _ := time.Parse(time.RFC3339, job.ObservedAt)
-	if time.Since(observed) > 5*time.Minute {
-		job.Stalled = false
-	}
+	withLiveProgress(l.registry, &job)
 	job.CanTryAnother = CanTryAnother(job, sets.files[job.SeriesID])
 	d := ActivityDownload{Job: job, Files: []store.ReviewItem{}, ListingID: jobListing(job)}
 	snap := jobSnapshot(job)

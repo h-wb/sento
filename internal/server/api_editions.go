@@ -210,15 +210,9 @@ func (s *Server) handleEditEditionMetadata(w http.ResponseWriter, r *http.Reques
 	if !decodeBody(w, r, &p) {
 		return
 	}
-	if err := s.store.EditEdition(r.Context(), id, cid, p); err != nil {
+	if err := s.library.EditEditionMetadata(r.Context(), id, cid, p); err != nil {
 		writeErr(w, err)
 		return
-	}
-	if len(p.Reset) > 0 {
-		if err := s.library.Refresh(r.Context(), id); err != nil {
-			writeErr(w, err)
-			return
-		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -280,12 +274,8 @@ func (s *Server) handleSeparateCollection(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	edition, err := s.store.SeparateCollection(r.Context(), id, cid)
+	edition, err := s.library.SeparateCollection(r.Context(), id, cid)
 	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	if err = s.store.EnsureModels(r.Context(), id); err != nil {
 		writeErr(w, err)
 		return
 	}

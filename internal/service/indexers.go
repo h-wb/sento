@@ -51,9 +51,6 @@ func sourceSettings(ix store.Indexer) (SourceSettings, error) {
 	return ss, err
 }
 
-// SourceSettingsOf is the API layer's accessor for sourceSettings.
-func SourceSettingsOf(ix store.Indexer) (SourceSettings, error) { return sourceSettings(ix) }
-
 func parseEntry(ix store.Indexer) (provider.IndexerEntry, error) {
 	e := provider.IndexerEntry{ID: ix.ID, Name: ix.Name, Enabled: ix.Enabled}
 	switch ix.Protocol {
@@ -160,8 +157,7 @@ type ProwlarrIndexer struct {
 }
 
 // BrowseProwlarr lists a Prowlarr's indexers as ready-to-add Torznab
-// endpoints (the Add Indexer assist; the entered credentials are
-// remembered in connection settings by the caller).
+// endpoints (the Add Indexer assist).
 func BrowseProwlarr(ctx context.Context, baseURL, apiKey string) ([]ProwlarrIndexer, error) {
 	indexers, err := prowlarr.New(baseURL, apiKey).ListIndexers(ctx)
 	if err != nil {
