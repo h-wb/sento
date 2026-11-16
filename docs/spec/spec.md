@@ -84,6 +84,12 @@ clean library for readers like Komga/Kavita.
   small so others can follow).
 - **FlareSolverr**: optional, configured inside Suwayomi (not Sento's concern).
 
+*Correction (2026-11-16):* the sidecar is not an unmodified Suwayomi-Server
+and is not spoken to over GraphQL (this adjusts D3). It is a purpose-built
+JVM app in `extensions/` (Javalin, on vendored Suwayomi pieces) with its own
+small HTTP API; see [the sidecar contract](../extensions.md) and
+[connections](../domain/connections.md).
+
 Deployment: docker-compose file shipping sento + suwayomi; prowlarr/qbit
 optional externals. Sento also runs bare (single binary, SQLite).
 
@@ -125,6 +131,10 @@ semi-stable and everything edition-related as **unstable surface**:
   scheduled live smoke-check (one known series) compares actual responses to
   the expected shape and surfaces "metadata provider drift" as a health
   warning instead of crashing sync.
+  *Correction (2026-11-16):* no scheduled live smoke-check exists; drift is
+  caught by the contract tests against recorded fixtures only. The client's
+  actual retry and paging rules are in
+  [connections](../domain/connections.md#the-mangabaka-client-retries-and-paging).
 - **Degraded mode.** A failed catalog refresh keeps existing metadata. A successful snapshot marks absent entries stale. Explicit local continuation preserves the publication while detaching its upstream references. The default chapter edition may infer a bounded series count; local chapter editions start with explicit books.
 
 ### 5.2 API usage
@@ -135,6 +145,16 @@ semi-stable and everything edition-related as **unstable surface**:
   - `GET /v1/series/{id}` — refresh
   - `GET /v1/series/{id}/collections` — editions (undocumented but live)
   - `GET /v1/series/{id}/works?page=` — volume slots (paginated, 25/page)
+  - `GET /v1/editions/all?limit=50` — the edition list (paginated)
+
+  *Correction (2026-11-16):* the budgets are enforced client-side (search: 1
+  request per 2 s with burst 5; lookups: 1 per 500 ms with burst 10), and
+  429/502/503/504 are retried up to 4 attempts, waiting the response's
+  `Retry-After` or doubling from 1 s, each wait capped at 30 s. Paginated
+  endpoints are walked by following `pagination.next` (a repeated page URL
+  is an error); works are not fixed at 25/page, the API chooses the page
+  size. See
+  [connections](../domain/connections.md#the-mangabaka-client-retries-and-paging).*
 - **Database mode** (v1.x): weekly DB dump mirrored locally for search and
   refresh without rate limits. Schema kept compatible from day one (we store
   raw MangaBaka JSON per series alongside extracted columns).
@@ -158,6 +178,10 @@ downloads use the bundled Kotlin sidecar through `internal/extensions`; see
 > with `suwayomi` and `torrent` (Prowlarr+qBittorrent) implementations.
 > The decision funnel and importer are provider-agnostic; candidates carry
 > uniform `provider/site/protocol` tags.
+>
+> *Correction (2026-11-16):* the provider ids are `host` (the extensions
+> sidecar) and `torrent` (`internal/extensions/client.go`,
+> `internal/provider/torrent.go`); there is no `suwayomi` provider.
 
 Validated flow (no Suwayomi library membership needed at any step):
 `fetchSourceManga(SEARCH)` → `fetchChapters` (stable chapter ids; list =
@@ -166,6 +190,12 @@ completion signal = `chapter.isDownloaded`, *not* the queue) →
 `GET /api/v1/chapter/{id}/download` (CBZ stream incl. Suwayomi's own
 ComicInfo.xml, merged per §11.3) → `deleteDownloadedChapter` after import.
 Suwayomi configured with `downloadAsCbz = true`.
+
+*Correction (2026-11-16):* there is no Suwayomi chapter-download endpoint in
+use. Sento pulls each page over the sidecar's `page` route and assembles the
+CBZ itself (retry, pacing and staging included); see
+[the sidecar contract](../extensions.md#page-fetching) and
+[acquisition](../domain/acquisition.md).*
 
 Key semantics:
 
@@ -180,6 +210,10 @@ Key semantics:
   list + health". Roadmap: v2 manages extensions from Sento's UI via
   Suwayomi GraphQL; long-term we may ship a slim replacement engine — the
   `SourceProvider` interface is the contract that makes both possible.
+  *Correction (2026-11-16):* extension management is in scope: Sento owns
+  the desired extension list (source indexer entries reference packages) and
+  reconciles installs, removals, repos and source preferences onto the
+  sidecar; see [connections](../domain/connections.md#extension-lifecycle).*
 - Suwayomi auth (if enabled) via basic auth config. Multiple Suwayomi
   instances: not in v1.
 
@@ -188,6 +222,11 @@ Key semantics:
 - **Prowlarr** integration identical in spirit to Sonarr's: Sento queries
   Prowlarr's search API (`/api/v1/search?query=&cat=`) with manga categories;
   Prowlarr handles the per-indexer adapters.
+  *Correction (2026-11-16):* Sento does not query Prowlarr's search API.
+  Prowlarr is used only by the Add Indexer browse assist, which lists its
+  indexers as ready-to-add Torznab endpoints; torrent search queries each
+  indexer's own Torznab endpoint. See
+  [connections](../domain/connections.md#indexer-entries).*
 - Interactive search (UI button per slot/series) + automatic search for
   wanted slots (see §10).
 - RSS sync `[v1.x]`: poll Prowlarr recent releases, match against wanted —
@@ -248,6 +287,14 @@ Reuses one internal cron/queue system (Go, persisted jobs):
 | Queue/import processing | event-driven + 1m poll |
 | Library rescan (new/changed/deleted files, §11.4) | on refresh + daily sweep |
 | Health checks (peripherals reachable, bindings valid) | 15m |
+
+*Correction (2026-11-16):* there is no release-date trigger task, and the
+library rescan is not daily: `library-scan` runs every 12 h. The actual loops
+are `queue-process` 1 min, `extension-sync` 30 min, `metadata-refresh` 1 h,
+`library-scan` 12 h, `chapter-check` 2 h, `volume-sweep` 12 h,
+`library-organize` on demand, `housekeeping` 24 h, `health-check` 15 min; only
+each task's last-run time is persisted in the `scheduler` settings key, not
+the jobs. See [architecture.md](../architecture.md#background-tasks).*
 
 ## 11. Import, naming, post-processing
 
@@ -389,6 +436,11 @@ see [domain/library-files.md](../domain/library-files.md#scanning).
 - **API**: REST/JSON (OpenAPI spec in repo), API-key auth; SSE stream for
   queue/import events. The TS SPA is a pure API client (no server-rendered
   state), so third-party clients get full power.
+  *Correction (2026-11-16):* the API key is not enforced (startup logs a
+  warning) and there is no OpenAPI document; TypeScript types are generated
+  by tygo. The only stream is the NDJSON search stream. See
+  [api.md](../api.md#conventions) and
+  [installation.md](../installation.md#configuration).*
 - **UI (TypeScript SPA)** `[default: React + Vite]`: views — Library (series
   grid), Series detail (collections + the two ledgers, slot status, search
   buttons), Add series (MangaBaka search → pick collections → options),
@@ -397,6 +449,11 @@ see [domain/library-files.md](../domain/library-files.md#scanning).
   MangaBaka JSON blobs cached per series with schema-version tags (§5.1).
 - **Config**: file + env (12-factor-ish); secrets (API keys for peripherals)
   in config; no DB-stored credentials in v1.
+  *Correction (2026-11-16):* the database is sqlc plus migrations as stated,
+  but credentials are stored in it: qBittorrent passwords sit in the
+  `connections` settings document. See
+  [installation.md](../installation.md#settings-stored-in-the-database) and
+  [connections](../domain/connections.md#connection-settings).*
 
 ## 13. Post-v1 roadmap
 
