@@ -38,6 +38,13 @@ func offerFacts(item store.QueueItem, format string) store.AssetFacts {
 	return facts
 }
 
+// filenameFacts is base with what a file's own parsed name says.
+func filenameFacts(base store.AssetFacts, p parse.Result) store.AssetFacts {
+	base.Language, base.Group, base.Flags, base.FactsKnown = p.Language, p.Group, parseFlags(p), true
+	base.Resolution, base.Revision, base.Digital = p.Quality.Resolution, p.Version, p.Quality.Digital
+	return base
+}
+
 // assetPath is dir/name with an unsafe or overlong name tamed and, when
 // hash is given, " [hash]" before the extension.
 func assetPath(dir, name, hash string) string {
@@ -91,6 +98,7 @@ func installProcessed(src, dest, hash string, info mediafile.ComicInfo) error {
 	if _, err := os.Stat(dest); err == nil {
 		return verifyDestination(dest, hash)
 	}
+	mediafile.CleanStaleTemps(filepath.Dir(dest))
 	// Staged next to dest, then installed exclusively: a path that became
 	// occupied in the meantime is never replaced.
 	stage := filepath.Join(filepath.Dir(dest), ".sento-stage-"+filepath.Base(dest))
@@ -145,15 +153,9 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 	claims := facts
 	if actual, ok := parsed.(parse.Result); ok {
 		// An offer's claims remain available for review; file facts are specific to these bytes.
+		facts = filenameFacts(facts, actual)
 		facts.Sources = map[string]string{"language": "filename", "group": "filename", "quality": "filename"}
 		facts.Title = filepath.Base(path)
-		facts.Group = actual.Group
-		facts.Language = actual.Language
-		facts.Flags = parseFlags(actual)
-		facts.Resolution = actual.Quality.Resolution
-		facts.Revision = actual.Version
-		facts.Digital = actual.Quality.Digital
-		facts.FactsKnown = true
 	}
 	// Stat before hashing, so a write during or after the hash changes the
 	// signature recorded with it. Recording the signature lets review
@@ -282,17 +284,11 @@ func (im *Importer) importReviewFile(ctx context.Context, item store.QueueItem, 
 	if err != nil {
 		return err
 	}
-	snap := jobSnapshot(item)
-	claims := store.AssetFacts{Title: snap.Title, Language: snap.Parse.Language, Group: snap.Parse.Group, ReleaseKey: item.ReleaseKey, Sources: map[string]string{"language": "offer", "group": "offer"}}
-	facts := store.AssetFacts{Title: filepath.Base(src), Format: strings.TrimPrefix(filepath.Ext(src), "."), Protocol: item.Protocol, ReleaseKey: item.ReleaseKey, Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}}
+	format := strings.TrimPrefix(filepath.Ext(src), ".")
+	claims := offerFacts(item, format)
+	facts := store.AssetFacts{Title: filepath.Base(src), Format: format, Protocol: item.Protocol, ReleaseKey: item.ReleaseKey, Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}}
 	if p, ok := parsed.(parse.Result); ok {
-		facts.Language = p.Language
-		facts.Group = p.Group
-		facts.Flags = parseFlags(p)
-		facts.FactsKnown = true
-		facts.Resolution = p.Quality.Resolution
-		facts.Revision = p.Version
-		facts.Digital = p.Quality.Digital
+		facts = filenameFacts(facts, p)
 	}
 	// The signature of the installed copy, read after install: a later write
 	// to the shared inode changes it, so review re-reads the archive then.

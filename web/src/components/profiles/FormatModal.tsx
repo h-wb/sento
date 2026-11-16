@@ -4,7 +4,6 @@ import {
   Button,
   Checkbox,
   Group,
-  Modal,
   Select,
   Stack,
   Text,
@@ -14,6 +13,8 @@ import { IconPlus, IconTrash } from '@tabler/icons-react'
 import { useMutation } from '@tanstack/react-query'
 import { api, type Condition, type Format } from '../../api'
 import { notify } from '../../ui'
+import { EditorModal } from '../EditorModal'
+import { sameJSON } from '../sameJSON'
 
 const conditionTypes = [
   { value: 'title', label: 'Release title (regex)' },
@@ -55,6 +56,8 @@ export function FormatModal({
       : [{ type: 'title', value: '' }],
   )
 
+  const [opened] = useState({ name, conditions })
+
   const setCond = (i: number, patch: Partial<Condition>) =>
     setConditions((cs) => cs.map((c, j) => (j === i ? { ...c, ...patch } : c)))
 
@@ -71,8 +74,9 @@ export function FormatModal({
   })
 
   return (
-    <Modal
-      opened
+    <EditorModal
+      dirty={!sameJSON({ name, conditions }, opened)}
+      busy={save.isPending}
       onClose={onClose}
       title={format ? `Edit ${format.name}` : 'Add custom format'}
       size="lg"
@@ -171,6 +175,6 @@ export function FormatModal({
           </Button>
         </Group>
       </Stack>
-    </Modal>
+    </EditorModal>
   )
 }

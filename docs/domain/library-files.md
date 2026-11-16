@@ -56,10 +56,9 @@ cannot set the change time, so restoring the modification time after a rewrite
 still changes the signature. Platforms without inode metadata return an empty
 signature and always fingerprint.
 
-Leftover `.sento-import-*` temp files from interrupted imports are swept
-when the folder is next written (`cleanStaleTemps`); anything older than one
-hour is removed. `.sento-stage-*` leftovers are not swept: they are only
-created and defer-removed by the import and organize paths.
+Leftover `.sento-import-*` and `.sento-stage-*` temp files from
+interrupted imports, re-tags and organizes are swept when the folder is next
+written (`CleanStaleTemps`); any older than one hour is removed.
 
 ## Scanning
 

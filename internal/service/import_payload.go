@@ -52,6 +52,7 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 	if err := os.MkdirAll(seriesDir, 0o755); err != nil {
 		return err
 	}
+	mediafile.CleanStaleTemps(seriesDir)
 	stage, err := os.CreateTemp(seriesDir, ".sento-stage-*.cbz")
 	if err != nil {
 		return err

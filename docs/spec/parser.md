@@ -207,6 +207,8 @@ the marker repeated (`T02 au T05`); plus volume *lists* that keep their
 gaps (`Tomes 2, 4 et 7` → 2, 4, 7, separators `,` `&` `et` `und` `y`).
 See [the extraction cascade](../domain/parsing.md#the-extraction-cascade-numbersgo).
 
+*Correction (2026-11-16):* Kapitel is now read as a chapter marker.
+
 ### 5.2 Chapter markers
 `c001` `ch. 4` `Ch.34` `Chapter 1184` `Chap 5` `#34` `Episode 12` `Ep. 12`
 (webtoons) `第12話` (raws) `- 375` (dash-bound trailing number,

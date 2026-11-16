@@ -261,9 +261,9 @@ order the patterns run; later passes only see what earlier ones left:
 flowchart TD
     A["extractNumbers(text)"] --> B["version suffix 34v2: Version, blanked first so v2 is not a volume"]
     B --> C["JP markers: 第N巻 → volume, 第N話 → chapter"]
-    C --> D["volume lists: Vol/Tome/Band/Kapitel/T followed by numbers separated by , & et und y: each number kept, gaps kept"]
-    D --> E["volume markers: v01, vol./volume(s), t0me/tome(s)/tomo(s), band, bände, kapitel, t01; ranges with - – ~ à au to, marker may repeat"]
-    E --> F["chapter markers: c001, ch./chs./chapitre(s)/chap./chapters, episode(s)/ep., #34, c-ranges; alpha suffix after the long form"]
+    C --> D["volume lists: Vol/Tome/Band/T followed by numbers separated by , & et und y: each number kept, gaps kept"]
+    D --> E["volume markers: v01, vol./volume(s), t0me/tome(s)/tomo(s), band, bände, t01; ranges with - – ~ à au to, marker may repeat"]
+    E --> F["chapter markers: c001, ch./chs./chapitre(s)/chap./chapters, kapitel, episode(s)/ep., #34, c-ranges; alpha suffix after the long form"]
     F --> G["trailing dash chapter: Berserk - 375"]
     G --> H["bare numbers in the remainder, only when not glued to a letter, a dot or a #"]
     H --> I["collected into Bare, padded ones also into BarePadded"]
@@ -277,9 +277,9 @@ Rule tables, with examples from `internal/parse/testdata/corpus/`:
 | JP volume `第N巻` | `第01-10巻` → volumes [1,10]; `ワンピース 第98巻` → volume 98 |
 | JP chapter `第N話` | `第12話` → chapter 12; `1167話 伊達之子` → chapter 1167 |
 | volume list | `Tomes 2, 4 et 7` → volumes 2, 4, 7 (not 2–7); `Volumes 2 & 4` → 2 and 4; separators `,` `&` `et` `und` `y` |
-| volume markers | `v41` → 41; `Vol. 106` → 106; `volume64` → 64; `Tome 12`, `T0me 7`, `Tomo 8` → volume; `T05`/`T02 au T05` → volume; `Band 3-6` → [3,6]; `Bände`; `Kapitel 4` → volume 4; `Tomes 2 à 5` → [2,5] |
-| chapter markers | `c001`, `Ch.34`, `Chap 5`, `Chapter 1184`, `Chapitre 1090`, `chs`, `Episode 12`, `Ep. 45`, `#34` → chapter; `ch1.1 + ch1.3` → 1.1 and 1.3 |
-| marker ranges | `v01-v38`, `v01-38`, `Vol. 102-105`, `c001-050`, `Chapters 12.5-14`; separators `-` `–` `~` |
+| volume markers | `v41` → 41; `Vol. 106` → 106; `volume64` → 64; `Tome 12`, `T0me 7`, `Tomo 8` → volume; `T05`/`T02 au T05` → volume; `Band 3-6` → [3,6]; `Bände`; `Tomes 2 à 5` → [2,5] |
+| chapter markers | `c001`, `Ch.34`, `Chap 5`, `Chapter 1184`, `Chapitre 1090`, `chs`, `Kapitel 4`, `Episode 12`, `Ep. 45`, `#34` → chapter; `ch1.1 + ch1.3` → 1.1 and 1.3 |
+| marker ranges | `v01-v38`, `v01-38`, `Vol. 102-105`, `c001-050`, `Chapters 12.5-14`, `Kapitel 2-3`; separators `-` `–` `~` |
 | alpha suffix | `Chapter 4a` → 4.1 (only after the long marker form, or on bare numbers); `1150a` → 1150.1 |
 | trailing dash | `[Kamizye] Berserk - 375` → chapter 375 |
 | bare range | `One Piece v001-111 + 1134-1176` → volumes [1,111], chapters [1134,1176]; `Solo Leveling 164-169 (2021)` → stays `Bare` [164,169] |
@@ -461,7 +461,7 @@ source releases that carry a listing name (`funnel.go`): `rc.Parse.Inherit(parse
 
 ## Parser version and stale facts
 
-`parse.Version` is the parser revision, currently 2, stamped on every
+`parse.Version` is the parser revision, currently 3, stamped on every
 file whose filename-derived facts were read from its name
 (`store.File.ParserVersion`, migration 0035). Bump it whenever parser
 output for existing names may change: a scan then re-reads stale names
@@ -470,7 +470,8 @@ replaces and what it keeps is in
 [library files](library-files.md#re-reading-names-after-a-parser-change).
 
 Revision 2 exists because 0.7.0 stamped reviewed files as read by
-revision 1 without re-reading them.
+revision 1 without re-reading them. Revision 3 reads `Kapitel` (German for
+chapter) as a chapter marker instead of a volume marker.
 
 `Result.Mentions(phrase)` reports whether the cleaned name contains a
 phrase as whole words (phrase must be lowercase); the edition fitter uses

@@ -252,19 +252,19 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 func (sc *Scanner) rederiveFacts(ctx context.Context, f store.File, titles []string) error {
 	facts := f.Facts
 	if name := factsName(f); name != "" {
-		parsed := parse.ParseAnchored(name, parse.ChannelFile, titles)
-		facts.Flags = parseFlags(parsed)
-		facts.Resolution, facts.Revision, facts.Digital = parsed.Quality.Resolution, parsed.Version, parsed.Quality.Digital
+		read := filenameFacts(facts, parse.ParseAnchored(name, parse.ChannelFile, titles))
+		read.FactsKnown = facts.FactsKnown
 		// A download's recorded name may be the one Sento gave it, whose own
 		// brackets ("[Standard Edition][en]") read as a group and a language:
 		// the re-read corrects what the facts hold, it does not add to them.
 		scanned := f.Provenance == scanProvenance
-		if facts.Sources["language"] == "filename" && (scanned || facts.Language != "") {
-			facts.Language = parsed.Language
+		if facts.Sources["language"] != "filename" || (!scanned && facts.Language == "") {
+			read.Language = facts.Language
 		}
-		if facts.Sources["group"] == "filename" && (scanned || facts.Group != "") {
-			facts.Group = parsed.Group
+		if facts.Sources["group"] != "filename" || (!scanned && facts.Group == "") {
+			read.Group = facts.Group
 		}
+		facts = read
 	}
 	return sc.store.RewriteFileFacts(ctx, f.ID, facts, parse.Version)
 }

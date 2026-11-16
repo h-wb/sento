@@ -17,7 +17,7 @@ func ImportCBZ(src io.Reader, destPath string, sentoInfo *ComicInfo) (int64, err
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return 0, err
 	}
-	cleanStaleTemps(filepath.Dir(destPath))
+	CleanStaleTemps(filepath.Dir(destPath))
 
 	tmp, err := os.CreateTemp(filepath.Dir(destPath), ".sento-import-*")
 	if err != nil {
@@ -58,17 +58,20 @@ func ImportCBZ(src io.Reader, destPath string, sentoInfo *ComicInfo) (int64, err
 	return info.Size(), nil
 }
 
-// cleanStaleTemps removes leftover temp files from imports interrupted by
-// a crash/kill (the defer never ran). Anything older than an hour is junk.
-func cleanStaleTemps(dir string) {
-	matches, err := filepath.Glob(filepath.Join(dir, ".sento-import-*"))
-	if err != nil {
-		return
-	}
+// CleanStaleTemps removes leftover import and stage files from operations
+// interrupted by a crash/kill (the defer never ran). Anything older than an
+// hour is junk.
+func CleanStaleTemps(dir string) {
 	cutoff := time.Now().Add(-time.Hour)
-	for _, m := range matches {
-		if info, err := os.Stat(m); err == nil && info.ModTime().Before(cutoff) {
-			_ = os.Remove(m)
+	for _, pattern := range []string{".sento-import-*", ".sento-stage-*"} {
+		matches, err := filepath.Glob(filepath.Join(dir, pattern))
+		if err != nil {
+			continue
+		}
+		for _, m := range matches {
+			if info, err := os.Lstat(m); err == nil && info.Mode().IsRegular() && info.ModTime().Before(cutoff) {
+				_ = os.Remove(m)
+			}
 		}
 	}
 }

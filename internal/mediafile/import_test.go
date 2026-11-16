@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func cbz(t *testing.T, names ...string) []byte {
@@ -77,5 +78,40 @@ func assertNoTemps(t *testing.T, dir string) {
 	left, _ := filepath.Glob(filepath.Join(dir, ".sento-import-*"))
 	if len(left) > 0 {
 		t.Fatalf("temp files left behind: %v", left)
+	}
+}
+
+func TestCleanStaleTempsSweepsOldImportAndStageFiles(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	old := now.Add(-2 * time.Hour)
+	files := []struct {
+		name  string
+		mtime time.Time
+		swept bool
+	}{
+		{".sento-stage-x", old, true},
+		{".sento-import-x", old, true},
+		{".sento-stage-y", now, false},
+		{"unrelated.cbz", old, false},
+	}
+	for _, f := range files {
+		path := filepath.Join(dir, f.name)
+		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, f.mtime, f.mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	CleanStaleTemps(dir)
+	for _, f := range files {
+		_, err := os.Stat(filepath.Join(dir, f.name))
+		if f.swept && !os.IsNotExist(err) {
+			t.Errorf("%s survived the sweep (stat err = %v)", f.name, err)
+		}
+		if !f.swept && err != nil {
+			t.Errorf("%s was removed: %v", f.name, err)
+		}
 	}
 }

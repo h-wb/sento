@@ -262,11 +262,13 @@ closes immediately when the form is clean, and asks first ("Discard unsaved
 changes?") through `useConfirmAction` when `dirty` is set. `dirty` also
 registers with the global `UnsavedChangesProvider` (`useUnsavedChanges`), which
 blocks route changes (`useBlocker`) and tab close (`useBeforeUnload`) while any
-form is dirty, with the same confirm dialog. `useEditor` gives an editor its
-`run`/`busy`/`error` triple: `run` sets busy, keeps the error message to show
-in the dialog (via `errorMessage`, without the "Error: " prefix) and always
-clears busy. `useConfirmAction` keeps its confirm dialog open when the action
-fails, so the same action can be retried. The small shared pieces:
+form is dirty, with the same confirm dialog. Every editor dialog uses
+`EditorModal`, the profile, custom-format, profile-import and indexer dialogs
+included. `useEditor` gives an editor its `run`/`busy`/`error` triple: `run`
+sets busy, keeps the error message to show in the dialog (via `errorMessage`,
+without the "Error: " prefix) and always clears busy. `useConfirmAction` keeps
+its confirm dialog open when the action fails, so the same action can be
+retried. The small shared pieces:
 
 `QueryFeedback` (pending skeleton or error with retry), `EmptyState`,
 `PageHeader`, `usePageTitle` (`ui.ts`), and `usePaged` for client-side paging.

@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Button, FileButton, Group, Modal, Stack, Text, Textarea } from '@mantine/core'
+import { Button, FileButton, Group, Stack, Text, Textarea } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useMutation } from '@tanstack/react-query'
 import { api, type ProfileDoc } from '../../api'
 import { notify } from '../../ui'
+import { EditorModal } from '../EditorModal'
+import { sameJSON } from '../sameJSON'
 
 export function ImportProfileModal({
   onClose,
@@ -13,6 +15,7 @@ export function ImportProfileModal({
   onSaved: () => void
 }) {
   const [text, setText] = useState('')
+  const [opened] = useState(text)
   // Match the theme's mobile input rule: under 16px iOS zooms on focus.
   const coarseInput = useMediaQuery('(pointer: coarse), (max-width: 48em)')
 
@@ -35,7 +38,13 @@ export function ImportProfileModal({
   })
 
   return (
-    <Modal opened onClose={onClose} title="Import profile" size="lg">
+    <EditorModal
+      dirty={!sameJSON(text, opened)}
+      busy={importMut.isPending}
+      onClose={onClose}
+      title="Import profile"
+      size="lg"
+    >
       <Stack gap="sm">
         <Text size="sm" c="dimmed">
           Paste an exported profile document, or pick a file. Formats are matched by name and
@@ -75,6 +84,6 @@ export function ImportProfileModal({
           </Button>
         </Group>
       </Stack>
-    </Modal>
+    </EditorModal>
   )
 }
