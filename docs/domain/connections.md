@@ -11,7 +11,7 @@ health service probes everything configured and reports what is broken.
 | File or package | What it holds |
 | --- | --- |
 | `internal/service/connections.go` | `Connections`: settings load/save, `Apply`, `TestConnections`, legacy key migration |
-| `internal/service/indexers.go` | entry settings (`TorznabSettings`, `SourceSettings`), `ValidateIndexer`, the Prowlarr browse assist |
+| `internal/service/indexers.go` | entry settings (`TorznabSettings`, `SourceSettings`), `validateIndexer`, the Prowlarr browse assist |
 | `internal/service/sites.go` | `SiteService`: Indexers views, live reachability, per-series overrides |
 | `internal/service/extensions.go` | `ExtensionService`: the desired set, `Reconcile`, repos, source preferences |
 | `internal/service/health.go` | `HealthService`: the checks, probe timeout, report caching and invalidation |
@@ -128,7 +128,7 @@ The two settings documents:
 | `SourceSettings` | `sourceId` | the host-minted source id; required |
 | `SourceSettings` | `pkgName` | the owning extension; the entry is what makes the extension wanted |
 
-Validation rules (`ValidateIndexer`): a name is required; a Torznab URL must
+Validation rules (`validateIndexer`): a name is required; a Torznab URL must
 start with `http://`/`https://`; `language` must match
 `^[A-Za-z]{2,3}(-[A-Za-z]{2,4})?$` (examples: `en`, `fr`, `pt-BR`); a source
 entry must select a source; the protocol must be `torznab` or `source`.

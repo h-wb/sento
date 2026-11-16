@@ -88,7 +88,7 @@ page (grouped Pages/Configure), and every library series under Library, fed by
 the same `['series']` query `LibraryPage` uses. Spotlight shows at most 8
 results and highlights the query text.
 
-Badges come from `shell/useNavBadges.ts` and `components/activityModel.ts`:
+Badges come from `shell/NavBadges.tsx` (rendered by `App.tsx`) and `components/activityModel.ts`:
 
 - The Activity nav link shows the count of attention groups, falling back to
   active downloads when nothing needs attention (`activityCounts`).

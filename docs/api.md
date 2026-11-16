@@ -246,8 +246,8 @@ reverse proxy. See [installation](installation.md#configuration).
 | PUT | `/indexers/{iid}` | replace an entry (protocol immutable) | `api_indexers.go` | `SiteService.Update` |
 | PATCH | `/indexers/{iid}` | toggle enabled/volumes/chapters/priority inline | `api_indexers.go` | `SiteService.Patch` |
 | DELETE | `/indexers/{iid}` | delete an entry; the last entry of an extension uninstalls it, 204 | `api_indexers.go` | `ExtensionService.DeleteIndexerEntry` |
-| POST | `/indexers/{iid}/test` | probe the entry, 204 | `api_indexers.go` | `service.TestIndexer` |
-| POST | `/indexers/{iid}/search-test` | one raw search query with result count and samples | `api_indexers.go` | `service.TestIndexerSearch` |
+| POST | `/indexers/{iid}/test` | probe the entry, 204 | `api_indexers.go` | `SiteService.Test` |
+| POST | `/indexers/{iid}/search-test` | one raw search query with result count and samples | `api_indexers.go` | `SiteService.TestSearch` |
 | GET | `/series/{id}/indexers` | effective entries for a series (globals plus overrides, with bindings) | `api_indexers.go` | `SiteService.Effective` |
 | PUT | `/series/{id}/indexers/{iid}` | set or clear (all-null body) a per-series override | `api_indexers.go` | `store.UpsertSiteOverride` |
 

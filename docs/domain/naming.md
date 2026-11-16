@@ -275,7 +275,7 @@ moves, in this order:
    folder (`editionFolders`), plus the `review/` folders inside them.
 3. Pick the placed file for each book of each collected version
    (`preferredFileOwners`: pin first, then score, then lower id).
-4. For each file, list the books it holds (`fileBooks`), each filed under
+4. For each file, list the books it holds (`placedBooks`), each filed under
    its edition's default version, else the oldest additional version
    that claims it.
 5. Decide its fate (`skipReason`): not on disk, not matched to a book
