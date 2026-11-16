@@ -125,6 +125,125 @@ service → {persistence, acquisition, metadata, domain}.
 | `internal/version` | Version string |
 | `internal/db/dbtest` | Test helper: per-test database |
 
+## Persistence
+
+`cmd/sento` calls `db.Open(cfg.Database.URL, cfg.Database.Path)` once:
+a PostgreSQL URL (`SENTO_DB_URL`) wins, otherwise a SQLite file
+(`SENTO_DB_PATH`). The dialect decides only the few things the portable
+SQL subset cannot express: placeholder style and constraint-violation
+codes. The schema itself, every table, column, key and state value, is
+documented in [Data model and persistence](domain/data-model.md).
+
+This diagram shows opening and migrating a database: dialect choice,
+then pending migration files applied in one transaction each.
+
+```mermaid
+flowchart TD
+    A["db.Open(url, path)"] --> B{"url set?"}
+    B -->|"yes, postgres"| C["pgx connect + Ping"]
+    B -->|"no, sqlite"| D["one connection, WAL, foreign_keys ON, busy_timeout 5000"]
+    C --> E["migrate(conn, postgres)"]
+    D --> F["migrate(conn, sqlite)"]
+    E --> G["ensure schema_migrations, read MAX(version)"]
+    F --> G
+    G --> H["for each embedded file above MAX(version), in name order"]
+    H --> I["one tx: exec file, insert version row"]
+    I --> J["commit, next file"]
+    J --> K{"more files?"}
+    K -->|yes| H
+    K -->|no| L["store.New(db, dialect)"]
+```
+
+Store conventions (`internal/store/store.go`, `query.go`, `tx.go`):
+
+- Queries are written with `?` placeholders; `q` rebinds them to `$N` on
+  PostgreSQL. No query contains a literal `?`.
+- Timestamps are TEXT in UTC, `2006-01-02 15:04:05` (`utcNow`), matching
+  the column defaults. The two progress columns `progress_at` and
+  `observed_at` are the exception: RFC 3339 (`progress.go`).
+- Book numbers are integer hundredths (`sequence_num`, `cutoff_num`,
+  `book_observations.number`).
+- Inserts use `INSERT ... RETURNING id` (`insert`), the portable
+  replacement for `LastInsertId`.
+- `conflict` maps a unique violation (PostgreSQL `23505`, SQLite
+  "UNIQUE constraint") to `apperr.ErrConflict`; `ErrNotFound` maps to 404.
+- Rows map to structs with scany (`list`/`get`): columns match snake-cased
+  field names or `db` tags. `inTx` runs one transaction; `touch` fails
+  with `ErrNotFound` when no row was affected.
+
+Concurrency and locks. All writes that change edition identity or take
+reservations lock the affected edition rows in ascending id order:
+`SELECT ... FOR UPDATE` on PostgreSQL, `UPDATE id=id` on SQLite (whose
+single write transaction already serializes). `CommitFileReviews` locks
+the series row first, then its editions, and on PostgreSQL additionally
+takes `LOCK TABLE profiles, custom_formats, settings IN SHARE MODE`. It
+then re-hashes the review revision and refuses the commit when it
+changed. `ReserveQueue` takes `FOR UPDATE` on the active offer row on
+PostgreSQL. This sequence shows one review commit taking its locks.
+
+```mermaid
+sequenceDiagram
+    participant S as service
+    participant T as store, one tx
+    S->>T: CommitFileReviews(series, revision, writes)
+    T->>T: lockRow series (FOR UPDATE / UPDATE id=id)
+    T->>T: lockEditions, every edition in id order
+    alt postgres
+        T->>T: LOCK TABLE profiles, custom_formats, settings IN SHARE MODE
+    end
+    T->>T: reviewRevision hash, compare with revision
+    T->>T: trash protection over the whole batch, then validate
+    T->>T: writeFileReview for each write
+    T-->>S: commit, or rollback on any error
+```
+
+The review revision is a SHA-256 over the JSON-encoded rows of: `series`,
+`editions`, `versions`, `books`, `files` (minus volatile columns),
+`asset_contents`, `asset_coverage`, `file_trash`, `queue_items` (only
+`id`, `books_json`, `snapshot_json`, `release_key`, `external_id`),
+`profiles`, `custom_formats`, and `settings` keys `default_profile_id`
+and `media`. `refreshed_at` is skipped because a refresh stamps the series
+even when nothing changed. Because the hash reads `SELECT *`, it is taken
+by column name: never rely on column order.
+
+Writing a migration. Add one file under both
+`internal/db/migrations/sqlite/` and `internal/db/migrations/postgres/`,
+named `NNNN_description.sql` with the next free number. Never edit a
+shipped file. The runner applies each file in one transaction. Keep to
+the portable subset:
+
+| SQLite | PostgreSQL |
+| --- | --- |
+| `INTEGER PRIMARY KEY` (rowid; rebuilt tables use `AUTOINCREMENT`) | `BIGINT GENERATED ALWAYS AS IDENTITY` (`BY DEFAULT` for `versions`, `book_observations`) |
+| booleans as `INTEGER` 0/1 | real `BOOLEAN` |
+| `REAL` | `DOUBLE PRECISION` |
+| `json_*` functions | `jsonb_*` functions; `IS JSON OBJECT` needs PostgreSQL 16 or later (mise pins 17) |
+| rebuild a table to change it | drop constraints dynamically with the `DO $$` pattern (see 0014) |
+
+Partial indexes, `ON CONFLICT ... DO UPDATE`, `RETURNING` and
+`CREATE TABLE IF NOT EXISTS` work in both dialects.
+
+Current dialect drift (same version numbers, different physical schema):
+
+- PostgreSQL has no 0001–0012; its 0013 baseline is the reference.
+- 0014 rebuilds `collections`/`works` in SQLite (column order differs),
+  while PostgreSQL drops the UNIQUE constraints dynamically and adds
+  columns.
+- In SQLite, the pre-0014 tables (`series`, `files`, `queue_items`,
+  `decisions`, `blocklist`, `source_bindings`, `indexers`, `profiles`)
+  use rowid ids, which can reuse the highest deleted id; PostgreSQL
+  identity columns never reuse ids.
+- 0030 sorts `aliases_json` in PostgreSQL (`jsonb_agg ORDER BY`); SQLite
+  does not.
+- 0022/0023 JSON rewrites reformat the text through `jsonb` on PostgreSQL.
+- Type differences as in the table above, e.g. `file_trash.file_id` is
+  BIGINT vs INTEGER. No index drift.
+
+Two data migrations run in Go at startup, before serving:
+`MigrateCopyRules` moves legacy `versions.required_group` /
+`allow_unknown` into profiles, and `ReconcileLibraryRoot` records the
+library root in `settings` and rewrites stored paths when it changes.
+
 ## Architectural invariants
 
 - **Book identity is stable.** Acquisition targets are `(version ID, book ID)`.
@@ -149,6 +268,7 @@ service → {persistence, acquisition, metadata, domain}.
 - [Acquisition](domain/acquisition.md): search, release decisions, downloads, import and recovery.
 - [Naming](domain/naming.md): where files land, templates, names in readers and organize.
 - [Parsing](domain/parsing.md): release names and title matching.
+- [Data model and persistence](domain/data-model.md): every table, column, key, relation and state value.
 
 Entry-point wiring is in `cmd/sento`, HTTP handlers in `internal/server`, and
 background loops in `internal/scheduler`. Read the service handling a flow

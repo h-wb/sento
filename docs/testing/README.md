@@ -36,9 +36,28 @@ To focus a Go test run, forward flags to the task, for example:
 mise run test -- -run TestName ./internal/service
 ```
 
-`test:pg` starts a mise-managed PostgreSQL daemon and gives tests its URL.
-Tests create isolated schemas. Stop the server when done with
+`test:pg` starts a mise-managed PostgreSQL daemon (version 17, see
+`[daemons.postgres]` in `mise.toml`) and gives tests its URL through
+`SENTO_TEST_DB_URL`. Stop the server when done with
 `mise daemons stop postgres`; do not point the suite at a production database.
+
+## PostgreSQL
+
+`internal/db/dbtest` opens a throwaway database per test. Without
+`SENTO_TEST_DB_URL` that is a SQLite file in a temp dir. With it, each test
+creates its own schema on the shared server (`sento_test_<pid>_<random>`),
+scopes the connection to it with `options=-csearch_path=<schema>`, runs the
+full PostgreSQL migration set there, and drops the schema with `CASCADE` on
+cleanup. The same Go suite therefore doubles as the dialect conformance
+run: `db.Open` migrates whatever schema its URL points at. PostgreSQL 16 or
+later is required (migration 0030 uses `IS JSON OBJECT`); mise pins 17.
+
+The data-migration tests for 0014, 0024 and 0034
+(`internal/db/migration_test.go`) replay the SQLite files only, by hand.
+The tests for 0027, 0028 and 0030 (`store/settle_migration_test.go`,
+`archive_range_migration_test.go`, `blocklist_migration_test.go`) and the
+other store suites go through `dbtest`, so under `test:pg` they run on both
+dialects. Write new migration tests with `dbtest` for the same reason.
 
 ## Browser tests
 
@@ -82,7 +101,9 @@ and [scenario reference](exploratory-scenarios.md).
 Put parser cases in `internal/parse/testdata/corpus/`. Use service/store tests
 for edition matching, book coverage, migrations and acquisition decisions;
 use browser tests when the user interaction or persisted UI state matters.
-Every migration needs SQLite and PostgreSQL coverage. Sidecar behavior belongs
+Every schema migration needs a matching numbered file in both dialect
+directories, and its test should use `dbtest` so the migration runs on both
+(see [PostgreSQL](#postgresql)). Sidecar behavior belongs
 in Kotlin fixtures and the Go contract tests at the JVM boundary.
 
 Keep fixture results deterministic and credentials fictional. An upstream

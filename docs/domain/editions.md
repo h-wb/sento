@@ -35,6 +35,9 @@ flowchart LR
   Version --> Fulfillment
 ```
 
+The tables behind these entities, with every column and key, are in
+[Data model and persistence](data-model.md).
+
 ## Catalog identity and local editions
 
 The catalog is mirrored under MangaBaka's own names and fields (`collections`, `works`, and its edition ID and name on `editions`), so a change on their side lands in one place. MangaBaka files a series' books as **collections** — a language, a publisher, an edition, a type, a format and a medium — each holding **works**. The digital and the paperback run of a series are two collections with separate works, ISBNs and dates, and the same edition.
