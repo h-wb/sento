@@ -1,29 +1,26 @@
 import {
-ActionIcon,
-AppShell,
-Burger,
-Center,
-Divider,
-Group,
-Kbd,
-Loader,
-Modal,
-NavLink,
-Text,
-Title,
-Tooltip,
-UnstyledButton
+  ActionIcon,
+  AppShell,
+  Burger,
+  Center,
+  Divider,
+  Group,
+  Kbd,
+  Loader,
+  Modal,
+  NavLink,
+  Text,
+  Title,
+  Tooltip,
+  UnstyledButton,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { NavigationProgress,nprogress } from '@mantine/nprogress'
-import { Spotlight,spotlight } from '@mantine/spotlight'
-import {
-IconBooks,
-IconSearch
-} from '@tabler/icons-react'
-import { useIsFetching,useQuery } from '@tanstack/react-query'
-import { Suspense,useEffect } from 'react'
-import { Link,useLocation,useNavigate } from 'react-router-dom'
+import { NavigationProgress, nprogress } from '@mantine/nprogress'
+import { Spotlight, spotlight } from '@mantine/spotlight'
+import { IconBooks, IconSearch } from '@tabler/icons-react'
+import { useIsFetching, useQuery } from '@tanstack/react-query'
+import { Suspense, useEffect } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import classes from './App.module.css'
 import { AddSeriesCtx } from './addSeries'
 import { api } from './api'
@@ -33,10 +30,9 @@ import { useActivity } from './components/useActivity'
 import { plural } from './format'
 import { AppRoutes } from './routes'
 import { AppearanceMenu } from './shell/AppearanceMenu'
-import { ActivityBadge } from './shell/NavBadges'
-import { useNavBadges } from './shell/useNavBadges'
+import { ActivityBadge, HealthBadge } from './shell/NavBadges'
 import { ShortcutsHelp } from './shell/ShortcutsHelp'
-import { configLinks,modKey,primaryLinks,systemLink,type NavItem } from './shell/navigation'
+import { configLinks, modKey, primaryLinks, systemLink, type NavItem } from './shell/navigation'
 import { useShortcuts } from './shell/useShortcuts'
 import { useSpotlightActions } from './shell/useSpotlightActions'
 import { versionLabel } from './ui'
@@ -70,7 +66,8 @@ export default function App() {
 
   const spotlightActions = useSpotlightActions(openAdd)
 
-  const { healthIssues, healthSummary, healthBadge } = useNavBadges(health.data)
+  const healthIssues = health.data?.issues ?? []
+  const healthSummary = `${healthIssues.length} health ${plural(healthIssues.length, 'issue')}`
 
   const renderLink = (l: NavItem) => (
     <NavLink
@@ -83,8 +80,8 @@ export default function App() {
       rightSection={
         l.to === '/queue' && active > 0 ? (
           <ActivityBadge active={active} attention={activityCount.attention} />
-        ) : l.to === '/system' ? (
-          healthBadge
+        ) : l.to === '/system' && healthIssues.length > 0 ? (
+          <HealthBadge issues={healthIssues} summary={healthSummary} />
         ) : undefined
       }
       aria-description={l.to === '/system' && healthIssues.length > 0 ? healthSummary : l.to === '/queue' && activityCount.attention > 0 ? `${activityCount.attention} ${plural(activityCount.attention, 'issue needs', 'issues need')} attention` : undefined}

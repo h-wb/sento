@@ -27,8 +27,8 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 // A release can contain more files than one bounded review request accepts.
-// Keep batching here so previews and both bulk actions share the limit.
-export const reviewBatchSize = 500
+// Keep batching here so the bulk file actions share the limit.
+const reviewBatchSize = 500
 
 // Slice a long id list into review-sized batches.
 export function* batched<T>(items: T[]): Generator<T[]> {
@@ -36,5 +36,3 @@ export function* batched<T>(items: T[]): Generator<T[]> {
     yield items.slice(offset, offset + reviewBatchSize)
   }
 }
-
-export type Ledger = 'volume' | 'chapter'

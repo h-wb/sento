@@ -1,11 +1,4 @@
-import {
-  Button,
-  Card,
-  Group,
-  Select,
-  Stack,
-  Text,
-} from '@mantine/core'
+import { Button, Card, Group, Select, Stack, Text } from '@mantine/core'
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import type { Dispatch, SetStateAction } from 'react'
 import { api } from '../../api'

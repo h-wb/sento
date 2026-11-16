@@ -13,7 +13,7 @@ import {
 import { IconPlus, IconTrash } from '@tabler/icons-react'
 import { useMutation } from '@tanstack/react-query'
 import { api, type Condition, type Format } from '../../api'
-import { factFlags } from '../factFlags'
+import { notify } from '../../ui'
 
 const conditionTypes = [
   { value: 'title', label: 'Release title (regex)' },
@@ -25,20 +25,28 @@ const conditionTypes = [
   { value: 'resolution', label: 'Min resolution (px)' },
 ]
 
-const flagValues = factFlags.map((f) => f.key)
-
-// --- format editor ---
+const flagValues = [
+  'digital',
+  'scan',
+  'web',
+  'premium',
+  'colored',
+  'omnibus',
+  'deluxe',
+  'boxset',
+  'official',
+  'raw',
+  'complete',
+]
 
 export function FormatModal({
   format,
   onClose,
   onSaved,
-  fail,
 }: {
   format: Format | null
   onClose: () => void
   onSaved: () => void
-  fail: (e: Error) => void
 }) {
   const [name, setName] = useState(format?.name ?? '')
   const [conditions, setConditions] = useState<Condition[]>(
@@ -59,7 +67,7 @@ export function FormatModal({
       onSaved()
       onClose()
     },
-    onError: fail,
+    onError: (e: Error) => notify.err(e),
   })
 
   return (
@@ -109,7 +117,11 @@ export function FormatModal({
                 size="xs"
                 style={{ flex: 1 }}
                 placeholder={
-                  c.type === 'resolution' ? '1600' : c.type === 'language' ? 'fr, or * for any stated language' : 'regex…'
+                  c.type === 'resolution'
+                    ? '1600'
+                    : c.type === 'language'
+                      ? 'fr, or * for any stated language'
+                      : 'regex…'
                 }
                 value={c.value}
                 onChange={(e) => setCond(i, { value: e.currentTarget.value })}

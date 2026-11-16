@@ -5,16 +5,12 @@ import { useMutation } from '@tanstack/react-query'
 import { api, type ProfileDoc } from '../../api'
 import { notify } from '../../ui'
 
-// --- import ---
-
 export function ImportProfileModal({
   onClose,
   onSaved,
-  fail,
 }: {
   onClose: () => void
   onSaved: () => void
-  fail: (e: Error) => void
 }) {
   const [text, setText] = useState('')
   // Match the theme's mobile input rule: under 16px iOS zooms on focus.
@@ -35,7 +31,7 @@ export function ImportProfileModal({
       onSaved()
       onClose()
     },
-    onError: fail,
+    onError: (e: Error) => notify.err(e),
   })
 
   return (

@@ -3,10 +3,12 @@ import { factFlags } from '../factFlags'
 
 // This screen words the flags its own way ("Color"); the keys are the
 // shared ones.
-export const flagLabels: Record<string, string> = { colored: 'Color' }
-export const flagLabel = (key: string) => flagLabels[key] ?? factFlags.find((f) => f.key === key)?.label ?? key
+const ownFlagLabels: Record<string, string> = { colored: 'Color' }
+export const flagLabel = (key: string) =>
+  ownFlagLabels[key] ?? factFlags.find((f) => f.key === key)?.label ?? key
 
-export const releaseKey = (c: ReleaseCandidate) => c.key || `${c.provider}/${c.siteId}/${c.guid}/${c.versionId ?? 0}`
+export const releaseKey = (c: ReleaseCandidate) =>
+  c.key || `${c.provider}/${c.siteId}/${c.guid}/${c.versionId ?? 0}`
 export const rangeLabel = (label: string, ranges?: [number, number][]) =>
   ranges?.length
     ? `${label} ${ranges.map(([from, to]) => (from === to ? from : `${from}–${to}`)).join(', ')}`
@@ -17,7 +19,7 @@ export const rank = { ready: 0, review: 1, blocked: 2 }
 
 // A pack carries several books: by what it would collect here, or by the
 // span its name states.
-export const spans = (ranges?: [number, number][]) =>
+const spans = (ranges?: [number, number][]) =>
   (ranges ?? []).reduce((n, [from, to]) => n + Math.max(1, Math.floor(to - from) + 1), 0)
 export const isPack = (c: ReleaseCandidate) =>
   (c.coverage?.length ?? 0) > 1 ||
@@ -29,7 +31,7 @@ export const firstNumber = (c: ReleaseCandidate) =>
 
 // Short names for why a release was ruled out, used to group the blocked
 // results. The full sentence stays on each row.
-export const reasonNames: Record<string, string> = {
+const reasonNames: Record<string, string> = {
   'rejected.series_match': 'Different series',
   'rejected.edition_routing': 'Different edition',
   'rejected.edition_ambiguous': 'Edition to confirm',
@@ -44,7 +46,8 @@ export const reasonNames: Record<string, string> = {
   'rejected.blocklisted': 'On your blocklist',
   'rejected.target_group': 'Other release group',
 }
-export const reasonCode = (c: ReleaseCandidate) => c.decision?.reasons[0]?.code ?? c.rejections?.[0] ?? ''
+export const reasonCode = (c: ReleaseCandidate) =>
+  c.decision?.reasons[0]?.code ?? c.rejections?.[0] ?? ''
 // Who decides a rejection, in the order the reasons are grouped.
 export const owners = [
   ['book', 'Not this book'],
@@ -57,14 +60,3 @@ export const reasonName = (code: string) => {
   const fallback = code.replace(/^rejected\./, '').replace(/_/g, ' ')
   return reasonNames[code] ?? fallback.charAt(0).toUpperCase() + fallback.slice(1)
 }
-
-// "host/Japscan (fr): binding 9 (Japscan (fr)): host: Cloudflare…" reads
-// as "Japscan (fr): Cloudflare…": the routing detail is for logs.
-export function tidyProblem(message: string): string {
-  return message
-    .replace(/^(host|torrent)\//, '')
-    .split(': ')
-    .filter((part) => part !== 'host' && !/^binding \d+ \(/.test(part))
-    .join(': ')
-}
-

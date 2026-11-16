@@ -1,11 +1,10 @@
 import { useState, type Dispatch, type SetStateAction } from 'react'
 import { Alert, Button, Divider, Group, Select, Text, TextInput } from '@mantine/core'
-import { useMutation, type UseQueryResult } from '@tanstack/react-query'
+import { useMutation, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, type ExtensionView, type Source } from '../../api'
 import { errorMessage, notify } from '../../ui'
 import SourcePrefsFields from '../SourcePrefsFields'
-import { useAddExtensionRepo } from '../extensions/useAddExtensionRepo'
 import type { SourceForm } from './IndexerModal'
 
 // The source flow of the indexer modal: pick an extension from the catalog,
@@ -13,41 +12,46 @@ import type { SourceForm } from './IndexerModal'
 // repo from inside the dialog covers the case where the catalog is empty
 // because there is none yet.
 export function ExtensionSourcePicker({
+  active,
+  picking,
   extensions,
-  isEdit,
-  configuring,
-  extInstalled,
-  setInstalledNow,
   pkg,
-  setPkg,
+  pickedExt,
+  extInstalled,
   source,
-  setSource,
   prefValues,
   setPrefValues,
-  suggestName,
+  onPickExtension,
+  onPickSource,
+  onInstalled,
   onClose,
 }: {
+  // Whether the source protocol is chosen; the picker keeps its state while not.
+  active: boolean
+  // Adding a new entry, before it saved: the extension and source can still change.
+  picking: boolean
   extensions: UseQueryResult<ExtensionView[], Error>
-  isEdit: boolean
-  configuring: boolean
-  extInstalled: boolean
-  setInstalledNow: Dispatch<SetStateAction<boolean>>
   pkg: string
-  setPkg: Dispatch<SetStateAction<string>>
+  pickedExt: ExtensionView | undefined
+  extInstalled: boolean
   source: SourceForm
-  setSource: Dispatch<SetStateAction<SourceForm>>
   prefValues: Record<string, unknown>
   setPrefValues: Dispatch<SetStateAction<Record<string, unknown>>>
-  suggestName: (n: string) => void
+  onPickExtension: (pkg: string) => void
+  onPickSource: (src: Source, pkg: string) => void
+  onInstalled: () => void
   onClose: () => void
 }) {
-  // Adding a repo from inside the dialog, for the case where the catalog
-  // is empty because there is none yet.
+  const queryClient = useQueryClient()
   const [newRepo, setNewRepo] = useState('')
   const [repoProblem, setRepoProblem] = useState('')
-  const addRepo = useAddExtensionRepo({
-    onAdded: (data, url) => {
-      const added = data.repos?.find((r) => r.url === url)
+  const addRepo = useMutation({
+    mutationFn: async () => {
+      const current = await api.extensionRepos()
+      return api.setExtensionRepos([...current.urls, newRepo.trim()])
+    },
+    onSuccess: (data) => {
+      const added = data.repos?.find((r) => r.url === newRepo.trim())
       // Saved either way; say so when it yields nothing, since the
       // catalog below will stay empty.
       setRepoProblem(
@@ -58,17 +62,16 @@ export function ExtensionSourcePicker({
             : '',
       )
       setNewRepo('')
+      queryClient.invalidateQueries({ queryKey: ['extensions'] })
+      queryClient.invalidateQueries({ queryKey: ['extension-repos'] })
     },
+    onError: notify.err,
   })
   const [extSources, setExtSources] = useState<Source[] | null>(null)
-  const pickedExt = (extensions.data ?? []).find((e) => e.pkgName === pkg)
 
   const offerSources = (srcs: Source[], p: string) => {
     setExtSources(srcs)
-    if (srcs.length === 1) {
-      setSource({ sourceId: srcs[0].id, pkgName: p })
-      suggestName(`${srcs[0].name} (${srcs[0].lang})`)
-    }
+    if (srcs.length === 1) onPickSource(srcs[0], p)
   }
   // Fallback for repos whose index does not declare sources: the only way
   // to learn them is to install the extension and ask it.
@@ -79,15 +82,16 @@ export function ExtensionSourcePicker({
       return api.extensionSources(p)
     },
     onSuccess: (srcs, p) => {
-      setInstalledNow(true)
+      onInstalled()
       offerSources(srcs, p)
     },
     onError: notify.err,
   })
 
+  if (!active) return null
   return (
     <>
-      {!isEdit && !configuring && extensions.error && (
+      {picking && extensions.error && (
         // No host answering: nothing can be listed, and the fix is on
         // another page.
         <Alert color="yellow" title="Extension sources are not available">
@@ -101,14 +105,14 @@ export function ExtensionSourcePicker({
           </Text>
         </Alert>
       )}
-      {!isEdit && !configuring && extensions.data?.length === 0 && (
+      {picking && extensions.data?.length === 0 && (
         // A connected host with nothing to offer means no repo (or only
         // failing ones). Adding one is a single field — do it here
         // rather than sending the user to another page and back.
         <Alert color="blue" title="No extensions to choose from yet">
           <Text size="sm" mb="xs">
-            Extensions come from repos, and none ship with Sento. Add a Mihon-compatible repo
-            index URL to load its catalog.
+            Extensions come from repos, and none ship with Sento. Add a Mihon-compatible repo index
+            URL to load its catalog.
           </Text>
           <Group gap={6} wrap="nowrap">
             <TextInput
@@ -124,7 +128,7 @@ export function ExtensionSourcePicker({
               variant="default"
               loading={addRepo.isPending}
               disabled={!newRepo.trim()}
-              onClick={() => addRepo.mutate(newRepo.trim())}
+              onClick={() => addRepo.mutate()}
             >
               Add repo
             </Button>
@@ -136,7 +140,7 @@ export function ExtensionSourcePicker({
           )}
         </Alert>
       )}
-      {!isEdit && !configuring && !extensions.error && extensions.data?.length !== 0 && (
+      {picking && !extensions.error && extensions.data?.length !== 0 && (
         <>
           <Select
             label="Extension"
@@ -156,11 +160,8 @@ export function ExtensionSourcePicker({
             nothingFoundMessage="No extension matches — repos are managed on the Connections page"
             onChange={(v) => {
               if (!v) return
-              setPkg(v)
+              onPickExtension(v)
               setExtSources(null)
-              setSource({ sourceId: '' })
-              setPrefValues({})
-              setInstalledNow(false)
               const declared = (extensions.data ?? []).find((e) => e.pkgName === v)?.sources
               if (declared && declared.length > 0) offerSources(declared, v)
               else loadSources.mutate(v)
@@ -183,9 +184,9 @@ export function ExtensionSourcePicker({
               onChange={(v) => {
                 if (!v) return
                 const src = extSources.find((s) => s.id === v)
-                setSource({ sourceId: v, pkgName: pkg })
+                if (!src) return
+                onPickSource(src, pkg)
                 setPrefValues({})
-                if (src) suggestName(`${src.name} (${src.lang})`)
               }}
             />
           )}
@@ -206,8 +207,8 @@ export function ExtensionSourcePicker({
         <>
           <Divider label="Source settings" labelPosition="left" mt="xs" />
           <Text size="xs" c="dimmed" mt={-6}>
-            The source's own settings (login, mirrors…) — shared by every entry using this
-            source, applied when you save.
+            The source's own settings (login, mirrors…) — shared by every entry using this source,
+            applied when you save.
           </Text>
           <SourcePrefsFields
             sourceId={source.sourceId}

@@ -1,22 +1,10 @@
-import {
-  ActionIcon,
-  Anchor,
-  Badge,
-  Button,
-  Progress,
-  Text,
-} from '@mantine/core'
-import {
-  IconChevronDown,
-  IconChevronRight,
-} from '@tabler/icons-react'
+import { ActionIcon, Anchor, Badge, Button, Progress, Text } from '@mantine/core'
+import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ActivityDownload } from '../../types/service'
 import classes from '../Activity.module.css'
-import {
-  downloadLabel,
-} from '../activityModel'
+import { downloadLabel } from '../activityModel'
 import { DownloadActivityRow, type DownloadActions } from '../DownloadActivityRow'
 
 export function ProgressSeries({
@@ -32,9 +20,16 @@ export function ProgressSeries({
 }) {
   const [opened, setOpened] = useState(false)
   const [waitingOpen, setWaitingOpen] = useState(false)
-  const waiting = downloads.filter((d) => ['queued', 'retry_wait'].includes(d.job.status) || ['waiting for source cooldown', 'waiting for download slot', 'queuedDL'].includes(d.job.downloadState))
+  const waiting = downloads.filter(
+    (d) =>
+      ['queued', 'retry_wait'].includes(d.job.status) ||
+      ['waiting for source cooldown', 'waiting for download slot', 'queuedDL'].includes(
+        d.job.downloadState,
+      ),
+  )
   const waitingIDs = new Set(waiting.map((d) => d.job.id))
-  const visible = waiting.length > 5 ? downloads.filter((d) => !waitingIDs.has(d.job.id)) : downloads
+  const visible =
+    waiting.length > 5 ? downloads.filter((d) => !waitingIDs.has(d.job.id)) : downloads
   const current = downloads.find(
     (d) =>
       d.job.status === 'downloading' &&
@@ -96,10 +91,23 @@ export function ProgressSeries({
           {visible.map((d) => (
             <DownloadActivityRow key={d.job.id} download={d} actions={actions} />
           ))}
-          {waiting.length > 5 && <>
-            <Button variant="subtle" size="compact-xs" my="sm" aria-expanded={waitingOpen} onClick={() => setWaitingOpen(!waitingOpen)}>{waitingOpen ? 'Hide' : 'Show'} {waiting.length} waiting downloads</Button>
-            {waitingOpen && waiting.map((d) => <DownloadActivityRow key={d.job.id} download={d} actions={actions} />)}
-          </>}
+          {waiting.length > 5 && (
+            <>
+              <Button
+                variant="subtle"
+                size="compact-xs"
+                my="sm"
+                aria-expanded={waitingOpen}
+                onClick={() => setWaitingOpen(!waitingOpen)}
+              >
+                {waitingOpen ? 'Hide' : 'Show'} {waiting.length} waiting downloads
+              </Button>
+              {waitingOpen &&
+                waiting.map((d) => (
+                  <DownloadActivityRow key={d.job.id} download={d} actions={actions} />
+                ))}
+            </>
+          )}
         </div>
       )}
     </section>

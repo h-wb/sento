@@ -14,22 +14,19 @@ import {
 } from '@mantine/core'
 import { useMutation } from '@tanstack/react-query'
 import { api, type Format, type Profile } from '../../api'
+import { notify } from '../../ui'
 import { MinScoreOff } from '../../types/profile'
-
-// --- profile editor ---
 
 export function ProfileModal({
   profile,
   formats,
   onClose,
   onSaved,
-  fail,
 }: {
   profile: Profile | null
   formats: Format[]
   onClose: () => void
   onSaved: () => void
-  fail: (e: Error) => void
 }) {
   const [name, setName] = useState(profile?.name ?? '')
   const [upgradesEnabled, setUpgradesEnabled] = useState(profile?.upgradesEnabled ?? false)
@@ -78,7 +75,7 @@ export function ProfileModal({
       onSaved()
       onClose()
     },
-    onError: fail,
+    onError: (e: Error) => notify.err(e),
   })
 
   return (
@@ -133,49 +130,65 @@ export function ProfileModal({
         )}
         <Divider label="Formats" />
         <Text size="sm" c="dimmed">
-          Scores rank releases within this profile. Require every selected format, or refuse any match.
-          These rules also apply to files on disk and cannot be overridden when downloading.
+          Scores rank releases within this profile. Require every selected format, or refuse any
+          match. These rules also apply to files on disk and cannot be overridden when downloading.
         </Text>
         <Table.ScrollContainer minWidth={460}>
-        <Table verticalSpacing={4}>
-          <Table.Thead>
-            <Table.Tr><Table.Th>Format</Table.Th><Table.Th>Rule</Table.Th><Table.Th>Score</Table.Th></Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {formats.map((f) => (
-              <Table.Tr key={f.id}>
-                <Table.Td>
-                  <Text size="sm">{f.name}</Text>
-                </Table.Td>
-                <Table.Td w={170}>
-                  <Select
-                    size="xs"
-                    aria-label={`Rule for ${f.name}`}
-                    allowDeselect={false}
-                    data={[
-                      { value: 'score', label: 'Score only' },
-                      { value: 'required', label: 'Required' },
-                      { value: 'refused', label: 'Refused' },
-                    ]}
-                    value={required.includes(f.id) ? 'required' : refused.includes(f.id) ? 'refused' : 'score'}
-                    onChange={(rule) => {
-                      setRequired((ids) => [...ids.filter((id) => id !== f.id), ...(rule === 'required' ? [f.id] : [])])
-                      setRefused((ids) => [...ids.filter((id) => id !== f.id), ...(rule === 'refused' ? [f.id] : [])])
-                    }}
-                  />
-                </Table.Td>
-                <Table.Td w={120}>
-                  <NumberInput
-                    size="xs"
-                    aria-label={`Score for ${f.name}`}
-                    value={scores[f.id] ?? 0}
-                    onChange={(v) => setScores((s) => ({ ...s, [f.id]: Number(v) || 0 }))}
-                  />
-                </Table.Td>
+          <Table verticalSpacing={4}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Format</Table.Th>
+                <Table.Th>Rule</Table.Th>
+                <Table.Th>Score</Table.Th>
               </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
+            </Table.Thead>
+            <Table.Tbody>
+              {formats.map((f) => (
+                <Table.Tr key={f.id}>
+                  <Table.Td>
+                    <Text size="sm">{f.name}</Text>
+                  </Table.Td>
+                  <Table.Td w={170}>
+                    <Select
+                      size="xs"
+                      aria-label={`Rule for ${f.name}`}
+                      allowDeselect={false}
+                      data={[
+                        { value: 'score', label: 'Score only' },
+                        { value: 'required', label: 'Required' },
+                        { value: 'refused', label: 'Refused' },
+                      ]}
+                      value={
+                        required.includes(f.id)
+                          ? 'required'
+                          : refused.includes(f.id)
+                            ? 'refused'
+                            : 'score'
+                      }
+                      onChange={(rule) => {
+                        setRequired((ids) => [
+                          ...ids.filter((id) => id !== f.id),
+                          ...(rule === 'required' ? [f.id] : []),
+                        ])
+                        setRefused((ids) => [
+                          ...ids.filter((id) => id !== f.id),
+                          ...(rule === 'refused' ? [f.id] : []),
+                        ])
+                      }}
+                    />
+                  </Table.Td>
+                  <Table.Td w={120}>
+                    <NumberInput
+                      size="xs"
+                      aria-label={`Score for ${f.name}`}
+                      value={scores[f.id] ?? 0}
+                      onChange={(v) => setScores((s) => ({ ...s, [f.id]: Number(v) || 0 }))}
+                    />
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
         </Table.ScrollContainer>
 
         <Divider label="Download rules" />

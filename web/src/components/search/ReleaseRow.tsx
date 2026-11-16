@@ -14,7 +14,7 @@ import { Link } from 'react-router-dom'
 import type { ReleaseCandidate } from '../../api'
 import { fmtNum, fmtSize, plural } from '../../format'
 import classes from '../CandidateList.module.css'
-import { flagLabel, rangeLabel, reasonCode, reasonName, status } from '../search/releaseModel'
+import { flagLabel, rangeLabel, reasonCode, reasonName, status } from './releaseModel'
 
 export function ReleaseRow({
   c,
@@ -122,7 +122,9 @@ export function ReleaseRow({
                     : decision?.kind || 'Unclassified'}
                   {state === 'ready' && ` · Rank score ${c.score}`}
                   {c.editionSnapshot && ` · ${c.editionSnapshot.editionName}`}
-                  {c.versionSnapshot && !c.versionSnapshot.isDefault && ` · ${c.versionSnapshot.name}`}
+                  {c.versionSnapshot &&
+                    !c.versionSnapshot.isDefault &&
+                    ` · ${c.versionSnapshot.name}`}
                 </Text>
               )}
             </div>
@@ -133,11 +135,25 @@ export function ReleaseRow({
             Queued
           </Badge>
         ) : onUnblock && c.rejections?.includes('rejected.blocklisted') ? (
-          <Button size="xs" variant="default" disabled={busy || unblockDisabled} loading={loading} onClick={onUnblock}>Unblock</Button>
+          <Button
+            size="xs"
+            variant="default"
+            disabled={busy || unblockDisabled}
+            loading={loading}
+            onClick={onUnblock}
+          >
+            Unblock
+          </Button>
         ) : onToggle && state === 'ready' ? (
           // Inside a download plan a ready release joins the plan instead
           // of starting its own download.
-          <Button size="xs" variant={selected ? 'light' : 'default'} disabled={busy} aria-pressed={selected ?? false} onClick={onToggle}>
+          <Button
+            size="xs"
+            variant={selected ? 'light' : 'default'}
+            disabled={busy}
+            aria-pressed={selected ?? false}
+            onClick={onToggle}
+          >
             {selected ? 'In plan' : 'Add to plan'}
           </Button>
         ) : onGrab && state !== 'blocked' ? (
@@ -170,10 +186,10 @@ export function ReleaseRow({
                     {r.code === 'rejected.blocklisted'
                       ? 'Unblock this release to evaluate it again.'
                       : r.owner === 'book'
-                      ? 'Not this book: nothing to change.'
-                      : r.override
-                        ? 'Can be overridden for this download.'
-                        : 'Cannot be overridden.'}
+                        ? 'Not this book: nothing to change.'
+                        : r.override
+                          ? 'Can be overridden for this download.'
+                          : 'Cannot be overridden.'}
                   </Text>
                   {r.owner === 'profile' && !!c.profileId && (
                     <>

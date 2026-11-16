@@ -3,7 +3,7 @@ import { Button, Group } from '@mantine/core'
 import { IconPackages } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type IndexerView } from '../api'
-import { extensionsQuery, invalidateExtensions } from '../queries'
+import { extensionsQuery } from '../queries'
 import { notify, usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
@@ -31,7 +31,12 @@ export default function IndexersPage() {
   const [duplicating, setDuplicating] = useState<IndexerView | null>(null)
   const [managing, setManaging] = useState(false)
   const [searchTesting, setSearchTesting] = useState<IndexerView | null>(null)
-  const refresh = () => invalidateExtensions(queryClient)
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['health'] })
+    // Saving an entry may have installed its extension on the host.
+    queryClient.invalidateQueries({ queryKey: ['extensions'] })
+    return queryClient.invalidateQueries({ queryKey: ['indexers'] })
+  }
 
   const patch = useMutation({
     mutationFn: ({ id, p }: { id: number; p: Parameters<typeof api.patchIndexer>[1] }) =>

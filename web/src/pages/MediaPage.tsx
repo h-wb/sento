@@ -1,12 +1,8 @@
-import {
-Alert,
-Button,
-Text
-} from '@mantine/core'
+import { Alert, Button, Text } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { useMutation,useQuery,useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { api,type MediaSettings } from '../api'
+import { api, type MediaSettings } from '../api'
 import { ComicInfoSection } from '../components/media/ComicInfoSection'
 import { DiskSection } from '../components/media/DiskSection'
 import { ReaderSetupSection } from '../components/media/ReaderSetupSection'
@@ -17,7 +13,7 @@ import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { TemplateInput } from '../components/TemplateInput'
 import type { NamingSetup } from '../types/service'
-import { notify,usePageTitle } from '../ui'
+import { notify, usePageTitle } from '../ui'
 import { useUnsavedChanges } from '../useUnsavedChanges'
 import classes from './MediaPage.module.css'
 

@@ -4,7 +4,12 @@ import type { BookSelection } from './BookDialog'
 import { cardLabel } from './editionText'
 
 // The single book a row or grid cell opens the search for.
-export function bookSelection(c: Edition, t: CollectedVersion, label: string, s: BookStatus): BookSelection {
+export function bookSelection(
+  c: Edition,
+  t: CollectedVersion,
+  label: string,
+  s: BookStatus,
+): BookSelection {
   return {
     ledger: c.type === 'chapter' ? 'chapter' : 'volume',
     editionId: c.id,
@@ -21,7 +26,11 @@ export function bookSelection(c: Edition, t: CollectedVersion, label: string, s:
 }
 
 // Search every wanted book of one edition card at once.
-export function editionSearch(c: Edition, t: CollectedVersion, allVersions: CollectedVersion[]): BookSelection {
+export function editionSearch(
+  c: Edition,
+  t: CollectedVersion,
+  allVersions: CollectedVersion[],
+): BookSelection {
   return {
     ledger: c.type === 'chapter' ? 'chapter' : 'volume',
     editionId: c.id,

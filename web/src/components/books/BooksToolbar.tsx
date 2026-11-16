@@ -1,46 +1,65 @@
-import type { Dispatch, SetStateAction } from 'react'
-import { ActionIcon, Button, Chip, Group, NumberInput, Popover, SegmentedControl, Text, Tooltip } from '@mantine/core'
+import { useState, type Dispatch, type SetStateAction } from 'react'
+import {
+  ActionIcon,
+  Button,
+  Chip,
+  Group,
+  NumberInput,
+  Popover,
+  SegmentedControl,
+  Text,
+  Tooltip,
+} from '@mantine/core'
 import { IconSortAscendingNumbers, IconSortDescendingNumbers } from '@tabler/icons-react'
 import type { BookStatus } from '../../types/service'
 import { filters } from './bookStatus'
+import type { BookRange, BookSelectionState } from './useBookSelection'
 import classes from '../EditionBooks.module.css'
 
-export function BooksToolbar({ filter, setFilter, setPage, all, view, selecting, setSelecting, rangeOpen, setRangeOpen, range, setRange, selectRange, noun, goTo, setGoTo, jump, order, setOrder, setViewChoice, picked, busy, monitor, clearSelection, books }: {
+export function BooksToolbar({
+  filter,
+  onFilter,
+  all,
+  books,
+  view,
+  setViewChoice,
+  selecting,
+  setSelecting,
+  selection,
+  noun,
+  jump,
+  order,
+  setOrder,
+  busy,
+  monitor,
+}: {
   filter: string
-  setFilter: Dispatch<SetStateAction<string>>
-  setPage: Dispatch<SetStateAction<number>>
+  onFilter: (filter: string) => void
   all: BookStatus[]
+  books: BookStatus[]
   view: 'grid' | 'list'
+  setViewChoice: Dispatch<SetStateAction<'grid' | 'list' | null>>
   selecting: boolean
   setSelecting: Dispatch<SetStateAction<boolean>>
-  rangeOpen: boolean
-  setRangeOpen: Dispatch<SetStateAction<boolean>>
-  range: { from: string | number; to: string | number }
-  setRange: Dispatch<SetStateAction<{ from: string | number; to: string | number }>>
-  selectRange: () => void
+  selection: BookSelectionState
   noun: string
-  goTo: string | number
-  setGoTo: Dispatch<SetStateAction<string | number>>
-  jump: () => void
+  jump: (goTo: string | number) => void
   order: 'newest' | 'oldest'
   setOrder: (order: 'newest' | 'oldest') => void
-  setViewChoice: Dispatch<SetStateAction<'grid' | 'list' | null>>
-  picked: BookStatus[]
   busy: boolean
   monitor: (list: BookStatus[], monitored: boolean) => void
-  clearSelection: () => void
-  books: BookStatus[]
 }) {
+  const { picked, clearSelection } = selection
+  const [goTo, setGoTo] = useState<string | number>('')
+  const [range, setRange] = useState<BookRange>({ from: '', to: '' })
+  const [rangeOpen, setRangeOpen] = useState(false)
+  const selectRange = () => {
+    if (selection.selectRange(range)) setRangeOpen(false)
+  }
   return (
     <>
       <Group justify="space-between" gap="xs">
-        <Chip.Group
-          value={filter}
-          onChange={(v) => {
-            setFilter(typeof v === 'string' ? v : 'all')
-            setPage(1)
-          }}
-        >
+        <Chip.Group value={filter} onChange={(v) => onFilter(typeof v === 'string' ? v : 'all')}>
           <Group gap={6}>
             {filters.map((f) => {
               const count = all.filter(f.match).length
@@ -116,16 +135,24 @@ export function BooksToolbar({ filter, setFilter, setPage, all, view, selecting,
             hideControls
             value={goTo}
             onChange={setGoTo}
-            onKeyDown={(e) => e.key === 'Enter' && jump()}
+            onKeyDown={(e) => e.key === 'Enter' && jump(goTo)}
           />
           <Tooltip label={order === 'newest' ? 'Newest first' : 'Oldest first'}>
             <ActionIcon
               variant="default"
               size="md"
-              aria-label={order === 'newest' ? 'Newest first; show oldest first' : 'Oldest first; show newest first'}
+              aria-label={
+                order === 'newest'
+                  ? 'Newest first; show oldest first'
+                  : 'Oldest first; show newest first'
+              }
               onClick={() => setOrder(order === 'newest' ? 'oldest' : 'newest')}
             >
-              {order === 'newest' ? <IconSortDescendingNumbers size={16} /> : <IconSortAscendingNumbers size={16} />}
+              {order === 'newest' ? (
+                <IconSortDescendingNumbers size={16} />
+              ) : (
+                <IconSortAscendingNumbers size={16} />
+              )}
             </ActionIcon>
           </Tooltip>
           <SegmentedControl
@@ -191,7 +218,6 @@ export function BooksToolbar({ filter, setFilter, setPage, all, view, selecting,
           )}
         </Group>
       )}
-
     </>
   )
 }

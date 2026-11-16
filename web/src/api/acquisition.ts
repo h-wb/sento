@@ -1,17 +1,11 @@
 import type { BlocklistEntry, Decision } from '../types/store'
-import type {
-  SearchEvent,
-  SearchScope,
-  ActivityData,
-} from '../types/service'
-import type { SearchBody, SearchResponse, UnblockBody } from '../types/server'
-import { base, readError, request, type Ledger } from './request'
+import type { SearchEvent, SearchScope, ActivityData } from '../types/service'
+import type { QueueProcessResponse, SearchBody, SearchResponse, UnblockBody } from '../types/server'
+import { base, batched, readError, request } from './request'
+import type { Ledger } from './index'
 
 export const acquisitionApi = {
-  search: (
-    id: number,
-    opts: Partial<SearchBody> & { ledger: Ledger },
-  ) =>
+  search: (id: number, opts: Partial<SearchBody> & { ledger: Ledger }) =>
     request<SearchResponse>(`/series/${id}/search`, {
       method: 'POST',
       body: JSON.stringify(opts),
@@ -65,17 +59,21 @@ export const acquisitionApi = {
     request<void>(`/queue/${id}/retry`, { method: 'POST', body: JSON.stringify({ remoteId }) }),
   cancelQueue: (id: number) => request<void>(`/queue/${id}/cancel`, { method: 'POST' }),
   tryAnotherRelease: async (ids: number[]) => {
-    for (let i = 0; i < ids.length; i += 500) {
-      await request<void>('/queue/another', { method: 'POST', body: JSON.stringify({ ids: ids.slice(i, i + 500) }) })
+    for (const batch of batched(ids)) {
+      await request<void>('/queue/another', {
+        method: 'POST',
+        body: JSON.stringify({ ids: batch }),
+      })
     }
   },
-  processQueue: () => request<{ processed: number }>('/queue/process', { method: 'POST' }),
+  processQueue: () => request<QueueProcessResponse>('/queue/process', { method: 'POST' }),
   activity: (seriesId = 0) => request<ActivityData>(`/activity?seriesId=${seriesId}`),
   history: (seriesId?: number, limit = 100) =>
     request<Decision[]>(
       seriesId ? `/series/${seriesId}/history?limit=${limit}` : `/history?limit=${limit}`,
     ),
   blocklist: () => request<BlocklistEntry[]>('/blocklist'),
-  unblockReleases: (body: UnblockBody) => request<void>('/blocklist/unblock', { method: 'POST', body: JSON.stringify(body) }),
+  unblockReleases: (body: UnblockBody) =>
+    request<void>('/blocklist/unblock', { method: 'POST', body: JSON.stringify(body) }),
   unblockAll: () => request<void>('/blocklist', { method: 'DELETE' }),
 }

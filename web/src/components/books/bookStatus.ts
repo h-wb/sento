@@ -73,4 +73,3 @@ export const filters: Filter[] = [
   },
   { value: 'review', label: 'Needs attention', tone: 'review', match: (s) => tone(s) === 'review' },
 ]
-

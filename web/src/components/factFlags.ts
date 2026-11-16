@@ -1,7 +1,8 @@
 import type { File as SeriesFile } from '../types/store'
 
 // The flags a file's facts carry, as release profiles test them and a
-// person can correct them (the backend's store.FactFlags).
+// person can correct them (the backend's store.FactFlags, without the
+// release-level "complete").
 export const factFlags: { key: string; label: string }[] = [
   { key: 'colored', label: 'Colored' },
   { key: 'digital', label: 'Digital' },
@@ -13,7 +14,6 @@ export const factFlags: { key: string; label: string }[] = [
   { key: 'omnibus', label: 'Omnibus' },
   { key: 'deluxe', label: 'Deluxe' },
   { key: 'boxset', label: 'Box set' },
-  { key: 'complete', label: 'Complete' },
 ]
 
 // Whether a person set the flag, either way.

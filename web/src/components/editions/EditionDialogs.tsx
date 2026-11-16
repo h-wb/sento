@@ -1,7 +1,11 @@
-import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { api } from '../../api'
-import type { AssetCoverage, Book, CollectedVersion, Edition, File as SeriesFile } from '../../types/store'
+import type {
+  AssetCoverage,
+  CollectedVersion,
+  Edition,
+  File as SeriesFile,
+} from '../../types/store'
 import type { BookStatus } from '../../types/service'
 import { BookEditor } from '../BookEditor'
 import { BulkFactsDialog } from '../BulkFactsDialog'
@@ -12,6 +16,7 @@ import { EditionEditor } from '../EditionEditor'
 import { EditorModal } from '../EditorModal'
 import { MappingEditor } from '../MappingEditor'
 import { QueryFeedback } from '../QueryFeedback'
+import type { EditionDialogState } from './useEditionDialogs'
 
 type Props = {
   seriesID: number
@@ -23,25 +28,11 @@ type Props = {
   allBooks: BookStatus[]
   coverage: UseQueryResult<AssetCoverage[]>
   details: UseQueryResult<Record<string, BookStatus[]>>
-  version: CollectedVersion | null
-  setVersion: Dispatch<SetStateAction<CollectedVersion | null>>
-  book: Book | null
-  setBook: Dispatch<SetStateAction<Book | null>>
-  edition: Edition | null
-  setEdition: Dispatch<SetStateAction<Edition | null>>
-  collectAgain: Edition | null
-  setCollectAgain: Dispatch<SetStateAction<Edition | null>>
-  link: Edition | null
-  setLink: Dispatch<SetStateAction<Edition | null>>
-  file: SeriesFile | null
-  setFile: Dispatch<SetStateAction<SeriesFile | null>>
-  correcting: { fileIds: number[]; hint: string } | null
-  setCorrecting: Dispatch<SetStateAction<{ fileIds: number[]; hint: string } | null>>
+  dialogs: EditionDialogState
   // The series' release profile (0: the instance default).
   seriesProfileId: number
   changed: () => Promise<void>
   onReaderNameChanged: () => void
-  confirmation: ReactNode
 }
 
 export function EditionDialogs({
@@ -53,25 +44,27 @@ export function EditionDialogs({
   allBooks,
   coverage,
   details,
-  version,
-  setVersion,
-  book,
-  setBook,
-  edition,
-  setEdition,
-  collectAgain,
-  setCollectAgain,
-  link,
-  setLink,
-  file,
-  setFile,
-  correcting,
-  setCorrecting,
+  dialogs,
   seriesProfileId,
   changed,
   onReaderNameChanged,
-  confirmation,
 }: Props) {
+  const {
+    version,
+    setVersion,
+    book,
+    setBook,
+    edition,
+    setEdition,
+    collectAgain,
+    setCollectAgain,
+    link,
+    setLink,
+    file,
+    setFile,
+    correcting,
+    setCorrecting,
+  } = dialogs
   return (
     <>
       {version && (
@@ -203,7 +196,6 @@ export function EditionDialogs({
           close={() => setCorrecting(null)}
         />
       )}
-      {confirmation}
     </>
   )
 }

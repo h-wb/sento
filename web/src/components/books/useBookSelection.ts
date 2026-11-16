@@ -1,8 +1,10 @@
-import { useState, type Dispatch, type SetStateAction } from 'react'
+import { useState } from 'react'
 import type { BookStatus } from '../../types/service'
 import { booksInRange } from '../bookRanges'
 
-export function useBookSelection(all: BookStatus[], books: BookStatus[], range: { from: string | number; to: string | number }, setRangeOpen: Dispatch<SetStateAction<boolean>>) {
+export type BookRange = { from: string | number; to: string | number }
+
+export function useBookSelection(all: BookStatus[], books: BookStatus[]) {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [anchor, setAnchor] = useState<number | null>(null)
   // A selection only ever acts on books that still exist.
@@ -28,14 +30,17 @@ export function useBookSelection(all: BookStatus[], books: BookStatus[], range: 
     setSelected(next)
     setAnchor(s.book.id)
   }
-  const selectRange = () => {
+  // Whether the range was valid and selected.
+  const selectRange = (range: BookRange) => {
     const from = Number(range.from)
     const to = Number(range.to)
-    if (range.from === '' || range.to === '' || Number.isNaN(from) || Number.isNaN(to)) return
+    if (range.from === '' || range.to === '' || Number.isNaN(from) || Number.isNaN(to)) return false
     setSelected(new Set(booksInRange(all, from, to).map((s) => s.book.id)))
     setAnchor(null)
-    setRangeOpen(false)
+    return true
   }
 
   return { selected, picked, clearSelection, pick, selectRange }
 }
+
+export type BookSelectionState = ReturnType<typeof useBookSelection>

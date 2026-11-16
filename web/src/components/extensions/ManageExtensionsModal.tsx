@@ -1,13 +1,5 @@
 import { useState } from 'react'
-import {
-  Accordion,
-  Badge,
-  Button,
-  Group,
-  Modal,
-  Stack,
-  Text,
-} from '@mantine/core'
+import { Accordion, Badge, Button, Group, Modal, Stack, Text } from '@mantine/core'
 import { IconPackage, IconRefresh } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'

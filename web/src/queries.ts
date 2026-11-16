@@ -11,17 +11,26 @@ export const seriesQueries = {
   versions: (id: number) =>
     queryOptions({ queryKey: ['series', id, 'versions'], queryFn: () => api.versions(id) }),
   overview: (id: number) =>
-    queryOptions({ queryKey: ['series', id, 'edition-overview'], queryFn: () => api.editionOverview(id) }),
+    queryOptions({
+      queryKey: ['series', id, 'edition-overview'],
+      queryFn: () => api.editionOverview(id),
+    }),
   coverage: (id: number) =>
     queryOptions({ queryKey: ['series', id, 'coverage'], queryFn: () => api.coverage(id) }),
   readerNames: (id: number) =>
     queryOptions({ queryKey: ['series', id, 'reader-names'], queryFn: () => api.readerNames(id) }),
   versionBooks: (id: number) =>
-    queryOptions({ queryKey: ['series', id, 'version-books'], queryFn: () => api.versionBooks(id) }),
+    queryOptions({
+      queryKey: ['series', id, 'version-books'],
+      queryFn: () => api.versionBooks(id),
+    }),
   files: (id: number) =>
     queryOptions({ queryKey: ['series', id, 'files'], queryFn: () => api.files(id) }),
   books: (id: number, versionId: number) =>
-    queryOptions({ queryKey: ['series', id, 'books', versionId], queryFn: () => api.versionBooksOf(id, versionId) }),
+    queryOptions({
+      queryKey: ['series', id, 'books', versionId],
+      queryFn: () => api.versionBooksOf(id, versionId),
+    }),
 }
 
 export const activityQuery = (seriesID = 0) =>
@@ -31,13 +40,19 @@ export const activityQuery = (seriesID = 0) =>
     refetchInterval: 10000,
   })
 
-export const connectionsQuery = queryOptions({ queryKey: ['connections'], queryFn: api.connections })
+export const connectionsQuery = queryOptions({
+  queryKey: ['connections'],
+  queryFn: api.connections,
+})
 
 export const extensionsQuery = queryOptions({ queryKey: ['extensions'], queryFn: api.extensions })
 
 export const profilesQuery = queryOptions({ queryKey: ['profiles'], queryFn: api.listProfiles })
 
-export const defaultProfileQuery = queryOptions({ queryKey: ['default-profile'], queryFn: api.defaultProfile })
+export const defaultProfileQuery = queryOptions({
+  queryKey: ['default-profile'],
+  queryFn: api.defaultProfile,
+})
 
 export const formatsQuery = queryOptions({ queryKey: ['formats'], queryFn: api.listFormats })
 

@@ -1,10 +1,4 @@
-import type {
-  CollectedVersion,
-  Book,
-  AssetCoverage,
-  Work,
-  Series,
-} from '../types/store'
+import type { CollectedVersion, Book, AssetCoverage, Work, Series } from '../types/store'
 import type {
   CopyReaderNames,
   LibraryOrganizeRequest,
@@ -20,7 +14,13 @@ import type {
   SeriesIndexerView,
   BookStatus,
 } from '../types/service'
-import type { SeriesDetail, OverridePatch } from '../types/server'
+import type {
+  SeriesDetail,
+  OverridePatch,
+  IDResponse,
+  SeparateCollectionResponse,
+  ImportFolderResponse,
+} from '../types/server'
 import { request } from './request'
 
 export const seriesApi = {
@@ -76,7 +76,7 @@ export const seriesApi = {
       mangaTitle?: string
     },
   ) =>
-    request<{ id: number }>(`/series/${id}/bindings`, {
+    request<IDResponse>(`/series/${id}/bindings`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
@@ -115,7 +115,11 @@ export const seriesApi = {
         'The Sento server is older than this page and returned books in an outdated format. Restart or update the server, then reload.',
       )
     }
-    return books.map((b) => ({ ...b, fileIds: b.fileIds ?? [], onDiskFileIds: b.onDiskFileIds ?? [] }))
+    return books.map((b) => ({
+      ...b,
+      fileIds: b.fileIds ?? [],
+      onDiskFileIds: b.onDiskFileIds ?? [],
+    }))
   },
   bulkMonitor: (id: number, version: number, bookIds: number[], monitored: boolean) =>
     request<void>(`/series/${id}/versions/${version}/monitor`, {
@@ -139,7 +143,7 @@ export const seriesApi = {
     request<void>(`/series/${id}/books/${uid}`, { method: 'DELETE' }),
   bookWorks: (id: number, bookId: number) => request<Work[]>(`/series/${id}/books/${bookId}/works`),
   separateCollection: (id: number, collectionId: number) =>
-    request<{ editionId: number }>(`/series/${id}/collections/${collectionId}/separate`, {
+    request<SeparateCollectionResponse>(`/series/${id}/collections/${collectionId}/separate`, {
       method: 'POST',
     }),
   coverage: (id: number) => request<AssetCoverage[]>(`/series/${id}/coverage`),
@@ -164,7 +168,7 @@ export const seriesApi = {
       body: JSON.stringify({ root: root ?? '' }),
     }),
   importFolder: (dir: string, mangabakaId: number) =>
-    request<{ seriesId: number; scan: ScanResult | null; existing?: boolean }>('/library/import', {
+    request<ImportFolderResponse>('/library/import', {
       method: 'POST',
       body: JSON.stringify({ dir, mangabakaId }),
     }),

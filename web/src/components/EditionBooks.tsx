@@ -11,11 +11,11 @@ import { toHundredths } from '../format'
 import { seriesQueries } from '../queries'
 import type { BookStatus } from '../types/service'
 import type {
-AssetCoverage,
-Book,
-CollectedVersion,
-Edition,
-File as SeriesFile,
+  AssetCoverage,
+  Book,
+  CollectedVersion,
+  Edition,
+  File as SeriesFile,
 } from '../types/store'
 import type { BookSelection } from './BookDialog'
 import { bookSelection } from './bookSelection'
@@ -69,12 +69,6 @@ export default function EditionBooks({
   const [viewChoice, setViewChoice] = useState<'grid' | 'list' | null>(null)
   const [selecting, setSelecting] = useState(false)
   const [flash, setFlash] = useState<number | null>(null)
-  const [goTo, setGoTo] = useState<string | number>('')
-  const [range, setRange] = useState<{ from: string | number; to: string | number }>({
-    from: '',
-    to: '',
-  })
-  const [rangeOpen, setRangeOpen] = useState(false)
   const [split, setSplit] = useState<{ book: Book; count: string | number } | null>(null)
   const container = useRef<HTMLDivElement>(null)
 
@@ -94,6 +88,8 @@ export default function EditionBooks({
   const view = viewChoice ?? (all.length > GRID_FROM ? 'grid' : 'list')
   const { page, setPage, pages, slice } = usePaged(books, PAGE_SIZE)
   const shown = view === 'list' ? slice : books
+  const selection = useBookSelection(all, books)
+  const { selected, clearSelection, pick } = selection
   const monitor = (list: BookStatus[], monitored: boolean) =>
     void run(() =>
       api.bulkMonitor(
@@ -113,7 +109,7 @@ export default function EditionBooks({
     onBook(bookSelection(c, t, label, s))
   }
 
-  const jump = () => {
+  const jump = (goTo: string | number) => {
     const wantedNumber = Number(goTo)
     if (goTo === '' || Number.isNaN(wantedNumber)) return
     // The first book numbered at least that, in either order.
@@ -145,8 +141,6 @@ export default function EditionBooks({
     )
   }
 
-  const { selected, picked, clearSelection, pick, selectRange } = useBookSelection(all, books, range, setRangeOpen)
-
   if (q.isPending || q.error) {
     return <QueryFeedback pending={q.isPending} error={q.error} onRetry={() => void q.refetch()} />
   }
@@ -159,7 +153,26 @@ export default function EditionBooks({
   }
   return (
     <Stack gap="xs" ref={container}>
-      <BooksToolbar filter={filter} setFilter={setFilter} setPage={setPage} all={all} view={view} selecting={selecting} setSelecting={setSelecting} rangeOpen={rangeOpen} setRangeOpen={setRangeOpen} range={range} setRange={setRange} selectRange={selectRange} noun={noun} goTo={goTo} setGoTo={setGoTo} jump={jump} order={order} setOrder={setOrder} setViewChoice={setViewChoice} picked={picked} busy={busy} monitor={monitor} clearSelection={clearSelection} books={books} />
+      <BooksToolbar
+        filter={filter}
+        onFilter={(v) => {
+          setFilter(v)
+          setPage(1)
+        }}
+        all={all}
+        books={books}
+        view={view}
+        setViewChoice={setViewChoice}
+        selecting={selecting}
+        setSelecting={setSelecting}
+        selection={selection}
+        noun={noun}
+        jump={jump}
+        order={order}
+        setOrder={setOrder}
+        busy={busy}
+        monitor={monitor}
+      />
 
       {!books.length && (
         <Text size="sm" c="dimmed">

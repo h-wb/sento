@@ -8,10 +8,6 @@ import { Repos } from '../extensions/ExtensionRepos'
 import { ConnectionDialog } from './ConnectionDialog'
 
 type ClientType = 'qbittorrent' | 'extensions'
-export type Editing =
-  | { kind: 'new'; client: DownloadClientConn }
-  | { kind: 'client'; client: DownloadClientConn }
-  | { kind: 'extensions' }
 
 const blank: ConnectionSettings = {
   prowlarr: { url: '', apiKey: '' },
@@ -174,7 +170,8 @@ export function ClientDialog({
   const base: ConnectionSettings = isNew
     ? { ...saved, downloadClients: [...saved.downloadClients, client] }
     : saved
-  const mine = (c: ConnectionSettings) => c.downloadClients.find((d) => d.id === client.id) ?? client
+  const mine = (c: ConnectionSettings) =>
+    c.downloadClients.find((d) => d.id === client.id) ?? client
   const put = (c: ConnectionSettings, value: DownloadClientConn) => ({
     ...c,
     downloadClients: c.downloadClients.map((d) => (d.id === client.id ? value : d)),

@@ -1,18 +1,27 @@
-import type { Dispatch,SetStateAction } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../../api'
 import type { ActivityDownload } from '../../types/service'
 import { notify } from '../../ui'
 import type { BookSelection } from '../BookDialog'
 import { replacementSearch } from '../bookSelection'
-import { useConfirmAction } from '../ConfirmAction'
+import type { Confirm } from '../ConfirmAction'
 import type { DownloadActions } from '../DownloadActivityRow'
 
-export function useDownloadActions({ seriesID, onSources, mutation, confirm, refresh, setAttach, setRemoteID, setRecovery }: {
+export function useDownloadActions({
+  seriesID,
+  onSources,
+  mutation,
+  confirm,
+  refresh,
+  setAttach,
+  setRemoteID,
+  setRecovery,
+}: {
   seriesID: number
   onSources?: () => void
   mutation: { isPending: boolean; mutate: (work: () => Promise<unknown>) => void }
-  confirm: ReturnType<typeof useConfirmAction>['confirm']
+  confirm: Confirm
   refresh: () => Promise<void>
   setAttach: Dispatch<SetStateAction<ActivityDownload | null>>
   setRemoteID: Dispatch<SetStateAction<string>>

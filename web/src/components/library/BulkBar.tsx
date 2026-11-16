@@ -1,23 +1,20 @@
-import {
-  Affix,
-  Button,
-  Divider,
-  Group,
-  Paper,
-  Text,
-  Transition
-} from '@mantine/core'
-import {
-  IconEye,
-  IconEyeOff,
-  IconFolders,
-  IconTrash
-} from '@tabler/icons-react'
-import type { Dispatch,SetStateAction } from 'react'
+import { Affix, Button, Divider, Group, Paper, Text, Transition } from '@mantine/core'
+import { IconEye, IconEyeOff, IconFolders, IconTrash } from '@tabler/icons-react'
+import type { Dispatch, SetStateAction } from 'react'
 
-type BulkMonitor = { isPending: boolean; mutate: (v: { ids: number[]; monitored: boolean }) => void }
+type BulkMonitor = {
+  isPending: boolean
+  mutate: (v: { ids: number[]; monitored: boolean }) => void
+}
 
-export function BulkBar({ view, visibleSelected, bulkMonitor, setOrganizing, setRemoving, setSelected }: {
+export function BulkBar({
+  view,
+  visibleSelected,
+  bulkMonitor,
+  setOrganizing,
+  setRemoving,
+  setSelected,
+}: {
   view: 'grid' | 'table'
   visibleSelected: number[]
   bulkMonitor: BulkMonitor
@@ -30,15 +27,7 @@ export function BulkBar({ view, visibleSelected, bulkMonitor, setOrganizing, set
     <Affix position={{ bottom: 24, left: '50%' }} style={{ transform: 'translateX(-50%)' }}>
       <Transition transition="slide-up" mounted={view === 'table' && visibleSelected.length > 0}>
         {(styles) => (
-          <Paper
-            shadow="md"
-            radius="xl"
-            withBorder
-            py="xs"
-            pl="lg"
-            pr="xs"
-            style={styles}
-          >
+          <Paper shadow="md" radius="xl" withBorder py="xs" pl="lg" pr="xs" style={styles}>
             <Group gap="sm" wrap="nowrap">
               <Text size="sm" fw={600}>
                 {visibleSelected.length} selected

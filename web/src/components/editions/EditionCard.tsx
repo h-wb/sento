@@ -1,27 +1,25 @@
 import type { Dispatch, SetStateAction } from 'react'
-import {
-  Button,
-  Card,
-  Group,
-  Menu,
-  Stack,
-  Switch,
-  Text,
-} from '@mantine/core'
+import { Button, Card, Group, Menu, Stack, Switch, Text } from '@mantine/core'
 import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 import { api } from '../../api'
 import { plural } from '../../format'
-import type { AssetCoverage, Book, CollectedVersion, Edition, File as SeriesFile } from '../../types/store'
+import type {
+  AssetCoverage,
+  CollectedVersion,
+  Edition,
+  File as SeriesFile,
+} from '../../types/store'
 import type { VersionSummary } from '../../types/service'
 import type { BookSelection } from '../BookDialog'
 import { editionSearch } from '../bookSelection'
-import { useConfirmAction } from '../ConfirmAction'
+import type { Confirm } from '../ConfirmAction'
 import EditionActions from '../EditionActions'
 import EditionBooks from '../EditionBooks'
 import { cardLabel, cardTitle, editionDetails } from '../editionText'
 import { EditionOrigin } from '../Origin'
 import { RefusedFilesNotice } from '../RefusedFiles'
 import type { Refused } from '../refusal'
+import type { EditionDialogState } from './useEditionDialogs'
 
 type Props = {
   seriesID: number
@@ -35,7 +33,7 @@ type Props = {
   refusal: Refused
   // The series' page on MangaBaka.
   catalogUrl: string
-  // Editions other than this one, for the move dialog.
+  // Every edition in display order; the move dialog offers the others.
   visible: Edition[]
   // A card's series name in readers, when it is not just the series title.
   readerName: (versionId: number) => string | undefined
@@ -47,14 +45,8 @@ type Props = {
   run: (fn: () => Promise<unknown>) => Promise<void>
   changed: () => Promise<void>
   onBook: (s: BookSelection) => void
-  onEdit: (b: Book) => void
-  onFile: (f: SeriesFile) => void
-  confirm: ReturnType<typeof useConfirmAction>['confirm']
-  onLink: (e: Edition) => void
-  onEditEdition: (e: Edition) => void
-  onDownloadSettings: (v: CollectedVersion) => void
-  onCollectAgain: (e: Edition) => void
-  onCorrecting: (c: { fileIds: number[]; hint: string }) => void
+  dialogs: EditionDialogState
+  confirm: Confirm
 }
 
 export function EditionCard({
@@ -77,14 +69,8 @@ export function EditionCard({
   run,
   changed,
   onBook,
-  onEdit,
-  onFile,
+  dialogs,
   confirm,
-  onLink,
-  onEditEdition,
-  onDownloadSettings,
-  onCollectAgain,
-  onCorrecting,
 }: Props) {
   const owned = stats?.owned ?? 0
   const total = stats?.total ?? 0
@@ -176,20 +162,20 @@ export function EditionCard({
                     </Menu.Item>
                   )}
                   {c.custom && (
-                    <Menu.Item onClick={() => onLink(c)}>Link to MangaBaka</Menu.Item>
+                    <Menu.Item onClick={() => dialogs.setLink(c)}>Link to MangaBaka</Menu.Item>
                   )}
                 </>
               }
             >
               <Menu.Item onClick={findMissing}>Search releases</Menu.Item>
-              <Menu.Item onClick={() => onEditEdition(c)}>Edit edition</Menu.Item>
-              <Menu.Item onClick={() => onDownloadSettings(t)}>Download settings</Menu.Item>
-              <Menu.Item onClick={() => onCollectAgain(c)}>
+              <Menu.Item onClick={() => dialogs.setEdition(c)}>Edit edition</Menu.Item>
+              <Menu.Item onClick={() => dialogs.setVersion(t)}>Download settings</Menu.Item>
+              <Menu.Item onClick={() => dialogs.setCollectAgain(c)}>
                 Collect again with another profile…
               </Menu.Item>
               <Menu.Item
                 onClick={() =>
-                  onEdit({
+                  dialogs.setBook({
                     id: 0,
                     editionId: c.id,
                     sequenceNum: 0,
@@ -212,15 +198,15 @@ export function EditionCard({
           refused={refusal}
           chapters={c.type === 'chapter'}
           onCorrect={() =>
-            onCorrecting({
+            dialogs.setCorrecting({
               fileIds: refusal.fileIds,
               hint: `${title} doesn’t use these files${refusal.reason ? `: ${refusal.reason.charAt(0).toLowerCase()}${refusal.reason.slice(1)}` : ''}. If that was read wrong, say what they are.`,
             })
           }
-          onCollectAgain={() => onCollectAgain(c)}
+          onCollectAgain={() => dialogs.setCollectAgain(c)}
           onSearch={findMissing}
         />
-        {(
+        {
           <Group justify="space-between" gap="sm">
             <Group gap="sm">
               {total > 0 ? (
@@ -229,11 +215,7 @@ export function EditionCard({
                   size="compact-sm"
                   px={4}
                   leftSection={
-                    show ? (
-                      <IconChevronDown size={14} />
-                    ) : (
-                      <IconChevronRight size={14} />
-                    )
+                    show ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />
                   }
                   aria-expanded={show}
                   aria-label={`${show ? 'Hide' : 'Show'} ${noun} (${total})`}
@@ -263,7 +245,7 @@ export function EditionCard({
               }
             />
           </Group>
-        )}
+        }
         {show && (
           <EditionBooks
             key={t.id}
@@ -274,8 +256,8 @@ export function EditionCard({
             files={files}
             coverage={coverage}
             onBook={onBook}
-            onEdit={onEdit}
-            onFile={onFile}
+            onEdit={dialogs.setBook}
+            onFile={dialogs.setFile}
             run={run}
             busy={busy}
             explained={refusal.books.length ? refusal.reason : undefined}

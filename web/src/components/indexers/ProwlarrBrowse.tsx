@@ -6,9 +6,12 @@ import { notify } from '../../ui'
 
 // Prowlarr browse assist for torznab entries.
 export function ProwlarrBrowse({
+  active,
   apiKey,
   onApply,
 }: {
+  // Whether the torznab protocol is chosen; the browse keeps its state while not.
+  active: boolean
   apiKey: string
   onApply: (pick: { url: string; apiKey: string }, name: string) => void
 }) {
@@ -20,6 +23,7 @@ export function ProwlarrBrowse({
     onError: notify.err,
   })
 
+  if (!active) return null
   return (
     <>
       {!browse && (

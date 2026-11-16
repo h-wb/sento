@@ -9,6 +9,7 @@ import type {
 } from '../types/service'
 import type { ProfileDoc } from '../types/service'
 import type {
+  DefaultProfileResponse,
   ExtensionRepos,
   IndexerBody,
   IndexerPatch,
@@ -37,7 +38,7 @@ export const settingsApi = {
       method: 'POST',
       body: JSON.stringify(doc),
     }),
-  defaultProfile: () => request<{ profileId: number }>('/profiles/default'),
+  defaultProfile: () => request<DefaultProfileResponse>('/profiles/default'),
   setDefaultProfile: (profileId: number) =>
     request<void>('/profiles/default', {
       method: 'PUT',
@@ -117,7 +118,10 @@ export const settingsApi = {
   deleteIndexer: (iid: number) => request<void>(`/indexers/${iid}`, { method: 'DELETE' }),
   testIndexer: (iid: number) => request<void>(`/indexers/${iid}/test`, { method: 'POST' }),
   testIndexerSearch: (iid: number, query: string) =>
-    request<IndexerSearchCheck>(`/indexers/${iid}/search-test`, { method: 'POST', body: JSON.stringify({ query }) }),
+    request<IndexerSearchCheck>(`/indexers/${iid}/search-test`, {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    }),
   browseProwlarr: (body: BrowseProwlarrBody) =>
     request<ProwlarrIndexer[]>('/indexers/browse', {
       method: 'POST',

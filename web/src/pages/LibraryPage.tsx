@@ -1,17 +1,7 @@
-import {
-Button,
-Center,
-SimpleGrid,
-Skeleton,
-Stack,
-Text
-} from '@mantine/core'
+import { Button, Center, SimpleGrid, Skeleton, Stack, Text } from '@mantine/core'
 import { useLocalStorage } from '@mantine/hooks'
-import {
-IconBooks,
-IconPlus
-} from '@tabler/icons-react'
-import { useMutation,useQuery,useQueryClient } from '@tanstack/react-query'
+import { IconBooks, IconPlus } from '@tabler/icons-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useAddSeries } from '../addSeries'
 import { api } from '../api'
@@ -25,10 +15,9 @@ import { QueryFeedback } from '../components/QueryFeedback'
 import { RemoveSeries } from '../components/RemoveSeries'
 import { seriesQueries } from '../queries'
 import type { Series } from '../types/store'
-import { notify,usePageTitle } from '../ui'
+import type { SortField } from '../components/library/types'
+import { notify, usePageTitle } from '../ui'
 import classes from './LibraryPage.module.css'
-
-type SortField = 'sortTitle' | 'type' | 'status' | 'year' | 'finalVolume' | 'totalChapters' | 'addedAt'
 
 function compare(a: Series, b: Series, field: SortField): number {
   const av = a[field]

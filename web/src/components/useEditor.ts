@@ -8,7 +8,8 @@ export function useEditor() {
   return {
     busy,
     error,
-    run: async (fn: () => Promise<void>) => {
+    // settled runs after fn either way, once its error shows and before busy clears.
+    run: async (fn: () => Promise<void>, settled?: () => Promise<void>) => {
       setBusy(true)
       setError('')
       try {
@@ -16,6 +17,7 @@ export function useEditor() {
       } catch (e) {
         setError(errorMessage(e))
       } finally {
+        await settled?.()
         setBusy(false)
       }
     },

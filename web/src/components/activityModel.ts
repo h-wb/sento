@@ -90,7 +90,7 @@ export function activityTime(value: string) {
   return parseServerTime(value).getTime() || 0
 }
 
-export function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
+function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
   const groups = new Map<K, T[]>()
   for (const item of items) {
     const list = groups.get(key(item)) ?? []

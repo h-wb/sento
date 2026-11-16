@@ -22,18 +22,36 @@ import {
   IconUpload,
 } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type Format, type Profile } from '../api'
+import { api, type Condition, type Format, type Profile } from '../api'
 import { defaultProfileQuery, formatsQuery, invalidateProfiles, profilesQuery } from '../queries'
 import { notify, usePageTitle } from '../ui'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { EmptyState } from '../components/EmptyState'
 import { useConfirmAction } from '../components/ConfirmAction'
 import { PageHeader } from '../components/PageHeader'
-import { condText, downloadJSON } from '../components/profiles/profileText'
 import { ProfileModal } from '../components/profiles/ProfileModal'
 import { FormatModal } from '../components/profiles/FormatModal'
 import { ImportProfileModal } from '../components/profiles/ImportProfileModal'
 import { MinScoreOff } from '../types/profile'
+
+// condText renders a condition compactly: "title ~ \bLQ\b", "NOT flag:raw".
+function condText(c: Condition): string {
+  const body =
+    c.type === 'flag' || c.type === 'protocol' ? `${c.type}:${c.value}` : `${c.type} ~ ${c.value}`
+  return `${c.negate ? 'NOT ' : ''}${body}${c.required ? ' (required)' : ''}`
+}
+
+function downloadJSON(name: string, data: unknown) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: 'application/json',
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 export default function ProfilesPage() {
   usePageTitle('Profiles')
@@ -328,7 +346,6 @@ export default function ProfilesPage() {
           formats={formats.data ?? []}
           onClose={closeProfile}
           onSaved={invalidate}
-          fail={fail}
         />
       )}
       {editFormat && (
@@ -336,10 +353,9 @@ export default function ProfilesPage() {
           format={editFormat === 'new' ? null : editFormat}
           onClose={() => setEditFormat(null)}
           onSaved={invalidate}
-          fail={fail}
         />
       )}
-      {importOpen && <ImportProfileModal onClose={() => setImportOpen(false)} onSaved={invalidate} fail={fail} />}
+      {importOpen && <ImportProfileModal onClose={() => setImportOpen(false)} onSaved={invalidate} />}
     </Stack>
   )
 }

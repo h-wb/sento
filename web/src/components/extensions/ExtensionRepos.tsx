@@ -8,7 +8,6 @@ import { hostOf, plural } from '../../format'
 import type { RepoStatus } from '../../types/extensions'
 import { notify } from '../../ui'
 import { QueryFeedback } from '../QueryFeedback'
-import { useAddExtensionRepo } from './useAddExtensionRepo'
 
 // Repos lists the extension repos with what each one currently yields on
 // the host: its name and usable extension count, or why it yields nothing.
@@ -18,19 +17,19 @@ export function Repos() {
   const queryClient = useQueryClient()
   const repos = useQuery({ queryKey: ['extension-repos'], queryFn: api.extensionRepos })
   const [newRepo, setNewRepo] = useState('')
-  const addRepo = useAddExtensionRepo({
-    onAdded: () => notify.ok('Extension repos updated'),
-    // Give back what was being added, so it can be corrected.
-    onFailed: (url) => setNewRepo(url),
-  })
-  const removeRepo = useMutation({
-    mutationFn: (url: string) => api.setExtensionRepos(urls.filter((x) => x !== url)),
+  const saveRepos = useMutation({
+    mutationFn: (urls: string[]) => api.setExtensionRepos(urls),
     onSuccess: (data) => {
       notify.ok('Extension repos updated')
       queryClient.setQueryData(['extension-repos'], data)
       queryClient.invalidateQueries({ queryKey: ['extensions'] })
     },
-    onError: notify.err,
+    onError: (e, sent) => {
+      // Give back what was being added, so it can be corrected.
+      const added = sent.find((u) => !urls.includes(u))
+      if (added) setNewRepo(added)
+      notify.err(e)
+    },
   })
   const urls = repos.data?.urls ?? []
   const typed = newRepo.trim()
@@ -39,12 +38,11 @@ export function Repos() {
   // not editable.
   const managed = repos.data?.managed ?? false
   const rows: RepoStatus[] = repos.data?.repos ?? urls.map((url) => ({ url, extensions: 0 }))
-  const busy = addRepo.isPending || removeRepo.isPending
   // The field empties as the repo is added; an error gives it back.
   const add = () => {
-    if (!typed || known || busy) return
+    if (!typed || known || saveRepos.isPending) return
     setNewRepo('')
-    addRepo.mutate(typed)
+    saveRepos.mutate([...urls, typed])
   }
 
   return (
@@ -68,7 +66,11 @@ export function Repos() {
         )}{' '}
         its sources on <Link to="/indexers">Indexers</Link>.
       </Text>
-      <QueryFeedback pending={repos.isPending} error={repos.error} onRetry={() => void repos.refetch()} />
+      <QueryFeedback
+        pending={repos.isPending}
+        error={repos.error}
+        onRetry={() => void repos.refetch()}
+      />
       <Stack gap="xs">
         {repos.data && rows.length === 0 && (
           <Text size="sm" c="dimmed">
@@ -79,41 +81,43 @@ export function Repos() {
           <RepoRow
             key={repo.url}
             repo={repo}
-            removing={busy}
+            removing={saveRepos.isPending}
             onRemove={
-              managed ? undefined : () => removeRepo.mutate(repo.url)
+              managed ? undefined : () => saveRepos.mutate(urls.filter((x) => x !== repo.url))
             }
           />
         ))}
-        {!managed && <Group gap={6} wrap="nowrap">
-          <TextInput
-            size="xs"
-            style={{ flex: 1 }}
-            aria-label="Extension repo URL"
-            placeholder="https://…/index.min.json"
-            value={newRepo}
-            onChange={(e) => setNewRepo(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') add()
-            }}
-            error={known ? 'Already added' : undefined}
-          />
-          <Button
-            size="xs"
-            variant="default"
-            loading={addRepo.isPending}
-            disabled={!typed || known}
-            onClick={add}
-          >
-            Add repo
-          </Button>
-        </Group>}
+        {!managed && (
+          <Group gap={6} wrap="nowrap">
+            <TextInput
+              size="xs"
+              style={{ flex: 1 }}
+              aria-label="Extension repo URL"
+              placeholder="https://…/index.min.json"
+              value={newRepo}
+              onChange={(e) => setNewRepo(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') add()
+              }}
+              error={known ? 'Already added' : undefined}
+            />
+            <Button
+              size="xs"
+              variant="default"
+              loading={saveRepos.isPending}
+              disabled={!typed || known}
+              onClick={add}
+            >
+              Add repo
+            </Button>
+          </Group>
+        )}
       </Stack>
     </>
   )
 }
 
-export function RepoRow({
+function RepoRow({
   repo,
   removing,
   onRemove,
@@ -158,7 +162,13 @@ export function RepoRow({
         )}
       </Stack>
       {onRemove && (
-        <Button size="compact-xs" variant="subtle" color="red" disabled={removing} onClick={onRemove}>
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          color="red"
+          disabled={removing}
+          onClick={onRemove}
+        >
           Remove
         </Button>
       )}

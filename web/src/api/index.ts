@@ -7,9 +7,17 @@ import { filesApi } from './files'
 import { acquisitionApi } from './acquisition'
 import { settingsApi } from './settings'
 import { systemApi, type LookupResult, type SystemStatus } from './system'
-import type { Ledger } from './request'
 
-import type { Binding, BlocklistEntry, CalendarEntry, Edition, Decision, File as SeriesFile, QueueItem, Series } from '../types/store'
+import type {
+  Binding,
+  BlocklistEntry,
+  CalendarEntry,
+  Edition,
+  Decision,
+  File as SeriesFile,
+  QueueItem,
+  Series,
+} from '../types/store'
 import type {
   BrowseProwlarrBody,
   EditionPatch,
@@ -80,7 +88,7 @@ export type {
 }
 export type { SystemStatus, LookupResult }
 export type SiteOverride = OverridePatch
-export type { Ledger }
+export type Ledger = 'volume' | 'chapter'
 
 export const api = {
   ...seriesApi,

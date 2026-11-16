@@ -1,7 +1,10 @@
-import { useState } from 'react';
-import type { MediaSettings } from '../../api';
+import { useState } from 'react'
+import type { MediaSettings } from '../../api'
 
-export function useTemplateCaret(set: (patch: Partial<MediaSettings>) => void, setReaderField: (key: string, template: string) => void) {
+export function useTemplateCaret(
+  set: (patch: Partial<MediaSettings>) => void,
+  setReaderField: (key: string, template: string) => void,
+) {
   // The template last focused: a token picked from the table goes into it,
   // at the caret. Reader fields are keyed "reader:<field>".
   const [active, setActive] = useState<{ field: string; input: HTMLInputElement } | null>(null)

@@ -1,13 +1,12 @@
-import type { CollectedVersion, EditionMetadataPatch, CatalogLinkPreview, Edition } from '../types/store'
+import type {
+  CollectedVersion,
+  EditionMetadataPatch,
+  CatalogLinkPreview,
+  Edition,
+} from '../types/store'
 import type { Edition as CatalogEdition } from '../types/metadata'
-import type {
-  EditionOverview,
-} from '../types/service'
-import type {
-  EditionPatch,
-  CreateEditionBody,
-  MergeEditionResponse,
-} from '../types/server'
+import type { EditionOverview } from '../types/service'
+import type { EditionPatch, CreateEditionBody, MergeEditionResponse } from '../types/server'
 import { request } from './request'
 
 export const editionsApi = {

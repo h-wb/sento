@@ -21,11 +21,10 @@ import AcquisitionPlan from './AcquisitionPlan'
 import type { EditionStart } from './AddEdition'
 import CandidateList from './CandidateList'
 import { useConfirmAction } from './ConfirmAction'
-import { BookFiles } from './search/BookFiles'
-import { tidyProblem } from './search/releaseModel'
+import { BookFiles } from './books/BookFiles'
 import { SearchNotices } from './search/SearchNotices'
 import { SearchStatus } from './search/SearchStatus'
-import { useReleaseSearch } from './search/useReleaseSearch'
+import { tidyProblem, useReleaseSearch } from './search/useReleaseSearch'
 
 export type BookSelection = {
   // A download this search looks to replace: it keeps running until a
@@ -119,7 +118,7 @@ function Inner({
   )
   const small = useMediaQuery('(max-width: 48em)')
 
-  const { searchController, searching, result, searchScope, interactiveSearch } = useReleaseSearch(seriesID, sel, editionWide, allBooks, busy)
+  const { stop, searching, result, searchScope, interactiveSearch } = useReleaseSearch(seriesID, sel, editionWide, allBooks, busy)
 
   // Source failures are secondary to the results: one line, opened on
   // demand, or straight away when they are all there is to show. Notes
@@ -255,7 +254,7 @@ function Inner({
                 </Button>
               )}
               {result && (
-                <SearchStatus result={result} searching={searching} problems={problems} showProblems={showProblems} setProblemsOpen={setProblemsOpen} searchController={searchController} interactiveSearch={interactiveSearch} busy={busy} />
+                <SearchStatus result={result} searching={searching} problems={problems} showProblems={showProblems} setProblemsOpen={setProblemsOpen} stop={stop} interactiveSearch={interactiveSearch} busy={busy} />
               )}
               {result && (
                 <Stack gap={4}>

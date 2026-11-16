@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, type ReleaseCandidate } from '../../api'
+import { api, type ReleaseCandidate, type SearchEvent } from '../../api'
 import type { AcquisitionPlan as Plan } from '../../types/service'
 import { errorMessage } from '../../ui'
 import type { BookSelection } from '../BookDialog'
@@ -18,43 +18,50 @@ export type StreamResult = {
   stopped?: boolean
 }
 
-export function applySearchEvent(prev: StreamResult | null, ev: Parameters<Parameters<typeof api.searchStream>[2]>[0]): StreamResult | null {
-            if (!prev) return prev
-            switch (ev.type) {
-              case 'sites':
-                return {
-                  ...prev,
-                  notes: ev.bindingNotes ?? [],
-                  searched: ev.searched ?? [],
-                  pending: ev.searched ?? [],
-                }
-              case 'batch':
-                return {
-                  ...prev,
-                  queries: [...new Set([...prev.queries, ...(ev.queries ?? [])])],
-                  pending: prev.pending.filter((p) => !(ev.sites ?? []).includes(p)),
-                  candidates: [...prev.candidates, ...(ev.candidates ?? [])],
-                  dropped: prev.dropped + (ev.dropped ?? 0),
-                  notes: [...prev.notes, ...(ev.bindingNotes ?? [])],
-                  errors: ev.error ? [...prev.errors, ev.error] : prev.errors,
-                  plan: ev.plan ?? prev.plan,
-                }
-              case 'done':
-                return { ...prev, pending: [], done: true, plan: ev.plan ?? prev.plan }
-              case 'error':
-                return {
-                  ...prev,
-                  pending: [],
-                  done: true,
-                  errors: [...prev.errors, ev.error ?? 'search failed'],
-                }
-              default:
-                return prev
-            }
+export function applySearchEvent(prev: StreamResult | null, ev: SearchEvent): StreamResult | null {
+  if (!prev) return prev
+  switch (ev.type) {
+    case 'sites':
+      return {
+        ...prev,
+        notes: ev.bindingNotes ?? [],
+        searched: ev.searched ?? [],
+        pending: ev.searched ?? [],
+      }
+    case 'batch':
+      return {
+        ...prev,
+        queries: [...new Set([...prev.queries, ...(ev.queries ?? [])])],
+        pending: prev.pending.filter((p) => !(ev.sites ?? []).includes(p)),
+        candidates: [...prev.candidates, ...(ev.candidates ?? [])],
+        dropped: prev.dropped + (ev.dropped ?? 0),
+        notes: [...prev.notes, ...(ev.bindingNotes ?? [])],
+        errors: ev.error ? [...prev.errors, ev.error] : prev.errors,
+        plan: ev.plan ?? prev.plan,
+      }
+    case 'done':
+      return { ...prev, pending: [], done: true, plan: ev.plan ?? prev.plan }
+    case 'error':
+      return {
+        ...prev,
+        pending: [],
+        done: true,
+        errors: [...prev.errors, ev.error ?? 'search failed'],
+      }
+    default:
+      return prev
+  }
 }
 
-export function useReleaseSearch(seriesID: number, sel: BookSelection, editionWide: boolean, allBooks: boolean, busy: boolean) {
+export function useReleaseSearch(
+  seriesID: number,
+  sel: BookSelection,
+  editionWide: boolean,
+  allBooks: boolean,
+  busy: boolean,
+) {
   const searchController = useRef<AbortController | null>(null)
+  const stop = () => searchController.current?.abort()
   useEffect(() => () => searchController.current?.abort(), [])
   const [searching, setSearching] = useState(false)
   const [result, setResult] = useState<StreamResult | null>(null)
@@ -118,5 +125,15 @@ export function useReleaseSearch(seriesID: number, sel: BookSelection, editionWi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return { searchController, searching, result, searchScope, interactiveSearch }
+  return { stop, searching, result, searchScope, interactiveSearch }
+}
+
+// "host/Japscan (fr): binding 9 (Japscan (fr)): host: Cloudflare…" reads
+// as "Japscan (fr): Cloudflare…": the routing detail is for logs.
+export function tidyProblem(message: string): string {
+  return message
+    .replace(/^(host|torrent)\//, '')
+    .split(': ')
+    .filter((part) => part !== 'host' && !/^binding \d+ \(/.test(part))
+    .join(': ')
 }

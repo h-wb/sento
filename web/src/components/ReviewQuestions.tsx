@@ -77,12 +77,8 @@ export default function ReviewQuestions({
   }
   const run = (fn: () => Promise<unknown>) =>
     editor.run(async () => {
-      try {
-        await fn()
-      } finally {
-        await invalidate()
-      }
-    })
+      await fn()
+    }, invalidate)
   const chapters = items.filter((i) => i.kind === 'chapter')
   const proposed = items.filter((i) => i.proposal)
   // Series with files waiting: one recheck for them all, not one per file.

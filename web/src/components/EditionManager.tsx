@@ -9,12 +9,7 @@ import {
 } from '@mantine/core'
 import { useQueryClient } from '@tanstack/react-query'
 import { invalidateLibrary } from '../queries'
-import type {
-  Edition,
-  CollectedVersion,
-  Book,
-  File as SeriesFile,
-} from '../types/store'
+import type { Edition, File as SeriesFile } from '../types/store'
 import type { BookSelection } from './BookDialog'
 import type { EditionStart } from './AddEdition'
 import { QueryFeedback } from './QueryFeedback'
@@ -25,6 +20,7 @@ import { useEditor } from './useEditor'
 import { EditionCard } from './editions/EditionCard'
 import { OtherEditions } from './editions/OtherEditions'
 import { EditionDialogs } from './editions/EditionDialogs'
+import { useEditionDialogs } from './editions/useEditionDialogs'
 import { useSeriesEditions } from './editions/useSeriesEditions'
 
 // Editions and Files share their book, version and file-mapping dialogs.
@@ -69,6 +65,7 @@ export default function EditionManager({
     coverage,
     details,
     allVersions,
+    allBooks,
     readerName,
     refused,
     visible,
@@ -78,12 +75,7 @@ export default function EditionManager({
     others,
     pending,
   } = useSeriesEditions(seriesID, editions, seriesTitle)
-  const [collectAgain, setCollectAgain] = useState<Edition | null>(null)
-  const [version, setVersion] = useState<CollectedVersion | null>(null)
-  const [book, setBook] = useState<Book | null>(null)
-  const [edition, setEdition] = useState<Edition | null>(null)
-  const [link, setLink] = useState<Edition | null>(null)
-  const [file, setFile] = useState<SeriesFile | null>(null)
+  const dialogs = useEditionDialogs()
   const editor = useEditor()
   const { confirm, confirmation } = useConfirmAction()
   const changed = async () => {
@@ -94,7 +86,6 @@ export default function EditionManager({
       await fn()
       await changed()
     })
-  const [correcting, setCorrecting] = useState<{ fileIds: number[]; hint: string } | null>(null)
   const [otherEditions, setOtherEditions] = useState(false)
   const [language, setLanguage] = useState<string | null>(null)
   const [layout, setLayout] = useState<string | null>(null)
@@ -170,14 +161,8 @@ export default function EditionManager({
                   run={run}
                   changed={changed}
                   onBook={onBook}
-                  onEdit={setBook}
-                  onFile={setFile}
+                  dialogs={dialogs}
                   confirm={confirm}
-                  onLink={setLink}
-                  onEditEdition={setEdition}
-                  onDownloadSettings={setVersion}
-                  onCollectAgain={setCollectAgain}
-                  onCorrecting={setCorrecting}
                 />
               ))
             })}
@@ -206,8 +191,8 @@ export default function EditionManager({
             editions={editions}
             versions={allVersions}
             coverage={coverage.data}
-            books={details.data ? Object.values(details.data).flat() : undefined}
-            onOpen={setFile}
+            books={details.data ? allBooks : undefined}
+            onOpen={dialogs.setFile}
             changed={changed}
           />
         </Stack>
@@ -218,28 +203,15 @@ export default function EditionManager({
         visible={visible}
         files={files}
         allVersions={allVersions}
-        allBooks={Object.values(details.data ?? {}).flat()}
+        allBooks={allBooks}
         coverage={coverage}
         details={details}
-        version={version}
-        setVersion={setVersion}
-        book={book}
-        setBook={setBook}
-        edition={edition}
-        setEdition={setEdition}
-        collectAgain={collectAgain}
-        setCollectAgain={setCollectAgain}
-        link={link}
-        setLink={setLink}
-        file={file}
-        setFile={setFile}
-        correcting={correcting}
-        setCorrecting={setCorrecting}
+        dialogs={dialogs}
         seriesProfileId={seriesProfileId}
         changed={changed}
         onReaderNameChanged={onReaderNameChanged}
-        confirmation={confirmation}
       />
+      {confirmation}
     </Stack>
   )
 }

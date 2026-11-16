@@ -1,14 +1,14 @@
 import {
-IconAdjustmentsHorizontal,
-IconBooks,
-IconCalendar,
-IconDownload,
-IconFiles,
-IconPlug,
-IconServerBolt,
-IconWorldSearch,
-IconZoomCheck
-} from '@tabler/icons-react';
+  IconAdjustmentsHorizontal,
+  IconBooks,
+  IconCalendar,
+  IconDownload,
+  IconFiles,
+  IconPlug,
+  IconServerBolt,
+  IconWorldSearch,
+  IconZoomCheck,
+} from '@tabler/icons-react'
 export type NavItem = { to: string; label: string; icon: typeof IconBooks; key: string }
 
 // Day-to-day pages, always on top. `key` is the page's "g <key>" shortcut.
@@ -26,7 +26,12 @@ export const configLinks: NavItem[] = [
   { to: '/profiles', label: 'Profiles', icon: IconAdjustmentsHorizontal, key: 'p' },
   { to: '/media', label: 'Media', icon: IconFiles, key: 'm' },
 ]
-export const systemLink: NavItem = { to: '/system', label: 'System', icon: IconServerBolt, key: 's' }
+export const systemLink: NavItem = {
+  to: '/system',
+  label: 'System',
+  icon: IconServerBolt,
+  key: 's',
+}
 export const allLinks = [...primaryLinks, ...configLinks, systemLink]
 
 export const modKey = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl '
@@ -38,4 +43,3 @@ export const SHORTCUTS: [string[], string][] = [
   [['g n'], 'Add a series'],
   [['?'], 'Show this help'],
 ]
-

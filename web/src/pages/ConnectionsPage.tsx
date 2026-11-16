@@ -24,10 +24,14 @@ import {
   ClientDialog,
   NewClientDialog,
   SidecarDialog,
-  type Editing,
 } from '../components/connections/ClientDialogs'
 import type { DownloadClientConn } from '../types/service'
 import classes from './ConnectionsPage.module.css'
+
+type Editing =
+  | { kind: 'new'; client: DownloadClientConn }
+  | { kind: 'client'; client: DownloadClientConn }
+  | { kind: 'extensions' }
 
 // The download clients Sento fetches through. They come in two types:
 // qBittorrent instances for torrents (any number), and the extensions

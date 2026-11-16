@@ -1,16 +1,8 @@
-import {
-  Anchor,
-  Button,
-  Group,
-  Stack,
-  Text,
-} from '@mantine/core'
+import { Anchor, Button, Group, Stack, Text } from '@mantine/core'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import classes from '../Activity.module.css'
-import {
-  type AttentionGroup,
-} from '../activityModel'
+import { type AttentionGroup } from '../activityModel'
 import { DownloadActivityRow, type DownloadActions } from '../DownloadActivityRow'
 import ReviewQuestions from '../ReviewQuestions'
 

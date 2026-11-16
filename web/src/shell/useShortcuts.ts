@@ -40,5 +40,4 @@ export function useShortcuts(openHelp: () => void, openAdd: () => void) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [navigate, openHelp, openAdd])
-
 }

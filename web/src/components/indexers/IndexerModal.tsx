@@ -133,120 +133,139 @@ export function IndexerModal({
       onClose={configuring ? onSaved : onClose}
       title={isEdit ? `Edit ${initial.name}` : configuring ? `${name} — settings` : 'Add indexer'}
       size="lg"
-      closeOnClickOutside={!save.isPending} closeOnEscape={!save.isPending} withCloseButton={!save.isPending}
+      closeOnClickOutside={!save.isPending}
+      closeOnEscape={!save.isPending}
+      withCloseButton={!save.isPending}
     >
-      <fieldset className="formFields" disabled={save.isPending}><Stack gap="sm">
-        {!isEdit && (
-          <SegmentedControl
-            value={protocol}
-            onChange={(v) => setProtocol(v as 'torznab' | 'source')}
-            data={[
-              { value: 'torznab', label: 'Torrent indexer' },
-              { value: 'source', label: 'Extension source' },
-            ]}
+      <fieldset className="formFields" disabled={save.isPending}>
+        <Stack gap="sm">
+          {!isEdit && (
+            <SegmentedControl
+              value={protocol}
+              onChange={(v) => setProtocol(v as 'torznab' | 'source')}
+              data={[
+                { value: 'torznab', label: 'Torrent indexer' },
+                { value: 'source', label: 'Extension source' },
+              ]}
+            />
+          )}
+          <TextInput
+            label="Name"
+            description="Shown in results, history and the queue"
+            value={name}
+            onChange={(e) => setName(e.currentTarget.value)}
+            data-autofocus
           />
-        )}
-        <TextInput
-          label="Name"
-          description="Shown in results, history and the queue"
-          value={name}
-          onChange={(e) => setName(e.currentTarget.value)}
-          data-autofocus
-        />
 
-        {protocol === 'torznab' && (
-          <>
-            <TextInput
-              label="Torznab URL"
-              placeholder="http://prowlarr:9696/1/api"
-              description="Use the Torznab URL provided by Prowlarr or Jackett"
-              value={torznab.url}
-              onChange={(e) => setTorznab({ ...torznab, url: e.currentTarget.value })}
-            />
-            <PasswordInput
-              label="API key"
-              value={torznab.apiKey}
-              onChange={(e) => setTorznab({ ...torznab, apiKey: e.currentTarget.value })}
-            />
-            <TextInput
-              label="Default language"
-              placeholder="Mixed"
-              description="Language of this indexer's releases when a release name doesn't state one, e.g. fr for a French tracker. Leave empty for indexers that mix languages."
-              maw={320}
-              value={torznab.language ?? ''}
-              onChange={(e) => setTorznab({ ...torznab, language: e.currentTarget.value.trim() })}
-            />
-            {(downloadClients.length > 1 || !!torznab.downloadClient) && (
-              <Select
-                label="Download client"
-                description="Where this indexer's releases are sent, e.g. a tracker that must go through the VPN client."
-                maw={320}
-                allowDeselect={false}
-                value={torznab.downloadClient ?? ''}
-                onChange={(v) => setTorznab({ ...torznab, downloadClient: v ?? '' })}
-                error={
-                  torznab.downloadClient && !downloadClients.some((c) => c.id === torznab.downloadClient)
-                    ? 'This client no longer exists. Pick another.'
-                    : undefined
-                }
-                data={[
-                  { value: '', label: `Default (${downloadClients[0]?.name ?? 'none configured'})` },
-                  ...downloadClients.slice(1).map((c) => ({ value: c.id, label: c.name })),
-                ]}
+          {protocol === 'torznab' && (
+            <>
+              <TextInput
+                label="Torznab URL"
+                placeholder="http://prowlarr:9696/1/api"
+                description="Use the Torznab URL provided by Prowlarr or Jackett"
+                value={torznab.url}
+                onChange={(e) => setTorznab({ ...torznab, url: e.currentTarget.value })}
               />
-            )}
-            <ProwlarrBrowse
-              apiKey={torznab.apiKey}
-              onApply={(pick, picked) => {
-                setTorznab({ ...torznab, url: pick.url, apiKey: pick.apiKey })
-                suggestName(picked)
-              }}
-            />
-          </>
-        )}
+              <PasswordInput
+                label="API key"
+                value={torznab.apiKey}
+                onChange={(e) => setTorznab({ ...torznab, apiKey: e.currentTarget.value })}
+              />
+              <TextInput
+                label="Default language"
+                placeholder="Mixed"
+                description="Language of this indexer's releases when a release name doesn't state one, e.g. fr for a French tracker. Leave empty for indexers that mix languages."
+                maw={320}
+                value={torznab.language ?? ''}
+                onChange={(e) => setTorznab({ ...torznab, language: e.currentTarget.value.trim() })}
+              />
+              {(downloadClients.length > 1 || !!torznab.downloadClient) && (
+                <Select
+                  label="Download client"
+                  description="Where this indexer's releases are sent, e.g. a tracker that must go through the VPN client."
+                  maw={320}
+                  allowDeselect={false}
+                  value={torznab.downloadClient ?? ''}
+                  onChange={(v) => setTorznab({ ...torznab, downloadClient: v ?? '' })}
+                  error={
+                    torznab.downloadClient &&
+                    !downloadClients.some((c) => c.id === torznab.downloadClient)
+                      ? 'This client no longer exists. Pick another.'
+                      : undefined
+                  }
+                  data={[
+                    {
+                      value: '',
+                      label: `Default (${downloadClients[0]?.name ?? 'none configured'})`,
+                    },
+                    ...downloadClients.slice(1).map((c) => ({ value: c.id, label: c.name })),
+                  ]}
+                />
+              )}
+            </>
+          )}
+          <ProwlarrBrowse
+            active={protocol === 'torznab'}
+            apiKey={torznab.apiKey}
+            onApply={(pick, picked) => {
+              setTorznab({ ...torznab, url: pick.url, apiKey: pick.apiKey })
+              suggestName(picked)
+            }}
+          />
 
-        {protocol === 'source' && isEdit && (
-          <Text size="xs" c="dimmed">
-            {initial?.summary} — the extension/source of an entry cannot change; add a new
-            indexer instead.
-          </Text>
-        )}
-        {protocol === 'source' && configuring && (
-          <Text size="xs" c="dimmed">
-            {name} is added. Set what this source needs below, or close to keep its defaults.
-          </Text>
-        )}
-        {protocol === 'source' && (
+          {protocol === 'source' && isEdit && (
+            <Text size="xs" c="dimmed">
+              {initial?.summary} — the extension/source of an entry cannot change; add a new indexer
+              instead.
+            </Text>
+          )}
+          {protocol === 'source' && configuring && (
+            <Text size="xs" c="dimmed">
+              {name} is added. Set what this source needs below, or close to keep its defaults.
+            </Text>
+          )}
           <ExtensionSourcePicker
+            active={protocol === 'source'}
+            picking={!isEdit && !configuring}
             extensions={extensions}
-            isEdit={isEdit}
-            configuring={configuring}
-            extInstalled={extInstalled}
-            setInstalledNow={setInstalledNow}
             pkg={pkg}
-            setPkg={setPkg}
+            pickedExt={pickedExt}
+            extInstalled={extInstalled}
             source={source}
-            setSource={setSource}
             prefValues={prefValues}
             setPrefValues={setPrefValues}
-            suggestName={suggestName}
+            onPickExtension={(p) => {
+              setPkg(p)
+              setSource({ sourceId: '' })
+              setPrefValues({})
+              setInstalledNow(false)
+            }}
+            onPickSource={(src, p) => {
+              setSource({ sourceId: src.id, pkgName: p })
+              suggestName(`${src.name} (${src.lang})`)
+            }}
+            onInstalled={() => setInstalledNow(true)}
             onClose={onClose}
           />
-        )}
 
-        <Group justify="flex-end" mt="xs">
-          <Button variant="default" onClick={configuring ? onSaved : onClose}>
-            {configuring ? 'Close' : 'Cancel'}
-          </Button>
-          <Button
-            loading={save.isPending}
-            disabled={!name.trim() || (protocol === 'torznab' && !torznab.url.trim()) || (protocol === 'source' && !isEdit && !source.sourceId)}
-            onClick={() => save.mutate()}
-          >
-            {isEdit ? 'Save' : configuring ? 'Save settings' : 'Add'}
-          </Button>
-        </Group>
-      </Stack></fieldset>
+          <Group justify="flex-end" mt="xs">
+            <Button variant="default" onClick={configuring ? onSaved : onClose}>
+              {configuring ? 'Close' : 'Cancel'}
+            </Button>
+            <Button
+              loading={save.isPending}
+              disabled={
+                !name.trim() ||
+                (protocol === 'torznab' && !torznab.url.trim()) ||
+                (protocol === 'source' && !isEdit && !source.sourceId)
+              }
+              onClick={() => save.mutate()}
+            >
+              {isEdit ? 'Save' : configuring ? 'Save settings' : 'Add'}
+            </Button>
+          </Group>
+        </Stack>
+      </fieldset>
     </Modal>
   )
 }
