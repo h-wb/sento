@@ -509,6 +509,7 @@ func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettin
 
 	switch {
 	case retag:
+		mediafile.CleanStaleTemps(filepath.Dir(dest))
 		stage := filepath.Join(filepath.Dir(dest), ".sento-stage-"+filepath.Base(dest))
 		defer func() { _ = os.Remove(stage) }()
 		if err := mediafile.Process(src, stage, &p.info); err != nil {

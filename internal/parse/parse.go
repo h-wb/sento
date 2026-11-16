@@ -21,7 +21,9 @@ import (
 // 2: 0.7.0 stamped reviewed files as read by revision 1 without re-reading
 // them, so they still hold what the parser before it read (a group name
 // taken for a color claim).
-const Version = 2
+//
+// 3: Kapitel reads as a chapter marker, no longer a volume marker.
+const Version = 3
 
 func Parse(name string, ch Channel) Result {
 	res := Result{ContentType: ContentManga, Confidence: 1}

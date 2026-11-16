@@ -8,6 +8,7 @@ import (
 	"github.com/h-wb/sento/internal/db/dbtest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/h-wb/sento/internal/parse"
@@ -276,6 +277,51 @@ func TestImportReviewRetainsClaimsAndCompletesExistingPayload(t *testing.T) {
 	}
 	if p.fetches != 1 {
 		t.Fatalf("review downloaded the payload again: %d", p.fetches)
+	}
+}
+
+// A file sent to review keeps everything the release claimed, as an
+// imported file does.
+func TestImportReviewFileCarriesTheReleaseClaims(t *testing.T) {
+	t.Parallel()
+	_, st, id, c, ws, version := modelFixture(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	for _, name := range []string{"unknown.cbz", "extras.cbz"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := &recoveryProvider{payloadProvider: payloadProvider{dir: dir, files: []string{"unknown.cbz", "extras.cbz"}}}
+	snap, err := json.Marshal(ReleaseCandidate{Title: "ONE PIECE v01-02 (Digital) (2400px) [Group]", Site: "Nyaa", ProfileID: 3, FormatScore: 120,
+		Parse: parse.Result{Group: "Group", Language: "en", Version: 2, Quality: parse.QualityHints{Digital: true, Resolution: 2400}, Edition: parse.EditionHints{Colored: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := store.QueueItem{SeriesID: id, ProviderID: p.ID(), Protocol: p.Protocol(), ReleaseKey: "review-pack", Title: "ONE PIECE v01-02", Snapshot: snap}
+	qid, _, err := st.ReserveQueue(ctx, item, []store.BookRef{modelRef(c, ws[0], version)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.SetQueueExternalID(ctx, qid, "remote"); err != nil {
+		t.Fatal(err)
+	}
+	im := NewImporter(st, provider.NewRegistry(p), t.TempDir(), nil)
+	if _, err := im.ProcessQueue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	files, err := st.ListFiles(ctx, id)
+	if err != nil || len(files) != 2 {
+		t.Fatalf("review files: %d, %v", len(files), err)
+	}
+	want := offerFacts(item, "cbz")
+	for _, f := range files {
+		if !f.NeedsReview {
+			t.Errorf("%s was not sent to review", f.Path)
+		}
+		if !reflect.DeepEqual(f.Claims, want) {
+			t.Errorf("%s claims\n got %+v\nwant %+v", f.Path, f.Claims, want)
+		}
 	}
 }
 

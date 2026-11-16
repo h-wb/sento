@@ -217,8 +217,9 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 		}
 		return false, nil
 	default:
-		// Neither done nor in flight: stuck. Kick recoverable providers
-		// once, fail after a grace period.
+		// Neither done nor in flight: stuck. After two minutes, kick a
+		// recoverable provider on every pass (Recover is idempotent); fail
+		// after ten.
 		age := time.Since(parseTime(item.CreatedAt))
 		if age > 2*time.Minute {
 			if rec, ok := prov.(provider.Recoverer); ok {

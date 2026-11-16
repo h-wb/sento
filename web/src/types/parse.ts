@@ -63,8 +63,9 @@ anchor.go is the title-aware entry point, num.go the number domain.
  * 2: 0.7.0 stamped reviewed files as read by revision 1 without re-reading
  * them, so they still hold what the parser before it read (a group name
  * taken for a color claim).
+ * 3: Kapitel reads as a chapter marker, no longer a volume marker.
  */
-export const Version = 2;
+export const Version = 3;
 
 //////////
 // source: result.go

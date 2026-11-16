@@ -165,8 +165,9 @@ While a file is written it passes through temporary names in its folder:
 `.sento-import-*` (the `Process` / `ImportCBZ` temp), `.sento-stage-*` (a
 re-tag staged next to its destination) and `.sento-install-*` (a copy
 staged before its exclusive link). Each is removed when its operation
-ends; a leftover `.sento-import-*` older than one hour is swept on the
-next import into that folder (`cleanStaleTemps`).
+ends; a leftover `.sento-import-*` or `.sento-stage-*` older than one hour
+is swept the next time a file is written or staged in that folder
+(`CleanStaleTemps`).
 
 ## Names in readers
 
