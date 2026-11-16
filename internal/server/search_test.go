@@ -18,7 +18,7 @@ func TestSearchWithoutDownloadsReturnsEmptyQueuedArray(t *testing.T) {
 	cfg := config.Default()
 	cfg.Library.Path = t.TempDir()
 	conn, dialect := dbtest.Open(t)
-	srv := New(cfg, conn, dialect, noMetadata{})
+	srv := New(cfg, store.New(conn, dialect), conn, noMetadata{})
 	sid, err := srv.store.AddSeries(ctx, store.AddSeriesParams{Series: &metadata.Series{MangaBakaID: 103, Title: "No releases", Type: "manga"}})
 	if err != nil {
 		t.Fatal(err)

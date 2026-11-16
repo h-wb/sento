@@ -48,27 +48,89 @@ container can write to the library and staging directories.
 
 ## Configuration
 
-An optional YAML file is loaded first, then `SENTO_*` variables override it.
-The image looks for `/config/config.yml`. These are the common variables;
-[config.go](../internal/config/config.go) contains the full set and defaults.
+Configuration loads in three layers: built-in defaults, then an optional
+YAML file, then `SENTO_*` environment variables, which win over the file.
 
-| Variable | Purpose |
+The binary takes `-config <path>` (default `config.yml`); the image runs
+`sento -config /config/config.yml` and sets `SENTO_DB_PATH=/config/sento.db`,
+`SENTO_LIBRARY_PATH=/library`, `SENTO_DOWNLOADS_DIR=/downloads` and
+`SENTO_STATIC_DIR=/app/web/dist` in the [Dockerfile](../Dockerfile), with
+`/config`, `/library` and `/downloads` as volumes. A missing YAML file is
+not an error. An environment value that does not parse as a number is
+ignored, keeping the file value. The full set with defaults is in
+[config.go](../internal/config/config.go).
+
+This diagram shows the precedence for one setting: defaults, file, env,
+then the database for the settings Sento stores there.
+
+```mermaid
+flowchart TD
+    A["config.Default() built-in defaults"] --> B["YAML file (-config, optional)"]
+    B --> C["SENTO_* environment variables"]
+    C --> D{"row already in the settings table?"}
+    D -->|"yes: stored value wins (connections, media, profiles, scheduler state)"| E["database settings"]
+    D -->|"no: file/env value seeds the first save"| F["file/env seed"]
+    C --> G["enforced: extensions URL and repos from file/env always win"]
+    E --> H["live configuration"]
+    F --> H
+    G --> H
+```
+
+| YAML key | Environment variable | Default | Effect |
+| --- | --- | --- | --- |
+| `server.host` | `SENTO_HOST` | `0.0.0.0` | HTTP listen host |
+| `server.port` | `SENTO_PORT` | `8484` | HTTP listen port |
+| `server.api_key` | `SENTO_API_KEY` | empty | Not enforced: startup logs a warning; use a reverse proxy for auth |
+| `server.static_dir` | `SENTO_STATIC_DIR` | `web/dist` | Built web UI directory |
+| `database.path` | `SENTO_DB_PATH` | `data/sento.db` | SQLite database file |
+| `database.url` | `SENTO_DB_URL` | empty | PostgreSQL URL; wins over `database.path` when set |
+| `library.path` | `SENTO_LIBRARY_PATH` | `library` | Library root; required, made absolute at startup |
+| `library.path_mappings` | `SENTO_PATH_MAPPINGS` | empty | Comma-separated `remote=local` download-client path translations |
+| `downloads.dir` | `SENTO_DOWNLOADS_DIR` | `data/downloads` | Staging for in-progress source downloads |
+| `downloads.page_concurrency` | `SENTO_DOWNLOADS_PAGE_CONCURRENCY` | `3` | Parallel page fetches per chapter; keep at or below 4 (the sidecar's HTTP client allows 5 per host) |
+| `downloads.page_rate_per_second` | `SENTO_DOWNLOADS_PAGE_RATE` | `4` | Page requests per second per source (token bucket); `0` disables |
+| `extensions.url` | `SENTO_EXTENSIONS_URL` | empty | Sidecar URL; enforced (read-only in the UI) when set |
+| `extensions.repos` | `SENTO_EXTENSIONS_REPOS` | empty | Extension repo URLs, comma- or space-separated; enforced when set |
+| `prowlarr.url`, `prowlarr.api_key` | `SENTO_PROWLARR_URL`, `SENTO_PROWLARR_API_KEY` | empty | Seed the Prowlarr connection for the Add Indexer browse assist |
+| `qbittorrent.url`, `.username`, `.password`, `.category` | `SENTO_QBITTORRENT_URL`, `SENTO_QBITTORRENT_USERNAME`, `SENTO_QBITTORRENT_PASSWORD`, `SENTO_QBITTORRENT_CATEGORY` | empty, category `sento` | Seed the default download client connection |
+| `mangabaka.base_url` | `SENTO_MANGABAKA_BASE_URL` | `https://api.mangabaka.org/v1` | Metadata provider base URL |
+
+qBittorrent and Prowlarr environment settings seed their initial connections
+only: once settings are saved in the UI, the stored values win. Extension
+settings are different: `SENTO_EXTENSIONS_URL` and `SENTO_EXTENSIONS_REPOS`
+stay in force, are reported as managed, and are read-only in the UI. Note
+the separator differs on the two sides of the sidecar link: the Go side
+splits `SENTO_EXTENSIONS_REPOS` on commas or any whitespace and enforces the
+list, while the sidecar itself splits on commas only and treats the variable
+as an additive extra.
+
+### Sidecar environment
+
+The extension sidecar (`extensions/`, a JVM app, no config file) reads:
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `SENTO_EXTENSIONS_PORT` | `8901` | Listen port |
+| `SENTO_EXTENSIONS_DATA` | `data` | Data root for installed extensions |
+| `SENTO_EXTENSIONS_REPOS` | empty | Extra repo index URLs, comma-separated (Sento pushes its configured list on connect) |
+| `SENTO_EXTENSIONS_FLARESOLVERR_URL` | empty | Optional FlareSolverr for Cloudflare-protected sources |
+
+### Settings stored in the database
+
+Runtime-editable state lives in the `settings` table, not in the YAML file:
+
+| Key | Holds |
 | --- | --- |
-| `SENTO_HOST`, `SENTO_PORT` | HTTP listener |
-| `SENTO_DB_PATH` | SQLite database path |
-| `SENTO_DB_URL` | PostgreSQL connection URL; takes precedence over SQLite |
-| `SENTO_LIBRARY_PATH` | Library root |
-| `SENTO_DOWNLOADS_DIR` | Source download staging |
-| `SENTO_STATIC_DIR` | Built web UI directory (already set in the image) |
-| `SENTO_PATH_MAPPINGS` | Comma-separated `remote=local` torrent paths |
-| `SENTO_EXTENSIONS_URL` | Sidecar URL |
-| `SENTO_EXTENSIONS_REPOS` | Comma- or space-separated extension repository URLs |
+| `connections` | Prowlarr, download clients (including passwords) and sidecar URL; legacy keys `sourceHost` and `qbittorrent` are migrated on load |
+| `extension_repos` | The extension repository URL list |
+| `source_prefs` | Per-source preferences pushed to the sidecar |
+| `default_profile_id` | The instance default release profile |
+| `media` | Media (naming) settings |
+| `scheduler` | Each background task's last-run time, for cadence resume |
+| `library_root` | The recorded library root, used to rewrite paths when it moves |
 
-qBittorrent and Prowlarr environment settings seed their initial connections;
-settings saved in the UI take precedence after that. `SENTO_EXTENSIONS_URL`
-and `SENTO_EXTENSIONS_REPOS` stay in force and are read-only in the UI when
-supplied by the environment. The `SENTO_API_KEY` configuration field currently
-does not protect routes; do not rely on it for authentication.
+The `SENTO_API_KEY` configuration field currently does not protect routes;
+do not rely on it for authentication.
 
 ## Moving the library
 
@@ -95,25 +157,15 @@ series folders need not exist. Validation errors or database path collisions
 abort startup and roll back all path changes. Restore the files/configuration
 and retry. The new root is recorded in the same transaction, so restarting
 does not repeat the rewrite.
+
 Only paths inside the old root are rewritten. Torrent payload paths, source
 download staging, and series adopted outside it remain unchanged. Update
 reader library paths and other applications' mount/configuration separately.
 
 ## Empty indexer searches
 
-A successful connection test checks that the indexer answers, not that its
-feed contains manga. On **Indexers**, use **Test search** with a title you
-know the tracker has. Sento shows the Books result count, sample titles and
-their categories. An empty Books query also runs an unrestricted comparison.
-
-If the unrestricted samples are films or anime, check the tracker's own
-category setting in Prowlarr or Jackett. Some definitions fetch a fixed
-category and apply the requested Books filter only after the site's result
-limit. For Prowlarr's Nyaa definition, create a separate instance with
-**Category → Literature - English-translated** and use that instance's
-Torznab URL in Sento. Give it a separate tag if the existing instance also
-serves Sonarr or Radarr; each application's tags determine which indexers
-Prowlarr syncs to it. See [Prowlarr's settings guide](https://wiki.servarr.com/prowlarr/settings).
+If an indexer connects but its searches find no manga, see
+[empty indexer searches](domain/connections.md#empty-indexer-searches).
 
 ## Server binaries
 

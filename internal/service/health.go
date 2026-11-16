@@ -11,7 +11,6 @@ import (
 	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/qbittorrent"
 	"github.com/h-wb/sento/internal/store"
-	"github.com/h-wb/sento/internal/torznab"
 )
 
 // Health levels. An error stops something from working now; a warning is
@@ -39,9 +38,11 @@ type HealthReport struct {
 	Issues    []HealthIssue `json:"issues"`
 }
 
-// probeTimeout bounds one remote probe, so a hung service costs a check
-// run seconds rather than the request timeout.
-const probeTimeout = 10 * time.Second
+// taskStatusSource supplies the health issues raised by background tasks
+// whose last run failed (the scheduler is one). A nil source reports none.
+type taskStatusSource interface {
+	TaskIssues() []HealthIssue
+}
 
 // HealthService probes what Sento depends on — the library folder, the
 // download client, the extensions sidecar and every enabled indexer — and keeps
@@ -51,6 +52,7 @@ type HealthService struct {
 	store       *store.Store
 	conns       *Connections
 	libraryPath string
+	tasks       taskStatusSource // optional
 
 	run sync.Mutex // one check run at a time
 
@@ -61,6 +63,14 @@ type HealthService struct {
 
 func NewHealthService(st *store.Store, conns *Connections, libraryPath string) *HealthService {
 	return &HealthService{store: st, conns: conns, libraryPath: libraryPath}
+}
+
+// SetTaskSource wires in the background tasks whose failures the report
+// includes (the scheduler, built after this service).
+func (h *HealthService) SetTaskSource(tasks taskStatusSource) {
+	h.mu.Lock()
+	h.tasks = tasks
+	h.mu.Unlock()
 }
 
 // Invalidate marks the report stale after a settings change; the next
@@ -77,10 +87,10 @@ func (h *HealthService) Report(ctx context.Context) HealthReport {
 	h.mu.RLock()
 	report, fresh := h.report, h.fresh
 	h.mu.RUnlock()
-	if fresh {
-		return report
+	if !fresh {
+		return h.Check(ctx)
 	}
-	return h.Check(ctx)
+	return h.withTaskFailures(report)
 }
 
 // Check runs every check now and stores the report.
@@ -95,6 +105,21 @@ func (h *HealthService) Check(ctx context.Context) HealthReport {
 	h.mu.Lock()
 	h.report, h.fresh = report, true
 	h.mu.Unlock()
+	return h.withTaskFailures(report)
+}
+
+// withTaskFailures merges the background tasks whose last run failed into
+// the report — live state, not part of the cached report.
+func (h *HealthService) withTaskFailures(report HealthReport) HealthReport {
+	h.mu.RLock()
+	tasks := h.tasks
+	h.mu.RUnlock()
+	if tasks == nil {
+		return report
+	}
+	issues := append([]HealthIssue{}, report.Issues...)
+	issues = append(issues, tasks.TaskIssues()...)
+	report.Issues = issues
 	return report
 }
 
@@ -140,19 +165,7 @@ func (h *HealthService) collect(ctx context.Context) []HealthIssue {
 	for _, ix := range torznabs {
 		probes = append(probes, func(ctx context.Context) []HealthIssue { return checkTorznab(ctx, ix) })
 	}
-	found := make([][]HealthIssue, len(probes))
-	var wg sync.WaitGroup
-	for i, probe := range probes {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			ctx, cancel := context.WithTimeout(ctx, probeTimeout)
-			defer cancel()
-			found[i] = probe(ctx)
-		}()
-	}
-	wg.Wait()
-	for _, f := range found {
+	for _, f := range runParallel(ctx, probeTimeout, probes) {
 		issues = append(issues, f...)
 	}
 	// Errors first; the stable sort keeps the check order within a level.
@@ -201,23 +214,20 @@ func checkDownloadClients(ctx context.Context, clients []DownloadClientConn, tor
 			Message: "No download client is configured, so torrent releases cannot be downloaded",
 		}}
 	}
-	found := make([][]HealthIssue, len(clients))
-	var wg sync.WaitGroup
+	probes := make([]func(context.Context) []HealthIssue, len(clients))
 	for i, dc := range clients {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		probes[i] = func(ctx context.Context) []HealthIssue {
 			if err := qbittorrent.New(dc.URL, dc.Username, dc.Password).Ping(ctx); err != nil {
-				found[i] = []HealthIssue{{
+				return []HealthIssue{{
 					Source: "download-client", Level: HealthError, Link: "/connections",
 					Message: fmt.Sprintf("Download client %s is unavailable", dc.Name), Detail: err.Error(),
 				}}
 			}
-		}()
+			return nil
+		}
 	}
-	wg.Wait()
 	var issues []HealthIssue
-	for _, f := range found {
+	for _, f := range runParallel(ctx, 0, probes) {
 		issues = append(issues, f...)
 	}
 	known := map[string]bool{"": true}
@@ -255,18 +265,14 @@ func checkSources(ctx context.Context, host extensions.Host, indexers []store.In
 			Message: "The extensions sidecar is unavailable", Detail: err.Error(),
 		}}
 	}
-	present := map[string]bool{}
-	for _, s := range sources {
-		present[s.ID] = true
-	}
 	var issues []HealthIssue
 	for _, ix := range indexers {
 		e, err := parseEntry(ix)
 		switch {
 		case err != nil:
 			issues = append(issues, indexerIssue(ix, err.Error()))
-		case !present[e.SourceID]:
-			issues = append(issues, indexerIssue(ix, fmt.Sprintf("source %s is not present on the host (extension uninstalled?)", e.SourceID)))
+		case !sourcePresent(sources, e.SourceID):
+			issues = append(issues, indexerIssue(ix, errSourceMissing(e.SourceID).Error()))
 		}
 	}
 	return issues
@@ -275,7 +281,7 @@ func checkSources(ctx context.Context, host extensions.Host, indexers []store.In
 func checkTorznab(ctx context.Context, ix store.Indexer) []HealthIssue {
 	e, err := parseEntry(ix)
 	if err == nil {
-		err = torznab.New(e.URL, e.APIKey).Ping(ctx)
+		err = probeTorznab(ctx, e)
 	}
 	if err != nil {
 		return []HealthIssue{indexerIssue(ix, err.Error())}

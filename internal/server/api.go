@@ -3,17 +3,14 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/scheduler"
-	"github.com/h-wb/sento/internal/service"
 )
 
 func (s *Server) mountAPI(r chi.Router) {
@@ -25,92 +22,16 @@ func (s *Server) mountAPI(r chi.Router) {
 	r.Get("/system/tasks", s.handleListTasks)
 	r.Post("/system/tasks/{slug}/run", s.handleRunTask)
 
-	r.Get("/lookup", s.handleLookup)
-	r.Get("/catalog/editions", s.handleCatalogEditions)
-	r.Get("/calendar", s.handleCalendar)
-	r.Get("/wanted", s.handleWanted)
-	r.Get("/review", s.handleReview)
-	r.Delete("/files/{fid}", s.handleDeleteFile)
-	r.Post("/library/import/scan", s.handleImportScan)
-	r.Post("/library/import", s.handleImportFolder)
-	r.Get("/library/organize", s.handlePlanOrganizeLibrary)
-	r.Post("/library/organize", s.handleOrganizeLibrary)
-	r.Get("/library/organize/status", s.handleOrganizeLibraryStatus)
-	r.Get("/library/progress", s.handleLibraryProgress)
-	r.Get("/settings/media", s.handleGetMediaSettings)
-	r.Put("/settings/media", s.handlePutMediaSettings)
-	r.Post("/settings/media/preview", s.handlePreviewMediaSettings)
-	r.Get("/settings/media/schema", s.handleMediaSchema)
-	r.Get("/settings/connections", s.handleGetConnections)
-	r.Put("/settings/connections", s.handlePutConnections)
-	r.Post("/settings/connections/test", s.handleTestConnections)
-	r.Get("/extensions", s.handleListExtensions)
-	r.Get("/extensions/{pkg}/sources", s.handleExtensionSources)
-	r.Get("/extensions/repos", s.handleGetExtensionRepos)
-	r.Put("/extensions/repos", s.handleSetExtensionRepos)
-	r.Post("/extensions/{pkg}", s.handleInstallExtension)
-	r.Get("/extensions/sources/{sid}/preferences", s.handleSourcePreferences)
-	r.Put("/extensions/sources/{sid}/preferences", s.handleSetSourcePreference)
-	s.mountSourceAPI(r)
+	s.mountSeriesAPI(r)
+	s.mountEditionsAPI(r)
+	s.mountBooksAPI(r)
+	s.mountFilesAPI(r)
+	s.mountReviewAPI(r)
+	s.mountQueueAPI(r)
+	s.mountSearchAPI(r)
+	s.mountIndexerAPI(r)
+	s.mountSettingsAPI(r)
 	s.mountProfileAPI(r)
-
-	r.Route("/series", func(r chi.Router) {
-		r.Get("/", s.handleListSeries)
-		r.Post("/", s.handleAddSeries)
-		r.Route("/{id}", func(r chi.Router) {
-			r.Get("/", s.handleGetSeries)
-			r.Put("/", s.handleUpdateSeries)
-			r.Delete("/", s.handleDeleteSeries)
-			r.Post("/refresh", s.handleRefreshSeries)
-			r.Get("/versions", s.handleListVersions)
-			r.Post("/versions", s.handleSaveVersion)
-			r.Put("/versions/{vid}", s.handleSaveVersion)
-			r.Delete("/versions/{vid}", s.handleDeleteVersion)
-			r.Get("/books", s.handleBooksByVersion)
-			r.Get("/edition-overview", s.handleEditionOverview)
-			r.Get("/versions/{vid}/books", s.handleVersionBooks)
-			r.Get("/versions/{vid}/files/{fid}/score", s.handleFileScore)
-			r.Post("/versions/{vid}/monitor", s.handleBulkMonitor)
-			r.Post("/books", s.handleSaveBook)
-			r.Put("/books/{bid}", s.handleSaveBook)
-			r.Delete("/books/{bid}", s.handleDeleteBook)
-			r.Get("/books/{bid}/works", s.handleBookWorks)
-			r.Post("/books/{bid}/catalog-reset", s.handleResetBook)
-			r.Post("/books/{bid}/split", s.handleSplitBox)
-			r.Put("/editions/{eid}/metadata", s.handleEditEditionMetadata)
-			r.Post("/editions/{eid}/catalog-link", s.handleCatalogLink)
-			r.Get("/coverage", s.handleCoverage)
-			r.Put("/coverage/pin", s.handlePinCoverage)
-			r.Put("/book-monitor", s.handleBookMonitor)
-			r.Put("/files/{fid}/mapping", s.handleRemapFile)
-			// The review routes live outside the global request cap: see
-			// Server.Handler.
-			r.Patch("/files/{fid}/facts", s.handleFileFacts)
-			r.Patch("/files/facts", s.handleFilesFacts)
-			r.Post("/check-files", s.handleCheckFiles)
-			r.Get("/observations", s.handleObservations)
-			r.Post("/observations", s.handleObservations)
-			r.Put("/observations/{oid}", s.handleResolveObservation)
-			r.Post("/editions", s.handleCreateEdition)
-			r.Put("/editions/{eid}", s.handleUpdateEdition)
-			r.Post("/reader-names", s.handleReaderNames)
-			r.Post("/editions/{eid}/merge", s.handleMergeEditions)
-			r.Post("/collections/{cid}/separate", s.handleSeparateCollection)
-			r.Delete("/editions/{eid}", s.handleDeleteEdition)
-			r.Get("/files", s.handleListFiles)
-			r.Get("/files/cleanup", s.handleCleanupPreview)
-			r.Post("/files/cleanup", s.handleCleanupFiles)
-			r.Get("/files/trash", s.handleFileTrash)
-			r.Post("/files/trash/{fid}/restore", s.handleRestoreTrash)
-			r.Delete("/files/trash/{fid}", s.handlePurgeTrash)
-			r.Get("/files/organize", s.handlePlanOrganize)
-			r.Post("/import", s.handleScanSeries)
-			r.Get("/bindings", s.handleListBindings)
-			r.Post("/bindings", s.handleAddBinding)
-			r.Put("/bindings/{bid}", s.handleUpdateBinding)
-			r.Delete("/bindings/{bid}", s.handleDeleteBinding)
-		})
-	})
 }
 
 // --- scheduler tasks (System → Tasks) ---
@@ -139,28 +60,11 @@ func (s *Server) handleRunTask(w http.ResponseWriter, r *http.Request) {
 // plus scheduled tasks whose last run failed — those are live state, not
 // part of the cached report.
 func (s *Server) handleHealthChecks(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.withTaskFailures(s.health.Report(r.Context())))
+	writeJSON(w, http.StatusOK, s.health.Report(r.Context()))
 }
 
 func (s *Server) handleRunHealthChecks(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.withTaskFailures(s.health.Check(r.Context())))
-}
-
-func (s *Server) withTaskFailures(report service.HealthReport) service.HealthReport {
-	if s.sched == nil {
-		return report
-	}
-	issues := append([]service.HealthIssue{}, report.Issues...)
-	for _, t := range s.sched.Tasks() {
-		if t.LastError != "" {
-			issues = append(issues, service.HealthIssue{
-				Source: "task", Level: service.HealthWarning, Link: "/system",
-				Message: fmt.Sprintf("Scheduled task %s failed on its last run", t.Name), Detail: t.LastError,
-			})
-		}
-	}
-	report.Issues = issues
-	return report
+	writeJSON(w, http.StatusOK, s.health.Check(r.Context()))
 }
 
 // invalidateHealth marks the health report stale after a change to what
@@ -182,50 +86,6 @@ func (s *Server) invalidateHealth(next http.Handler) http.Handler {
 	})
 }
 
-// --- lookup ---
-
-func (s *Server) handleLookup(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query().Get("q")
-	if q == "" {
-		writeError(w, http.StatusBadRequest, "missing query parameter q")
-		return
-	}
-	refs, err := s.provider.Search(r.Context(), q)
-	if err != nil {
-		writeErr(w, apperr.Upstreamf("lookup: %w", err))
-		return
-	}
-	writeJSON(w, http.StatusOK, refs)
-}
-
-// handleCalendar lists dated volume releases of monitored editions:
-// two weeks back, `days` ahead (default 60).
-func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
-	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
-	if days <= 0 {
-		days = 60
-	}
-	now := time.Now()
-	from := now.AddDate(0, 0, -14).Format("2006-01-02")
-	to := now.AddDate(0, 0, days).Format("2006-01-02")
-	entries, err := s.library.Calendar(r.Context(), from, to)
-	respondList(w, entries, err)
-}
-
-// handleWanted lists the library's missing and upgrade-eligible books
-// across every monitored series (the Wanted page).
-func (s *Server) handleWanted(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.library.Wanted(r.Context())
-	respondList(w, rows, err)
-}
-
-// handleLibraryProgress counts each series' books on disk and wanted, for
-// the Library's posters.
-func (s *Server) handleLibraryProgress(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.library.Progress(r.Context())
-	respondList(w, rows, err)
-}
-
 // --- helpers ---
 
 func pathID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
@@ -235,6 +95,38 @@ func pathID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+// queryID reads an optional numeric query parameter: an absent parameter
+// is 0 and ok; ok is false when a present value is not a valid ID.
+func queryID(r *http.Request, name string) (int64, bool) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return 0, true
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id < 0 {
+		return 0, false
+	}
+	return id, true
+}
+
+// queryIDs reads an optional comma-separated list of IDs ("1, 2,3"); an
+// absent parameter is nil and ok. bad is the first offending part when ok
+// is false.
+func queryIDs(r *http.Request, name string) (ids []int64, bad string, ok bool) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return nil, "", true
+	}
+	for _, part := range strings.Split(raw, ",") {
+		id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err != nil {
+			return nil, part, false
+		}
+		ids = append(ids, id)
+	}
+	return ids, "", true
 }
 
 // maxBodyBytes caps request bodies. The largest legitimate one is a

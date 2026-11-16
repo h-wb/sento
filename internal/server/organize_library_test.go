@@ -22,7 +22,7 @@ func TestSeriesOrganizeRoutes(t *testing.T) {
 	cfg := config.Default()
 	cfg.Library.Path = t.TempDir()
 	conn, dialect := dbtest.Open(t)
-	srv := New(cfg, conn, dialect, noMetadata{})
+	srv := New(cfg, store.New(conn, dialect), conn, noMetadata{})
 	ctx := context.Background()
 	sid, err := srv.store.AddSeries(ctx, store.AddSeriesParams{Series: &metadata.Series{MangaBakaID: 6766, Title: "Yotsuba&!", Type: "manga"}})
 	if err != nil {
@@ -44,7 +44,7 @@ func TestOrganizeLibraryRunsInBackground(t *testing.T) {
 	cfg := config.Default()
 	cfg.Library.Path = t.TempDir()
 	conn, dialect := dbtest.Open(t)
-	srv := New(cfg, conn, dialect, noMetadata{})
+	srv := New(cfg, store.New(conn, dialect), conn, noMetadata{})
 	h := srv.Handler()
 
 	if rec := do(t, h, http.MethodGet, "/api/v1/library/organize?series=1,x", ""); rec.Code != http.StatusBadRequest {
@@ -57,7 +57,7 @@ func TestOrganizeLibraryRunsInBackground(t *testing.T) {
 		t.Fatalf("without a scheduler: %d %s", rec.Code, rec.Body)
 	}
 
-	srv.SetScheduler(scheduler.New(srv.store, srv.library, srv.search, srv.importer, srv.scanner, srv.extensions, scheduler.DefaultIntervals()))
+	srv.SetScheduler(scheduler.New(srv.store, srv.library, srv.search, srv.importer, srv.scanner, srv.extensions, srv.health, scheduler.DefaultIntervals()))
 	if rec := do(t, h, http.MethodPost, "/api/v1/library/organize", `{}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("nothing to apply: %d %s", rec.Code, rec.Body)
 	}

@@ -67,10 +67,11 @@ const (
 )
 
 func DefaultMediaSettings() MediaSettings {
-	n := mediafile.DefaultNaming()
 	return MediaSettings{
-		SeriesFolder: n.SeriesFolder, VolumeFile: n.VolumeFile,
-		ChapterFile: n.ChapterFile, ChapterDir: n.ChapterDir,
+		SeriesFolder:  "{Series Title} [mangabaka-{seriesId}]",
+		VolumeFile:    "{Series Title} v{volume:00} [{edition}][{lang}].cbz",
+		ChapterFile:   "{Series Title} c{chapter:000} [{group}][{lang}].cbz",
+		ChapterDir:    "chapters",
 		BookFolder:    BookFolderByEdition,
 		RenameImports: true, WriteComicInfo: true,
 		ReaderFields: defaultReaderFields(),
@@ -83,14 +84,6 @@ func defaultReaderFields() map[string]string {
 		out[f.Key] = f.Default
 	}
 	return out
-}
-
-// Naming adapts the settings to the template renderer's config.
-func (m MediaSettings) Naming() mediafile.NamingConfig {
-	return mediafile.NamingConfig{
-		SeriesFolder: m.SeriesFolder, VolumeFile: m.VolumeFile,
-		ChapterFile: m.ChapterFile, ChapterDir: m.ChapterDir,
-	}
 }
 
 // LoadMediaSettings reads the stored settings, falling back to defaults

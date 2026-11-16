@@ -2,7 +2,10 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/h-wb/sento/internal/metadata"
@@ -50,27 +53,24 @@ func (s *Store) GetSeries(ctx context.Context, id int64) (*Series, error) {
 }
 
 func (s *Store) DeleteSeries(ctx context.Context, id int64) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	// Its history goes with it; the schema would only detach it.
-	if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM decisions WHERE series_id=?`), id); err != nil {
-		return err
-	}
-	res, err := tx.ExecContext(ctx, s.q(`DELETE FROM series WHERE id=?`), id)
-	if err != nil {
-		return err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return ErrNotFound
-	}
-	return tx.Commit()
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		// Its history goes with it; the schema would only detach it.
+		if _, err := tx.ExecContext(ctx, s.q(`DELETE FROM decisions WHERE series_id=?`), id); err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx, s.q(`DELETE FROM series WHERE id=?`), id)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
 }
 
 // SetSeriesMonitored gates all automatic searches for the series.
@@ -93,92 +93,195 @@ type AddSeriesParams struct {
 }
 
 func (s *Store) AddSeries(ctx context.Context, p AddSeriesParams) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	var seriesID int64
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		md := p.Series
+		var profileID any // NULL = instance default
+		if p.ProfileID > 0 {
+			profileID = p.ProfileID
+		}
+		err := tx.QueryRowContext(ctx, s.q(`
+			INSERT INTO series (mangabaka_id, title, sort_title, type, status, content_rating,
+				year, total_chapters, final_volume, description, cover_url, profile_id, raw_json,
+				raw_schema_version, refreshed_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`),
+			md.MangaBakaID, md.Title, sortTitle(md.Title), md.Type, md.Status, md.ContentRating,
+			md.Year, md.TotalChapters, md.FinalVolume, md.Description, md.CoverURL, profileID,
+			string(md.RawJSON), 1, utcNow()).Scan(&seriesID)
+		if err != nil {
+			if c := conflict(err, "series is already in the library"); c != err {
+				return c
+			}
+			return fmt.Errorf("inserting series: %w", err)
+		}
+
+		monitor := map[string]bool{}
+		for _, id := range p.MonitorIDs {
+			monitor[id] = true
+		}
+
+		lang := p.ChapterLang
+		if lang == "" {
+			lang = "en"
+		}
+
+		if err := s.syncCatalog(ctx, tx, seriesID, p.Collections, p.Works); err != nil {
+			return fmt.Errorf("filing the catalog: %w", err)
+		}
+		// An edition is collected when any of its collections was chosen.
+		var chapterColID int64 // first catalog chapter edition of the wanted language
+		volumes := false       // some volume edition is collected
+		for _, col := range p.Collections {
+			var edID int64
+			if err := tx.QueryRowContext(ctx, s.q(`SELECT edition_id FROM collections WHERE provider_id=? AND edition_id IN(SELECT id FROM editions WHERE series_id=?)`), col.ProviderID, seriesID).Scan(&edID); err != nil {
+				return err
+			}
+			monitored := p.MonitorAll && col.Type == "volume" || monitor[col.ProviderID]
+			volumes = volumes || monitored && col.Type == "volume"
+			if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored) SELECT ?,'Default',TRUE,FALSE WHERE NOT EXISTS(SELECT 1 FROM versions WHERE edition_id=?)`), edID, edID); err != nil {
+				return err
+			}
+			if monitored {
+				if _, err := tx.ExecContext(ctx, s.q(`UPDATE versions SET monitored=TRUE WHERE edition_id=? AND is_default=TRUE`), edID); err != nil {
+					return err
+				}
+			}
+			if chapterColID == 0 && col.Type == "chapter" && strings.EqualFold(col.Language, lang) {
+				chapterColID = edID
+			}
+		}
+
+		// The chapter ledger is a chapter-type collection: adopt the MangaBaka
+		// one of the wanted language when present, else create the default.
+		// Collected volumes hold the chapters out so far, so only new chapters
+		// are wanted; without volumes the chapters are all there is (a
+		// one-shot, a chapter-only series), so every one is.
+		cutoff := p.ChapterCutoff
+		if cutoff == 0 && volumes {
+			cutoff = int64(md.TotalChapters) * 100
+		}
+		if chapterColID != 0 {
+			if _, err := tx.ExecContext(ctx, s.q(`
+				UPDATE versions SET monitored=?,cutoff_num=? WHERE edition_id=? AND is_default=TRUE`),
+				!p.MonitorNone, cutoff, chapterColID); err != nil {
+				return fmt.Errorf("adopting chapter edition: %w", err)
+			}
+		} else {
+			if err := tx.QueryRowContext(ctx, s.q(`INSERT INTO editions(series_id,edition_name,language,type,custom,updated_at,numbering_source) VALUES(?,'Chapters',?,'chapter',TRUE,?,'series_count') RETURNING id`), seriesID, lang, utcNow()).Scan(&chapterColID); err != nil {
+				return err
+			}
+			if err := s.insertDefaultVersion(ctx, tx, chapterColID, !p.MonitorNone, cutoff); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return 0, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	return seriesID, nil
+}
 
-	md := p.Series
-	var profileID any // NULL = instance default
-	if p.ProfileID > 0 {
-		profileID = p.ProfileID
-	}
-	var seriesID int64
-	err = tx.QueryRowContext(ctx, s.q(`
-		INSERT INTO series (mangabaka_id, title, sort_title, type, status, content_rating,
-			year, total_chapters, final_volume, description, cover_url, profile_id, raw_json,
-			raw_schema_version, refreshed_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`),
-		md.MangaBakaID, md.Title, sortTitle(md.Title), md.Type, md.Status, md.ContentRating,
-		md.Year, md.TotalChapters, md.FinalVolume, md.Description, md.CoverURL, profileID,
-		string(md.RawJSON), 1, utcNow()).Scan(&seriesID)
+// SetSeriesChapterPath records the separate chapter folder ("" = chapters
+// share the series folder).
+func (s *Store) SetSeriesChapterPath(ctx context.Context, seriesID int64, path string) error {
+	_, err := s.db.ExecContext(ctx, s.q(`UPDATE series SET chapter_path = ? WHERE id = ?`), path, seriesID)
+	return err
+}
+
+func (s *Store) SetSeriesPath(ctx context.Context, seriesID int64, path string) error {
+	_, err := s.db.ExecContext(ctx, s.q(`UPDATE series SET path = ? WHERE id = ?`), path, seriesID)
+	return err
+}
+
+// seriesNames is a series' primary title and the names MangaBaka gives it.
+type seriesNames struct {
+	NativeTitle    string `json:"native_title"`
+	RomanizedTitle string `json:"romanized_title"`
+	Titles         []struct {
+		Title string `json:"title"`
+	} `json:"titles"`
+	Secondary map[string][]struct {
+		Title string `json:"title"`
+	} `json:"secondary_titles"`
+}
+
+func (s *Store) seriesNames(ctx context.Context, seriesID int64) (string, seriesNames, error) {
+	row, err := get[struct {
+		Title   string
+		RawJSON string `db:"raw_json"`
+	}](ctx, s, `SELECT title, COALESCE(raw_json,'') AS raw_json FROM series WHERE id = ?`, seriesID)
 	if err != nil {
-		if c := conflict(err, "series is already in the library"); c != err {
-			return 0, c
-		}
-		return 0, fmt.Errorf("inserting series: %w", err)
+		return "", seriesNames{}, err
 	}
+	var raw seriesNames
+	_ = json.Unmarshal([]byte(row.RawJSON), &raw)
+	return row.Title, raw, nil
+}
 
-	monitor := map[string]bool{}
-	for _, id := range p.MonitorIDs {
-		monitor[id] = true
-	}
+// titleList collects titles once each, in order, ignoring case.
+type titleList []string
 
-	lang := p.ChapterLang
-	if lang == "" {
-		lang = "en"
+func (l *titleList) add(t string) {
+	t = strings.TrimSpace(t)
+	if t == "" {
+		return
 	}
+	for _, ex := range *l {
+		if strings.EqualFold(ex, t) {
+			return
+		}
+	}
+	*l = append(*l, t)
+}
 
-	if err = s.syncCatalog(ctx, tx, seriesID, p.Collections, p.Works); err != nil {
-		return 0, fmt.Errorf("filing the catalog: %w", err)
+// SeriesTitles returns the primary title plus every alias from the cached
+// provider payload — anchoring and source binding match releases named in
+// any language (Japscan lists French titles, raws use kana, …).
+func (s *Store) SeriesTitles(ctx context.Context, seriesID int64, preferredLanguage ...string) ([]string, error) {
+	title, raw, err := s.seriesNames(ctx, seriesID)
+	if err != nil {
+		return nil, err
 	}
-	// An edition is collected when any of its collections was chosen.
-	var chapterColID int64 // first catalog chapter edition of the wanted language
-	volumes := false       // some volume edition is collected
-	for _, col := range p.Collections {
-		var edID int64
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT edition_id FROM collections WHERE provider_id=? AND edition_id IN(SELECT id FROM editions WHERE series_id=?)`), col.ProviderID, seriesID).Scan(&edID); err != nil {
-			return 0, err
-		}
-		monitored := p.MonitorAll && col.Type == "volume" || monitor[col.ProviderID]
-		volumes = volumes || monitored && col.Type == "volume"
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored) SELECT ?,'Default',TRUE,FALSE WHERE NOT EXISTS(SELECT 1 FROM versions WHERE edition_id=?)`), edID, edID); err != nil {
-			return 0, err
-		}
-		if monitored {
-			if _, err = tx.ExecContext(ctx, s.q(`UPDATE versions SET monitored=TRUE WHERE edition_id=? AND is_default=TRUE`), edID); err != nil {
-				return 0, err
-			}
-		}
-		if chapterColID == 0 && col.Type == "chapter" && strings.EqualFold(col.Language, lang) {
-			chapterColID = edID
+	titles := titleList{title}
+	for _, lang := range preferredLanguage {
+		for _, t := range raw.Secondary[lang] {
+			titles.add(t.Title)
 		}
 	}
+	titles.add(raw.NativeTitle)
+	titles.add(raw.RomanizedTitle)
+	for _, t := range raw.Titles {
+		titles.add(t.Title)
+	}
+	languages := make([]string, 0, len(raw.Secondary))
+	for lang := range raw.Secondary {
+		languages = append(languages, lang)
+	}
+	sort.Strings(languages)
+	for _, lang := range languages {
+		for _, t := range raw.Secondary[lang] {
+			titles.add(t.Title)
+		}
+	}
+	return titles, nil
+}
 
-	// The chapter ledger is a chapter-type collection: adopt the MangaBaka
-	// one of the wanted language when present, else create the default.
-	// Collected volumes hold the chapters out so far, so only new chapters
-	// are wanted; without volumes the chapters are all there is (a
-	// one-shot, a chapter-only series), so every one is.
-	cutoff := p.ChapterCutoff
-	if cutoff == 0 && volumes {
-		cutoff = int64(md.TotalChapters) * 100
+// QueryTitles are the names worth searching an indexer by for editions in
+// the given languages: the primary title, the titles in those languages,
+// and the romanized one. Other languages' aliases ("budak getah") only
+// find other languages' releases.
+func (s *Store) QueryTitles(ctx context.Context, seriesID int64, languages ...string) ([]string, error) {
+	title, raw, err := s.seriesNames(ctx, seriesID)
+	if err != nil {
+		return nil, err
 	}
-	if chapterColID != 0 {
-		if _, err := tx.ExecContext(ctx, s.q(`
-			UPDATE versions SET monitored=?,cutoff_num=? WHERE edition_id=? AND is_default=TRUE`),
-			!p.MonitorNone, cutoff, chapterColID); err != nil {
-			return 0, fmt.Errorf("adopting chapter edition: %w", err)
-		}
-	} else {
-		if err = tx.QueryRowContext(ctx, s.q(`INSERT INTO editions(series_id,edition_name,language,type,custom,updated_at,numbering_source) VALUES(?,'Chapters',?,'chapter',TRUE,?,'series_count') RETURNING id`), seriesID, lang, utcNow()).Scan(&chapterColID); err != nil {
-			return 0, err
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored,cutoff_num) VALUES(?,'Default',TRUE,?,?)`), chapterColID, !p.MonitorNone, cutoff); err != nil {
-			return 0, err
+	titles := titleList{title}
+	for _, lang := range languages {
+		for _, t := range raw.Secondary[lang] {
+			titles.add(t.Title)
 		}
 	}
-
-	return seriesID, tx.Commit()
+	titles.add(raw.RomanizedTitle)
+	return titles, nil
 }

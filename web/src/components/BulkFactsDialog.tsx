@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Alert, Button, Group, Modal, Stack, Text } from '@mantine/core'
 import { api } from '../api'
-import { notify } from '../ui'
+import { errorMessage, notify } from '../ui'
 import type { File as SeriesFile } from '../types/store'
 import { FileFacts } from './FileFacts'
 
@@ -42,7 +42,7 @@ export function BulkFactsDialog({
       notify.ok(one ? 'File corrected' : `Corrected ${files.length} files`)
       close()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorMessage(e))
     } finally {
       setBusy(false)
     }

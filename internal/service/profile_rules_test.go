@@ -7,6 +7,7 @@ import (
 
 	"github.com/h-wb/sento/internal/db/dbtest"
 	"github.com/h-wb/sento/internal/profile"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -15,7 +16,7 @@ func TestCopyRuleMigrationPreservesProfilesAndIsRepeatable(t *testing.T) {
 	conn, dialect := dbtest.Open(t)
 	st := store.New(conn, dialect)
 	ctx := context.Background()
-	sid, err := NewLibrary(st, testProvider()).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
+	sid, err := NewLibrary(st, testProvider(), provider.NewRegistry()).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 377})
 	if err != nil {
 		t.Fatal(err)
 	}

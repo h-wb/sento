@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { Alert, Button, Checkbox, Group, Modal, Radio, Select, Stack, Text } from '@mantine/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
-import { notify } from '../ui'
+import { invalidateLibrary } from '../queries'
+import { plural } from '../format'
+import { errorMessage, notify } from '../ui'
 import type {
   AssetCoverage,
   BookRef,
@@ -143,18 +145,14 @@ export function MoveFilesDialog({
         token: plan.token,
         choices: rows.map((r) => r.choice),
       })
-      await Promise.all(
-        ['series', 'activity', 'review', 'queue', 'wanted'].map((k) =>
-          qc.invalidateQueries({ queryKey: [k] }),
-        ),
-      )
+      await invalidateLibrary(qc)
       await done()
       const notes = outcomes.filter((o) => o.note)
       if (notes.length) notify.err(`${notes.length} files still need attention: ${notes[0].note}`)
-      else notify.ok(`${moved.length} ${moved.length === 1 ? 'file is' : 'files are'} now used by ${cardName}`)
+      else notify.ok(`${moved.length} ${plural(moved.length, 'file is', 'files are')} now used by ${cardName}`)
       close()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorMessage(e))
     } finally {
       setBusy(false)
     }
@@ -262,7 +260,7 @@ export function MoveFilesDialog({
             {one
               ? 'Use file'
               : moved.length
-                ? `Use ${moved.length} ${moved.length === 1 ? 'file' : 'files'}`
+                ? `Use ${moved.length} ${plural(moved.length, 'file')}`
                 : 'Use files'}
           </Button>
         </Group>

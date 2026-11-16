@@ -152,6 +152,31 @@ func (c *Connections) Host() extensions.Host {
 	return c.host
 }
 
+// RequireHost returns the current source backend, or an error when no
+// extensions sidecar is configured.
+func (c *Connections) RequireHost() (extensions.Host, error) {
+	if host := c.Host(); host != nil {
+		return host, nil
+	}
+	return nil, apperr.Unavailablef("no extensions sidecar is configured")
+}
+
+// BrowseProwlarr lists a Prowlarr's indexers as ready-to-add Torznab
+// endpoints (the Add Indexer assist), remembering the entered credentials
+// in the connection settings for next time.
+func (c *Connections) BrowseProwlarr(ctx context.Context, baseURL, apiKey string) ([]ProwlarrIndexer, error) {
+	indexers, err := browseProwlarr(ctx, baseURL, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	cs := c.Load(ctx)
+	if cs.Prowlarr.URL != baseURL || cs.Prowlarr.APIKey != apiKey {
+		cs.Prowlarr.URL, cs.Prowlarr.APIKey = baseURL, apiKey
+		_ = c.Save(ctx, cs)
+	}
+	return indexers, nil
+}
+
 // Load returns the stored settings, falling back to file/env defaults.
 func (c *Connections) Load(ctx context.Context) ConnectionSettings {
 	if raw, err := c.store.GetSetting(ctx, connectionsKey); err == nil {
@@ -253,18 +278,18 @@ func TestConnections(ctx context.Context, cs ConnectionSettings) []ConnectionTes
 
 	type probe struct {
 		service string
-		run     func() (string, error)
+		run     func(context.Context) (string, error)
 	}
 	var probes []probe
 	for _, dc := range normalizeClients(cs.DownloadClients) {
 		qb := qbittorrent.New(dc.URL, dc.Username, dc.Password)
-		probes = append(probes, probe{"downloadClient:" + dc.ID, func() (string, error) {
+		probes = append(probes, probe{"downloadClient:" + dc.ID, func(ctx context.Context) (string, error) {
 			return qb.Version(ctx)
 		}})
 	}
 	if cs.Extensions.URL != "" {
 		hc := extensions.NewClient(cs.Extensions.URL)
-		probes = append(probes, probe{"extensions", func() (string, error) {
+		probes = append(probes, probe{"extensions", func(ctx context.Context) (string, error) {
 			sources, err := hc.Sources(ctx)
 			detail := fmt.Sprintf("%d sources", len(sources))
 			if len(sources) == 1 {
@@ -274,19 +299,16 @@ func TestConnections(ctx context.Context, cs ConnectionSettings) []ConnectionTes
 		}})
 	}
 
-	results := make([]ConnectionTest, len(probes))
-	var wg sync.WaitGroup
+	runs := make([]func(context.Context) ConnectionTest, len(probes))
 	for i, p := range probes {
-		wg.Add(1)
-		go func(i int, p probe) {
-			defer wg.Done()
-			detail, err := p.run()
-			results[i] = ConnectionTest{Service: p.service, OK: err == nil, Detail: detail}
+		runs[i] = func(ctx context.Context) ConnectionTest {
+			detail, err := p.run(ctx)
+			result := ConnectionTest{Service: p.service, OK: err == nil, Detail: detail}
 			if err != nil {
-				results[i].Error = err.Error()
+				result.Error = err.Error()
 			}
-		}(i, p)
+			return result
+		}
 	}
-	wg.Wait()
-	return results
+	return runParallel(ctx, 0, runs)
 }

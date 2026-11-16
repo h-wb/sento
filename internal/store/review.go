@@ -77,58 +77,59 @@ type ReviewResolution struct {
 // file. The batch is one transaction; a file that no longer waits for a
 // mapping decision is skipped with the reason, never overwritten.
 func (s *Store) DeclineFiles(ctx context.Context, seriesID int64, fileIDs []int64) (*ReviewResolution, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	res := &ReviewResolution{Resolved: []int64{}, Skipped: []ReviewSkip{}}
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		for _, fid := range slices.Compact(slices.Sorted(slices.Values(fileIDs))) {
+			var fileSeries int64
+			var waiting bool
+			err := tx.QueryRowContext(ctx, s.q(`SELECT series_id, needs_review OR EXISTS(SELECT 1 FROM asset_contents c WHERE c.file_id=files.id AND c.verified=FALSE) FROM files WHERE id=?`), fid).Scan(&fileSeries, &waiting)
+			if errors.Is(err, sql.ErrNoRows) {
+				res.Skipped = append(res.Skipped, ReviewSkip{fid, "File is no longer available"})
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if fileSeries != seriesID {
+				res.Skipped = append(res.Skipped, ReviewSkip{fid, "File does not belong to this series"})
+				continue
+			}
+			if err = s.rejectTrashEdit(ctx, tx, fid); err != nil {
+				if errors.Is(err, apperr.ErrConflict) {
+					res.Skipped = append(res.Skipped, ReviewSkip{fid, err.Error()})
+					continue
+				}
+				return err
+			}
+			if !waiting {
+				res.Skipped = append(res.Skipped, ReviewSkip{fid, "File is no longer waiting for review"})
+				continue
+			}
+			var protected int
+			if err = tx.QueryRowContext(ctx, s.q(`SELECT (SELECT COUNT(*) FROM asset_coverage WHERE file_id=? AND pinned=TRUE)+(SELECT COUNT(*) FROM asset_contents WHERE file_id=? AND verified=TRUE)`), fid, fid).Scan(&protected); err != nil {
+				return err
+			}
+			if protected > 0 {
+				res.Skipped = append(res.Skipped, ReviewSkip{fid, "This archive already has confirmed contents or pins; review its selections individually"})
+				continue
+			}
+			if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_coverage WHERE file_id=?`), fid); err != nil {
+				return err
+			}
+			if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_contents WHERE file_id=?`), fid); err != nil {
+				return err
+			}
+			if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=FALSE,unrequested=TRUE,review_action='keep' WHERE id=?`), fid); err != nil {
+				return err
+			}
+			res.Resolved = append(res.Resolved, fid)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = tx.Rollback() }()
-	res := &ReviewResolution{Resolved: []int64{}, Skipped: []ReviewSkip{}}
-	for _, fid := range slices.Compact(slices.Sorted(slices.Values(fileIDs))) {
-		var fileSeries int64
-		var waiting bool
-		err := tx.QueryRowContext(ctx, s.q(`SELECT series_id, needs_review OR EXISTS(SELECT 1 FROM asset_contents c WHERE c.file_id=files.id AND c.verified=FALSE) FROM files WHERE id=?`), fid).Scan(&fileSeries, &waiting)
-		if errors.Is(err, sql.ErrNoRows) {
-			res.Skipped = append(res.Skipped, ReviewSkip{fid, "File is no longer available"})
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		if fileSeries != seriesID {
-			res.Skipped = append(res.Skipped, ReviewSkip{fid, "File does not belong to this series"})
-			continue
-		}
-		if err = s.rejectTrashEdit(ctx, tx, fid); err != nil {
-			if errors.Is(err, apperr.ErrConflict) {
-				res.Skipped = append(res.Skipped, ReviewSkip{fid, err.Error()})
-				continue
-			}
-			return nil, err
-		}
-		if !waiting {
-			res.Skipped = append(res.Skipped, ReviewSkip{fid, "File is no longer waiting for review"})
-			continue
-		}
-		var protected int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT (SELECT COUNT(*) FROM asset_coverage WHERE file_id=? AND pinned=TRUE)+(SELECT COUNT(*) FROM asset_contents WHERE file_id=? AND verified=TRUE)`), fid, fid).Scan(&protected); err != nil {
-			return nil, err
-		}
-		if protected > 0 {
-			res.Skipped = append(res.Skipped, ReviewSkip{fid, "This archive already has confirmed contents or pins; review its selections individually"})
-			continue
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_coverage WHERE file_id=?`), fid); err != nil {
-			return nil, err
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_contents WHERE file_id=?`), fid); err != nil {
-			return nil, err
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`UPDATE files SET needs_review=FALSE,unrequested=TRUE,review_action='keep' WHERE id=?`), fid); err != nil {
-			return nil, err
-		}
-		res.Resolved = append(res.Resolved, fid)
-	}
-	return res, tx.Commit()
+	return res, nil
 }
 
 func (s *Store) ReviewItems(ctx context.Context, sid int64) ([]ReviewItem, error) {

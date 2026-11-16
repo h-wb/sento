@@ -3,14 +3,12 @@ package mediafile
 import "testing"
 
 func TestRender(t *testing.T) {
-	naming := DefaultNaming()
-
-	got := Render(naming.SeriesFolder, NameTokens{SeriesTitle: "One Piece", SeriesID: 377, Volume: -1, Chapter: -1})
+	got := Render("{Series Title} [mangabaka-{seriesId}]", NameTokens{SeriesTitle: "One Piece", SeriesID: 377, Volume: -1, Chapter: -1})
 	if got != "One Piece [mangabaka-377]" {
 		t.Errorf("series folder: %q", got)
 	}
 
-	got = Render(naming.VolumeFile, NameTokens{
+	got = Render("{Series Title} v{volume:00} [{edition}][{lang}].cbz", NameTokens{
 		SeriesTitle: "One Piece", SeriesID: 377, Volume: 100, Chapter: -1,
 		Edition: "Standard Edition", Lang: "en",
 	})
@@ -19,7 +17,7 @@ func TestRender(t *testing.T) {
 	}
 
 	// Absent tokens collapse their wrappers.
-	got = Render(naming.ChapterFile, NameTokens{
+	got = Render("{Series Title} c{chapter:000} [{group}][{lang}].cbz", NameTokens{
 		SeriesTitle: "One Piece", SeriesID: 377, Volume: -1, Chapter: 118400,
 	})
 	if got != "One Piece c1184 .cbz" && got != "One Piece c1184.cbz" {

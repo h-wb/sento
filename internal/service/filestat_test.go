@@ -282,7 +282,7 @@ func TestScanBackfillsSignatureForUntouchedLegacyFile(t *testing.T) {
 	if sig == "" {
 		t.Skip("platform reports no inode metadata")
 	}
-	hash, err := fileHash(path)
+	hash, err := fingerprint(path)
 	if err != nil {
 		t.Fatal(err)
 	}

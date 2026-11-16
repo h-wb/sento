@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 import type { Decision } from '../types/store'
-import { fmtWhen } from '../ui'
+import { fmtWhen } from '../format'
 import { QueryFeedback } from './QueryFeedback'
 import { EmptyState } from './EmptyState'
 

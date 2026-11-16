@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Select, Stack, Text } from '@mantine/core'
-import { api } from '../api'
+import { seriesQueries } from '../queries'
 import type { ReviewItem } from '../types/store'
 import { cardLabel } from './editionText'
 import { EditorModal } from './EditorModal'
@@ -17,8 +17,8 @@ export function ReleaseMatchDialog({ seriesID, title, files, close }: {
   close: () => void
 }) {
   // Shared series caches: opened from the series page, these are already warm.
-  const detail = useQuery({ queryKey: ['series', seriesID], queryFn: () => api.getSeries(seriesID) })
-  const versions = useQuery({ queryKey: ['series', seriesID, 'versions'], queryFn: () => api.versions(seriesID) })
+  const detail = useQuery(seriesQueries.detail(seriesID))
+  const versions = useQuery(seriesQueries.versions(seriesID))
   const pending = detail.isPending || versions.isPending
   const error = detail.error ?? versions.error
   const data = detail.data && versions.data ? { editions: detail.data.editions, versions: versions.data } : undefined

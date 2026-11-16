@@ -11,6 +11,7 @@ import (
 	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -310,7 +311,7 @@ func TestModelFractionalZeroExtrasAndUnknownDates(t *testing.T) {
 	if _, err := st.SaveVersion(ctx, id, version); err != nil {
 		t.Fatal(err)
 	}
-	slots, err := NewLibrary(st, nil).BooksByVersion(ctx, id)
+	slots, err := NewLibrary(st, nil, provider.NewRegistry()).BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +409,7 @@ func TestModelQualifyingAssetReusedAcrossVersions(t *testing.T) {
 	}
 	other.ID = tid
 	ownedModelFile(t, st, id, c, ws[0], version)
-	slots, err := NewLibrary(st, nil).BooksByVersion(ctx, id)
+	slots, err := NewLibrary(st, nil, provider.NewRegistry()).BooksByVersion(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +436,7 @@ func TestModelAtomicInstallCannotClobber(t *testing.T) {
 	if err := os.WriteFile(dst, []byte("retained"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	hash, _ := fileHash(src)
+	hash, _ := fingerprint(src)
 	for _, copy := range []bool{false, true} {
 		if err := installAsset(src, dst, hash, copy); err == nil {
 			t.Fatal("different bytes accepted at occupied destination")
@@ -545,7 +546,7 @@ func TestModelPackStaysOneAssetAcrossUnitsAndVersions(t *testing.T) {
 	}
 	// Still one archive with the same pages; tagged at series level only,
 	// since no single number describes two volumes.
-	if want, _ := fileHash(filepath.Join(dir, name)); fs[0].Hash != want {
+	if want, _ := fingerprint(filepath.Join(dir, name)); fs[0].Hash != want {
 		t.Fatal("pack pages changed")
 	}
 	if _, info := readBook(t, fs[0].Path); info == nil || info.Series != "ONE PIECE" || info.Number != "" || info.Volume != "" {

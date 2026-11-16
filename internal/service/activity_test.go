@@ -68,7 +68,7 @@ func TestActivityGroupsFileQuestionsWithTheirImport(t *testing.T) {
 	otherProvider.series = &metadata.Series{MangaBakaID: 999, Title: "Another series"}
 	otherProvider.collections = nil
 	otherProvider.works = nil
-	other, err := NewLibrary(st, otherProvider).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 999, Monitor: "none"})
+	other, err := NewLibrary(st, otherProvider, provider.NewRegistry()).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 999, Monitor: "none"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// Client talks to a sento-extensions sidecar (host/), the native implementation
-// of this package's contract. All keys pass through opaquely.
+// Client talks to a sento-extensions sidecar (extensions/app), the native
+// implementation of this package's contract. All keys pass through opaquely.
 type Client struct {
 	baseURL string
 	http    *http.Client

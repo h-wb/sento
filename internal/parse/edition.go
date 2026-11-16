@@ -7,7 +7,7 @@ import (
 )
 
 // An edition, for a downloader, is a numbering: which pages "volume 3"
-// holds (docs/reviews/edition-rules.md). Release names and edition names
+// holds (docs/domain/editions.md). Release names and edition names
 // say things about it in one vocabulary, read here and nowhere else:
 //
 //   - a regrouping: the story cut into fewer, bigger books. "Deluxe",

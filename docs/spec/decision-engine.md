@@ -67,6 +67,18 @@ Ordered; first failure wins; all are recorded with machine-readable codes
 8. Profile **block terms** match (must-not-contain).
 9. Profile **require terms** miss (must-contain, when configured).
 
+*Correction (2026-11-16):* the real order, in `internal/service/funnel.go`, is:
+`readRelease` rejects `numbers_unknown`, `content_type`, `series_match`,
+`blocklisted`; `route` rejects `language`, `edition_routing`,
+`edition_ambiguous`; `fitBooks` rejects `content_type`, `series_match`,
+`language`, `book_ambiguous`, `pack_threshold`, `no_coverage`;
+`judgeByProfile` rejects `profile_rule`, `no_upgrade`, `format_score`,
+`size`, `seeders`; `process` adds `previous_download` for a replacement
+search and the funnel adds `pack_unverified` for an unverified pack. Block and
+require terms no longer exist; custom-format `Required`/`Refused` replaced
+them. See [routing and the funnel](../domain/acquisition.md#routing-and-the-funnel)
+and the [rejection table](../domain/acquisition.md#rejection-table).
+
 ## 4. Scoring
 
 Transparent weighted sum; weights live in the release profile so they're
@@ -95,6 +107,16 @@ or no eligible candidates (those slots keep their backoff schedule). A pack
 and singles thus compete naturally: the pack's coverage bonus wins exactly
 when it covers more wanted slots than any single.
 
+*Correction (2026-11-16):* the code scores only: +1000 per wanted book, +200
+for the preferred protocol, the summed custom-format score, +50 for seeders
+above 20 or +25 above 5, and −100 when parse confidence is below 0.8. The
+overshoot penalty, the +150 edition bonus, scanlator preference and source
+priority are gone. The only tie-break is the indexer's priority (lower number
+wins). The plan (`BuildPlan`) re-scores by marginal coverage with −150 per
+extra book held, breaks ties by indexer priority then smaller size, and prunes
+a pick whose coverage the others fully cover. See [scoring](../domain/acquisition.md#scoring)
+and [the plan](../domain/acquisition.md#the-plan).
+
 ## 5. Release profiles
 
 Profiles inherit copy → series → instance default. They contain custom-format scores, hard required/refused format rules, soft score/size/seed gates, protocol preferences, and optional upgrade thresholds. Upgrades compare current per-file facts under the current profile, respect pins, and retain earlier copies. See [profiles and acquisition state](../domain/profiles-ledger.md) for matching semantics.
@@ -115,6 +137,12 @@ seeders, terms, delay) with a confirm dialog; hard gates that survive
 force: content-type and series-match (grabbing those routes through manual
 import anyway, where the user can override identification explicitly).
 
+*Correction (2026-11-16):* force survives only six codes: `format_score`,
+`size`, `seeders`, `pack_threshold`, `pack_unverified`, `edition_ambiguous`.
+The other eleven codes in the rejection table are hard and a forced grab is
+refused for them. See the [rejection table](../domain/acquisition.md#rejection-table)
+and [grabbing](../domain/acquisition.md#grabbing).
+
 ## 8. Decision records
 
 Every run persists: request (slots), candidate count, top-N candidates
@@ -122,6 +150,14 @@ with scores, chosen release(s) with full breakdown, rejection histogram.
 Retention 90 days `[default]`. Powers: activity feed, "why this file"
 on every imported file (joins grab context → decision → parse trace), and
 future scoring tuning.
+
+*Correction (2026-11-16):* the real record is the `decisions` table, a log of
+events (`grabbed`, `imported`, `imported_after_review`, `import_failed`,
+`download_failed`, `download_retry`, `download_needs_review`, `blocklisted`,
+`editions_grouped`, `listing_switched_off`) capped at 1000 rows overall by the
+daily housekeeping task; there is no 90-day retention, top-N list or
+histogram. The full chosen candidate is snapshotted on the queue row instead.
+See [Activity](../domain/acquisition.md#activity).
 
 ## 9. Deferred (post-v1)
 

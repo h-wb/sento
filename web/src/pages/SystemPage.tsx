@@ -3,23 +3,10 @@ import { IconAlertTriangle, IconCircleCheck, IconCircleX, IconPlayerPlay, IconRe
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, type TaskStatus } from '../api'
-import { fmtUntil, fmtWhen, notify, usePageTitle, versionLabel } from '../ui'
+import { fmtDuration, fmtInterval, fmtUntil, fmtWhen } from '../format'
+import { notify, usePageTitle, versionLabel } from '../ui'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
-
-function fmtInterval(secs: number): string {
-  if (secs <= 0) return 'on demand'
-  if (secs >= 86400) return `${Math.round(secs / 86400)} day${secs >= 2 * 86400 ? 's' : ''}`
-  if (secs >= 3600) return `${Math.round(secs / 3600)} hour${secs >= 2 * 3600 ? 's' : ''}`
-  return `${Math.round(secs / 60)} minute${secs >= 120 ? 's' : ''}`
-}
-
-function fmtDuration(ms: number): string {
-  if (ms <= 0) return '—'
-  if (ms < 1000) return `${ms} ms`
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`
-  return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`
-}
 
 export default function SystemPage() {
   usePageTitle('System')

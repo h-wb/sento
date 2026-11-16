@@ -89,18 +89,26 @@ it next to Sento.
 
 ```
 GET    /health
-GET/PUT /api/v1/repos
-GET    /api/v1/repos/status
 GET    /api/v1/sources
 GET    /api/v1/sources/{sid}/search?q=
 GET    /api/v1/sources/{sid}/listings?manga={key}
 GET    /api/v1/sources/{sid}/chapters?manga={key}
 GET    /api/v1/sources/{sid}/pages?chapter={key}
 GET    /api/v1/sources/{sid}/page?ref={ref}
+GET    /api/v1/sources/{sid}/preferences
+POST   /api/v1/sources/{sid}/preferences
+GET    /api/v1/repos
+PUT    /api/v1/repos
+GET    /api/v1/repos/status
 GET    /api/v1/extensions
+GET    /api/v1/extensions/{pkg}/sources
 POST   /api/v1/extensions/{pkg}
 DELETE /api/v1/extensions/{pkg}
 ```
+
+The full contract — status codes, key envelopes, error and retry
+classification, repo index resolution and the page-fetch flow — is in
+[docs/extensions.md](../docs/extensions.md).
 
 Keys and page refs are opaque JSON envelopes minted by the sidecar; Sento
 stores and round-trips them without interpreting.

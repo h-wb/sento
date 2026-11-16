@@ -1,138 +1,38 @@
-import { useMemo, useRef, useState, type MouseEvent } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import {
-  ActionIcon,
-  Badge,
-  Button,
-  Checkbox,
-  Chip,
-  Group,
-  Menu,
-  Modal,
-  NumberInput,
   Pagination,
-  Popover,
-  SegmentedControl,
   Stack,
   Text,
-  Tooltip,
 } from '@mantine/core'
-import {
-  IconBookmark,
-  IconBookmarkFilled,
-  IconDots,
-  IconSortAscendingNumbers,
-  IconSortDescendingNumbers,
-} from '@tabler/icons-react'
 import { useLocalStorage } from '@mantine/hooks'
+import { useQuery } from '@tanstack/react-query'
+import { useMemo, useRef, useState, type MouseEvent } from 'react'
 import { api } from '../api'
-import type {
-  Edition,
-  CollectedVersion,
-  Book,
-  File as SeriesFile,
-  AssetCoverage,
-} from '../types/store'
+import { toHundredths } from '../format'
+import { seriesQueries } from '../queries'
 import type { BookStatus } from '../types/service'
+import type {
+  AssetCoverage,
+  Book,
+  CollectedVersion,
+  Edition,
+  File as SeriesFile,
+} from '../types/store'
 import type { BookSelection } from './BookDialog'
-import { QueryFeedback } from './QueryFeedback'
-import { BookOrigin } from './Origin'
+import { bookSelection } from './bookSelection'
+import { BookGrid } from './books/BookGrid'
+import { BookRow } from './books/BookRow'
+import { filters } from './books/bookStatus'
+import { BooksToolbar } from './books/BooksToolbar'
+import { SplitBoxDialog } from './books/SplitBoxDialog'
+import { useBookSelection } from './books/useBookSelection'
 import classes from './EditionBooks.module.css'
-
-const labels: Record<string, string> = {
-  owned: 'Owned',
-  pending: 'Pending',
-  missing: 'Missing',
-  not_released: 'Upcoming',
-  unmonitored: 'Paused',
-  unknown: 'Date unknown',
-  upgrade_eligible: 'Upgrade wanted',
-  unsatisfactory: 'On disk, not accepted',
-  needs_review: 'Needs review',
-  storage_unavailable: 'Storage unavailable',
-}
+import { QueryFeedback } from './QueryFeedback'
+import { usePaged } from './usePaged'
 
 // Editions longer than this open as the overview grid; shorter ones (most
 // volume runs) open as the list, where every book shows its details.
 const GRID_FROM = 50
 const PAGE_SIZE = 100
-
-type Tone = 'disk' | 'wanted' | 'pending' | 'review' | 'upcoming' | 'paused'
-
-// tone is the one colour a book gets in the grid and the status badge.
-function tone(s: BookStatus): Tone {
-  switch (s.state) {
-    case 'pending':
-      return 'pending'
-    case 'needs_review':
-    case 'storage_unavailable':
-    case 'unsatisfactory':
-      return 'review'
-    case 'owned':
-    case 'upgrade_eligible':
-      return 'disk'
-    case 'missing':
-      return 'wanted'
-    case 'unmonitored':
-      return 'paused'
-    default:
-      return 'upcoming'
-  }
-}
-
-const badgeColor: Record<Tone, string> = {
-  disk: 'green',
-  wanted: 'red',
-  pending: 'blue',
-  review: 'yellow',
-  upcoming: 'gray',
-  paused: 'gray',
-}
-
-type Filter = {
-  value: string
-  label: string
-  tone?: Tone
-  always?: boolean
-  match: (s: BookStatus) => boolean
-}
-
-const filters: Filter[] = [
-  { value: 'all', label: 'All', always: true, match: () => true },
-  {
-    value: 'on_disk',
-    label: 'On disk',
-    tone: 'disk',
-    always: true,
-    match: (s) => (s.onDiskFileIds ?? []).length > 0,
-  },
-  { value: 'wanted', label: 'Wanted', tone: 'wanted', always: true, match: (s) => s.wanted },
-  { value: 'pending', label: 'Downloading', tone: 'pending', match: (s) => s.state === 'pending' },
-  { value: 'upcoming', label: 'Upcoming', tone: 'upcoming', match: (s) => tone(s) === 'upcoming' },
-  {
-    value: 'unmonitored',
-    label: 'Paused',
-    tone: 'paused',
-    match: (s) => s.state === 'unmonitored',
-  },
-  { value: 'review', label: 'Needs attention', tone: 'review', match: (s) => tone(s) === 'review' },
-]
-
-function bookSelection(c: Edition, t: CollectedVersion, label: string, s: BookStatus): BookSelection {
-  return {
-    ledger: c.type === 'chapter' ? 'chapter' : 'volume',
-    editionId: c.id,
-    versionId: t.id,
-    bookId: s.book.id,
-    number: s.book.sequenceNum,
-    label: s.book.sequenceStr,
-    editionLabel: label,
-    fileIds: s.fileIds,
-    unusedFileIds: s.onDiskFileIds.filter((id) => !s.fileIds.includes(id)),
-    monitored: s.monitored,
-    wanted: s.wanted,
-  }
-}
 
 export default function EditionBooks({
   seriesID,
@@ -167,24 +67,12 @@ export default function EditionBooks({
   const noun = c.type === 'chapter' ? 'chapter' : 'volume'
   const [filter, setFilter] = useState('all')
   const [viewChoice, setViewChoice] = useState<'grid' | 'list' | null>(null)
-  const [page, setPage] = useState(1)
   const [selecting, setSelecting] = useState(false)
-  const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [anchor, setAnchor] = useState<number | null>(null)
   const [flash, setFlash] = useState<number | null>(null)
-  const [goTo, setGoTo] = useState<string | number>('')
-  const [range, setRange] = useState<{ from: string | number; to: string | number }>({
-    from: '',
-    to: '',
-  })
-  const [rangeOpen, setRangeOpen] = useState(false)
   const [split, setSplit] = useState<{ book: Book; count: string | number } | null>(null)
   const container = useRef<HTMLDivElement>(null)
 
-  const q = useQuery({
-    queryKey: ['series', seriesID, 'books', t.id],
-    queryFn: () => api.versionBooksOf(seriesID, t.id),
-  })
+  const q = useQuery(seriesQueries.books(seriesID, t.id))
   // Newest first by default: new and wanted books are what is looked for.
   // Remembered per ledger, volumes and chapters apart.
   const [order, setOrder] = useLocalStorage<'newest' | 'oldest'>({
@@ -198,17 +86,10 @@ export default function EditionBooks({
   const active = filters.find((f) => f.value === filter) ?? filters[0]
   const books = useMemo(() => all.filter(active.match), [all, active])
   const view = viewChoice ?? (all.length > GRID_FROM ? 'grid' : 'list')
-  const pages = Math.max(1, Math.ceil(books.length / PAGE_SIZE))
-  const current = Math.min(page, pages)
-  const shown =
-    view === 'list' ? books.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE) : books
-  // A selection only ever acts on books that still exist.
-  const picked = all.filter((s) => selected.has(s.book.id))
-
-  const clearSelection = () => {
-    setSelected(new Set())
-    setAnchor(null)
-  }
+  const { page, setPage, pages, slice } = usePaged(books, PAGE_SIZE)
+  const shown = view === 'list' ? slice : books
+  const selection = useBookSelection(all, books)
+  const { selected, clearSelection, pick } = selection
   const monitor = (list: BookStatus[], monitored: boolean) =>
     void run(() =>
       api.bulkMonitor(
@@ -219,22 +100,6 @@ export default function EditionBooks({
       ),
     ).then(clearSelection)
 
-  // Shift extends from the last picked book across the visible order;
-  // Ctrl/Cmd (or Select mode) toggles one book.
-  const pick = (s: BookStatus, shift: boolean) => {
-    const next = new Set(selected)
-    const from = books.findIndex((b) => b.book.id === anchor)
-    const to = books.findIndex((b) => b.book.id === s.book.id)
-    if (shift && from >= 0 && to >= 0) {
-      for (const b of books.slice(Math.min(from, to), Math.max(from, to) + 1)) next.add(b.book.id)
-    } else if (next.has(s.book.id)) {
-      next.delete(s.book.id)
-    } else {
-      next.add(s.book.id)
-    }
-    setSelected(next)
-    setAnchor(s.book.id)
-  }
   const open = (e: MouseEvent, s: BookStatus) => {
     if ((selecting && view === 'grid') || e.shiftKey || e.metaKey || e.ctrlKey) {
       e.preventDefault()
@@ -244,13 +109,13 @@ export default function EditionBooks({
     onBook(bookSelection(c, t, label, s))
   }
 
-  const jump = () => {
+  const jump = (goTo: string | number) => {
     const wantedNumber = Number(goTo)
     if (goTo === '' || Number.isNaN(wantedNumber)) return
     // The first book numbered at least that, in either order.
     const at = (list: BookStatus[]) => {
       const target = list
-        .filter((s) => s.book.numberKnown && s.book.sequenceNum >= Math.round(wantedNumber * 100))
+        .filter((s) => s.book.numberKnown && s.book.sequenceNum >= toHundredths(wantedNumber))
         .reduce<BookStatus | null>((low, s) => (!low || s.book.sequenceNum < low.book.sequenceNum ? s : low), null)
       return target ? list.indexOf(target) : -1
     }
@@ -276,28 +141,6 @@ export default function EditionBooks({
     )
   }
 
-  const selectRange = () => {
-    const from = Number(range.from)
-    const to = Number(range.to)
-    if (range.from === '' || range.to === '' || Number.isNaN(from) || Number.isNaN(to)) return
-    const low = Math.round(Math.min(from, to) * 100)
-    const high = Math.round(Math.max(from, to) * 100)
-    setSelected(
-      new Set(
-        all
-          .filter(
-            (s) => s.book.numberKnown && s.book.sequenceNum >= low && s.book.sequenceNum <= high,
-          )
-          .map((s) => s.book.id),
-      ),
-    )
-    setAnchor(null)
-    setRangeOpen(false)
-  }
-
-  const title = (s: BookStatus) =>
-    `${noun[0].toUpperCase()}${noun.slice(1)} ${s.book.sequenceStr} · ${labels[s.state] ?? s.state}${s.reason ? ` · ${s.reason}` : ''}`
-
   if (q.isPending || q.error) {
     return <QueryFeedback pending={q.isPending} error={q.error} onRetry={() => void q.refetch()} />
   }
@@ -310,164 +153,26 @@ export default function EditionBooks({
   }
   return (
     <Stack gap="xs" ref={container}>
-      <Group justify="space-between" gap="xs">
-        <Chip.Group
-          value={filter}
-          onChange={(v) => {
-            setFilter(typeof v === 'string' ? v : 'all')
-            setPage(1)
-          }}
-        >
-          <Group gap={6}>
-            {filters.map((f) => {
-              const count = all.filter(f.match).length
-              if (!f.always && count === 0 && f.value !== filter) return null
-              return (
-                <Chip key={f.value} value={f.value} size="xs" variant="light">
-                  {f.tone && <span className={classes.dot} data-tone={f.tone} />}
-                  {f.label} {count}
-                </Chip>
-              )
-            })}
-          </Group>
-        </Chip.Group>
-
-        <Group gap="xs">
-          {/* The list has a checkbox per book; tiles need a mode to select. */}
-          {view === 'grid' && (
-            <Button
-              size="compact-xs"
-              variant={selecting ? 'light' : 'subtle'}
-              aria-pressed={selecting}
-              title="Click books to select them. Shift-click selects a range; Ctrl/Cmd-click works without this mode."
-              onClick={() => setSelecting(!selecting)}
-            >
-              {selecting ? 'Done selecting' : 'Select'}
-            </Button>
-          )}
-          <Popover
-            opened={rangeOpen}
-            onChange={setRangeOpen}
-            position="bottom-start"
-            withArrow
-            trapFocus
-          >
-            <Popover.Target>
-              <Button size="compact-xs" variant="subtle" onClick={() => setRangeOpen(!rangeOpen)}>
-                Select range
-              </Button>
-            </Popover.Target>
-            <Popover.Dropdown>
-              <Group gap="xs" align="flex-end">
-                <NumberInput
-                  label="From"
-                  size="xs"
-                  w={90}
-                  min={0}
-                  hideControls
-                  value={range.from}
-                  onChange={(from) => setRange({ ...range, from })}
-                />
-                <NumberInput
-                  label="To"
-                  size="xs"
-                  w={90}
-                  min={0}
-                  hideControls
-                  value={range.to}
-                  onChange={(to) => setRange({ ...range, to })}
-                  onKeyDown={(e) => e.key === 'Enter' && selectRange()}
-                />
-                <Button size="xs" onClick={selectRange}>
-                  Select
-                </Button>
-              </Group>
-            </Popover.Dropdown>
-          </Popover>
-          <NumberInput
-            aria-label={`Go to ${noun} number`}
-            placeholder={`Go to ${noun}…`}
-            size="xs"
-            w={130}
-            min={0}
-            hideControls
-            value={goTo}
-            onChange={setGoTo}
-            onKeyDown={(e) => e.key === 'Enter' && jump()}
-          />
-          <Tooltip label={order === 'newest' ? 'Newest first' : 'Oldest first'}>
-            <ActionIcon
-              variant="default"
-              size="md"
-              aria-label={order === 'newest' ? 'Newest first; show oldest first' : 'Oldest first; show newest first'}
-              onClick={() => setOrder(order === 'newest' ? 'oldest' : 'newest')}
-            >
-              {order === 'newest' ? <IconSortDescendingNumbers size={16} /> : <IconSortAscendingNumbers size={16} />}
-            </ActionIcon>
-          </Tooltip>
-          <SegmentedControl
-            size="xs"
-            aria-label="Book layout"
-            value={view}
-            onChange={(v) => setViewChoice(v as 'grid' | 'list')}
-            data={[
-              { value: 'grid', label: 'Grid' },
-              { value: 'list', label: 'List' },
-            ]}
-          />
-        </Group>
-      </Group>
-
-      {/* Bulk actions stay out of the way until a filter or a selection gives them a subject. */}
-      {((selecting && view === 'grid') || picked.length > 0 || filter !== 'all') && (
-        <Group gap="xs">
-          {picked.length > 0 ? (
-            <>
-              <Text size="xs" fw={600}>
-                {picked.length} selected
-              </Text>
-              <Button
-                size="compact-xs"
-                variant="light"
-                disabled={busy}
-                onClick={() => monitor(picked, true)}
-              >
-                Collect
-              </Button>
-              <Button
-                size="compact-xs"
-                variant="light"
-                disabled={busy}
-                onClick={() => monitor(picked, false)}
-              >
-                Pause
-              </Button>
-              <Button size="compact-xs" variant="subtle" onClick={clearSelection}>
-                Clear
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                size="compact-xs"
-                variant="subtle"
-                disabled={busy || !books.length}
-                onClick={() => monitor(books, true)}
-              >
-                Collect {filter === 'all' ? 'all' : 'these'} {books.length}
-              </Button>
-              <Button
-                size="compact-xs"
-                variant="subtle"
-                disabled={busy || !books.length}
-                onClick={() => monitor(books, false)}
-              >
-                Pause {filter === 'all' ? 'all' : 'these'} {books.length}
-              </Button>
-            </>
-          )}
-        </Group>
-      )}
+      <BooksToolbar
+        filter={filter}
+        onFilter={(v) => {
+          setFilter(v)
+          setPage(1)
+        }}
+        all={all}
+        books={books}
+        view={view}
+        setViewChoice={setViewChoice}
+        selecting={selecting}
+        setSelecting={setSelecting}
+        selection={selection}
+        noun={noun}
+        jump={jump}
+        order={order}
+        setOrder={setOrder}
+        busy={busy}
+        monitor={monitor}
+      />
 
       {!books.length && (
         <Text size="sm" c="dimmed">
@@ -476,167 +181,19 @@ export default function EditionBooks({
       )}
 
       {view === 'grid' && books.length > 0 && (
-        <div className={classes.grid}>
-          {shown.map((s) => (
-            <button
-              key={s.book.id}
-              type="button"
-              className={classes.cell}
-              data-book={s.book.id}
-              data-tone={tone(s)}
-              data-selected={selected.has(s.book.id)}
-              data-flash={flash === s.book.id}
-              title={title(s)}
-              onClick={(e) => open(e, s)}
-            >
-              {s.book.sequenceStr}
-            </button>
-          ))}
-        </div>
+        <BookGrid shown={shown} selected={selected} flash={flash} noun={noun} open={open} />
       )}
 
       {view === 'list' && books.length > 0 && (
         <div className={classes.rows}>
-          {shown.map((s) => {
-            const onDisk = s.onDiskFileIds ?? s.fileIds
-            const pins = s.fileIds
-              .map((fid) =>
-                coverage.find(
-                  (a) => a.fileId === fid && a.versionId === t.id && a.bookId === s.book.id,
-                ),
-              )
-              .filter((a): a is AssetCoverage => !!a)
-            return (
-              <div
-                key={s.book.id}
-                className={classes.row}
-                data-book={s.book.id}
-                data-selected={selected.has(s.book.id)}
-                data-flash={flash === s.book.id}
-              >
-                <Checkbox
-                  size="xs"
-                  aria-label={`Select ${noun} ${s.book.sequenceStr}`}
-                  checked={selected.has(s.book.id)}
-                  // Clicks drive the change, so Shift extends a range here too.
-                  onChange={(e) => pick(s, (e.nativeEvent as globalThis.MouseEvent).shiftKey === true)}
-                />
-                <Button size="compact-sm" variant="subtle" miw={44} onClick={(e) => open(e, s)}>
-                  {s.book.sequenceStr}
-                </Button>
-                <Text size="xs" c="dimmed" className={classes.rowDetail}>
-                  {s.book.countType !== 'main' &&
-                    (s.book.countType === 'extra' ? 'Bonus / special · ' : 'Other · ')}
-                  {(s.reason !== explained && s.reason) || s.book.releaseDate || 'Publication date unknown'}
-                  {c.collections.length > 1 &&
-                    s.book.copies > 0 &&
-                    s.book.copies < c.collections.length &&
-                    ` · in ${s.book.copies} of ${c.collections.length} media`}
-                </Text>
-                <BookOrigin book={s.book} edition={c} />
-                <Tooltip label={s.reason} disabled={!s.reason || s.reason !== explained} multiline maw={320}>
-                  <Badge size="xs" variant="light" color={badgeColor[tone(s)]}>
-                    {labels[s.state] ?? s.state}
-                  </Badge>
-                </Tooltip>
-                <Tooltip label={s.monitored ? 'Collected · click to pause' : 'Paused · click to collect'} openDelay={300}>
-                  <ActionIcon
-                    size="sm"
-                    variant="subtle"
-                    color={s.monitored ? undefined : 'gray'}
-                    aria-label={`Collect ${c.type} ${s.book.sequenceStr}`}
-                    aria-pressed={s.monitored}
-                    disabled={busy}
-                    onClick={() => void run(() => api.bookMonitor(seriesID, t.id, s.book.id, !s.monitored))}
-                  >
-                    {s.monitored ? <IconBookmarkFilled size={14} /> : <IconBookmark size={14} />}
-                  </ActionIcon>
-                </Tooltip>
-                <Menu position="bottom-end" withinPortal>
-                  <Menu.Target>
-                    <ActionIcon
-                      size="sm"
-                      variant="subtle"
-                      color="gray"
-                      aria-label={`Actions for ${noun} ${s.book.sequenceStr}`}
-                    >
-                      <IconDots size={14} />
-                    </ActionIcon>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    <Menu.Item onClick={() => onEdit(s.book)}>Edit</Menu.Item>
-                    {c.type === 'volume' && (
-                      <Menu.Item onClick={() => setSplit({ book: s.book, count: 2 })}>
-                        This is a box of several volumes…
-                      </Menu.Item>
-                    )}
-                    {onDisk.length > 0 && (
-                      <Menu.Item
-                        onClick={() => {
-                          const f = files.find((f) => f.id === onDisk[0])
-                          if (f) onFile(f)
-                        }}
-                      >
-                        Edit file
-                      </Menu.Item>
-                    )}
-                    {pins.map((a) => (
-                      <Menu.Item
-                        key={a.fileId}
-                        disabled={busy}
-                        onClick={() =>
-                          void run(() => api.pinCoverage(seriesID, { ...a, pinned: !a.pinned }))
-                        }
-                      >
-                        {a.pinned ? 'Unpin file' : 'Pin file'}
-                      </Menu.Item>
-                    ))}
-                  </Menu.Dropdown>
-                </Menu>
-              </div>
-            )
-          })}
+          {shown.map((s) => <BookRow key={s.book.id} s={s} coverage={coverage} t={t} c={c} selected={selected} flash={flash} noun={noun} pick={pick} open={open} explained={explained} busy={busy} run={run} seriesID={seriesID} onEdit={onEdit} setSplit={setSplit} files={files} onFile={onFile} />)}
         </div>
       )}
       {view === 'list' && pages > 1 && (
-        <Pagination size="sm" total={pages} value={current} onChange={setPage} />
+        <Pagination size="sm" total={pages} value={page} onChange={setPage} />
       )}
       {split && (
-        <Modal
-          opened
-          onClose={() => setSplit(null)}
-          title={`Split "${split.book.sequenceStr}" into volumes`}
-        >
-          <Stack gap="sm">
-            <Text size="sm" c="dimmed">
-              Catalogs list a box set as one item, but releases are named after the books inside it.
-              This adds volumes 1 to N to this edition, with the box's ISBN and date, and stops
-              collecting the box itself.
-            </Text>
-            <NumberInput
-              label="Volumes in the box"
-              min={2}
-              max={100}
-              value={split.count}
-              onChange={(count) => setSplit({ ...split, count })}
-            />
-            <Group justify="flex-end">
-              <Button variant="default" onClick={() => setSplit(null)}>
-                Cancel
-              </Button>
-              <Button
-                disabled={busy || Number(split.count) < 2}
-                onClick={() =>
-                  void run(() => api.splitBox(seriesID, split.book.id, Number(split.count))).then(
-                    () => setSplit(null),
-                  )
-                }
-              >
-                Add volumes
-              </Button>
-            </Group>
-          </Stack>
-        </Modal>
+        <SplitBoxDialog split={split} setSplit={setSplit} busy={busy} run={run} seriesID={seriesID} />
       )}
     </Stack>
   )

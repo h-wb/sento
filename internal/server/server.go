@@ -45,16 +45,19 @@ type Server struct {
 // SetScheduler wires the background scheduler in after construction
 // (main builds it from this server's services) so the System → Tasks
 // endpoints can report and trigger its loops.
-func (s *Server) SetScheduler(sched *scheduler.Scheduler) { s.sched = sched }
+func (s *Server) SetScheduler(sched *scheduler.Scheduler) {
+	s.sched = sched
+	if sched != nil {
+		s.health.SetTaskSource(sched)
+	}
+}
 
-func New(cfg config.Config, db *sql.DB, dialect string, mdProvider metadata.Provider) *Server {
-	st := store.New(db, dialect)
+func New(cfg config.Config, st *store.Store, db *sql.DB, mdProvider metadata.Provider) *Server {
 	s := &Server{
 		cfg:      cfg,
 		db:       db,
 		store:    st,
 		provider: mdProvider,
-		library:  service.NewLibrary(st, mdProvider),
 		scanner:  service.NewScanner(st, cfg.Library.Path),
 	}
 
@@ -63,18 +66,16 @@ func New(cfg config.Config, db *sql.DB, dialect string, mdProvider metadata.Prov
 	s.conns = service.NewConnections(st, cfg)
 	s.conns.Apply(s.conns.Load(context.Background()))
 	s.registry = s.conns.Registry()
+	s.library = service.NewLibrary(st, mdProvider, s.registry)
 
 	// Everything downstream of here is provider-agnostic.
 	s.search = service.NewSearchService(st, s.registry)
-	s.sites = service.NewSiteService(st, s.registry)
+	s.sites = service.NewSiteService(st, s.conns)
 	s.importer = service.NewImporter(st, s.registry, cfg.Library.Path, cfg.Library.PathMappings)
 	s.extensions = service.NewExtensionService(st, s.conns.Host)
 	s.extensions.ManageRepos(cfg.Extensions.Repos)
 	s.profiles = service.NewProfiles(st)
 	s.health = service.NewHealthService(st, s.conns, cfg.Library.Path)
-	if err := s.profiles.EnsureDefaults(context.Background()); err != nil {
-		slog.Warn("seeding default profile failed", "error", err)
-	}
 	s.reconcileExtensions()
 	return s
 }
@@ -159,7 +160,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, StatusMessage{Status: "ok"})
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {

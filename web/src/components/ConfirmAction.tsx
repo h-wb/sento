@@ -1,21 +1,23 @@
 import { useState, type ReactNode } from 'react'
 import { Alert, Button, Group, Modal, Stack, Text } from '@mantine/core'
+import { errorMessage } from '../ui'
 
 type Action = { title: string; message: ReactNode; label: string; onConfirm: () => Promise<unknown> }
+export type Confirm = (next: Action) => void
 
 // Keep the dialog open on failure so the user can retry the same action.
 export function useConfirmAction() {
   const [action, setAction] = useState<Action | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const confirm = (next: Action) => { setError(null); setAction(next) }
+  const confirm: Confirm = (next) => { setError(null); setAction(next) }
   const close = () => { if (!pending) setAction(null) }
   const submit = async () => {
     if (!action || pending) return
     setPending(true)
     setError(null)
     try { await action.onConfirm(); setAction(null) }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    catch (e) { setError(errorMessage(e)) }
     finally { setPending(false) }
   }
   // Mounted only while asking: a dialog that is already mounted would also

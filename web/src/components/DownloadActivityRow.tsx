@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Badge, Button, Group, Menu, Progress, Stack, Text } from '@mantine/core'
 import { IconDotsVertical } from '@tabler/icons-react'
 import type { ActivityDownload } from '../types/service'
-import { fmtWhen } from '../ui'
+import { fmtWhen, plural } from '../format'
 import { activityTime, downloadLabel } from './activityModel'
 import ReviewQuestions from './ReviewQuestions'
 import classes from './Activity.module.css'
@@ -114,7 +114,7 @@ export function DownloadActivityRow({
               >
                 {filesOpen
                   ? 'Hide files'
-                  : `Review ${d.files.length} ${d.files.length === 1 ? 'file' : 'files'}`}
+                  : `Review ${d.files.length} ${plural(d.files.length, 'file')}`}
               </Button>
             ) : job.status === 'dispatch_unknown' ? (
               <Button size="compact-xs" variant="default" onClick={() => actions.attach(d)}>

@@ -33,11 +33,13 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, type Edition } from '../api'
+import { invalidateLibrary, seriesQueries } from '../queries'
+import { plural } from '../format'
 import BookDialog, { type BookSelection } from '../components/BookDialog'
+import { editionSearch } from '../components/bookSelection'
 import { notify, usePageTitle } from '../ui'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { EmptyState } from '../components/EmptyState'
-import { cardLabel } from '../components/editionText'
 import { RemoveSeries } from '../components/RemoveSeries'
 import classes from './SeriesPage.module.css'
 import ActivityPanel from '../components/ActivityPanel'
@@ -62,18 +64,7 @@ export default function SeriesPage() {
     const versions = await api.versions(seriesID)
     const v = versions.find((v) => v.editionId === e.id && v.isDefault)
     if (!v) return
-    setBookSel({
-      versionId: v.id,
-      all: true,
-      ledger: e.type === 'chapter' ? 'chapter' : 'volume',
-      number: 0,
-      editionId: e.id,
-      editionLabel: cardLabel(e, v, versions),
-      monitored: v.monitored,
-      wanted: true,
-      fileIds: [],
-      autoSearch: true,
-    })
+    setBookSel(editionSearch(e, v, versions))
   }
   // The open tab lives in ?view= so it survives a reload and can be linked
   // to; ?view=review is the deep link the global review inbox uses.
@@ -103,20 +94,11 @@ export default function SeriesPage() {
   const [organize, setOrganize] = useState<boolean | string>(false)
 
   const queryClient = useQueryClient()
-  const detail = useQuery({
-    queryKey: ['series', seriesID],
-    queryFn: () => api.getSeries(seriesID),
-  })
+  const detail = useQuery(seriesQueries.detail(seriesID))
   const activity = useActivity(seriesID)
   const attentionCount = activityCounts(activity.data).attention
-  const overviewQuery = useQuery({
-    queryKey: ['series', seriesID, 'edition-overview'],
-    queryFn: () => api.editionOverview(seriesID),
-  })
-  const filesQuery = useQuery({
-    queryKey: ['series', seriesID, 'files'],
-    queryFn: () => api.files(seriesID),
-  })
+  const overviewQuery = useQuery(seriesQueries.overview(seriesID))
+  const filesQuery = useQuery(seriesQueries.files(seriesID))
 
   const series = detail.data?.series ?? null
   usePageTitle(series?.title ?? '')
@@ -125,11 +107,7 @@ export default function SeriesPage() {
   const files = filesQuery.data ?? []
 
   // Refresh everything under this series (books, files, indexers, detail).
-  const load = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['queue'] })
-    void queryClient.invalidateQueries({ queryKey: ['activity'] })
-    return queryClient.invalidateQueries({ queryKey: ['series'] })
-  }, [queryClient])
+  const load = useCallback(() => invalidateLibrary(queryClient), [queryClient])
 
   // Editions and Files share their book, version and file-mapping dialogs.
   const editionManager = (section: EditionSection) => (
@@ -303,7 +281,7 @@ export default function SeriesPage() {
                   const queued = (v.queued?.length ?? 0) + (c.queued?.length ?? 0)
                   notify.ok(
                     queued
-                      ? `${queued} ${queued === 1 ? 'release' : 'releases'} queued`
+                      ? `${queued} ${plural(queued, 'release')} queued`
                       : 'No matching releases to download',
                   )
                 })

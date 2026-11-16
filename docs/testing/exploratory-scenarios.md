@@ -37,6 +37,7 @@ when selecting another scenario; “first attempt” means since the last reset.
 
 Client endpoints `/qbit` and `/qbit-vpn` accept magnets, remember category,
 return hashes/progress, and journal exact deletion hashes and `deleteFiles`.
+
 The Torznab fixture `/torznab/api` supplies three volume releases with stable
 hashes ending 1, 2, 3. Different series share these fixture hashes: finish or
 cancel/clean up one routing mission before starting another. This deliberate

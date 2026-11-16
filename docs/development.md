@@ -87,3 +87,41 @@ library under `data/exploratory/`.
 See [Testing](testing/README.md) for focused checks and harness conventions.
 `mise run ci` runs the standard local suite; PostgreSQL and JVM contract checks
 are separate tasks, as they are in GitHub Actions.
+
+## Developer tools
+
+Three manual commands live under `cmd/`, each behind its own build tag so
+`./...` and CI never build them:
+
+- `cmd/e2estub` (tag `e2e`) serves deterministic stand-ins for every upstream
+  Sento talks to on one port, each under its own prefix: MangaBaka
+  (`/mangabaka/v1/...`), the extension sidecar (`/host/api/v1/...`), Prowlarr
+  (`/prowlarr/api/v1/...`), qBittorrent (`/qbit/api/v2/...`, plus a second
+  client at `/qbit-vpn`) and Torznab
+  (`/torznab/api`). Fixtures are fixed (the series search always returns the
+  same three series) so tests can name them. Flags: `-addr` (default `:8899`)
+  and `-control`, which enables the exploratory scenarios and the request
+  journal under `/_control`. Run it with `mise run explore:fixtures`; the
+  Playwright suite builds and drives it via `mise run e2e` (or `e2e:ui`),
+  which runs `e2e:build` first (`bin/sento` plus `bin/e2estub`). Its own
+  Go tests are `mise run test:harness` (`go test -tags e2e ./cmd/e2estub`).
+  The hidden `mise run e2e:paseo` variant uses Paseo's cached Chromium in the
+  unprivileged agent image; see [testing/paseo.md](testing/paseo.md).
+- `cmd/harvest` (tag `harvest`) pulls real chapter names from the running
+  sidecar across a spread of sources and languages, runs each through
+  `parse.ParseAnchored`, and writes JSONL records to stdout, flagging cases
+  worth a corpus fixture: `number-mismatch`, `parsed-nothing`,
+  `volume-on-source`, `decimal-chapter`, `range`, `extra`, `low-confidence`
+  (below 0.7). Run: `go run -tags harvest ./cmd/harvest > /tmp/harvest.jsonl`.
+- `cmd/matchcheck` (tag `matchcheck`) harvests a broad pool of real titles
+  (one MangaDex source per language plus Weeb Central), builds a `match.Index`
+  with each title as a series, and stress-tests `internal/match`: collisions
+  at or above `match.AutoThreshold`, self-match at exactly 1.0, and a
+  round-trip of blind-parsing `"<title> v05"` back to the right series.
+  Run: `go run -tags matchcheck ./cmd/matchcheck`.
+
+Both harvest and matchcheck hardcode the sidecar at `http://localhost:8901`,
+but dev ports are assigned per checkout from that base (`mise.toml` daemon
+ports, `port = { auto = true, base = 8901 }`). Get the sidecar's actual port
+from `mise daemons urls` and either point the daemon at 8901 or edit the
+`hostURL` constant before running.

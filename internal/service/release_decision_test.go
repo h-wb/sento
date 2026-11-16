@@ -347,7 +347,7 @@ func TestApplyCatalog(t *testing.T) {
 
 // Release names are evidence about the numbering, weighed by one judge:
 // numbers, a color the edition claims and another edition's name say no;
-// a word alone leaves it for a person (docs/reviews/edition-rules.md).
+// a word alone leaves it for a person (docs/domain/editions.md).
 func TestEditionRules(t *testing.T) {
 	t.Parallel()
 	titles := []string{"NAUSICAA"}
@@ -436,7 +436,7 @@ func TestEditionRules(t *testing.T) {
 }
 
 // The rules on real release names (Nyaa, English-translated) against the
-// series' MangaBaka editions, as surveyed for edition-rules.md.
+// series' MangaBaka editions, as surveyed for docs/domain/editions.md.
 func TestEditionRulesOnRealNames(t *testing.T) {
 	t.Parallel()
 	id := int64(0)

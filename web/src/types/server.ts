@@ -3,49 +3,11 @@
 import type { ScanResult, SearchResult, SearchScope, PlanPick, PlanOutcome, SeriesPublisher, ReaderPreview } from "./service"
 import type { Edition, Series } from "./store"
 import type { RepoStatus } from "./extensions"
+export type { IndexerPatch } from "./service"
 
 //////////
 // source: api.go
 
-
-//////////
-// source: api_catalog.go
-
-export interface CatalogLinkBody {
-  catalogId: number /* int64 */;
-}
-export interface FileMappingBody {
-  books: any /* store.BookRef */[];
-  /**
-   * Replace forces the upgrade path: this file takes the books even when
-   * it does not outscore the current owner.
-   */
-  replace?: boolean;
-}
-export interface ReviewResolveBody {
-  fileIds: number /* int64 */[];
-}
-export interface ReviewMatchBody {
-  versionId: number /* int64 */;
-  fileIds: number /* int64 */[];
-}
-export interface ObservationReviewBody {
-  accept: boolean;
-}
-export interface BookMonitorBody {
-  versionId: number /* int64 */;
-  bookId: number /* int64 */;
-  monitored: boolean;
-}
-
-//////////
-// source: api_file_cleanup.go
-
-export interface FileCleanupBody {
-  editionId: number /* int64 */;
-  fileIds: number /* int64 */[];
-  retentionDays: number /* int */;
-}
 
 //////////
 // source: server.go
@@ -190,15 +152,6 @@ export interface IndexerBody {
   settings: any;
 }
 /**
- * IndexerPatch toggles entry fields inline (nil = keep).
- */
-export interface IndexerPatch {
-  enabled?: boolean;
-  useVolumes?: boolean;
-  useChapters?: boolean;
-  priority?: number /* int */;
-}
-/**
  * BrowseProwlarrBody asks for the Add Indexer discovery assist.
  */
 export interface BrowseProwlarrBody {
@@ -327,4 +280,118 @@ export interface ExtensionRepos {
    * cannot be edited (response only).
    */
   managed: boolean;
+}
+/**
+ * CatalogLinkBody is POST /series/{id}/editions/{eid}/catalog-link.
+ */
+export interface CatalogLinkBody {
+  catalogId: number /* int64 */;
+}
+/**
+ * FileMappingBody is PUT /series/{id}/files/{fid}/mapping.
+ */
+export interface FileMappingBody {
+  books: any /* store.BookRef */[];
+  /**
+   * Replace forces the upgrade path: this file takes the books even when
+   * it does not outscore the current owner.
+   */
+  replace?: boolean;
+}
+/**
+ * FileCleanupBody is POST /series/{id}/files/cleanup.
+ */
+export interface FileCleanupBody {
+  editionId: number /* int64 */;
+  fileIds: number /* int64 */[];
+  retentionDays: number /* int */;
+}
+/**
+ * ReviewResolveBody is POST /series/{id}/review/resolve.
+ */
+export interface ReviewResolveBody {
+  fileIds: number /* int64 */[];
+}
+/**
+ * ReviewMatchBody is POST /series/{id}/review/match.
+ */
+export interface ReviewMatchBody {
+  versionId: number /* int64 */;
+  fileIds: number /* int64 */[];
+}
+/**
+ * ObservationReviewBody is PUT /series/{id}/observations/{oid}.
+ */
+export interface ObservationReviewBody {
+  accept: boolean;
+}
+/**
+ * BookMonitorBody is PUT /series/{id}/book-monitor.
+ */
+export interface BookMonitorBody {
+  versionId: number /* int64 */;
+  bookId: number /* int64 */;
+  monitored: boolean;
+}
+/**
+ * BulkMonitorBody is POST /series/{id}/versions/{vid}/monitor.
+ */
+export interface BulkMonitorBody {
+  bookIds: number /* int64 */[];
+  monitored: boolean;
+}
+/**
+ * IndexerSearchTestBody is POST /indexers/{iid}/search-test.
+ */
+export interface IndexerSearchTestBody {
+  query: string;
+}
+/**
+ * QueueRetryBody is POST /queue/{qid}/retry.
+ */
+export interface QueueRetryBody {
+  remoteId: string;
+}
+/**
+ * QueueAnotherBody is POST /queue/another.
+ */
+export interface QueueAnotherBody {
+  ids: number /* int64 */[];
+}
+/**
+ * SetDefaultProfileBody is PUT /profiles/default.
+ */
+export interface SetDefaultProfileBody {
+  profileId: number /* int64 */;
+}
+/**
+ * StatusMessage is a bare {"status": ...} reply, e.g. POST
+ * /series/{id}/refresh.
+ */
+export interface StatusMessage {
+  status: string;
+}
+/**
+ * IDResponse is a bare {"id": ...} reply, e.g. POST /series/{id}/bindings.
+ */
+export interface IDResponse {
+  id: number /* int64 */;
+}
+/**
+ * SeparateCollectionResponse is POST /series/{id}/collections/{cid}/separate.
+ */
+export interface SeparateCollectionResponse {
+  editionId: number /* int64 */;
+}
+/**
+ * DefaultProfileResponse is GET /profiles/default.
+ */
+export interface DefaultProfileResponse {
+  profileId: number /* int64 */;
+}
+/**
+ * QueueProcessResponse is POST /queue/process.
+ */
+export interface QueueProcessResponse {
+  processed: number /* int */;
 }

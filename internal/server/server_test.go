@@ -10,11 +10,13 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/h-wb/sento/internal/config"
 	"github.com/h-wb/sento/internal/db/dbtest"
 	"github.com/h-wb/sento/internal/metadata"
 	"github.com/h-wb/sento/internal/service"
+	"github.com/h-wb/sento/internal/store"
 )
 
 // noMetadata is a metadata provider that knows nothing.
@@ -53,7 +55,7 @@ func testServer(t *testing.T) (http.Handler, string) {
 	cfg.Library.Path = t.TempDir()
 	cfg.Downloads.Dir = t.TempDir()
 	conn, dialect := dbtest.Open(t)
-	return New(cfg, conn, dialect, noMetadata{}).Handler(), static
+	return New(cfg, store.New(conn, dialect), conn, noMetadata{}).Handler(), static
 }
 
 func do(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {
@@ -259,5 +261,86 @@ func TestActivityScopesAndEmptyCollections(t *testing.T) {
 	}
 	if r := do(t, h, http.MethodGet, "/api/v1/activity?seriesId=999", ""); r.Code != http.StatusNotFound {
 		t.Fatalf("missing scope = %d", r.Code)
+	}
+	for _, path := range []string{"/api/v1/review?seriesId=bad", "/api/v1/review?seriesId=-1"} {
+		if r := do(t, h, http.MethodGet, path, ""); r.Code != http.StatusBadRequest {
+			t.Fatalf("invalid review scope = %d", r.Code)
+		}
+	}
+}
+
+// One queued download pins both views: the stall only counts while the last
+// observation is recent, and a downloading item carries its stored progress
+// fraction — identically in GET /queue and GET /activity.
+func TestQueueAndActivityPinLiveProgress(t *testing.T) {
+	cfg := config.Default()
+	cfg.Server.StaticDir = t.TempDir()
+	cfg.Library.Path = t.TempDir()
+	cfg.Downloads.Dir = t.TempDir()
+	conn, dialect := dbtest.Open(t)
+	srv := New(cfg, store.New(conn, dialect), conn, noMetadata{})
+	h := srv.Handler()
+	ctx := context.Background()
+	sid, err := srv.store.AddSeries(ctx, store.AddSeriesParams{Series: &metadata.Series{MangaBakaID: 1, Title: "Example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := srv.store.AddQueueItem(ctx, store.QueueItem{
+		SeriesID: sid, Protocol: "torrent", ExternalID: "hash-1",
+		Title: "Example v01", Status: store.QueueDownloading,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339)
+	update := `UPDATE queue_items SET provider_id='torrent', observed_at=?, download_progress=0.42, stalled=? WHERE id=?`
+	if dialect == "postgres" {
+		update = `UPDATE queue_items SET provider_id='torrent', observed_at=$1, download_progress=0.42, stalled=$2 WHERE id=$3`
+	}
+	if _, err := conn.ExecContext(ctx, update, stale, true, id); err != nil {
+		t.Fatal(err)
+	}
+
+	type live struct {
+		Stalled  bool     `json:"stalled"`
+		Progress *float64 `json:"progress"`
+	}
+	want := func(path string, got live) {
+		t.Helper()
+		if got.Stalled {
+			t.Errorf("%s: a 10-minute-old observation must clear stalled", path)
+		}
+		if got.Progress == nil || *got.Progress != 0.42 {
+			t.Errorf("%s: downloading item must carry its stored progress 0.42, got %+v", path, got)
+		}
+	}
+	for _, path := range []string{"/api/v1/queue", "/api/v1/queue?all=1", "/api/v1/activity"} {
+		rec := do(t, h, http.MethodGet, path, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d: %s", path, rec.Code, rec.Body.String())
+		}
+		if path == "/api/v1/activity" {
+			var data struct {
+				Downloads []struct {
+					Job live `json:"job"`
+				} `json:"downloads"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &data); err != nil {
+				t.Fatal(err)
+			}
+			if len(data.Downloads) != 1 {
+				t.Fatalf("activity want one download: %s", rec.Body.String())
+			}
+			want(path, data.Downloads[0].Job)
+			continue
+		}
+		var items []live
+		if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+			t.Fatalf("unmarshal %s: %v", rec.Body.String(), err)
+		}
+		if len(items) != 1 {
+			t.Fatalf("want exactly one queued item, got %s", rec.Body.String())
+		}
+		want(path, items[0])
 	}
 }

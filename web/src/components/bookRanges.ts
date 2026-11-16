@@ -1,3 +1,6 @@
+import { toHundredths } from '../format'
+import type { BookStatus } from '../types/service'
+
 // "1–3, 5, 7.5": consecutive whole numbers collapse into a range. Numbers
 // are in hundredths, as the API sends them.
 export function bookRanges<T>(items: T[], number: (t: T) => number, name: (t: T) => string): string {
@@ -11,4 +14,10 @@ export function bookRanges<T>(items: T[], number: (t: T) => number, name: (t: T)
     start = i
   }
   return out.join(', ')
+}
+
+export function booksInRange(list: BookStatus[], from: number, to: number) {
+  const low = toHundredths(Math.min(from, to))
+  const high = toHundredths(Math.max(from, to))
+  return list.filter((s) => s.book.numberKnown && s.book.sequenceNum >= low && s.book.sequenceNum <= high)
 }

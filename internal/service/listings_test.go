@@ -252,7 +252,7 @@ func TestReleasesInheritTheirListing(t *testing.T) {
 	cand := provider.Candidate{Title: "Vol. 001 (Digital)", Protocol: provider.ProtocolSource,
 		Source: &provider.SourceRef{ChapterKey: "v1", Listing: "One Piece - Digital Colored Comics", Lang: "en"}}
 	rc, _, keep := readRelease(run, cand)
-	if !keep || !rc.Parse.Edition.Colored || !candidateFlags(rc)["colored"] {
+	if !keep || !rc.Parse.Edition.Colored || !parseFlags(rc.Parse)["colored"] {
 		t.Fatalf("a colorized listing's volume is not colored: %+v", rc.Parse.Edition)
 	}
 }

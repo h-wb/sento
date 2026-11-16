@@ -73,17 +73,12 @@ func run(configPath string) error {
 	}
 
 	provider := mangabaka.New(cfg.MangaBaka.BaseURL)
-	app := server.New(cfg, database, dialect, provider)
+	app := server.New(cfg, st, database, provider)
 
 	schedCtx, stopSched := context.WithCancel(context.Background())
 	defer stopSched()
 	sched := scheduler.New(app.Store(), app.LibraryService(), app.SearchSvc(),
-		app.Importer(), app.Scanner(), app.ExtensionsSvc(), scheduler.DefaultIntervals())
-	health := app.HealthSvc()
-	sched.Register("health-check", "Check Health", 15*time.Minute, func(ctx context.Context) error {
-		health.Check(ctx)
-		return nil
-	})
+		app.Importer(), app.Scanner(), app.ExtensionsSvc(), app.HealthSvc(), scheduler.DefaultIntervals())
 	app.SetScheduler(sched)
 	sched.Start(schedCtx)
 

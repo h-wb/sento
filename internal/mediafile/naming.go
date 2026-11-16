@@ -8,25 +8,6 @@ import (
 	"strings"
 )
 
-// Naming templates use {Token} and {token:000} padding syntax (spec.md
-// §11.2). Volume/chapter numbers are passed in hundredths and rendered in
-// plain books; padding applies to the integer part.
-type NamingConfig struct {
-	SeriesFolder string `yaml:"series_folder"`
-	VolumeFile   string `yaml:"volume_file"`
-	ChapterFile  string `yaml:"chapter_file"`
-	ChapterDir   string `yaml:"chapter_dir"`
-}
-
-func DefaultNaming() NamingConfig {
-	return NamingConfig{
-		SeriesFolder: "{Series Title} [mangabaka-{seriesId}]",
-		VolumeFile:   "{Series Title} v{volume:00} [{edition}][{lang}].cbz",
-		ChapterFile:  "{Series Title} c{chapter:000} [{group}][{lang}].cbz",
-		ChapterDir:   "chapters",
-	}
-}
-
 type NameTokens struct {
 	SeriesTitle string
 	SeriesID    int64
@@ -70,7 +51,8 @@ func RenderFolder(template string, t NameTokens) []string {
 
 // Render fills a template; empty values collapse their bracket/paren wrapper
 // ("[{group}]" with no group disappears). Values lose the characters a
-// path cannot hold.
+// path cannot hold. Numbers come in hundredths and render in plain books,
+// with {token:000} padding the integer part (spec.md §11.2).
 func Render(template string, t NameTokens) string {
 	return render(template, t, sanitize)
 }

@@ -23,6 +23,7 @@ The task reuses the environment's shared dependency cache at
 packages live under `root/`, with libraries in **both**
 `root/usr/lib/x86_64-linux-gnu` and `root/lib/x86_64-linux-gnu`. The second
 directory contains `libdbus-1.so.3`; omitting it causes another launch failure.
+
 The cache also supplies `fonts.conf`, which points to its extracted fonts
 and writable font cache.
 
@@ -33,6 +34,7 @@ shared across worktrees; do not copy it into the repository or change the
 normal Playwright configuration for this environment.
 
 If the cache is missing or incomplete, the wrapper reports the missing path.
+
 Restore the environment's extracted dependency cache before retrying. If it
 has been provisioned elsewhere, set `SENTO_PASEO_BROWSER_DEPS` in gitignored
 `mise.local.toml`; its `fonts.conf` must reference that cache's actual fonts

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Alert, Button, Checkbox, Group, NumberInput, Select, Stack, Text, TextInput } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
+import { fromHundredths, toHundredths } from '../format'
 import type { Edition, Book } from '../types/store'
 import { useConfirmAction } from './ConfirmAction'
 import { Origin } from './Origin'
@@ -147,8 +148,8 @@ export function BookEditor({
                     label="Number"
                     decimalScale={2}
                     min={0}
-                    value={v.sequenceNum / 100}
-                    onChange={(n) => set({ ...v, sequenceNum: Math.round(Number(n) * 100) })}
+                    value={fromHundredths(v.sequenceNum)}
+                    onChange={(n) => set({ ...v, sequenceNum: toHundredths(Number(n)) })}
                   />
                 )}
                 <Select

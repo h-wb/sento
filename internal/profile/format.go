@@ -98,7 +98,7 @@ func (c Condition) test(in Input) bool {
 	case CondGroup:
 		return in.Group != "" && matchRegexp(c.Value, in.Group)
 	case CondLanguage:
-		return in.Language != "" && (c.Value == AnyLanguage || baseLang(in.Language) == baseLang(c.Value))
+		return in.Language != "" && (c.Value == AnyLanguage || BaseLang(in.Language) == BaseLang(c.Value))
 	case CondFlag:
 		return in.Flags[strings.ToLower(c.Value)]
 	case CondProtocol:
@@ -129,7 +129,8 @@ func matchRegexp(pattern, s string) bool {
 	return re != nil && re.MatchString(s)
 }
 
-func baseLang(lang string) string {
+// BaseLang is the language without its region ("fr-ca" → "fr").
+func BaseLang(lang string) string {
 	base, _, _ := strings.Cut(lang, "-")
 	return strings.ToLower(base)
 }

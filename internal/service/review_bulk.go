@@ -12,8 +12,9 @@ import (
 )
 
 // Bulk file review: one decision for a whole pack of files instead of one
-// dialog per file. Both actions stay explicit — nothing here ever accepts
-// a proposal on its own (propose-dont-ask.md §A1).
+// dialog per file. Both actions stay explicit — nothing here ever accepts a
+// proposal on its own (docs/domain/import-review.md, "Bulk match and
+// decline").
 
 // ResolveFileReviews declines files in bulk: each one is marked reviewed
 // and unmapped, exactly as saving its mapping with no books would, but in

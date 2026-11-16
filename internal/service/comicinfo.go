@@ -26,16 +26,15 @@ type tagSource struct {
 
 // releaseSource is the tagSource of a queued download.
 func releaseSource(item store.QueueItem) tagSource {
-	var snap ReleaseCandidate
-	_ = json.Unmarshal(item.Snapshot, &snap)
+	snap := jobSnapshot(item)
 	group := snap.Parse.Group
 	if group == "" {
 		group = snap.Scanlator
 	}
-	return tagSource{Release: item.Title, Group: group, Via: item.Protocol, Site: snap.Site, Flags: candidateFlags(snap)}
+	return tagSource{Release: item.Title, Group: group, Via: item.Protocol, Site: snap.Site, Flags: parseFlags(snap.Parse)}
 }
 
-// fileInfo builds the ComicInfo for a file holding the given books of one
+// info builds the ComicInfo for a file holding the given books of one
 // edition: everything a reader needs to file and describe it without
 // Sento, and Sento's Notes line to adopt it back by (docs/domain/metadata.md).
 func (p *placement) info(ctx context.Context, slots []store.BookRef, src tagSource) mediafile.ComicInfo {

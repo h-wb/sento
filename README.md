@@ -80,8 +80,8 @@ can take several minutes.
 
 [Contributing](CONTRIBUTING.md) covers setup, pull requests and commit messages.
 The [development guide](docs/development.md) and [testing guide](docs/testing/README.md)
-cover the daily workflow. The [documentation index](docs/README.md) links to the
-architecture and domain rules.
+cover the daily workflow. The [documentation index](docs/README.md) starts with
+how Sento works end to end, then links to the architecture, API and domain rules.
 
 ## Credits
 

@@ -58,109 +58,109 @@ func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink
 	if info, e := os.Stat(f.Path); e != nil || info.IsDir() {
 		presence = "unknown"
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	var fileID int64
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		cids := []int64{}
+		for _, l := range links {
+			cids = append(cids, l.EditionID)
+		}
+		for _, b := range f.ContentBooks {
+			cids = append(cids, b.EditionID)
+		}
+		if err := s.lockEditions(ctx, tx, true, cids...); err != nil {
+			return err
+		}
+		var held int
+		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM file_trash t JOIN files f ON f.id=t.file_id WHERE f.path=?`), f.Path).Scan(&held); err != nil {
+			return err
+		}
+		if held > 0 {
+			return apperr.Conflictf("restore or empty this path's trash entry before importing it again")
+		}
+		var oldID int64
+		var oldHash, oldFacts, oldReview string
+		oldErr := tx.QueryRowContext(ctx, s.q(`SELECT id,COALESCE(hash,''),facts_json,review_action FROM files WHERE path=? AND series_id=?`), f.Path, f.SeriesID).Scan(&oldID, &oldHash, &oldFacts, &oldReview)
+		if oldErr != nil && !errors.Is(oldErr, sql.ErrNoRows) {
+			return oldErr
+		}
+		if oldErr == nil {
+			if err := s.rejectTrashEdit(ctx, tx, oldID); err != nil {
+				return err
+			}
+		}
+		if oldErr == nil && f.Hash != "" && oldHash == f.Hash {
+			var manual int
+			if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM asset_contents WHERE file_id=? AND evidence='manual'`), oldID).Scan(&manual); err != nil {
+				return err
+			}
+			if manual > 0 || oldReview != "" {
+				// A retry or scan must not undo a person's verified contents or corrections.
+				if _, err := tx.ExecContext(ctx, s.q(`UPDATE files SET presence=?,presence_error='',checked_at=?,parser_version=? WHERE id=?`), presence, utcNow(), f.ParserVersion, oldID); err != nil {
+					return err
+				}
+				fileID = oldID
+				return nil
+			}
+			var previous AssetFacts
+			if err := json.Unmarshal([]byte(oldFacts), &previous); err != nil {
+				return err
+			}
+			f.Facts = f.Facts.KeepingManual(previous)
+			factsJSON, _ = json.Marshal(f.Facts)
+		}
+
+		if err := tx.QueryRowContext(ctx, s.q(`
+			INSERT INTO files (series_id, path, size, parse_json, provenance, unrequested,needs_review,facts_json,claims_json,hash,hash_stat,parser_version,presence,checked_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			ON CONFLICT(path) DO UPDATE SET
+				series_id = excluded.series_id,
+				size = excluded.size,
+				parser_version = excluded.parser_version,
+				parse_json = excluded.parse_json,
+				provenance = excluded.provenance,
+				unrequested = excluded.unrequested,
+				needs_review = excluded.needs_review,
+	 facts_json=excluded.facts_json,claims_json=excluded.claims_json,hash=excluded.hash,hash_stat=excluded.hash_stat,presence=excluded.presence,checked_at=excluded.checked_at,review_action=''
+			WHERE files.series_id = excluded.series_id
+			RETURNING id`),
+			f.SeriesID, f.Path, f.Size, string(parseJSON), f.Provenance, f.Unrequested, f.NeedsReview, string(factsJSON), string(claimsJSON), f.Hash, f.HashStat, f.ParserVersion, presence, utcNow()).Scan(&fileID); err != nil {
+			return err
+		}
+		for _, l := range links {
+			valid, err := s.bookInVersion(ctx, tx, f.SeriesID, l.BookID, l.VersionID, l.EditionID)
+			if err != nil {
+				return err
+			}
+			if !valid {
+				return apperr.Invalidf("file mapping does not belong to this edition/version")
+			}
+			if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,evidence) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`), fileID, l.VersionID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,book_id,evidence) VALUES(?,?,?) ON CONFLICT DO NOTHING`), fileID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
+				return err
+			}
+
+		}
+
+		for _, b := range f.ContentBooks {
+			var valid int
+			if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM books w JOIN editions c ON c.id=w.edition_id WHERE w.id=? AND c.id=? AND c.series_id=?`), b.BookID, b.EditionID, f.SeriesID).Scan(&valid); err != nil {
+				return err
+			}
+			if valid != 1 {
+				return apperr.Invalidf("file contents do not belong to this series and edition")
+			}
+			if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,book_id,evidence) VALUES(?,?,?) ON CONFLICT DO NOTHING`), fileID, b.BookID, orDefault(f.Provenance, "observed")); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return 0, err
 	}
-	defer func() { _ = tx.Rollback() }()
-
-	cids := []int64{}
-	for _, l := range links {
-		cids = append(cids, l.EditionID)
-	}
-	for _, b := range f.ContentBooks {
-		cids = append(cids, b.EditionID)
-	}
-	if err = s.lockEditions(ctx, tx, true, cids...); err != nil {
-		return 0, err
-	}
-	var held int
-	if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM file_trash t JOIN files f ON f.id=t.file_id WHERE f.path=?`), f.Path).Scan(&held); err != nil {
-		return 0, err
-	}
-	if held > 0 {
-		return 0, apperr.Conflictf("restore or empty this path's trash entry before importing it again")
-	}
-	var oldID int64
-	var oldHash, oldFacts, oldReview string
-	oldErr := tx.QueryRowContext(ctx, s.q(`SELECT id,COALESCE(hash,''),facts_json,review_action FROM files WHERE path=? AND series_id=?`), f.Path, f.SeriesID).Scan(&oldID, &oldHash, &oldFacts, &oldReview)
-	if oldErr != nil && !errors.Is(oldErr, sql.ErrNoRows) {
-		return 0, oldErr
-	}
-	if oldErr == nil {
-		if err = s.rejectTrashEdit(ctx, tx, oldID); err != nil {
-			return 0, err
-		}
-	}
-	if oldErr == nil && f.Hash != "" && oldHash == f.Hash {
-		var manual int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM asset_contents WHERE file_id=? AND evidence='manual'`), oldID).Scan(&manual); err != nil {
-			return 0, err
-		}
-		if manual > 0 || oldReview != "" {
-			// A retry or scan must not undo a person's verified contents or corrections.
-			_, err = tx.ExecContext(ctx, s.q(`UPDATE files SET presence=?,presence_error='',checked_at=?,parser_version=? WHERE id=?`), presence, utcNow(), f.ParserVersion, oldID)
-			if err != nil {
-				return 0, err
-			}
-			return oldID, tx.Commit()
-		}
-		var previous AssetFacts
-		if err = json.Unmarshal([]byte(oldFacts), &previous); err != nil {
-			return 0, err
-		}
-		f.Facts = f.Facts.KeepingManual(previous)
-		factsJSON, _ = json.Marshal(f.Facts)
-	}
-
-	var fileID int64
-	if err := tx.QueryRowContext(ctx, s.q(`
-		INSERT INTO files (series_id, path, size, parse_json, provenance, unrequested,needs_review,facts_json,claims_json,hash,hash_stat,parser_version,presence,checked_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(path) DO UPDATE SET
-			series_id = excluded.series_id,
-			size = excluded.size,
-			parser_version = excluded.parser_version,
-			parse_json = excluded.parse_json,
-			provenance = excluded.provenance,
-			unrequested = excluded.unrequested,
-			needs_review = excluded.needs_review,
- facts_json=excluded.facts_json,claims_json=excluded.claims_json,hash=excluded.hash,hash_stat=excluded.hash_stat,presence=excluded.presence,checked_at=excluded.checked_at,review_action=''
-		WHERE files.series_id = excluded.series_id
-		RETURNING id`),
-		f.SeriesID, f.Path, f.Size, string(parseJSON), f.Provenance, f.Unrequested, f.NeedsReview, string(factsJSON), string(claimsJSON), f.Hash, f.HashStat, f.ParserVersion, presence, utcNow()).Scan(&fileID); err != nil {
-		return 0, err
-	}
-	for _, l := range links {
-		var valid int
-		if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM books w JOIN versions t ON t.edition_id=w.edition_id JOIN editions c ON c.id=w.edition_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), l.BookID, l.VersionID, l.EditionID, f.SeriesID).Scan(&valid); err != nil {
-			return 0, err
-		}
-		if valid != 1 {
-			return 0, apperr.Invalidf("file mapping does not belong to this edition/version")
-		}
-		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_coverage(file_id,version_id,book_id,evidence) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`), fileID, l.VersionID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
-			return 0, err
-		}
-		if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,book_id,evidence) VALUES(?,?,?) ON CONFLICT DO NOTHING`), fileID, l.BookID, orDefault(f.Provenance, "observed")); err != nil {
-			return 0, err
-		}
-
-	}
-
-	for _, b := range f.ContentBooks {
-		var valid int
-		if err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM books w JOIN editions c ON c.id=w.edition_id WHERE w.id=? AND c.id=? AND c.series_id=?`), b.BookID, b.EditionID, f.SeriesID).Scan(&valid); err != nil {
-			return 0, err
-		}
-		if valid != 1 {
-			return 0, apperr.Invalidf("file contents do not belong to this series and edition")
-		}
-		if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO asset_contents(file_id,book_id,evidence) VALUES(?,?,?) ON CONFLICT DO NOTHING`), fileID, b.BookID, orDefault(f.Provenance, "observed")); err != nil {
-			return 0, err
-		}
-	}
-	return fileID, tx.Commit()
+	return fileID, nil
 }
 
 func (s *Store) ListFiles(ctx context.Context, seriesID int64) ([]File, error) {
@@ -317,4 +317,10 @@ func (s *Store) LowestOwnedChapters(ctx context.Context, seriesID int64) (map[in
 // wanting, reserving and owning.
 func BookKey(versionID, bookID int64) string {
 	return fmt.Sprintf("%d/%d", versionID, bookID)
+}
+
+// SetFileLocation records where a library file now lives after it was
+// renamed or rewritten, with its new size and content fingerprint.
+func (s *Store) SetFileLocation(ctx context.Context, fileID int64, path string, size int64, hash string) error {
+	return s.touch(ctx, `UPDATE files SET path=?, size=?, hash=?, hash_stat='', modified_at=? WHERE id=?`, path, size, hash, utcNow(), fileID)
 }

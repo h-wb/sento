@@ -9,6 +9,7 @@ import type {
   ReviewProposal,
 } from '../types/store'
 import type { BookStatus } from '../types/service'
+import { toHundredths } from '../format'
 import { fileName } from './editionText'
 import { EditorModal } from './EditorModal'
 import { FileFacts } from './FileFacts'
@@ -234,7 +235,7 @@ export function MappingEditor({
               e.preventDefault()
               const [low, high] = [Number(range[1]), Number(range[2])].sort((a, b) => a - b)
               const inRange = booksOf(editionId)
-                .filter((s) => s.book.numberKnown && s.book.sequenceNum >= low * 100 && s.book.sequenceNum <= high * 100)
+                .filter((s) => s.book.numberKnown && s.book.sequenceNum >= toHundredths(low) && s.book.sequenceNum <= toHundredths(high))
                 .map((s) => s.book.id)
               setBooks(editionId, [...new Set([...chosen, ...inRange])])
               setBookSearch('')

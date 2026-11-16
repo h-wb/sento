@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/parse"
+	"github.com/h-wb/sento/internal/profile"
 	"github.com/h-wb/sento/internal/store"
 )
 
 // Whether a release belongs to an edition is decided here and nowhere
-// else (docs/reviews/edition-rules.md). An edition is a numbering; what a
+// else (docs/domain/editions.md). An edition is a numbering; what a
 // name says about it is read by parse.ReadEdition, for release names and
 // edition names alike. A release is judged against one edition of a
 // series, in view of the series' other editions: the shelf.
@@ -76,7 +78,7 @@ func (s *shelf) siblings(e store.Edition) []store.Edition {
 	}
 	var out []store.Edition
 	for _, o := range s.editions {
-		if o.ID != e.ID && o.Type == e.Type && baseLang(o.Language) == baseLang(e.Language) {
+		if o.ID != e.ID && o.Type == e.Type && profile.BaseLang(o.Language) == profile.BaseLang(e.Language) {
 			out = append(out, o)
 		}
 	}
@@ -134,10 +136,10 @@ func (s *shelf) judge(p parse.Result, e store.Edition, evidence int64) (fitVerdi
 		return verdict, reason
 	}
 	if last := lastVolume(p); e.Type == LedgerVolume && last > e.LastNumber && completedNumbering(e) {
-		return fitUnsure, fmt.Sprintf("The release goes to volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", hundredths(parse.Num(last)), hundredths(parse.Num(e.LastNumber)))
+		return fitUnsure, fmt.Sprintf("The release goes to volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", mediafile.RenderPlainNum(last), mediafile.RenderPlainNum(e.LastNumber))
 	}
 	if last := lastVolume(p); e.Type == LedgerVolume && last > 0 && last < e.LastNumber && p.Complete && !p.CompleteInferred && completedNumbering(e) {
-		return fitUnsure, fmt.Sprintf("The release calls itself complete at volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", hundredths(parse.Num(last)), hundredths(parse.Num(e.LastNumber)))
+		return fitUnsure, fmt.Sprintf("The release calls itself complete at volume %s; this completed catalog edition ends at %s. Confirm its numbering before assigning the books.", mediafile.RenderPlainNum(last), mediafile.RenderPlainNum(e.LastNumber))
 	}
 	return verdict, reason
 }
@@ -153,7 +155,7 @@ func (s *shelf) judgeIdentity(p parse.Result, e store.Edition, evidence int64) (
 	if last := lastVolume(p); e.Type == LedgerVolume && e.LastNumber > 0 && last > e.LastNumber+newVolumeSlack {
 		for _, o := range siblings {
 			if o.LastNumber >= last {
-				return fitNo, fmt.Sprintf("The release goes to volume %s; %s ends at %s.", hundredths(parse.Num(last)), e.EditionName, hundredths(parse.Num(e.LastNumber)))
+				return fitNo, fmt.Sprintf("The release goes to volume %s; %s ends at %s.", mediafile.RenderPlainNum(last), e.EditionName, mediafile.RenderPlainNum(e.LastNumber))
 			}
 		}
 	}
@@ -239,7 +241,7 @@ func lastVolume(p parse.Result) int64 {
 // English.
 func (s *shelf) prefer(p parse.Result, eds []store.Edition) []store.Edition {
 	for _, e := range eds {
-		if baseLang(e.Language) != baseLang(eds[0].Language) {
+		if profile.BaseLang(e.Language) != profile.BaseLang(eds[0].Language) {
 			return eds
 		}
 	}
@@ -293,75 +295,4 @@ func (s *shelf) offer(p parse.Result, e store.Edition) *OtherEdition {
 		o.InLibrary = o.InLibrary || s.fits(p, x)
 	}
 	return o
-}
-
-// ambiguousEdition names another edition the user collects that a release
-// fitting col fits at least as well ("" for none). Editions nobody
-// collects do not compete: the user already chose against them.
-func (run *searchRun) ambiguousEdition(p parse.Result, col store.Edition) string {
-	fits := []store.Edition{col}
-	other := ""
-	for _, c := range run.editions {
-		if c.ID == col.ID || c.Type != col.Type || c.SyncState == "stale" || !run.collected(c.ID) || !run.shelf.fits(p, c) {
-			continue
-		}
-		if other == "" {
-			other = c.EditionName
-		}
-		if baseLang(c.Language) != baseLang(col.Language) {
-			return c.EditionName
-		}
-		fits = append(fits, c)
-	}
-	if best := run.shelf.prefer(p, fits); len(best) == 1 && best[0].ID == col.ID {
-		return ""
-	}
-	return other
-}
-
-func (run *searchRun) collected(editionID int64) bool {
-	for _, t := range run.versions {
-		if t.EditionID == editionID && t.Monitored {
-			return true
-		}
-	}
-	return false
-}
-
-// Volumes and chapters are collected independently, so a release or a
-// file is one or the other, never both. The name decides:
-//
-//   - only volume numbers: a volume;
-//   - only chapter numbers: chapters;
-//   - both, with a single chapter ("Vol.5 Ch.34"): a chapter that notes
-//     the volume it belongs to;
-//   - both, with several chapters ("v01 c001-008", "Volumes 01-38 ¦
-//     Chapters 001-410"): volumes that list the chapters inside them.
-//
-// bookRanges returns what a name offers the given ledger under that rule:
-// its numbers when it is of that kind, nothing otherwise.
-func bookRanges(p parse.Result, ledger string) []parse.Range {
-	if ledgerOf(p) != ledger {
-		return nil
-	}
-	if ledger == LedgerVolume {
-		return p.Volumes
-	}
-	return p.Chapters
-}
-
-// ledgerOf says which kind of book a parsed name is ("" when it carries
-// no volume or chapter number).
-func ledgerOf(p parse.Result) string {
-	switch {
-	case len(p.Volumes) == 0 && len(p.Chapters) == 0:
-		return ""
-	case len(p.Chapters) == 0:
-		return LedgerVolume
-	case len(p.Volumes) == 0:
-		return LedgerChapter
-	case len(p.Chapters) == 1 && p.Chapters[0].From == p.Chapters[0].To:
-		return LedgerChapter
-	}
-	return LedgerVolume
 }

@@ -47,8 +47,6 @@ type filePlan struct {
 
 var reHashSuffix = regexp.MustCompile(` \[[a-f0-9]{64}\]$`)
 
-func bookArchive(path string) bool { return mediafile.IsArchive(path) }
-
 // organizePlans works out, for every file of a series, where the current
 // settings would put it and what metadata it should carry.
 func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) ([]filePlan, *store.Series, MediaSettings, error) {
@@ -137,14 +135,6 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 		return false
 	}
 	reviewDirs := []string{filepath.Join(volumesDir, "review"), filepath.Join(chaptersDir, "review")}
-	inReview := func(p string) bool {
-		for _, r := range reviewDirs {
-			if strings.HasPrefix(p, r+string(filepath.Separator)) {
-				return true
-			}
-		}
-		return false
-	}
 	insideTree := func(p string) bool { return under(p, volumeTrees) || under(p, chapterTrees) }
 
 	rel := func(p string) string {
@@ -162,63 +152,9 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 			return nil, nil, ms, err
 		}
 		p := filePlan{file: f, FileChange: FileChange{FileID: f.ID, From: rel(f.Path), To: rel(f.Path)}}
-		// The books this file holds, once each, filed under the edition's
-		// default version unless only an additional version claims it.
-		var slots []store.BookRef
-		home := map[int64]int64{} // book → the version it is filed under
-		for _, c := range coverage {
-			if c.FileID != f.ID || !c.Verified {
-				continue
-			}
-			// A book already placed through another file does not place this
-			// one next to it.
-			if placed[store.BookKey(c.VersionID, c.BookID)] != f.ID {
-				continue
-			}
-			w, err := cat.book(ctx, c.BookID)
-			if err != nil {
-				continue
-			}
-			// One stable home per book: the default version when it claims
-			// the file, otherwise the oldest additional version that does.
-			chosen, seen := home[c.BookID]
-			switch {
-			case c.VersionID == defaultVersion[w.EditionID]:
-				home[c.BookID] = c.VersionID
-			case !seen || (chosen != defaultVersion[w.EditionID] && c.VersionID < chosen):
-				home[c.BookID] = c.VersionID
-			}
-			if seen {
-				continue
-			}
-			col, err := cat.edition(ctx, w.EditionID)
-			if err != nil {
-				delete(home, c.BookID)
-				continue
-			}
-			slots = append(slots, store.BookRef{Ledger: col.Type, EditionID: col.ID, Number: w.SequenceNum, BookID: w.ID})
-		}
-		for i := range slots {
-			slots[i].VersionID = home[slots[i].BookID]
-		}
-		sort.Slice(slots, func(i, j int) bool { return slots[i].Number < slots[j].Number })
-		exile := false
-		switch {
-		case f.Presence == "missing" || f.Presence == "unavailable":
-			p.Skip = "The file is not on disk."
-		case f.NeedsReview || f.Unrequested:
-			p.Skip = "Not matched to a book yet."
-		case len(slots) == 0 && anyCov[f.ID]:
-			// Holds books whose placed copy is another file: out of the book
-			// folder, into review/ — never two copies of one book there.
-			if insideTree(f.Path) && !inReview(f.Path) {
-				exile = true
-			} else {
-				p.Skip = "Another file is placed for these books."
-			}
-		case len(slots) == 0:
-			p.Skip = "Not matched to a book yet."
-		}
+		slots := placedBooks(ctx, cat, coverage, placed, defaultVersion, f.ID)
+		skip, exile := skipReason(f, slots, anyCov[f.ID], insideTree(f.Path), under(f.Path, reviewDirs))
+		p.Skip = skip
 		if p.Skip != "" {
 			plans = append(plans, p)
 			continue
@@ -235,47 +171,120 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 			plans = append(plans, p)
 			continue
 		}
-
-		ext := filepath.Ext(f.Path)
-		processable := ms.WriteComicInfo && bookArchive(f.Path)
-		if processable {
-			ext = ".cbz"
-		}
-		group := f.Facts.Group
-		p.name = reHashSuffix.ReplaceAllString(strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path)), "") + ext
-		p.info = place.info(ctx, slots, tagSource{Release: f.Claims.Title, Group: group, Via: f.Facts.Protocol, Site: f.Facts.Site, Flags: f.Facts.Flags})
-		if ms.RenameImports {
-			p.name = place.fileName(ctx, slots, group, ext)
-		}
-		seriesDir := volumesDir
-		if slots[0].Ledger == "chapter" {
-			seriesDir = chaptersDir
-		}
-		p.dir = place.dir(ctx, seriesDir, slots[0])
-
-		p.dest = assetPath(p.dir, p.name, "")
-		if ms.HashInName && f.Hash != "" {
-			p.dest = assetPath(p.dir, p.name, f.Hash)
-		}
-		p.Rename = p.dest != f.Path
-		p.To = rel(p.dest)
-		if processable {
-			// Out of date when the container is not a CBZ yet, or the merge
-			// would change what the file already says.
-			existing := mediafile.ReadComicInfo(f.Path)
-			p.Retag = existing == nil || strings.ToLower(filepath.Ext(f.Path)) != ".cbz"
-			if existing != nil {
-				merged := mediafile.Merge(*existing, p.info)
-				merged.PageCount = existing.PageCount
-				p.Retag = p.Retag || !reflect.DeepEqual(merged, *existing)
-			}
-		}
+		planTarget(ctx, &p, place, ms, slots, volumesDir, chaptersDir, rel)
 		plans = append(plans, p)
 	}
 	if fileID == 0 {
 		settleFallbackNames(plans, rel)
 	}
 	return plans, series, ms, nil
+}
+
+// placedBooks lists the books one file holds, once each, filed under the
+// edition's default version unless only an additional version claims it.
+func placedBooks(ctx context.Context, cat *catalogCache, coverage []store.AssetCoverage, placed map[string]int64, defaultVersion map[int64]int64, fileID int64) []store.BookRef {
+	var slots []store.BookRef
+	home := map[int64]int64{} // book → the version it is filed under
+	for _, c := range coverage {
+		if c.FileID != fileID || !c.Verified {
+			continue
+		}
+		// A book already placed through another file does not place this
+		// one next to it.
+		if placed[store.BookKey(c.VersionID, c.BookID)] != fileID {
+			continue
+		}
+		w, err := cat.book(ctx, c.BookID)
+		if err != nil {
+			continue
+		}
+		// One stable home per book: the default version when it claims
+		// the file, otherwise the oldest additional version that does.
+		chosen, seen := home[c.BookID]
+		switch {
+		case c.VersionID == defaultVersion[w.EditionID]:
+			home[c.BookID] = c.VersionID
+		case !seen || (chosen != defaultVersion[w.EditionID] && c.VersionID < chosen):
+			home[c.BookID] = c.VersionID
+		}
+		if seen {
+			continue
+		}
+		col, err := cat.edition(ctx, w.EditionID)
+		if err != nil {
+			delete(home, c.BookID)
+			continue
+		}
+		slots = append(slots, store.BookRef{Ledger: col.Type, EditionID: col.ID, Number: w.SequenceNum, BookID: w.ID})
+	}
+	for i := range slots {
+		slots[i].VersionID = home[slots[i].BookID]
+	}
+	sort.Slice(slots, func(i, j int) bool { return slots[i].Number < slots[j].Number })
+	return slots
+}
+
+// skipReason says why a file is left alone (not matched to a book, missing),
+// or "" when it is planned; exile then reports a placed copy that must move
+// to review/.
+func skipReason(f store.File, slots []store.BookRef, anyCov, insideTree, inReview bool) (skip string, exile bool) {
+	switch {
+	case f.Presence == "missing" || f.Presence == "unavailable":
+		skip = "The file is not on disk."
+	case f.NeedsReview || f.Unrequested:
+		skip = "Not matched to a book yet."
+	case len(slots) == 0 && anyCov:
+		// Holds books whose placed copy is another file: out of the book
+		// folder, into review/ — never two copies of one book there.
+		if insideTree && !inReview {
+			exile = true
+		} else {
+			skip = "Another file is placed for these books."
+		}
+	case len(slots) == 0:
+		skip = "Not matched to a book yet."
+	}
+	return skip, exile
+}
+
+// planTarget fills a matched file's plan with where it goes and the metadata
+// it should carry.
+func planTarget(ctx context.Context, p *filePlan, place *placement, ms MediaSettings, slots []store.BookRef, volumesDir, chaptersDir string, rel func(string) string) {
+	f := p.file
+	ext := filepath.Ext(f.Path)
+	processable := ms.WriteComicInfo && mediafile.IsArchive(f.Path)
+	if processable {
+		ext = ".cbz"
+	}
+	group := f.Facts.Group
+	p.name = reHashSuffix.ReplaceAllString(strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path)), "") + ext
+	p.info = place.info(ctx, slots, tagSource{Release: f.Claims.Title, Group: group, Via: f.Facts.Protocol, Site: f.Facts.Site, Flags: f.Facts.Flags})
+	if ms.RenameImports {
+		p.name = place.fileName(ctx, slots, group, ext)
+	}
+	seriesDir := volumesDir
+	if slots[0].Ledger == "chapter" {
+		seriesDir = chaptersDir
+	}
+	p.dir = place.dir(ctx, seriesDir, slots[0])
+
+	p.dest = assetPath(p.dir, p.name, "")
+	if ms.HashInName && f.Hash != "" {
+		p.dest = assetPath(p.dir, p.name, f.Hash)
+	}
+	p.Rename = p.dest != f.Path
+	p.To = rel(p.dest)
+	if processable {
+		// Out of date when the container is not a CBZ yet, or the merge
+		// would change what the file already says.
+		existing := mediafile.ReadComicInfo(f.Path)
+		p.Retag = existing == nil || strings.ToLower(filepath.Ext(f.Path)) != ".cbz"
+		if existing != nil {
+			merged := mediafile.Merge(*existing, p.info)
+			merged.PageCount = existing.PageCount
+			p.Retag = p.Retag || !reflect.DeepEqual(merged, *existing)
+		}
+	}
 }
 
 // settleFallbackNames takes out of the plan the files that are where they
@@ -459,7 +468,7 @@ func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettin
 	hash := p.file.Hash
 	var err error
 	if hash == "" {
-		if hash, err = fileHash(src); err != nil {
+		if hash, err = fingerprint(src); err != nil {
 			return "", err
 		}
 	}
@@ -532,12 +541,15 @@ func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettin
 }
 
 // pruneEmptyDirs removes dir and its parents while they are empty, up to
-// but not including stop.
-func pruneEmptyDirs(dir, stop string) {
-	for dir != stop && strings.HasPrefix(dir, stop+string(filepath.Separator)) {
+// but not including root, and never outside root.
+func pruneEmptyDirs(dir, root string) {
+	if root == "" {
+		return
+	}
+	root = filepath.Clean(root)
+	for dir = filepath.Clean(dir); dir != root && strings.HasPrefix(dir, root+string(filepath.Separator)); dir = filepath.Dir(dir) {
 		if os.Remove(dir) != nil {
 			return
 		}
-		dir = filepath.Dir(dir)
 	}
 }

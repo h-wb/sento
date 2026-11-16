@@ -32,7 +32,7 @@ func reviewDefaults(plan *ReviewPlan) []ReviewFileChoice {
 func waitingScoredFile(t *testing.T, st *store.Store, sid int64, dir, name, key string) int64 {
 	t.Helper()
 	fid := waitingFile(t, st, sid, dir, name, key)
-	hash, err := fileHash(filepath.Join(dir, name))
+	hash, err := fingerprint(filepath.Join(dir, name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestReviewChoicesRejectsChangedBytesBeforePreview(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			digest, err := fileHash(before[0].Path)
+			digest, err := fingerprint(before[0].Path)
 			if err != nil {
 				t.Fatal(err)
 			}

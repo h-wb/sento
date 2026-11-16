@@ -48,7 +48,7 @@ func TestIndexerSearchChecksCategoryFiltering(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, err := TestIndexerSearch(context.Background(), store.Indexer{Protocol: store.IndexerTorznab, Settings: settings}, " Example ")
+			result, err := testIndexerSearch(context.Background(), store.Indexer{Protocol: store.IndexerTorznab, Settings: settings}, " Example ")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -78,11 +78,11 @@ func TestIndexerSearchChecksCategoryFiltering(t *testing.T) {
 func TestIndexerSearchRejectsInvalidInput(t *testing.T) {
 	t.Parallel()
 	for _, query := range []string{" ", strings.Repeat("a", 201)} {
-		if _, err := TestIndexerSearch(context.Background(), store.Indexer{Protocol: store.IndexerTorznab}, query); err == nil {
+		if _, err := testIndexerSearch(context.Background(), store.Indexer{Protocol: store.IndexerTorznab}, query); err == nil {
 			t.Errorf("query %q should be invalid", query)
 		}
 	}
-	if _, err := TestIndexerSearch(context.Background(), store.Indexer{Protocol: store.IndexerSource}, "Example"); err == nil {
+	if _, err := testIndexerSearch(context.Background(), store.Indexer{Protocol: store.IndexerSource}, "Example"); err == nil {
 		t.Fatal("source indexer should not use Torznab diagnostics")
 	}
 }

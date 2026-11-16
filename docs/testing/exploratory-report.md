@@ -1,4 +1,4 @@
-# Exploratory report — <date / commit>
+# Exploratory report: <date / commit>
 
 - Mode and fixture scenario(s):
 - Web / API / fixtures URLs:

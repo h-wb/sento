@@ -10,19 +10,21 @@ import (
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/metadata"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
 type Library struct {
 	store    *store.Store
 	provider metadata.Provider
+	registry *provider.Registry
 
 	editionsMu sync.Mutex
 	editions   []metadata.Edition
 }
 
-func NewLibrary(st *store.Store, provider metadata.Provider) *Library {
-	return &Library{store: st, provider: provider}
+func NewLibrary(st *store.Store, provider metadata.Provider, registry *provider.Registry) *Library {
+	return &Library{store: st, provider: provider, registry: registry}
 }
 
 type AddSeriesRequest struct {
@@ -37,21 +39,31 @@ type AddSeriesRequest struct {
 	ProfileID     int64    `json:"profileId"`     // 0 = instance default
 }
 
+// fetchCatalog loads the provider's series, collections and works records
+// for one MangaBaka id.
+func (l *Library) fetchCatalog(ctx context.Context, mangabakaID int64) (*metadata.Series, []metadata.Collection, map[string][]metadata.Work, error) {
+	series, err := l.provider.GetSeries(ctx, mangabakaID)
+	if err != nil {
+		return nil, nil, nil, apperr.Upstreamf("fetching series %d: %w", mangabakaID, err)
+	}
+	collections, err := l.provider.GetCollections(ctx, series.MangaBakaID)
+	if err != nil {
+		return nil, nil, nil, apperr.Upstreamf("fetching collections: %w", err)
+	}
+	works, err := l.provider.GetWorks(ctx, series.MangaBakaID)
+	if err != nil {
+		return nil, nil, nil, apperr.Upstreamf("fetching works: %w", err)
+	}
+	return series, collections, works, nil
+}
+
 func (l *Library) AddSeries(ctx context.Context, req AddSeriesRequest) (int64, error) {
 	if req.MangaBakaID == 0 {
 		return 0, apperr.Invalidf("mangabakaId is required")
 	}
-	series, err := l.provider.GetSeries(ctx, req.MangaBakaID)
+	series, collections, works, err := l.fetchCatalog(ctx, req.MangaBakaID)
 	if err != nil {
-		return 0, apperr.Upstreamf("fetching series %d: %w", req.MangaBakaID, err)
-	}
-	collections, err := l.provider.GetCollections(ctx, series.MangaBakaID)
-	if err != nil {
-		return 0, apperr.Upstreamf("fetching collections: %w", err)
-	}
-	works, err := l.provider.GetWorks(ctx, series.MangaBakaID)
-	if err != nil {
-		return 0, apperr.Upstreamf("fetching works: %w", err)
+		return 0, err
 	}
 
 	monitorAll := req.Monitor == "all"
@@ -111,19 +123,28 @@ func (l *Library) Refresh(ctx context.Context, seriesID int64) error {
 	if err != nil {
 		return err
 	}
-	series, err := l.provider.GetSeries(ctx, existing.MangaBakaID)
+	series, collections, works, err := l.fetchCatalog(ctx, existing.MangaBakaID)
 	if err != nil {
-		return apperr.Upstreamf("fetching series %d: %w", existing.MangaBakaID, err)
-	}
-	collections, err := l.provider.GetCollections(ctx, series.MangaBakaID)
-	if err != nil {
-		return apperr.Upstreamf("fetching collections: %w", err)
-	}
-	works, err := l.provider.GetWorks(ctx, series.MangaBakaID)
-	if err != nil {
-		return apperr.Upstreamf("fetching works: %w", err)
+		return err
 	}
 	return l.store.ReconcileMetadata(ctx, seriesID, series, collections, works)
+}
+
+// UpdateSeries applies a series-level patch (nil = keep): monitoring gates
+// the scheduler's automatic searches, the profile is 0 for the instance
+// default.
+func (l *Library) UpdateSeries(ctx context.Context, seriesID int64, monitored *bool, profileID *int64) error {
+	if monitored != nil {
+		if err := l.store.SetSeriesMonitored(ctx, seriesID, *monitored); err != nil {
+			return err
+		}
+	}
+	if profileID != nil {
+		if err := l.store.SetSeriesProfile(ctx, seriesID, *profileID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CreateEditionParams describes a user-defined edition: volume
@@ -295,4 +316,98 @@ func (l *Library) UpdateEdition(ctx context.Context, seriesID, editionID int64, 
 		}
 	}
 	return nil
+}
+
+// SaveVersion saves a way of collecting an edition, as a person sets it:
+// an edition is collected once per release profile (two of its cards with
+// one profile would want the same releases for the same books), and
+// release restrictions live in the profile, never here. A card beside the
+// first is named after its profile: the name is its folder.
+func (l *Library) SaveVersion(ctx context.Context, seriesID int64, t store.CollectedVersion) (int64, error) {
+	taken, err := l.store.ProfileTaken(ctx, t.EditionID, t.ID, t.ProfileID)
+	if err != nil {
+		return 0, err
+	}
+	if taken {
+		return 0, apperr.Conflictf("this edition is already collected with that release profile")
+	}
+	if !t.IsDefault && t.ProfileID > 0 {
+		p, err := l.store.GetProfile(ctx, t.ProfileID)
+		if err != nil {
+			return 0, err
+		}
+		t.Name = p.Name
+	}
+	return l.store.SaveVersion(ctx, seriesID, t)
+}
+
+// UpdateBinding applies a binding patch field by field, in order (nil =
+// keep, "" = no state change).
+func (l *Library) UpdateBinding(ctx context.Context, seriesID, bindingID int64, trustChapters *bool, editionID *int64, state string) error {
+	if trustChapters != nil {
+		if err := l.store.SetBindingTrust(ctx, seriesID, bindingID, *trustChapters); err != nil {
+			return err
+		}
+	}
+	if editionID != nil {
+		if err := l.store.SetBindingEdition(ctx, seriesID, bindingID, *editionID); err != nil {
+			return err
+		}
+	}
+	if state == "" && (trustChapters != nil || editionID != nil) {
+		return nil
+	}
+	if state != "active" && state != "disabled" {
+		return apperr.Invalidf("state must be active or disabled")
+	}
+	return l.store.SetBindingState(ctx, seriesID, bindingID, state)
+}
+
+// SeparateCollection gives one collection an edition of its own and
+// rebuilds the series' book models.
+func (l *Library) SeparateCollection(ctx context.Context, seriesID, collectionID int64) (int64, error) {
+	edition, err := l.store.SeparateCollection(ctx, seriesID, collectionID)
+	if err != nil {
+		return 0, err
+	}
+	if err := l.store.EnsureModels(ctx, seriesID); err != nil {
+		return 0, err
+	}
+	return edition, nil
+}
+
+// EditEditionMetadata edits one edition's metadata; resetting fields
+// refreshes the series from the provider afterwards.
+func (l *Library) EditEditionMetadata(ctx context.Context, seriesID, editionID int64, p store.EditionMetadataPatch) error {
+	if err := l.store.EditEdition(ctx, seriesID, editionID, p); err != nil {
+		return err
+	}
+	if len(p.Reset) > 0 {
+		return l.Refresh(ctx, seriesID)
+	}
+	return nil
+}
+
+// ResetBook clears one book's catalog state, then refreshes the series.
+func (l *Library) ResetBook(ctx context.Context, seriesID, bookID int64) error {
+	if err := l.store.ResetBook(ctx, seriesID, bookID); err != nil {
+		return err
+	}
+	return l.Refresh(ctx, seriesID)
+}
+
+// BookWorks lists the catalog works behind one book; a book that belongs to
+// another series is not found here.
+func (l *Library) BookWorks(ctx context.Context, seriesID, bookID int64) ([]store.Work, error) {
+	book, err := l.store.GetBook(ctx, bookID)
+	if err == nil {
+		var edition *store.Edition
+		if edition, err = l.store.GetEdition(ctx, book.EditionID); err == nil && edition.SeriesID != seriesID {
+			err = store.ErrNotFound
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return l.store.ListWorks(ctx, bookID)
 }

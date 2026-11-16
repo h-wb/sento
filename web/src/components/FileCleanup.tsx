@@ -12,10 +12,12 @@ import {
   Text,
 } from '@mantine/core'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, fmtSize } from '../api'
+import { api } from '../api'
+import { invalidateLibrary } from '../queries'
+import { fmtSize, fmtWhen, plural } from '../format'
 import { QueryFeedback } from './QueryFeedback'
 import { useConfirmAction } from './ConfirmAction'
-import { fmtWhen, notify } from '../ui'
+import { errorMessage, notify } from '../ui'
 
 export default function FileCleanup({
   seriesID,
@@ -48,11 +50,7 @@ export default function FileCleanup({
   const chosen = candidates.filter((f) => selected.includes(f.fileId) && f.eligible)
   const total = chosen.reduce((sum, f) => sum + f.size, 0)
   const refresh = async () => {
-    await Promise.all(
-      ['series', 'activity', 'review', 'wanted'].map((key) =>
-        qc.invalidateQueries({ queryKey: [key] }),
-      ),
-    )
+    await invalidateLibrary(qc)
   }
   const work = async (fn: () => Promise<unknown>) => {
     setBusy(true)
@@ -61,14 +59,14 @@ export default function FileCleanup({
       await fn()
       await refresh()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorMessage(e))
     } finally {
       setBusy(false)
     }
   }
   const move = () =>
     confirm({
-      title: `Move ${chosen.length} ${chosen.length === 1 ? 'file' : 'files'} to trash?`,
+      title: `Move ${chosen.length} ${plural(chosen.length, 'file')} to trash?`,
       message: `${fmtSize(total)} selected. These files will be kept for ${days} days, then permanently deleted by housekeeping. Download-client payloads stay in place; hardlinks can keep disk space in use. Collection settings stay as they are.`,
       label: 'Move to trash',
       onConfirm: async () => {
@@ -88,7 +86,7 @@ export default function FileCleanup({
           }
           setSelected([])
           setError(skipped.join('\n'))
-          notify.ok(`${moved.length} ${moved.length === 1 ? 'file' : 'files'} moved to trash`)
+          notify.ok(`${moved.length} ${plural(moved.length, 'file')} moved to trash`)
         } finally {
           await refresh()
           setBusy(false)

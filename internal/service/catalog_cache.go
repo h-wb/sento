@@ -40,7 +40,7 @@ func newCatalogCache(st *store.Store, seriesID int64) *catalogCache {
 // preload loads everything a series-wide pass needs in a fixed number of
 // queries, whatever the number of files.
 func (c *catalogCache) preload(ctx context.Context) error {
-	books, err := c.st.ListSeriesBooks(ctx, c.seriesID)
+	books, err := c.st.SeriesBooksByNumber(ctx, c.seriesID)
 	if err != nil {
 		return err
 	}
@@ -52,19 +52,11 @@ func (c *catalogCache) preload(ctx context.Context) error {
 		return err
 	}
 	c.worksRaw = raws
-	if c.editionList, err = c.st.ListEditions(ctx, c.seriesID); err != nil {
+	if _, err = c.editionsAll(ctx); err != nil {
 		return err
 	}
-	c.editionsLoaded = true
-	for i := range c.editionList {
-		c.editions[c.editionList[i].ID] = &c.editionList[i]
-	}
-	if c.versionList, err = c.st.ListVersions(ctx, c.seriesID); err != nil {
+	if _, err = c.versionsAll(ctx); err != nil {
 		return err
-	}
-	c.versionsLoaded = true
-	for i := range c.versionList {
-		c.versions[c.versionList[i].ID] = &c.versionList[i]
 	}
 	seriesRaw, _, err := c.st.CatalogPayloads(ctx, c.seriesID, 0)
 	if err != nil {

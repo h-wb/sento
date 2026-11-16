@@ -10,6 +10,24 @@ import (
 
 // Settings and sidecar-extension handlers.
 
+// mountSettingsAPI registers the settings and extension routes.
+func (s *Server) mountSettingsAPI(r chi.Router) {
+	r.Get("/settings/media", s.handleGetMediaSettings)
+	r.Put("/settings/media", s.handlePutMediaSettings)
+	r.Post("/settings/media/preview", s.handlePreviewMediaSettings)
+	r.Get("/settings/media/schema", s.handleMediaSchema)
+	r.Get("/settings/connections", s.handleGetConnections)
+	r.Put("/settings/connections", s.handlePutConnections)
+	r.Post("/settings/connections/test", s.handleTestConnections)
+	r.Get("/extensions", s.handleListExtensions)
+	r.Get("/extensions/{pkg}/sources", s.handleExtensionSources)
+	r.Get("/extensions/repos", s.handleGetExtensionRepos)
+	r.Put("/extensions/repos", s.handleSetExtensionRepos)
+	r.Post("/extensions/{pkg}", s.handleInstallExtension)
+	r.Get("/extensions/sources/{sid}/preferences", s.handleSourcePreferences)
+	r.Put("/extensions/sources/{sid}/preferences", s.handleSetSourcePreference)
+}
+
 // --- media settings ---
 
 func (s *Server) handleGetMediaSettings(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +44,28 @@ func (s *Server) handlePutMediaSettings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, m)
+}
+
+func (s *Server) handlePreviewMediaSettings(w http.ResponseWriter, r *http.Request) {
+	var m service.MediaSettings
+	if !decodeBody(w, r, &m) {
+		return
+	}
+	p := service.PreviewMediaSettings(m)
+	writeJSON(w, http.StatusOK, NamingPreview{
+		VolumePath: p["volumePath"], ChapterPath: p["chapterPath"],
+		BookFolder:   p["bookFolder"],
+		SeriesFolder: p["seriesFolder"], VolumeFile: p["volumeFile"], ChapterFile: p["chapterFile"],
+		Paths:   service.PreviewPaths(m),
+		Reader:  service.PreviewReaderFields(m),
+		Readers: service.CheckReaders(m),
+		Errors:  service.MediaSettingsProblems(m),
+	})
+}
+
+// handleMediaSchema lists the naming tokens and reader fields.
+func (s *Server) handleMediaSchema(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, service.MediaSettingsSchema())
 }
 
 // --- connection settings ---
@@ -56,28 +96,6 @@ func (s *Server) handleTestConnections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondList(w, service.TestConnections(r.Context(), cs), nil)
-}
-
-func (s *Server) handlePreviewMediaSettings(w http.ResponseWriter, r *http.Request) {
-	var m service.MediaSettings
-	if !decodeBody(w, r, &m) {
-		return
-	}
-	p := service.PreviewMediaSettings(m)
-	writeJSON(w, http.StatusOK, NamingPreview{
-		VolumePath: p["volumePath"], ChapterPath: p["chapterPath"],
-		BookFolder:   p["bookFolder"],
-		SeriesFolder: p["seriesFolder"], VolumeFile: p["volumeFile"], ChapterFile: p["chapterFile"],
-		Paths:   service.PreviewPaths(m),
-		Reader:  service.PreviewReaderFields(m),
-		Readers: service.CheckReaders(m),
-		Errors:  service.MediaSettingsProblems(m),
-	})
-}
-
-// handleMediaSchema lists the naming tokens and reader fields.
-func (s *Server) handleMediaSchema(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, service.MediaSettingsSchema())
 }
 
 // --- extensions (sidecar host management) ---

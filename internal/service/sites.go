@@ -2,24 +2,26 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/h-wb/sento/internal/apperr"
+	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
 // SiteService backs the Indexers UI: the configured entries with
-// reachability, plus per-series override views.
+// reachability, adding, updating, patching and testing them, the source
+// search of the manual bind, plus per-series override views.
 type SiteService struct {
-	store    *store.Store
-	registry *provider.Registry
+	store *store.Store
+	conns *Connections
 }
 
-func NewSiteService(st *store.Store, registry *provider.Registry) *SiteService {
-	return &SiteService{store: st, registry: registry}
+func NewSiteService(st *store.Store, conns *Connections) *SiteService {
+	return &SiteService{store: st, conns: conns}
 }
 
 // IndexerView is one entry with live reachability and a display summary.
@@ -117,14 +119,12 @@ func entryID(id int64) string {
 func summary(ix store.Indexer) string {
 	switch ix.Protocol {
 	case store.IndexerTorznab:
-		var ts TorznabSettings
-		_ = json.Unmarshal(ix.Settings, &ts)
+		ts, _ := torznabSettings(ix)
 		return hostString(ts.URL)
 	case store.IndexerSource:
 		// The source id is a number only the host understands; the
 		// extension's package says which one it is.
-		var ss SourceSettings
-		_ = json.Unmarshal(ix.Settings, &ss)
+		ss, _ := sourceSettings(ix)
 		if i := strings.LastIndex(ss.PkgName, "."); i >= 0 && i < len(ss.PkgName)-1 {
 			return "extension: " + ss.PkgName[i+1:]
 		}
@@ -139,7 +139,7 @@ func (s *SiteService) List(ctx context.Context) ([]IndexerView, error) {
 	if err != nil {
 		return nil, err
 	}
-	reach := reachability(ctx, s.registry)
+	reach := reachability(ctx, s.conns.Registry())
 	out := make([]IndexerView, 0, len(entries))
 	for _, ix := range entries {
 		out = append(out, IndexerView{
@@ -155,6 +155,110 @@ func (s *SiteService) List(ctx context.Context) ([]IndexerView, error) {
 		return out[i].Name < out[j].Name
 	})
 	return out, nil
+}
+
+// Add validates and stores a new indexer entry.
+func (s *SiteService) Add(ctx context.Context, ix store.Indexer) (store.Indexer, error) {
+	if err := validateIndexer(ix); err != nil {
+		return ix, err
+	}
+	id, err := s.store.AddIndexer(ctx, ix)
+	if err != nil {
+		return ix, err
+	}
+	ix.ID = id
+	return ix, nil
+}
+
+// Update replaces one entry; the protocol is immutable.
+func (s *SiteService) Update(ctx context.Context, iid int64, ix store.Indexer) (store.Indexer, error) {
+	existing, err := s.store.GetIndexer(ctx, iid)
+	if err != nil {
+		return ix, err
+	}
+	ix.ID = iid
+	ix.Protocol = existing.Protocol // protocol is immutable
+	if err := validateIndexer(ix); err != nil {
+		return ix, err
+	}
+	if err := s.store.UpdateIndexer(ctx, ix); err != nil {
+		return ix, err
+	}
+	return ix, nil
+}
+
+// IndexerPatch toggles entry fields inline (nil = keep).
+type IndexerPatch struct {
+	Enabled     *bool `json:"enabled"`
+	UseVolumes  *bool `json:"useVolumes"`
+	UseChapters *bool `json:"useChapters"`
+	Priority    *int  `json:"priority"`
+}
+
+// Patch applies inline field toggles to one entry. Unlike Add and Update
+// it does not re-validate: the switches only flip fields of an existing
+// entry.
+func (s *SiteService) Patch(ctx context.Context, iid int64, patch IndexerPatch) (store.Indexer, error) {
+	ix, err := s.store.GetIndexer(ctx, iid)
+	if err != nil {
+		return store.Indexer{}, err
+	}
+	if patch.Enabled != nil {
+		ix.Enabled = *patch.Enabled
+	}
+	if patch.UseVolumes != nil {
+		ix.UseVolumes = *patch.UseVolumes
+	}
+	if patch.UseChapters != nil {
+		ix.UseChapters = *patch.UseChapters
+	}
+	if patch.Priority != nil {
+		ix.Priority = *patch.Priority
+	}
+	if err := s.store.UpdateIndexer(ctx, *ix); err != nil {
+		return store.Indexer{}, err
+	}
+	return *ix, nil
+}
+
+// Test probes one entry: torznab caps, or source presence on the host.
+func (s *SiteService) Test(ctx context.Context, iid int64) error {
+	ix, err := s.store.GetIndexer(ctx, iid)
+	if err != nil {
+		return err
+	}
+	return testIndexer(ctx, *ix, s.conns.Host())
+}
+
+// TestSearch runs the search diagnostic against one torznab entry.
+func (s *SiteService) TestSearch(ctx context.Context, iid int64, query string) (*IndexerSearchCheck, error) {
+	ix, err := s.store.GetIndexer(ctx, iid)
+	if err != nil {
+		return nil, err
+	}
+	return testIndexerSearch(ctx, *ix, query)
+}
+
+// SearchSource searches one source entry's manga catalog on the host (the
+// manual bind UI).
+func (s *SiteService) SearchSource(ctx context.Context, iid int64, q string) ([]extensions.Manga, error) {
+	host, err := s.conns.RequireHost()
+	if err != nil {
+		return nil, err
+	}
+	ix, err := s.store.GetIndexer(ctx, iid)
+	if err != nil {
+		return nil, err
+	}
+	ss, err := sourceSettings(*ix)
+	if err != nil || ss.SourceID == "" {
+		return nil, apperr.Invalidf("indexer is not an extension source")
+	}
+	mangas, err := host.Search(ctx, ss.SourceID, q)
+	if err != nil {
+		return nil, apperr.Upstreamf("%w", err)
+	}
+	return mangas, nil
 }
 
 // Effective returns entries with the series overrides applied + bindings.

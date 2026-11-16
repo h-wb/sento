@@ -63,7 +63,16 @@ or describe a reset as an application repair.
 
 ## Exercise the workflow
 
-Start with matching, recovery and routing (M1–M3), then complete M4–M6.
+Start with the first three [missions](testing/exploratory-missions.md), then
+complete the other three:
+
+- M1 matching: find the right release and source matches.
+- M2 recovery: understand and recover from a source failure.
+- M3 routing: send a torrent to the intended client.
+- M4 editions: keep editions and profile-based copies coherent.
+- M5 files: import, organize, rescan and remove files without losing them.
+- M6 Review: finish Review and explain the result.
+
 For each mission, state the goal and expected result, act through the UI,
 reload, and check persisted state. Read-only API, request-journal and file
 checks support the evidence. Disclose API-seeded setup; it does not prove

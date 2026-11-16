@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/provider"
@@ -116,15 +115,7 @@ func (im *Importer) RemoveSeries(ctx context.Context, id int64, opts RemoveOptio
 // the library and never the library itself: a removed series leaves no
 // empty folders behind, and nothing outside the library is touched.
 func (im *Importer) pruneEmptyDirs(dir string) {
-	if im.libraryRoot == "" {
-		return
-	}
-	root := filepath.Clean(im.libraryRoot)
-	for dir = filepath.Clean(dir); dir != root && strings.HasPrefix(dir, root+string(filepath.Separator)); dir = filepath.Dir(dir) {
-		if os.Remove(dir) != nil { // not empty, or not ours to remove
-			return
-		}
-	}
+	pruneEmptyDirs(dir, im.libraryRoot)
 }
 
 // DeleteFile forgets a file and deletes it from disk; a file a card has

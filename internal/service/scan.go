@@ -183,7 +183,7 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 
 		parsed := parse.ParseAnchored(filepath.Base(path), parse.ChannelFile, titles)
 		links := sc.linksFor(ctx, sh, parsed, monitored, chapterCols)
-		facts := store.AssetFacts{Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}, Title: filepath.Base(path), Protocol: "torrent", FactsKnown: true, Flags: candidateFlags(ReleaseCandidate{Parse: parsed}), Language: parsed.Language, Group: parsed.Group, Format: strings.TrimPrefix(filepath.Ext(path), "."), Resolution: parsed.Quality.Resolution, Revision: parsed.Version, Digital: parsed.Quality.Digital}
+		facts := store.AssetFacts{Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}, Title: filepath.Base(path), Protocol: "torrent", FactsKnown: true, Flags: parseFlags(parsed), Language: parsed.Language, Group: parsed.Group, Format: strings.TrimPrefix(filepath.Ext(path), "."), Resolution: parsed.Quality.Resolution, Revision: parsed.Version, Digital: parsed.Quality.Digital}
 		// A file Sento tagged says what it is; its name is the fallback.
 		if ci := mediafile.ReadComicInfo(path); ci != nil {
 			if p, ok := mediafile.ReadProvenance(ci.Notes); ok && p.MangaBaka == series.MangaBakaID && series.MangaBakaID > 0 {
@@ -202,7 +202,7 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 		// cached attributes; record the signature with the fingerprint so
 		// review previews trust it instead of re-reading the archive.
 		live, serr := statArchive(path)
-		hash, herr := fileHash(path)
+		hash, herr := fingerprint(path)
 		if herr != nil {
 			return herr
 		}
@@ -253,7 +253,7 @@ func (sc *Scanner) rederiveFacts(ctx context.Context, f store.File, titles []str
 	facts := f.Facts
 	if name := factsName(f); name != "" {
 		parsed := parse.ParseAnchored(name, parse.ChannelFile, titles)
-		facts.Flags = candidateFlags(ReleaseCandidate{Parse: parsed})
+		facts.Flags = parseFlags(parsed)
 		facts.Resolution, facts.Revision, facts.Digital = parsed.Quality.Resolution, parsed.Version, parsed.Quality.Digital
 		// A download's recorded name may be the one Sento gave it, whose own
 		// brackets ("[Standard Edition][en]") read as a group and a language:
@@ -360,7 +360,7 @@ func (sc *Scanner) replaced(ctx context.Context, f store.File, d fs.DirEntry) (b
 	touched := statSignature(live) != f.HashStat
 	if f.HashStat == "" {
 		touched = info.Size() != f.Size
-		if checked, e := time.Parse("2006-01-02 15:04:05", f.CheckedAt); e == nil && info.ModTime().UTC().After(checked) {
+		if checked, e := time.Parse(dbTimeLayout, f.CheckedAt); e == nil && info.ModTime().UTC().After(checked) {
 			touched = true
 		}
 	}
@@ -374,7 +374,7 @@ func (sc *Scanner) replaced(ctx context.Context, f store.File, d fs.DirEntry) (b
 		}
 		return false, nil
 	}
-	hash, err := fileHash(f.Path)
+	hash, err := fingerprint(f.Path)
 	if err != nil {
 		return false, nil // unreadable right now: presence checks report it
 	}

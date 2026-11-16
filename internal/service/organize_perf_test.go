@@ -31,6 +31,7 @@ import (
 
 	"github.com/h-wb/sento/internal/db"
 	"github.com/h-wb/sento/internal/mediafile"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -268,7 +269,7 @@ func TestOrganizePlanningQueryCount(t *testing.T) {
 	ctx := context.Background()
 	conn, dialect := openCountedDB(t)
 	st := store.New(conn, dialect)
-	lib := NewLibrary(st, testProvider())
+	lib := NewLibrary(st, testProvider(), provider.NewRegistry())
 	library := t.TempDir()
 	if err := SaveMediaSettings(ctx, st, DefaultMediaSettings()); err != nil {
 		t.Fatal(err)
@@ -328,7 +329,7 @@ func TestOrganizePerfProfile(t *testing.T) {
 	ctx := context.Background()
 	conn, dialect := openCountedDB(t)
 	st := store.New(conn, dialect)
-	lib := NewLibrary(st, testProvider())
+	lib := NewLibrary(st, testProvider(), provider.NewRegistry())
 	library := t.TempDir()
 	if err := SaveMediaSettings(ctx, st, DefaultMediaSettings()); err != nil {
 		t.Fatal(err)

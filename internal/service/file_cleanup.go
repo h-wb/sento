@@ -50,7 +50,7 @@ func (im *Importer) CleanupPreview(ctx context.Context, sid, eid int64) ([]Clean
 	if eid != 0 && editionByID(editions, eid) == nil {
 		return nil, store.ErrNotFound
 	}
-	books, err := im.store.SeriesBooks(ctx, sid)
+	books, err := im.store.SeriesBooksByNumber(ctx, sid)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func (im *Importer) trashFile(ctx context.Context, sid int64, f CleanupFile, day
 	if !info.Mode().IsRegular() {
 		return apperr.Conflictf("only regular archive files can be moved to trash")
 	}
-	digest, err := fileHash(f.Path)
+	digest, err := fingerprint(f.Path)
 	if err != nil {
 		return err
 	}
@@ -219,8 +219,7 @@ func (im *Importer) trashFile(ctx context.Context, sid int64, f CleanupFile, day
 	}
 	dest := filepath.Join(dir, filepath.Base(f.Path))
 	now := time.Now().UTC()
-	format := "2006-01-02 15:04:05"
-	if err = im.store.BeginFileTrash(ctx, sid, f.FileID, f.Path, dest, digest, now.Format(format), now.AddDate(0, 0, days).Format(format)); err != nil {
+	if err = im.store.BeginFileTrash(ctx, sid, f.FileID, f.Path, dest, digest, now.Format(dbTimeLayout), now.AddDate(0, 0, days).Format(dbTimeLayout)); err != nil {
 		return err
 	}
 	// Link then unlink on the same filesystem: no overwrite, no payload rewrite.
@@ -246,6 +245,22 @@ func checkFileTrashDirectory(dir string) error {
 		if !st.IsDir() || st.Mode()&os.ModeSymlink != 0 {
 			return apperr.Conflictf("trash folder must be a regular directory")
 		}
+	}
+	return nil
+}
+
+// verifyRetained checks that path is still the regular file whose fingerprint
+// is the retained digest; the messages name the failure at the call site.
+func verifyRetained(path string, info fs.FileInfo, digest, notRegular, changed string) error {
+	if !info.Mode().IsRegular() {
+		return apperr.Conflictf("%s", notRegular)
+	}
+	got, err := fingerprint(path)
+	if err != nil {
+		return err
+	}
+	if got != digest {
+		return apperr.Conflictf("%s", changed)
 	}
 	return nil
 }
@@ -281,15 +296,8 @@ func (im *Importer) RestoreTrashedFile(ctx context.Context, sid, fid int64) erro
 	switch {
 	case trashErr == nil && originalErr == nil && os.SameFile(trashInfo, originalInfo):
 		// A crash between link and unlink left both names for the same archive.
-		if !trashInfo.Mode().IsRegular() {
-			return apperr.Conflictf("trash entry is not a regular file")
-		}
-		digest, e := fileHash(f.Path)
-		if e != nil {
-			return e
-		}
-		if digest != f.Digest {
-			return apperr.Conflictf("retained bytes changed; mappings cannot be restored")
+		if err = verifyRetained(f.Path, trashInfo, f.Digest, "trash entry is not a regular file", "retained bytes changed; mappings cannot be restored"); err != nil {
+			return err
 		}
 		if err = os.Remove(f.TrashPath); err != nil {
 			return err
@@ -299,29 +307,15 @@ func (im *Importer) RestoreTrashedFile(ctx context.Context, sid, fid int64) erro
 		if originalErr != nil {
 			return originalErr
 		}
-		if !originalInfo.Mode().IsRegular() {
-			return apperr.Conflictf("original path is not a regular file")
-		}
-		digest, e := fileHash(f.Path)
-		if e != nil {
-			return e
-		}
-		if digest != f.Digest {
-			return apperr.Conflictf("original path contains different bytes; retained mappings cannot be restored")
+		if err = verifyRetained(f.Path, originalInfo, f.Digest, "original path is not a regular file", "original path contains different bytes; retained mappings cannot be restored"); err != nil {
+			return err
 		}
 	default:
 		if trashErr != nil {
 			return trashErr
 		}
-		if !trashInfo.Mode().IsRegular() {
-			return apperr.Conflictf("trash entry is not a regular file")
-		}
-		digest, e := fileHash(f.TrashPath)
-		if e != nil {
-			return e
-		}
-		if digest != f.Digest {
-			return apperr.Conflictf("trash contents changed; retained mappings cannot be restored")
+		if err = verifyRetained(f.TrashPath, trashInfo, f.Digest, "trash entry is not a regular file", "trash contents changed; retained mappings cannot be restored"); err != nil {
+			return err
 		}
 		taken, e := im.store.PathTaken(ctx, f.Path, fid)
 		if e != nil {
@@ -381,15 +375,8 @@ func (im *Importer) purgeTrashedFile(ctx context.Context, sid, fid int64) error 
 		if originalErr == nil && os.SameFile(trashInfo, originalInfo) {
 			return apperr.Conflictf("original file still exists; restore the interrupted move first")
 		}
-		if !trashInfo.Mode().IsRegular() {
-			return apperr.Conflictf("trash entry is not a regular archive")
-		}
-		digest, e := fileHash(f.TrashPath)
-		if e != nil {
-			return e
-		}
-		if digest != f.Digest {
-			return apperr.Conflictf("retained archive changed; review its bytes before deleting it")
+		if err = verifyRetained(f.TrashPath, trashInfo, f.Digest, "trash entry is not a regular archive", "retained archive changed; review its bytes before deleting it"); err != nil {
+			return err
 		}
 		if err = os.Remove(f.TrashPath); err != nil {
 			return err
@@ -412,7 +399,7 @@ func (im *Importer) PurgeExpiredTrash(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	now := time.Now().UTC().Format(dbTimeLayout)
 	var failures []error
 	for _, f := range files {
 		if f.PurgeAfter <= now {

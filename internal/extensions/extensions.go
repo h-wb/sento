@@ -1,8 +1,8 @@
 // Package extensions defines the protocol-adapter contract for extension
 // sources: the host knows how to talk to manga sites (search, chapter
 // lists, page images); Sento owns everything stateful around it (queueing,
-// pacing, CBZ assembly, import). The Kotlin sidecar (host/) implements
-// it; any other extension runtime could.
+// pacing, CBZ assembly, import). The Kotlin sidecar (extensions/app)
+// implements it; any other extension runtime could.
 //
 // All identifiers below sourceID are opaque keys minted by the host —
 // Sento persists them (bindings, queue items) but never interprets them.

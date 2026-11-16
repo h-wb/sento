@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -68,26 +69,11 @@ func (e *ExtensionService) HasManager() bool {
 	return e.host() != nil && e.manager() != nil
 }
 
-// desired is the set of extensions referenced by source indexer entries
-// — entries drive the extension lifecycle.
+// desired is the sorted keys of desiredSet — the extensions referenced
+// by source indexer entries; entries drive the extension lifecycle.
 func (e *ExtensionService) desired(ctx context.Context) []string {
-	entries, err := e.store.ListIndexers(ctx)
-	if err != nil {
-		return nil
-	}
-	var pkgs []string
-	for _, ix := range entries {
-		if ix.Protocol != store.IndexerSource {
-			continue
-		}
-		var ss SourceSettings
-		if json.Unmarshal(ix.Settings, &ss) == nil && ss.PkgName != "" &&
-			!slices.Contains(pkgs, ss.PkgName) {
-			pkgs = append(pkgs, ss.PkgName)
-		}
-	}
-	slices.Sort(pkgs)
-	return pkgs
+	set, _ := e.desiredSet(ctx)
+	return slices.Sorted(maps.Keys(set))
 }
 
 // repoURLs is the stored extension repo list (none by default — the
@@ -258,8 +244,7 @@ func (e *ExtensionService) Sources(ctx context.Context, pkgName string) ([]exten
 func (e *ExtensionService) DeleteIndexerEntry(ctx context.Context, id int64) error {
 	var pkg string
 	if ix, err := e.store.GetIndexer(ctx, id); err == nil && ix.Protocol == store.IndexerSource {
-		var ss SourceSettings
-		if json.Unmarshal(ix.Settings, &ss) == nil {
+		if ss, err := sourceSettings(*ix); err == nil {
 			pkg = ss.PkgName
 		}
 	}
@@ -352,8 +337,8 @@ func (e *ExtensionService) desiredSet(ctx context.Context) (map[string]bool, boo
 		if ix.Protocol != store.IndexerSource {
 			continue
 		}
-		var ss SourceSettings
-		if json.Unmarshal(ix.Settings, &ss) != nil || ss.PkgName == "" {
+		ss, err := sourceSettings(ix)
+		if err != nil || ss.PkgName == "" {
 			complete = false
 			continue
 		}

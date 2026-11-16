@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
-import { notify } from '../ui'
+import { invalidateLibrary } from '../queries'
+import { errorMessage, notify } from '../ui'
 import type {
   ReviewBookPlan,
   ReviewFileChoice,
@@ -155,17 +156,7 @@ export function useReviewChoices({
   const trash = choices.filter((c) => c.disposition === 'trash').length
   const later = choices.filter((c) => c.disposition === 'later').length
 
-  const refreshAll = () =>
-    Promise.all(
-      ['series', 'activity', 'review', 'queue', 'wanted'].map((k) =>
-        qc.invalidateQueries({
-          queryKey: [k],
-          // Keep the open editor's snapshot until the saved receipt is dismissed.
-          predicate: (q) =>
-            !q.queryKey.includes('review-choices') && !q.queryKey.includes('file-review'),
-        }),
-      ),
-    )
+  const refreshAll = () => invalidateLibrary(qc, { keepReviewChoices: true })
   // `release` first saves the files as used by no edition and then moves
   // them to trash: the server trashes only a file nothing uses.
   const apply = async (saved: string, release = false) => {
@@ -184,7 +175,7 @@ export function useReviewChoices({
         } catch (e) {
           await refreshAll()
           throw new Error(
-            `No edition uses the file any more, but it is still on disk: ${e instanceof Error ? e.message : String(e)}`,
+            `No edition uses the file any more, but it is still on disk: ${errorMessage(e)}`,
             { cause: e },
           )
         }
@@ -200,7 +191,7 @@ export function useReviewChoices({
       notify.ok(saved)
       await applied()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorMessage(e))
     } finally {
       setBusy(false)
     }

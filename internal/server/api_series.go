@@ -3,14 +3,47 @@ package server
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
+	"github.com/h-wb/sento/internal/scheduler"
 	"github.com/h-wb/sento/internal/service"
 	"github.com/h-wb/sento/internal/store"
 )
 
-// Series-scoped handlers: the library entries, their editions and
-// books, files, in-place imports and source bindings.
+// Series and library-wide handlers: the library entries, their in-place
+// imports and source bindings, and the library-level views (calendar,
+// wanted, progress, bulk import and organize).
+
+// mountSeriesAPI registers the library-wide routes and the /series tree.
+func (s *Server) mountSeriesAPI(r chi.Router) {
+	r.Get("/calendar", s.handleCalendar)
+	r.Get("/wanted", s.handleWanted)
+	r.Post("/library/import/scan", s.handleImportScan)
+	r.Post("/library/import", s.handleImportFolder)
+	r.Get("/library/organize", s.handlePlanOrganizeLibrary)
+	r.Post("/library/organize", s.handleOrganizeLibrary)
+	r.Get("/library/organize/status", s.handleOrganizeLibraryStatus)
+	r.Get("/library/progress", s.handleLibraryProgress)
+
+	r.Route("/series", func(r chi.Router) {
+		r.Get("/", s.handleListSeries)
+		r.Post("/", s.handleAddSeries)
+		r.Route("/{id}", func(r chi.Router) {
+			r.Get("/", s.handleGetSeries)
+			r.Put("/", s.handleUpdateSeries)
+			r.Delete("/", s.handleDeleteSeries)
+			r.Post("/refresh", s.handleRefreshSeries)
+			r.Post("/import", s.handleScanSeries)
+			r.Get("/bindings", s.handleListBindings)
+			r.Post("/bindings", s.handleAddBinding)
+			r.Put("/bindings/{bid}", s.handleUpdateBinding)
+			r.Delete("/bindings/{bid}", s.handleDeleteBinding)
+		})
+	})
+}
 
 // handleImportScan proposes MangaBaka matches for a root folder's
 // subfolders (read-only; §11.4 bulk import).
@@ -117,17 +150,9 @@ func (s *Server) handleUpdateSeries(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &patch) {
 		return
 	}
-	if patch.Monitored != nil {
-		if err := s.store.SetSeriesMonitored(r.Context(), id, *patch.Monitored); err != nil {
-			writeErr(w, err)
-			return
-		}
-	}
-	if patch.ProfileID != nil {
-		if err := s.store.SetSeriesProfile(r.Context(), id, *patch.ProfileID); err != nil {
-			writeErr(w, err)
-			return
-		}
+	if err := s.library.UpdateSeries(r.Context(), id, patch.Monitored, patch.ProfileID); err != nil {
+		writeErr(w, err)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -158,168 +183,7 @@ func (s *Server) handleRefreshSeries(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "refreshed"})
-}
-
-// --- edition updates ---
-
-func (s *Server) handleCreateEdition(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	var body CreateEditionBody
-	if !decodeBody(w, r, &body) {
-		return
-	}
-	col, err := s.library.CreateEdition(r.Context(), id, service.CreateEditionParams{
-		EditionName: body.EditionName, Language: body.Language,
-		Publisher: body.Publisher, Medium: body.Medium, Type: body.Type,
-		ProviderEditionID: body.ProviderEditionID,
-		BasedOn:           body.BasedOn, Volumes: body.Volumes,
-		CutoffNum: body.CutoffNum, Monitored: body.Monitored,
-	})
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, col)
-}
-
-func (s *Server) handleMergeEditions(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	cid, ok := pathID(w, r, "eid")
-	if !ok {
-		return
-	}
-	var body MergeEditionBody
-	if !decodeBody(w, r, &body) {
-		return
-	}
-	if body.Into == 0 || body.Into == cid {
-		writeError(w, http.StatusBadRequest, "choose a different edition to merge into")
-		return
-	}
-	if r.URL.Query().Get("preview") == "1" {
-		data, err := s.store.PreviewMerge(r.Context(), id, cid, body.Into)
-		if err != nil {
-			writeErr(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, data)
-		return
-	}
-	unmatched, err := s.store.MergeEditions(r.Context(), id, cid, body.Into)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, MergeEditionResponse{Unmatched: unmatched})
-}
-
-func (s *Server) handleDeleteEdition(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	cid, ok := pathID(w, r, "eid")
-	if !ok {
-		return
-	}
-	if err := s.store.DeleteCustomEdition(r.Context(), id, cid); err != nil {
-		writeErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// handleReaderNames renders what readers show for each of a series'
-// collected versions, previewing an edition's unsaved templates when the
-// body names them.
-func (s *Server) handleReaderNames(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	var body service.ReaderNamesRequest
-	if !decodeBody(w, r, &body) {
-		return
-	}
-	names, err := s.library.ReaderNames(r.Context(), id, body)
-	respondList(w, names, err)
-}
-
-func (s *Server) handleUpdateEdition(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	cid, ok := pathID(w, r, "eid")
-	if !ok {
-		return
-	}
-	var body EditionPatch
-	if !decodeBody(w, r, &body) {
-		return
-	}
-	if err := s.library.UpdateEdition(r.Context(), id, cid, service.EditionUpdate{
-		Monitored: body.Monitored,
-		CutoffNum: body.CutoffNum, Language: body.Language,
-		ReaderFields: body.ReaderFields,
-	}); err != nil {
-		writeErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// --- files ---
-
-func (s *Server) handleFileScore(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	vid, ok := pathID(w, r, "vid")
-	if !ok {
-		return
-	}
-	fid, ok := pathID(w, r, "fid")
-	if !ok {
-		return
-	}
-	score, err := s.library.FileScore(r.Context(), id, vid, fid)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, score)
-}
-
-func (s *Server) handleListFiles(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "id")
-	if !ok {
-		return
-	}
-	files, err := s.store.ListFiles(r.Context(), id)
-	respondList(w, files, err)
-}
-
-// handleDeleteFile unlinks a file and deletes it from disk. The freed books
-// become wanted again and may re-download (Sonarr semantics, spec.md §11.4).
-func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
-	fid, ok := pathID(w, r, "fid")
-	if !ok {
-		return
-	}
-	if err := s.importer.DeleteFile(r.Context(), fid); err != nil {
-		writeErr(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, StatusMessage{Status: "refreshed"})
 }
 
 // handleScanSeries imports existing files in place (spec.md §11.4):
@@ -340,6 +204,75 @@ func (s *Server) handleScanSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// --- library-wide views ---
+
+// handleCalendar lists dated volume releases of monitored editions:
+// two weeks back, `days` ahead (default 60).
+func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	if days <= 0 {
+		days = 60
+	}
+	now := time.Now()
+	from := now.AddDate(0, 0, -14).Format("2006-01-02")
+	to := now.AddDate(0, 0, days).Format("2006-01-02")
+	entries, err := s.library.Calendar(r.Context(), from, to)
+	respondList(w, entries, err)
+}
+
+// handleWanted lists the library's missing and upgrade-eligible books
+// across every monitored series (the Wanted page).
+func (s *Server) handleWanted(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.library.Wanted(r.Context())
+	respondList(w, rows, err)
+}
+
+// handleLibraryProgress counts each series' books on disk and wanted, for
+// the Library's posters.
+func (s *Server) handleLibraryProgress(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.library.Progress(r.Context())
+	respondList(w, rows, err)
+}
+
+// handlePlanOrganizeLibrary previews organizing every series, or those
+// in ?series=1,2,3, listing the series it would change.
+func (s *Server) handlePlanOrganizeLibrary(w http.ResponseWriter, r *http.Request) {
+	ids, bad, ok := queryIDs(r, "series")
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid series id: "+bad)
+		return
+	}
+	plans, err := s.importer.PlanOrganizeLibrary(r.Context(), ids)
+	respondList(w, plans, err)
+}
+
+// handleOrganizeLibrary starts organizing the library in the background:
+// the run outlives the request and reports through the status endpoint.
+func (s *Server) handleOrganizeLibrary(w http.ResponseWriter, r *http.Request) {
+	if s.sched == nil {
+		writeError(w, http.StatusServiceUnavailable, "no scheduler is running")
+		return
+	}
+	var body service.LibraryOrganizeRequest
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	status, err := s.importer.QueueLibraryOrganize(body)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := s.sched.Run(scheduler.OrganizeLibrary); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, status)
+}
+
+func (s *Server) handleOrganizeLibraryStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.importer.LibraryOrganizeStatus())
 }
 
 // --- bindings ---
@@ -372,7 +305,7 @@ func (s *Server) handleAddBinding(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]int64{"id": bid})
+	writeJSON(w, http.StatusCreated, IDResponse{ID: bid})
 }
 
 func (s *Server) handleUpdateBinding(w http.ResponseWriter, r *http.Request) {
@@ -388,31 +321,7 @@ func (s *Server) handleUpdateBinding(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &patch) {
 		return
 	}
-	if patch.TrustChapters != nil {
-		if err := s.store.SetBindingTrust(r.Context(), id, bid, *patch.TrustChapters); err != nil {
-			writeErr(w, err)
-			return
-		}
-		if patch.EditionID == nil && patch.State == "" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-	}
-	if patch.EditionID != nil {
-		if err := s.store.SetBindingEdition(r.Context(), id, bid, *patch.EditionID); err != nil {
-			writeErr(w, err)
-			return
-		}
-		if patch.State == "" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-	}
-	if patch.State != "active" && patch.State != "disabled" {
-		writeError(w, http.StatusBadRequest, "state must be active or disabled")
-		return
-	}
-	if err := s.store.SetBindingState(r.Context(), id, bid, patch.State); err != nil {
+	if err := s.library.UpdateBinding(r.Context(), id, bid, patch.TrustChapters, patch.EditionID, patch.State); err != nil {
 		writeErr(w, err)
 		return
 	}

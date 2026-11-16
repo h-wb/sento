@@ -35,6 +35,68 @@ export interface ActivityDownload {
 }
 
 //////////
+// source: book_state.go
+
+/**
+ * BookState is where one book stands for one card.
+ */
+export type BookState = string;
+/**
+ * StatePending: a download or import already holds the book.
+ */
+export const StatePending: BookState = "pending";
+/**
+ * StateNeedsReview: a file holds the book but its mapping is not
+ * confirmed, and no confirmed file does.
+ */
+export const StateNeedsReview: BookState = "needs_review";
+/**
+ * StateOwned: a confirmed file the card's profile accepts holds it.
+ */
+export const StateOwned: BookState = "owned";
+/**
+ * StateUpgradeEligible: owned, and the profile wants a better file.
+ */
+export const StateUpgradeEligible: BookState = "upgrade_eligible";
+/**
+ * StateStorageUnavailable: the library folder cannot be checked.
+ */
+export const StateStorageUnavailable: BookState = "storage_unavailable";
+/**
+ * StateUnmonitored: the card does not collect this book.
+ */
+export const StateUnmonitored: BookState = "unmonitored";
+/**
+ * StateNotReleased: published in the future.
+ */
+export const StateNotReleased: BookState = "not_released";
+/**
+ * StateUnknown: no publication date, and undated books are not searched.
+ */
+export const StateUnknown: BookState = "unknown";
+/**
+ * StateUnsatisfactory: a file on disk holds it, but not one this card
+ * accepts; wanted.
+ */
+export const StateUnsatisfactory: BookState = "unsatisfactory";
+/**
+ * StateMissing: wanted, nothing holds it.
+ */
+export const StateMissing: BookState = "missing";
+export interface BookStatus {
+  onDiskFileIds: number /* int64 */[];
+  reason: string;
+  currentScore: number /* int */;
+  book: Book;
+  versionId: number /* int64 */;
+  monitored: boolean;
+  availability: string;
+  state: BookState;
+  fileIds: number /* int64 */[];
+  wanted: boolean;
+}
+
+//////////
 // source: box.go
 
 
@@ -297,13 +359,6 @@ export interface HealthService {
  */
 export interface Importer {
 }
-/**
- * SearchTarget is a series' ledger to search again.
- */
-export interface SearchTarget {
-  SeriesID: number /* int64 */;
-  Ledger: string;
-}
 
 //////////
 // source: indexer_search.go
@@ -364,6 +419,22 @@ export interface ProwlarrIndexer {
    */
   url: string;
 }
+
+//////////
+// source: ledger.go
+
+
+//////////
+// source: ledger_kind.go
+
+/**
+ * Ledger names the two book ledgers a search can target.
+ */
+export const LedgerVolume = "volume";
+/**
+ * Ledger names the two book ledgers a search can target.
+ */
+export const LedgerChapter = "chapter";
 
 //////////
 // source: library.go
@@ -789,6 +860,17 @@ export interface FormatDoc {
 }
 
 //////////
+// source: queue_recovery.go
+
+/**
+ * SearchTarget is a series' ledger to search again.
+ */
+export interface SearchTarget {
+  SeriesID: number /* int64 */;
+  Ledger: string;
+}
+
+//////////
 // source: reader_fields.go
 
 /**
@@ -1005,14 +1087,6 @@ export interface ScanResult {
 // source: search.go
 
 /**
- * Ledger names the two book ledgers a search can target.
- */
-export const LedgerVolume = "volume";
-/**
- * Ledger names the two book ledgers a search can target.
- */
-export const LedgerChapter = "chapter";
-/**
  * SearchService is the unified release search: same pipeline for volumes
  * and chapters (providers → parse → funnel → score → grab); only coverage
  * matching, routing and the protocol preference differ per ledger.
@@ -1134,11 +1208,16 @@ export interface SearchEvent {
 }
 
 //////////
+// source: search_bindings.go
+
+
+//////////
 // source: sites.go
 
 /**
  * SiteService backs the Indexers UI: the configured entries with
- * reachability, plus per-series override views.
+ * reachability, adding, updating, patching and testing them, the source
+ * search of the manual bind, plus per-series override views.
  */
 export interface SiteService {
 }
@@ -1156,6 +1235,15 @@ export interface IndexerView extends Indexer {
 export interface SeriesIndexerView extends IndexerView {
   override?: SiteOverride;
   bindings?: Binding[];
+}
+/**
+ * IndexerPatch toggles entry fields inline (nil = keep).
+ */
+export interface IndexerPatch {
+  enabled?: boolean;
+  useVolumes?: boolean;
+  useChapters?: boolean;
+  priority?: number /* int */;
 }
 
 //////////
@@ -1193,68 +1281,6 @@ export interface FileMappingResult {
   notes?: string[];
   replaced?: Replacement[];
   kept?: KeptClaim[];
-}
-
-//////////
-// source: versions.go
-
-/**
- * BookState is where one book stands for one card.
- */
-export type BookState = string;
-/**
- * StatePending: a download or import already holds the book.
- */
-export const StatePending: BookState = "pending";
-/**
- * StateNeedsReview: a file holds the book but its mapping is not
- * confirmed, and no confirmed file does.
- */
-export const StateNeedsReview: BookState = "needs_review";
-/**
- * StateOwned: a confirmed file the card's profile accepts holds it.
- */
-export const StateOwned: BookState = "owned";
-/**
- * StateUpgradeEligible: owned, and the profile wants a better file.
- */
-export const StateUpgradeEligible: BookState = "upgrade_eligible";
-/**
- * StateStorageUnavailable: the library folder cannot be checked.
- */
-export const StateStorageUnavailable: BookState = "storage_unavailable";
-/**
- * StateUnmonitored: the card does not collect this book.
- */
-export const StateUnmonitored: BookState = "unmonitored";
-/**
- * StateNotReleased: published in the future.
- */
-export const StateNotReleased: BookState = "not_released";
-/**
- * StateUnknown: no publication date, and undated books are not searched.
- */
-export const StateUnknown: BookState = "unknown";
-/**
- * StateUnsatisfactory: a file on disk holds it, but not one this card
- * accepts; wanted.
- */
-export const StateUnsatisfactory: BookState = "unsatisfactory";
-/**
- * StateMissing: wanted, nothing holds it.
- */
-export const StateMissing: BookState = "missing";
-export interface BookStatus {
-  onDiskFileIds: number /* int64 */[];
-  reason: string;
-  currentScore: number /* int */;
-  book: Book;
-  versionId: number /* int64 */;
-  monitored: boolean;
-  availability: string;
-  state: BookState;
-  fileIds: number /* int64 */[];
-  wanted: boolean;
 }
 
 //////////

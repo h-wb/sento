@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { errorMessage } from '../ui'
 
 // An editor dialog's save: busy while it runs, its error kept to show.
 export function useEditor() {
@@ -7,14 +8,16 @@ export function useEditor() {
   return {
     busy,
     error,
-    run: async (fn: () => Promise<void>) => {
+    // settled runs after fn either way, once its error shows and before busy clears.
+    run: async (fn: () => Promise<void>, settled?: () => Promise<void>) => {
       setBusy(true)
       setError('')
       try {
         await fn()
       } catch (e) {
-        setError(String(e))
+        setError(errorMessage(e))
       } finally {
+        await settled?.()
         setBusy(false)
       }
     },

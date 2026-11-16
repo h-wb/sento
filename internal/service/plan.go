@@ -162,7 +162,7 @@ func markAvailability(plan *AcquisitionPlan, pool []ReleaseCandidate, complete b
 				b.Availability = "available"
 				break
 			}
-			hard := slices.ContainsFunc(c.Rejections, func(code string) bool { return hardRejections[code] })
+			hard := slices.ContainsFunc(c.Rejections, func(code string) bool { return rejectionRules[code].Hard })
 			if hard {
 				continue
 			}

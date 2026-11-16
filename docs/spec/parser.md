@@ -99,6 +99,14 @@ type QualityHints struct {
 }
 ```
 
+> **Correction (2026-11-16):** the implemented `Result` also carries
+> `Bare` (unresolved bare numbers), `BarePadded` (their zero-padding
+> fact), `Languages` (all claimed languages, sorted), `Claim`
+> (`EditionClaim`: regroup keys, own name, written name, color, color
+> edition, box), `Anchored`, `TitleLeftover`, `CompleteInferred` and
+> `Ongoing`; `ContentType` also has `video` and `software` values set by
+> torrent-channel media detection. See [the result](../domain/parsing.md#the-result).
+
 API:
 
 ```go
@@ -115,6 +123,11 @@ func ParseAnchored(name string, ch Channel, titles []NormTitle) Result
 input
  │ 1. pre-clean      ext strip (.cbz/.cbr/.zip/.pdf/.epub), path split,
  │                   _→space, NFKC (full-width → ASCII), collapse ws
+ │
+ │ *Correction (2026-11-16):* the code strips 8 extensions (`.cbz`,
+ │ `.cbr`, `.cb7`, `.zip`, `.rar`, `.7z`, `.pdf`, `.epub`) and does no
+ │ path split; the whole string is the name. See
+ │ [preClean](../domain/parsing.md#preclean-precleango).
  │ 2. segment        bracket [..] / paren (..) / brace {..} segments vs
  │                   free text; preserve order & position
  │ 3. classify       each segment → tag class (year, group, language,
@@ -150,6 +163,11 @@ spec and locked by the corpus.
   `extra/omake/special/side story` after a number → `IsExtra` (Mihon maps
   to .99/.98/.97 — we keep the flag instead; integer-slot policy D8
   decides).
+  *Correction (2026-11-16):* the marker does not have to follow a number:
+  `extra`/`omake`/`special` count anywhere in free text and cut the title
+  only when they are not the first word (unless the parse is anchored);
+  `side story` counts anywhere and never cuts the title. See
+  [keywords and flags](../domain/parsing.md#keywords-flags-and-season-in-free-text).
 - **Ranges**: `-`, `~`, `–`, `to` between two numbers of the same axis;
   `v01-v38`, `v01-38`, `c001-050`, `[01-270]`, `164-169`. Mixed lists:
   `v01-03 + v05`, `v000-v105 & ch0035-1078` → multiple ranges, both axes.
@@ -167,6 +185,11 @@ spec and locked by the corpus.
   year (`(2022)`) or year-range (`(2003-2026)`); in free text it is a year
   only if the series context says chapters can't reach it (resolver rule
   R4, §7). `c2024` (marker-bound) is always chapter 2024.
+  *Correction (2026-11-16):* the year patterns cover **1800**–2100
+  (`reYear`/`reYearRange`), and the free-text year guard is not
+  implemented: R4 does not exist in code, so a 4-digit bare number in
+  free text only becomes a chapter through the ≥1000 prior, never a
+  year. See [bare-number resolution](../domain/parsing.md#bare-number-resolution-resolvebare).
 
 ## 5. Pattern inventory
 
@@ -176,10 +199,23 @@ Grounded in the harvested corpus; each row exists as ≥1 corpus case.
 `v01` `v1` `Vol. 1` `Vol 1` `Volume 01` `volume64` `Tome 1` `T01` (fr)
 `第01巻` `第1-10巻` (raws) — case-insensitive, optional dot/space.
 
+*Correction (2026-11-16):* also plurals (`vols`, `tomes`), `t0me`,
+`tomos?`, `band`/`bände`, `kapitel` (German for "chapter"; read as a
+**volume** marker and locked in by the corpus; open question for an
+owner decision), `t01`, and ranges written with `à`/`au`/`to` or with
+the marker repeated (`T02 au T05`); plus volume *lists* that keep their
+gaps (`Tomes 2, 4 et 7` → 2, 4, 7, separators `,` `&` `et` `und` `y`).
+See [the extraction cascade](../domain/parsing.md#the-extraction-cascade-numbersgo).
+
 ### 5.2 Chapter markers
 `c001` `ch. 4` `Ch.34` `Chapter 1184` `Chap 5` `#34` `Episode 12` `Ep. 12`
 (webtoons) `第12話` (raws) `- 375` (dash-bound trailing number,
 `[Kamizye] Berserk - 375`).
+
+*Correction (2026-11-16):* also `chapitre(s)` and `chs`, and c-ranges
+(`c001-050`). The alpha suffix (`4a` → 4.1) applies only after the long
+marker form (`Chapter 4a`) and on bare numbers (`1150a`), not after
+`c4a`. See [the extraction cascade](../domain/parsing.md#the-extraction-cascade-numbersgo).
 
 ### 5.3 Packs / batch markers
 `v01-v38` `Vol. 102-105` `c001-050` `[01-270]` `164-169`
@@ -187,6 +223,15 @@ Grounded in the harvested corpus; each row exists as ≥1 corpus case.
 `Batch` `[END]` `(ongoing)` — and the **implicit pack**: a torrent name with
 *no number at all* (`Solo Leveling (2021-2026) (Digital) (1r0n)`) =
 whole-series pack, `IsComplete` unless `(ongoing)`.
+
+*Correction (2026-11-16):* `Batch` is not a pack marker: `batch`/`oneshot`
+only cut the title and set no flag; only `complete`/`completed` (and inside
+segments `end`, `full` outside "full color") set `Complete`. The implicit
+pack additionally requires a title and a year range, and sets
+`CompleteInferred`; the funnel adds a second inferred-pack rule for
+anchored, leftover-free torrents on the volume ledger, offered for review
+but rejected as `pack_unverified` on grab. See
+[title assembly and group election](../domain/parsing.md#title-assembly-and-group-election).*
 
 ### 5.4 Edition tags
 `(Omnibus)` `2-in-1` `3-in-1` `Deluxe` `Box Set` `(Colored)` `FULL COLOR`
@@ -201,6 +246,17 @@ A color word in a delimited segment claims color only as the whole tag —
 group name that merely contains the word (`(Colored Council)`) is the group
 (§5.8), not a color claim. In free text the words claim color wherever they
 appear (publisher imprints sit mid-name).
+
+*Correction (2026-11-16):* there is a second distinction: `Color` (a
+colorization of the original volumes, e.g. `(Colored)`, `Digital Colored
+Comics`) versus `ColorEdition`, a numbering of its own (`Full Color`,
+`Color Edition`, `Complete Color`); `Digital Colored Comics` is exempt
+from `ColorEdition`. The claim also records regrouping keys, an own name
+(`<word> Edition` minus plain words) and a synthesized `Written` name in
+`Result.Claim`. See [edition claims](../domain/parsing.md#edition-claims-editiongo).*
+
+*Correction (2026-11-16):* the `webtoon`/`tapas` publisher tags also set
+`Quality.Web`. See [segment tag tables](../domain/parsing.md#segment-tag-tables-tagsgo).*
 
 ### 5.5 Quality / provenance tags
 `(Digital)` `(Scanlated)` `(Scan)` `(c2c)` `[Premium]` `(Webtoon)`
@@ -226,6 +282,15 @@ A language word qualifying retained source style (`Japanese Names`, `JP
 Honorifics`, `Korean SFX`) is metadata, not a language claim or a group.
 Other language tags in the same release still apply.
 
+*Correction (2026-11-16):* the vocabulary also covers `de`/`german`/
+`deutsch`, `it`/`italian`/`italiano`, `ru`/`russian`, `pl`/`polish`,
+`ko`/`kr`/`korean`, `zh`/`chinese`, and `multi`/`multilingual`; free text
+also accepts unambiguous words anywhere and bare uppercase scene codes
+(`FR`, `JP`, `JA`, `KR`, `CN`, `RU`, `PL`) as standalone words.
+`pt-BR` suppresses a plain `pt` in the same scan; more than one distinct
+language sets `Language` to `"multi"` and collects them in `Languages`.
+See [segment tag tables](../domain/parsing.md#segment-tag-tables-tagsgo).*
+
 ### 5.8 Group position & delimiters
 Trailing parens/brackets (`(LuCaZ)`, `[Stick]`, `(danke-Empire)`,
 `(-KS-)`); leading bracket (`[Kamizye] Berserk - 375`, `[0v3r] Berserk
@@ -234,11 +299,20 @@ segment is the group; a *leading* unclassified segment is the group when the
 remaining text title-matches. Known-group list (learned from history) breaks
 ties; never fatal if wrong.
 
+*Correction (2026-11-16):* `{4str0}` is not a group: curly-brace text is a
+note used only when no trailing candidate exists, a leading segment counts
+only when a title was found, and there is no known-group list. See
+[title assembly and group election](../domain/parsing.md#title-assembly-and-group-election).*
+
 ### 5.9 Title hazards
 - **Numbers in titles**: `Mob Psycho 100`, `86`, `Steins;Gate 0`,
   `Ranma 1/2`, `22/7` — anchored mode strips the title before number
   extraction; blind mode relies on longest-title-match against the library
   index (§6) and flags `Confidence` down when a bare number could be title.
+  *Correction (2026-11-16):* the "bare number could be the title" penalty
+  does not exist; confidence subtracts 0.05 per unexplained segment,
+  0.1 per unresolved bare number, 0.3 for no title and 0.2 for no numbers
+  without `Complete`. See [confidence](../domain/parsing.md#confidence).*
 - **Containment traps**: `Berserk` vs `Berserk of Gluttony` — title matching
   must score *longest normalized match*, and an anchored strip must respect
   word boundaries (`Berserk of Gluttony v01` must not become
@@ -261,6 +335,10 @@ Normalization (applied to both library titles/aliases and parsed guesses):
 4. collapse whitespace; trim articles only for *secondary* keys (keep
    primary exact)
 
+*Correction (2026-11-16):* articles are never trimmed; `Normalize` also
+drops apostrophes entirely and maps `×`/`✕` → " x ". See
+[title matching](../domain/parsing.md#title-matching-internalmatch).*
+
 Library index: every series stores all MangaBaka titles + `secondary_titles`
 + user aliases, normalized, in an in-memory index (rebuilt on library
 change). Matching:
@@ -269,6 +347,15 @@ change). Matching:
 - token-set similarity (Jaro-Winkler per token, order-tolerant) — accept
   ≥ 0.90 auto, 0.75–0.90 manual-confirm queue, < 0.75 no match `[default]`
 - always prefer the longest matching title (containment rule §5.9)
+
+*Correction (2026-11-16):* production never builds the library index:
+`match.Index`/`Lookup` are used only by the build-tagged manual tool
+`cmd/matchcheck`. Production calls only `match.Similarity`: binding
+auto-resolution accepts a score at or above `match.AutoThreshold` (0.90),
+and bulk import keeps the best score as the proposal's confidence for a
+person to confirm, with no threshold. The 0.75–0.90 manual-confirm band is
+unused; `ManualThreshold` (0.75) only gates `Lookup` results. See
+[title matching](../domain/parsing.md#title-matching-internalmatch).*
 
 ## 7. Resolver rules (context pass)
 
@@ -301,6 +388,12 @@ the trace.
   (relationships); else season is recorded but ignored for slot math
   `[default — revisit with webtoon corpus growth]`.
 
+*Correction (2026-11-16):* R3 (`final_volume` bounds), R4 (year vs number)
+and R7 are not implemented. R5 and R6 live in the search funnel as
+`fitBooks` and the shelf's `judge` (`internal/service/funnel.go`), which
+also applies the hard-rejection order of decision-engine.md §3. See
+[acquisition](../domain/acquisition.md).*
+
 ## 8. Testing regime
 
 ### 8.1 Regression corpus (the core asset)
@@ -311,6 +404,11 @@ parser/testdata/corpus/
   source_chapters.jsonl     files_import.jsonl      content_type.jsonl
   titles_hazards.jsonl      raws.jsonl              i18n_fr.jsonl
 ```
+
+*Correction (2026-11-16):* the corpus now lives at
+`internal/parse/testdata/corpus/` and holds 12 files, including
+`localized_acquisition.jsonl`, `resolution.jsonl` and
+`search_classification.jsonl`.*
 
 One JSON object per line:
 
@@ -345,6 +443,10 @@ template outputs.
   (pathological bracket nesting), always-valid `Result` invariants
   (`From ≤ To`, `Num ≥ 0`).
 - **Benchmark**: ≤ 50µs/name median on corpus (pack scans parse thousands).
+
+*Correction (2026-11-16):* only the fuzz test exists (`FuzzParse` in
+`corpus_test.go`, asserting `From ≤ To` and `Num ≥ 0` over all three
+channels); the round-trip property and the benchmark are not implemented.*
 
 ### 8.3 Drift watch
 

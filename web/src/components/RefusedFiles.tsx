@@ -1,5 +1,6 @@
 import { Alert, Button, Group, Text } from '@mantine/core'
 import { IconAlertTriangle } from '@tabler/icons-react'
+import { plural } from '../format'
 import { bookRanges } from './bookRanges'
 import type { Refused } from './refusal'
 
@@ -25,7 +26,7 @@ export function RefusedFilesNotice({
   return (
     <Alert color="orange" variant="default" p="sm" icon={<IconAlertTriangle size={18} color="var(--mantine-color-orange-filled)" />}>
       <Text size="sm" fw={500}>
-        {which} {n === 1 ? 'is' : 'are'} on disk, but this edition doesn’t use {n === 1 ? 'its file' : 'their files'}
+        {which} {plural(n, 'is', 'are')} on disk, but this edition doesn’t use {plural(n, 'its file', 'their files')}
       </Text>
       {refused.reason && (
         <Text size="xs" c="dimmed" mt={2}>

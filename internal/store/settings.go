@@ -17,13 +17,18 @@ func (s *Store) GetSetting(ctx context.Context, key string) ([]byte, error) {
 	return v, err
 }
 
-// PutSetting upserts one settings document.
-func (s *Store) PutSetting(ctx context.Context, key string, value []byte) error {
-	_, err := s.db.ExecContext(ctx, s.q(`
+// putSettingTx upserts one settings document.
+func (s *Store) putSettingTx(ctx context.Context, e execer, key string, value []byte) error {
+	_, err := e.ExecContext(ctx, s.q(`
 		INSERT INTO settings (key, value_json, updated_at) VALUES (?,?,?)
 		ON CONFLICT(key) DO UPDATE SET
 			value_json = excluded.value_json,
 			updated_at = excluded.updated_at`),
 		key, value, utcNow())
 	return err
+}
+
+// PutSetting upserts one settings document.
+func (s *Store) PutSetting(ctx context.Context, key string, value []byte) error {
+	return s.putSettingTx(ctx, s.db, key, value)
 }

@@ -9,7 +9,6 @@ import (
 	"slices"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
@@ -419,7 +418,7 @@ func (c *ReleaseCandidate) evalFormats(prof *profile.Profile, formats []profile.
 	in := profile.Input{
 		Title: title, Group: group, Language: c.Parse.Language,
 		Protocol: c.Protocol, Site: c.Site, Resolution: c.Parse.Quality.Resolution,
-		Flags: candidateFlags(*c),
+		Flags: parseFlags(c.Parse),
 	}
 	j := prof.Judge(in, formats)
 	c.FormatScore = j.Score
@@ -430,35 +429,6 @@ func (c *ReleaseCandidate) evalFormats(prof *profile.Profile, formats []profile.
 		c.Rejections = append(c.Rejections, "rejected.profile_rule")
 		c.profileWhy = j.Broken
 	}
-}
-
-func baseLang(lang string) string {
-	base, _, _ := strings.Cut(lang, "-")
-	return strings.ToLower(base)
-}
-
-// Rejections that survive a force-grab (decision-engine.md §7).
-var hardRejections = map[string]bool{
-	"rejected.profile_rule":      true,
-	"rejected.previous_download": true,
-	"rejected.numbers_unknown":   true,
-	"rejected.language":          true,
-	"rejected.book_ambiguous":    true,
-	"rejected.no_upgrade":        true,
-	"rejected.content_type":      true,
-	"rejected.series_match":      true,
-	"rejected.edition_routing":   true,
-	"rejected.no_coverage":       true,
-	"rejected.blocklisted":       true,
-}
-
-func editionByID(cols []store.Edition, id int64) *store.Edition {
-	for i := range cols {
-		if cols[i].ID == id {
-			return &cols[i]
-		}
-	}
-	return nil
 }
 
 // Publishers that only release in English: their rip tag is language
@@ -475,10 +445,6 @@ func englishPublisher(names []string) bool {
 	return false
 }
 
-func candidateFlags(c ReleaseCandidate) map[string]bool {
-	return map[string]bool{"digital": c.Parse.Quality.Digital, "scan": c.Parse.Quality.Scan, "web": c.Parse.Quality.Web, "premium": c.Parse.Quality.Premium, "colored": c.Parse.Edition.Colored, "omnibus": c.Parse.Edition.Omnibus, "deluxe": c.Parse.Edition.Deluxe, "boxset": c.Parse.Edition.BoxSet, "official": c.Parse.Edition.Official, "raw": c.Parse.Edition.Raw, "complete": c.Parse.Complete}
-}
-
 // betterRelease orders releases: the profile's score decides; between
 // equal scores, the indexer with the higher priority (the lower number)
 // wins. Priority is a property of the indexer, never part of the score.
@@ -487,19 +453,4 @@ func betterRelease(a, b ReleaseCandidate) bool {
 		return a.Score > b.Score
 	}
 	return a.IndexerPriority < b.IndexerPriority
-}
-
-func languageCompatible(p parse.Result, want string) bool {
-	if want == "" {
-		return true
-	}
-	if len(p.Languages) > 0 {
-		for _, lang := range p.Languages {
-			if baseLang(lang) == baseLang(want) {
-				return true
-			}
-		}
-		return false
-	}
-	return p.Language == "" || p.Language == "multi" || baseLang(p.Language) == baseLang(want)
 }

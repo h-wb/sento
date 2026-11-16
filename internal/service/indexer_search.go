@@ -28,7 +28,7 @@ type IndexerSearchSample struct {
 	Categories []string `json:"categories"`
 }
 
-func TestIndexerSearch(ctx context.Context, ix store.Indexer, query string) (*IndexerSearchCheck, error) {
+func testIndexerSearch(ctx context.Context, ix store.Indexer, query string) (*IndexerSearchCheck, error) {
 	query = strings.TrimSpace(query)
 	if query == "" || utf8.RuneCountInString(query) > 200 {
 		return nil, apperr.Invalidf("enter a title of 1–200 characters to test")
