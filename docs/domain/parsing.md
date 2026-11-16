@@ -464,17 +464,17 @@ source releases that carry a listing name (`funnel.go`): `rc.Parse.Inherit(parse
 `parse.Version` is the parser revision, currently 2, stamped on every
 file whose filename-derived facts were read from its name
 (`store.File.ParserVersion`, migration 0035). Bump it whenever parser
-output for existing names may change: a scan re-reads the name those
-facts came from with the current parser when the stored stamp is older
-(`scan.go`, `rederiveFacts`), replacing only what a name says (flags,
-resolution, revision, digital, and a name-read language or group); the
-download's provenance, claims, bytes and manual corrections stand.
+output for existing names may change: a scan then re-reads stale names
+with the current parser (`scan.go`, `rederiveFacts`). What a re-read
+replaces and what it keeps is in
+[library files](library-files.md#re-reading-names-after-a-parser-change).
 
 Revision 2 exists because 0.7.0 stamped reviewed files as read by
-revision 1 without re-reading them. `Result.Mentions(phrase)` reports
-whether the cleaned name contains a phrase as whole words (phrase must
-be lowercase); the edition fitter uses it to test a claim's own name
-against the release name.
+revision 1 without re-reading them.
+
+`Result.Mentions(phrase)` reports whether the cleaned name contains a
+phrase as whole words (phrase must be lowercase); the edition fitter uses
+it to test a claim's own name against the release name.
 
 ## Title matching (`internal/match`)
 

@@ -328,38 +328,25 @@ through `jsonb` during migrations 0022, 0023 and 0030). The Go shapes:
 The constants live in `queue.go`. Active statuses (those in
 `idx_active_offer`) are `queued`, `downloading`, `importing`,
 `needs_review`, `retry_wait` and `dispatch_unknown`; `imported`,
-`failed` and `cancelled` are terminal. This diagram shows every status
-and the store method that moves into it.
+`failed` and `cancelled` are terminal. The state diagram with every
+transition and its trigger is in
+[the queue lifecycle](acquisition.md#the-queue-lifecycle). This table gives
+the stored value of each status and the store method that writes it.
 
-```mermaid
-stateDiagram-v2
-    [*] --> queued : ReserveQueue inserts
-    queued --> downloading : UpdateQueueItem, worker dispatched it
-    queued --> importing : BeginImport
-    downloading --> importing : BeginImport
-    retry_wait --> importing : BeginImport
-    importing --> imported : UpdateQueueItem
-    importing --> needs_review : UpdateQueueItem, files await a person
-    importing --> failed : UpdateQueueItem
-    importing --> dispatch_unknown : UpdateQueueItem, no client accepted it
-    queued --> retry_wait : DeferQueueUntil
-    downloading --> retry_wait : DeferQueueUntil
-    retry_wait --> downloading : worker past retry_at
-    retry_wait --> queued : ResumeQueue only, retry_count reset to 0
-    needs_review --> queued : ResumeQueue, another release chosen
-    needs_review --> imported : SettleReviewedQueue, all files reviewed
-    retry_wait --> needs_review : UpdateQueueItem
-    retry_wait --> dispatch_unknown : UpdateQueueItem
-    dispatch_unknown --> queued : ResumeQueue
-    queued --> cancelled : CancelQueue
-    downloading --> cancelled : CancelQueue
-    retry_wait --> cancelled : CancelQueue
-    needs_review --> cancelled : CancelQueue
-    dispatch_unknown --> cancelled : CancelQueue
-    failed --> [*] : PruneFinishedQueue deletes old terminal rows
-    imported --> [*]
-    cancelled --> [*]
-```
+| Stored value | Kind | Written by |
+| --- | --- | --- |
+| `queued` | active | `ReserveQueue` inserts the row; `ResumeQueue` (from `needs_review`, `retry_wait` or `dispatch_unknown`) and `SetQueueExternalID` (an attached or found client ID) put it back, both resetting `retry_count` to 0 |
+| `downloading` | active | `UpdateQueueItem`, when the client reports the download in flight |
+| `importing` | active | `BeginImport`, from `queued`, `downloading`, `importing` or `retry_wait`; it freezes the plan |
+| `retry_wait` | active | `DeferQueueUntil` (and `DeferQueue`), which also increments `retry_count` and sets `retry_at` |
+| `needs_review` | active | `UpdateQueueItem`: files await a person, or a source failure is not retryable or out of retries |
+| `dispatch_unknown` | active | `UpdateQueueItem`: no external ID after 10 minutes |
+| `imported` | terminal | `UpdateQueueItem` after an import; `SettleReviewedQueue` from `needs_review` once all files are reviewed |
+| `failed` | terminal | `UpdateQueueItem`: a dead download, or a release blocklisted by hand |
+| `cancelled` | terminal | `CancelQueue`, from any status but `importing` and `imported` |
+
+`UpdateQueueItem` never changes a `cancelled` or `imported` row.
+`PruneFinishedQueue` deletes terminal rows beyond the newest 200.
 
 `DeferQueueUntil` waits 30 s × 2^`retry_count`, capped at 2^6 (about 32
 minutes), and longer when the source sent a Retry-After deadline; it

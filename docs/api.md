@@ -84,8 +84,7 @@ flowchart TD
     C -->|"yes: 4 review routes"| D["no request cap, no invalidateHealth"]
     C -->|"no: everything else"| E["Timeout 120s"]
     D --> G["handler: pathID, queryID, decodeBody (1 MiB cap)"]
-    E --> F
-    F --> G["handler: pathID, queryID, decodeBody (1 MiB cap)"]
+    E --> G
     G --> H["service or store method"]
     H -->|ok| I["writeJSON: 200 / 201 / 204, lists never null"]
     H -->|apperr kind| J["writeErr: 400 / 404 / 409 / 502 / 503"]
@@ -216,15 +215,15 @@ reverse proxy. See [installation](installation.md#configuration).
 | --- | --- | --- | --- | --- |
 | GET | `/queue` | active queue items, or all with `?all` | `api_queue.go` | `Importer.QueueView` |
 | POST | `/queue/process` | run one queue pass now, answers `{processed: n}` | `api_queue.go` | `Importer.ProcessQueue` |
-| POST | `/queue/{qid}/retry` | resume a failed item (`remoteId`), 204 | `api_queue.go` | `store.ResumeQueue` |
-| POST | `/queue/{qid}/cancel` | cancel an item, 204 | `api_queue.go` | `store.CancelQueue` |
+| POST | `/queue/{qid}/retry` | resume a `needs_review`, `retry_wait` or `dispatch_unknown` item, optionally attaching a client-side ID (`remoteId`), 204 | `api_queue.go` | `store.ResumeQueue` |
+| POST | `/queue/{qid}/cancel` | cancel an item and release its reservations (refused while importing), 204 | `api_queue.go` | `store.CancelQueue` |
 | POST | `/queue/{qid}/blocklist` | ban the item's release and fail it, 204 | `api_queue.go` | `Importer.BlocklistQueueItem` |
 | POST | `/queue/another` | blocklist 1..500 items and search again right away, 204 | `api_queue.go` | `Importer.TryAnother`, then `SearchService.SearchAgain` in a 15-minute goroutine |
 | GET | `/activity` | activity feed (`?seriesId=`) | `api_queue.go` | `Library.Activity` |
 | GET | `/history` | decision history (`?limit=`), all series or one | `api_queue.go` | `store.ListDecisions` |
 | GET | `/series/{id}/history` | one series' decision history | `api_queue.go` | `store.ListDecisions` |
 | GET | `/blocklist` | blocklisted releases | `api_queue.go` | `store.ListBlockedReleases` |
-| DELETE | `/blocklist` | clear the blocklist, 204 | `api_queue.go` | `store.ClearBlocklist` |
+| DELETE | `/blocklist` | clear the blocklist (the UI asks first), 204 | `api_queue.go` | `store.ClearBlocklist` |
 | POST | `/blocklist/unblock` | unblock by ids/protocol/keys, 204 | `api_queue.go` | `Importer.UnblockReleases` |
 | DELETE | `/blocklist/{bid}` | delete one entry, 204 | `api_queue.go` | `store.DeleteBlocklist` |
 

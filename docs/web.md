@@ -32,21 +32,7 @@ outside in:
 2. `ThemeProvider`: the Mantine provider, color scheme and accent preset, persisted in the browser.
 3. `Notifications`: toast area, bottom-right, at most 4 toasts.
 4. `QueryClientProvider`: one `QueryClient` for the whole app, with `retry: 1` and `refetchOnWindowFocus: false` as the query defaults.
-5. `RouterProvider`: a browser router whose single `*` route wraps `App` in `UnsavedChangesProvider`.
-
-This provider and component tree is the whole skeleton of the app:
-
-```mermaid
-flowchart TD
-  root["createRoot(#root)"] --> Strict["StrictMode"]
-  Strict --> Theme["ThemeProvider (MantineProvider, theme preset)"]
-  Theme --> Notif["Notifications (toasts)"]
-  Notif --> QC["QueryClientProvider (QueryClient)"]
-  QC --> Router["RouterProvider (createBrowserRouter)"]
-  Router --> UCP["UnsavedChangesProvider (route blocker)"]
-  UCP --> App["App (AppShell: header, navbar, Spotlight, dialogs)"]
-  App --> Routes["AppRoutes (routes.tsx)"]
-```
+5. `RouterProvider`: a browser router whose single `*` route wraps `App` in `UnsavedChangesProvider`. `App` draws the shell and renders `AppRoutes` from `routes.tsx`.
 
 ## Routing and URL state
 
@@ -382,16 +368,13 @@ Paseo `web` service starts it alongside the backend.
 
 ## Checks
 
-| Command | What it does |
-| --- | --- |
-| `mise run web:install` | `npm ci` in `web/` |
-| `mise run web:dev` | Vite dev server (`npm run dev --`, arguments go to Vite) |
-| `mise run web:build` | `tsc -b && vite build`: the type check plus the production bundle |
-| `mise run lint:web` | `npm run lint`: ESLint only, it does not type-check |
-| `mise run gen` / `mise run gen:check` | Regenerate / verify the TypeScript types from the Go structs |
-| `mise run e2e` | Playwright browser tests against a real backend with simulated upstreams |
+The task list is in [testing](testing/README.md#choose-a-check); two notes
+apply to the web app:
 
-See [testing](testing/README.md) for the browser-test harness and
-[development](development.md) for the full task list.
+- `mise run lint:web` runs ESLint only (`npm run lint`); it does not type-check.
+- `mise run web:build` runs `tsc -b && vite build`: the type check plus the
+  production bundle. Run it before pushing web changes.
 
-
+`mise run web:install` runs `npm ci` in `web/`, and `mise run web:dev` starts
+the Vite dev server alone (arguments after `--` go to Vite). See
+[development](development.md) for the full stack.

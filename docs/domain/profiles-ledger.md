@@ -8,8 +8,8 @@ which books need a copy. Both search and the UI use the same evaluation. See
 
 ### Custom formats: Sonarr's matching semantics
 
-A `Format` is a named list of `Condition`s. The matching rule (`Format.Matches`)
-is the subtle part and worth stating precisely:
+A `Format` is a named list of `Condition`s. The matching rule
+(`Format.Matches`) is:
 
 - **AND across condition *types*, OR within a type.** For each condition
   *type* that has non-required conditions, at least one must hit; every such
@@ -21,24 +21,7 @@ is the subtle part and worth stating precisely:
 - **An empty format matches nothing**: it can't mean "everything" (guard at
   the top of `Matches`).
 
-Condition types (`CondTitle`, `CondGroup`, `CondLanguage`, `CondFlag`,
-`CondProtocol`, `CondSite`, `CondResolution`) each have a `test`:
-
-title/group/site are case-insensitive regex; language is base-language equality
-(`fr` matches `fr-ca` via `baseLang`), or `*` for any stated language; flag
-looks up a boolean parse fact; protocol is case-insensitive equality; resolution
-is a minimum. `Validate` rejects malformed conditions before persistence (bad
-regex, unknown flag, non-torrent/source protocol, non-positive resolution).
-
-`Input` is the candidate's view a format matches against. Note it is the
-already-parsed facts (Title, Group, Language, Flags…), not a raw name. This is
-the clean layer boundary: `parse` produces facts, `profile` matches facts. (It
-does NOT re-tokenize names, which is why `profile` does not depend on I/O.)
-
-`Format.Matches` decides in three steps: an empty condition list matches
-nothing, every required condition must be satisfied (a failed one rejects
-immediately), and each condition type that has non-required conditions must have
-at least one hit. This diagram shows the matching rule as a flow:
+This diagram shows the same rule as a flow:
 
 ```mermaid
 flowchart TD
@@ -52,14 +35,24 @@ flowchart TD
     G -->|yes| H["true"]
 ```
 
-The bullets at the top of this section state the same rule in words. Title,
-group and site conditions are case-insensitive
-regexes (compiled once into a process-wide `regexCache`; a failed compile is
-cached too and never matches). Language is base-language equality via `BaseLang`
-(`fr` matches `fr-ca`), or `*` for any stated language. Protocol is
-case-insensitive equality with `torrent` or `source`.
+Each condition type has its own `test`:
 
-Resolution is a minimum pixel height.
+| Type | Test |
+| --- | --- |
+| `CondTitle`, `CondGroup`, `CondSite` | case-insensitive regex, compiled once into a process-wide `regexCache`; a failed compile is cached too and never matches |
+| `CondLanguage` | base-language equality via `BaseLang` (`fr` matches `fr-ca`), or `*` for any stated language |
+| `CondFlag` | looks up a boolean parse fact (see [the flag list](#the-flag-list)) |
+| `CondProtocol` | case-insensitive equality with `torrent` or `source` |
+| `CondResolution` | a minimum pixel height |
+
+`Validate` rejects malformed conditions before persistence (bad regex,
+unknown flag, non-torrent/source protocol, non-positive resolution), and
+`ProfileService` refuses formats with no name or no conditions.
+
+`Input` is the candidate's view a format matches against. It is the
+already-parsed facts (Title, Group, Language, Flags…), not a raw name. This is
+the clean layer boundary: `parse` produces facts, `profile` matches facts. It
+does not re-tokenize names, which is why `profile` does not depend on I/O.
 
 ### The flag list
 
@@ -85,9 +78,6 @@ the same names:
 For a release, the funnel builds the flags with `parseFlags(c.Parse)`; for a
 source release the title matched against is the listing name plus the release
 title, and the group is the parse group, falling back to the scanlator.
-`Validate` rejects malformed conditions before persistence (bad regex, unknown
-flag, non-torrent/source protocol, non-positive resolution), and
-`ProfileService` refuses formats with no name or no conditions.
 
 ### Profiles: scores + funnel knobs
 
@@ -116,7 +106,6 @@ matching format (in list order), the matched formats, and `Broken`, the first
 hard rule in words ("does not match \"X\", which Y requires" / "matches \"X\",
 which Y refuses"), empty when none breaks. A nil profile judges nothing: score
 0, no matches, no broken rule, and the built-in `DefaultRules` apply at the call
-
 sites.
 
 Search, the ledger and the importer all ask here, so a release and a file are
@@ -168,7 +157,10 @@ gets `rejected.no_upgrade`, so scheduled sweeps only hunt real improvements.
 ## Shared ledger
 
 The ledger view (`loadLedger`, `internal/service/ledger.go`) is loaded once per
-series and shared by search and UI evaluation. It batches the series, its
+series and shared by search and UI evaluation. Here "ledger" names this
+computed view of a series; the volume ledger and the chapter ledger it covers
+are the two bookkeeping axes defined in
+[editions](editions.md#numbers-and-chapter-discovery). It batches the series, its
 editions, collected versions, books, per-book overrides, file coverage and
 contents, presence, pending jobs and effective profiles; then `cardBooks`
 evaluates each version/book pair. GETs never initialize chapters or check paths.
@@ -230,17 +222,8 @@ group, and profile requirements. Policy changes may leave an existing copy
 unsatisfactory. Pins prevent upgrades; changing or deleting edition preferences
 does not delete knowledge of an archive’s contents.
 
-The book's Files tab and file-matching dialog show each file's current
-custom-format score, effective profile, and matched formats with their
-individual scores. This uses the same stored facts, release claims, and
-confirmed edition context as fulfillment and upgrade decisions, evaluated
-against today's profile settings.
-
-The matching dialog evaluates the selected collected version; unsaved
-corrections do not change the displayed current score. Its separate copy-choice
-preview scores proposed corrections before Apply choices, which saves the facts
-and selections together. A zero score is displayed explicitly, and unknown facts
-are identified as potentially incomplete.
+What the Files tab and the file-matching dialog show about each file's score
+is described under [how a file is judged](#how-a-file-is-judged).
 
 Acquisition identity is `(version ID, book ID)`, never the displayed
 volume/chapter number. The earlier number-keyed slot model (`internal/ledger`,
@@ -326,7 +309,10 @@ required/refused rule or, when the facts are known, a summed score below
 exactly this: current custom-format score, effective profile, matched formats
 with their individual scores, `FactsKnown`, and the refusal reason; a zero score
 is displayed explicitly, and unknown facts are identified as potentially
-incomplete. The dialog evaluates the selected collected version, and its
+incomplete. These are the same stored facts, release claims and confirmed
+edition context that fulfillment and upgrade decisions use, evaluated against
+today's profile settings. The dialog evaluates the selected collected version;
+unsaved corrections do not change the displayed current score. Its
 copy-choice preview scores proposed corrections before Apply saves facts and
 selections together.
 

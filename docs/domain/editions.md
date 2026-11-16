@@ -16,29 +16,28 @@ Sento distinguishes what a book **is**, which releases you want to **keep**, and
 | File contents | Confirmed books inside an archive, independent of edition rules | File ID + book ID |
 | Fulfillment | Whether a present, verified asset meets a version’s current rules | Derived; explicit selections and pins use file ID + version ID + book ID |
 
-These entities relate as follows:
+This diagram shows how these entities relate. Each node names the table that
+stores it; the tables with every column and key are drawn in
+[data model and persistence](data-model.md#entity-relationships).
 
 ```mermaid
 flowchart LR
-  Series --> Edition
-  Edition --> Collection
-  Edition --> Book
-  Collection --> Work
+  Series["Series (series)"] --> Edition["Edition (editions)"]
+  Edition --> Collection["Collection (collections)"]
+  Edition --> Book["Book (books)"]
+  Collection --> Work["Work (works)"]
   Book --> Work
-  Edition --> Version
-  Profile --> Version
-  Release[Release evaluation] --> Job[Download job]
+  Edition --> Version["Collected version (versions)"]
+  Profile["Profile (profiles)"] --> Version
+  Release["Release evaluation (the job's snapshot_json)"] --> Job["Download job (queue_items)"]
   Version --> Release
   Book --> Release
-  Job --> Asset[File asset]
-  Asset --> Contents[Verified file contents]
+  Job --> Asset["File asset (files)"]
+  Asset --> Contents["Verified file contents (asset_contents)"]
   Book --> Contents
-  Contents --> Fulfillment
+  Contents --> Fulfillment["Fulfillment (derived; selections in asset_coverage)"]
   Version --> Fulfillment
 ```
-
-The tables behind these entities, with every column and key, are in
-[Data model and persistence](data-model.md).
 
 ## Catalog identity and local editions
 
@@ -62,7 +61,7 @@ A collection or work the catalog no longer lists becomes `stale`; an edition is 
 
 ## Numbers and chapter discovery
 
-Volumes and chapters are collected independently: a release or a file is one kind or the other, never both (`ledgerOf`). Only volume numbers make a volume and only chapter numbers make chapters; with both, a single chapter ("Vol.5 Ch.34") is a chapter that notes its volume, and several chapters ("v01 c001-008") are a volume that lists what is inside it. A volume is never used to fill chapters, or the reverse.
+Volumes and chapters are collected independently: a release or a file is one kind or the other, never both (`ledgerOf`). Each kind is a **ledger**, one of the two bookkeeping axes: the volume ledger and the chapter ledger. Only volume numbers make a volume and only chapter numbers make chapters; with both, a single chapter ("Vol.5 Ch.34") is a chapter that notes its volume, and several chapters ("v01 c001-008") are a volume that lists what is inside it. A volume is never used to fill chapters, or the reverse.
 
 A book has a display label and an optional number. Numbers use integer hundredths: volume 0 is `0`, chapter 12.5 is `1250`. `number_known` distinguishes actual zero from an unnumbered special. Main, extra, and other books can share a number without sharing ownership.
 
@@ -78,15 +77,53 @@ A source match placed on a chapter edition reports its new chapters. A match is 
 
 ## Collected versions and profiles
 
-A **collected version** is one way of collecting an edition: the edition with a release profile, and which of its books are wanted. The series page shows one card per collected version. An edition starts with one (its default); **Collect again with another profile** adds another: the same books wanted as the releases that profile accepts (a colored copy beside a black-and-white one). An edition is collected once per profile, and a file counts for every card whose profile accepts it, so two cards keep their files apart only when one profile refuses a format the other requires (profile.Apart decides it; the dialog says so when they do not). A card is titled by its edition, plus its own profile when the edition has several (`cardTitle`; `cardLabel` adds the language where the card is named away from the list, as in a search); a card beside the first is named after its profile, and that name is its folder. "Card" is the layout's word, not the interface's: what people read is the edition ("this edition doesn't use their files", "Used by") and, for a second card, the edition collected again with another profile, named by its title (`Standard Edition · Colored`). Release restrictions live only in profiles: the old per-copy required group and strict language are read once by `MigrateCopyRules` and never written again. Any card can be removed while the edition keeps another (removing the default makes the oldest other one the default); the last one is switched off instead. Only collected versions persist edition intent; edition-level monitoring and cutoff in API responses are projections. Each carries its own monitoring, per-book intent, profile, chapter cutoff, and handling of unknown publication dates. Include extras enables bonus/other books; individual overrides can select them separately. “Skip through chapter N” means number > N. Chapter zero remains selectable with an override.
+A **collected version** is one way of collecting an edition: the edition with a release profile, and which of its books are wanted. The series page shows one card per collected version. An edition starts with one (its default); **Collect again with another profile** adds another: the same books wanted as the releases that profile accepts (a colored copy beside a black-and-white one).
+
+An edition is collected once per profile, and a file counts for every card whose profile accepts it. Two cards keep their files apart only when one profile refuses a format the other requires (`profile.Apart` decides it; the dialog says so when they do not).
+
+A card is titled by its edition, plus its own profile when the edition has several (`cardTitle`; `cardLabel` adds the language where the card is named away from the list, as in a search). A card beside the first is named after its profile, and that name is its folder. "Card" is the layout's word, not the interface's: what people read is the edition ("this edition doesn't use their files", "Used by") and, for a second card, the edition collected again with another profile, named by its title (`Standard Edition · Colored`).
+
+Release restrictions live only in profiles: the old per-copy required group and strict language are read once by `MigrateCopyRules` and never written again.
+
+Any card can be removed while the edition keeps another (removing the default makes the oldest other one the default); the last one is switched off instead. Only collected versions persist edition intent; edition-level monitoring and cutoff in API responses are projections. Each collected version carries its own:
+
+- monitoring and per-book intent;
+- profile;
+- chapter cutoff: "Skip through chapter N" means number > N, and chapter zero remains selectable with an override;
+- handling of unknown publication dates;
+- Include extras, which enables bonus and other books; individual overrides can select them separately.
 
 Profile inheritance is **copy (collected version) → series → instance default**: a profile is chosen where downloads are configured, on the series or in a copy's Download settings, not on the edition itself (migration 24 moved edition-level profiles onto the copies that inherited them). An unset profile follows its parent; selecting a profile creates an explicit assignment. Profile deletion checks version assignments too.
 
 Availability is `released`, `upcoming`, or `unknown`. Missing dates stay unknown. The version decides whether unknown-date books may be searched. Actual volume 0 never means “search the whole edition”; a search names a collected version, plus `bookId` for one book or `all` for the whole version. Widened to all books (`allBooks`), a search lists every release for every book but its plan proposes only the books the version wants; Select range picks releases inside a number range. A book's identity everywhere (wanted, reserved, grabbed, owned) is its id within a collected version, never its displayed number.
 
-Whether a release belongs to an edition is decided in one place (`parse.ReadEdition` reads names, `shelf.judge` in `internal/service/edition_fit.go` decides). **An edition is a numbering**: the original run, or a regrouping into fewer, bigger books: Deluxe, Omnibus, 3-in-1, VIZBIG, Perfect/Kanzenban, Colossal, Collector's, Eternal and the like are names for that one thing. Medium, a box, a scan or a digital rip, colorization of the same volumes and the group are variants within an edition, ranked by the profile's custom formats. A release and an edition are read into the same claim (the regroupings they name, a name of their own such as "Fullmetal Edition", a color claim) and judged **fits**, **unsure** or **no**. No: a language mismatch; volume numbers past the edition's last book that another edition of the series reaches (a catalog listing fewer books than exist proves nothing); an edition that claims color against an uncolored release; a release naming another edition of the series; a regrouping offered to a box set. Unsure (`rejected.edition_ambiguous`, soft: never grabbed automatically, downloadable after review, the reason in its text): words alone disagree: a regrouping word against the original numbering, a plain release against a regrouped edition, a colored release where the series has a color edition. A verified source listing turns unsure into fits but not no. Among editions that fit, packaging, color and medium pick the better home; a release that still fits several collected editions is the same question. A release that names a numbering no edition of the series surely takes is offered in the search: "Add <name>", in the release's own words, with the volume count the releases name.
+Whether a release belongs to an edition is decided in one place (`parse.ReadEdition` reads names, `shelf.judge` in `internal/service/edition_fit.go` decides).
 
-A catalog box set is a single item with one ISBN, while releases are named after the books inside. **This is a box of several volumes** (book menu) adds volumes 1..N carrying the box's ISBN and date and moves the box out of the main run so it is no longer collected. A torrent named for the series with no unit numbers is a proposed whole-edition pack (`rejected.pack_unverified`, soft): reviewable, never grabbed automatically, and checked against its actual contents at import. An explicit "Complete" tag still needs this confirmation: it establishes neither volume units nor the selected edition's numbering. A release ruled out as another edition names that edition (`otherEdition`); when the series has none like it, the search offers to add it, starting Add edition from its name and language and reopening the search on it. An edition's numbering shows in its shape as well as its name: in a completed series, a volume edition holding the story in at most two thirds of the original's volumes regroups it, whatever the catalog calls it (VIZ's English Goodnight Punpun, 7 books for 13, is listed as "Standard Edition"; its files say "Omnibus Edition"). A release naming a regrouping fits such an edition when no sibling edition names a numbering of its own; with named siblings (a 3-in-1, a VIZBIG) a bare "Omnibus" stays a question, and an ongoing series' shorter edition is only behind. Only collected editions compete for a release. A release that still fits several of them is `rejected.edition_ambiguous`: never grabbed automatically, downloadable after review from the edition the user searched. A name that states no language takes it from the indexer section it is filed under ("English-translated", "Raw"), then an English-only publisher's tag, then the indexer's default language setting. Torrent searches are restricted to the Books category and use the normalised title. A verified source listing can establish publication identity, while contradictory explicit language or edition tags still reject the release. Required and refused custom formats in the release profile are hard gates, including group and stated-language rules. Manually confirming a file as an explicit Full Color edition also confirms its color for that card, even when a bare volume filename supplies no color tag.
+**An edition is a numbering**: the original run, or a regrouping into fewer, bigger books: Deluxe, Omnibus, 3-in-1, VIZBIG, Perfect/Kanzenban, Colossal, Collector's, Eternal and the like are names for that one thing. Medium, a box, a scan or a digital rip, colorization of the same volumes and the group are variants within an edition, ranked by the profile's custom formats.
+
+A release and an edition are read into the same claim (the regroupings they name, a name of their own such as "Fullmetal Edition", a color claim) and judged **fits**, **unsure** or **no**:
+
+- **No** when:
+  - the languages do not match;
+  - volume numbers run past the edition's last book and another edition of the series reaches them (a catalog listing fewer books than exist proves nothing);
+  - an edition that claims color meets an uncolored release;
+  - the release names another edition of the series;
+  - a regrouping is offered to a box set.
+- **Unsure** (`rejected.edition_ambiguous`, soft: never grabbed automatically, downloadable after review, the reason in its text) when words alone disagree: a regrouping word against the original numbering, a plain release against a regrouped edition, a colored release where the series has a color edition.
+
+A verified source listing turns unsure into fits but not no. Among editions that fit, packaging, color and medium pick the better home; a release that still fits several collected editions is the same question. A release that names a numbering no edition of the series surely takes is offered in the search: "Add <name>", in the release's own words, with the volume count the releases name.
+
+More rules decide where a release belongs:
+
+- **Box sets.** A catalog box set is a single item with one ISBN, while releases are named after the books inside. **This is a box of several volumes** (book menu) adds volumes 1..N carrying the box's ISBN and date and moves the box out of the main run so it is no longer collected.
+- **Unverified packs.** A torrent named for the series with no unit numbers is a proposed whole-edition pack (`rejected.pack_unverified`, soft): reviewable, never grabbed automatically, and checked against its actual contents at import. An explicit "Complete" tag still needs this confirmation: it establishes neither volume units nor the selected edition's numbering.
+- **Another edition named by a release.** A release ruled out as another edition names that edition (`otherEdition`); when the series has none like it, the search offers to add it, starting Add edition from its name and language and reopening the search on it.
+- **Regrouped numberings.** An edition's numbering shows in its shape as well as its name: in a completed series, a volume edition holding the story in at most two thirds of the original's volumes regroups it, whatever the catalog calls it (VIZ's English Goodnight Punpun, 7 books for 13, is listed as "Standard Edition"; its files say "Omnibus Edition"). A release naming a regrouping fits such an edition when no sibling edition names a numbering of its own; with named siblings (a 3-in-1, a VIZBIG) a bare "Omnibus" stays a question, and an ongoing series' shorter edition is only behind.
+- **Language inference.** A name that states no language takes it from the indexer section it is filed under ("English-translated", "Raw"), then an English-only publisher's tag, then the indexer's default language setting.
+
+Only collected editions compete for a release. A release that still fits several of them is `rejected.edition_ambiguous`: never grabbed automatically, downloadable after review from the edition the user searched.
+
+Torrent searches are restricted to the Books category and use the normalised title. A verified source listing can establish publication identity, while contradictory explicit language or edition tags still reject the release. Required and refused custom formats in the release profile are hard gates, including group and stated-language rules. Manually confirming a file as an explicit Full Color edition also confirms its color for that card, even when a bare volume filename supplies no color tag.
 
 A catalog edition has a closed numbering when every linked collection
 explicitly says it is completed and its book count agrees with the known
@@ -94,7 +131,6 @@ final number. A release extending beyond that boundary needs confirmation
 of its numbering, even when its edition words match or a source is bound to
 the edition. A release that explicitly calls itself complete at an earlier
 number also needs confirmation; an ordinary partial pack remains eligible.
-
 It is never automatically clipped to the edition's books.
 Unknown, ongoing or conflicting catalog lines retain the normal allowance
 for metadata lag. Different numberings belong to different editions.
@@ -103,7 +139,7 @@ The shipped Standard profile prefers digital, official and premium releases and 
 
 Upgrades are off by default. When enabled, Sento evaluates stored file facts against the **current** profile, requires the configured score improvement, and stops at the cutoff score (`0` means no cutoff). Pins prevent automatic upgrades. Historical files without trustworthy facts are not automatically upgraded. Earlier copies are retained; there is no automatic deletion or chapter-to-volume replacement. Eligibility is visible but never acted on unattended: scheduled searches fill missing and unsatisfactory books only, and an upgrade-eligible copy is replaced when a person searches the book (per-book searches state the choice, so the improvement minimum steps aside) or the edition (the minimum still applies).
 
-The ledger is computed from books, monitoring intent, eligible coverage, file presence, pending jobs, availability, and optional upgrades. The Editions view manages both volumes and chapters, using the same model.
+The ledger view, the computed state of every book of a series (see [shared ledger](profiles-ledger.md#shared-ledger)), is computed from books, monitoring intent, eligible coverage, file presence, pending jobs, availability, and optional upgrades. The Editions view manages both volumes and chapters, using the same model.
 
 ## Downloads and imports
 
@@ -125,7 +161,7 @@ The files inside a download are placed by their numbers: the edition was decided
 
 Every import is post-processed into a self-contained book when **Embed metadata** is on (the default): a clean CBZ (zip/cbz and rar/cbr accepted) with pages byte-for-byte as downloaded, a wrapping folder flattened, OS junk dropped, and a full `ComicInfo.xml` (series, number, volume, title, summary, dates, credits, publisher, genres, tags, language, reading direction, age rating, ISBN, release group, and a notes line (`sento:v1 mangabaka:… edition:… work:… release:…`)) that re-identifies the file without the database. An existing ComicInfo is merged (Sento wins on fields it knows, unmodelled elements are kept) and preserved once as `ComicInfo.orig.xml`. Torrent payloads are copied, never modified, so they keep seeding; with embedding off they are hardlinked untouched.
 
-A book's identity is its **content fingerprint**: the SHA-256 of the sorted SHA-256s of its page images. Container, names, order and ComicInfo do not enter it, so a payload and its processed copy are the same asset and re-tagging never changes identity. Non-archives fall back to a byte hash.
+A book's identity is its **content fingerprint**, taken over its page images only, so a payload and its processed copy are the same asset and re-tagging never changes identity ([files and fingerprints](library-files.md#files-and-fingerprints)).
 
 Upgrade ownership and placement are per collected version's book. A colored
 copy cannot block or displace a black-and-white copy of the same book; each
@@ -147,22 +183,31 @@ Paths outside the old root stay unchanged. See [moving the library](../installat
 
 Installation does not overwrite an occupied path with different bytes. Existing library paths are preserved. A pack stays **one archive** with several coverage links. Identical bytes from one job may satisfy several confirmed versions through the same asset. Different releases remain separate assets.
 
-Scans consider paused editions too, check parsed language and edition evidence, and leave ambiguous archives for review. Unmatched downloaded archives are retained in the review area. Every file of a downloaded pack is recorded before the job is held: an archive whose observed facts break the release profile is kept for review without aborting the rest of the payload (the job is not re-run while it waits, so a file left unprocessed would never reach review). Partial imports record verified files and hold the job in `needs_review` until unresolved coverage is reviewed. Books already verified and accepted remain owned while the rest of the batch waits for review; an active transfer still shows pending. Activity reports the imported count and unmatched books separately, and its replacement search selects unmatched books without downloading verified ones again; saving the mapping of its last waiting file imports the job, releases its reservations (planned books no accepted file held are wanted again and searched for within the next queue pass) and records "imported after review" in History.
+Scans consider paused editions too, check parsed language and edition evidence, and leave ambiguous archives for review. Unmatched downloaded archives are retained in the review area. Every file of a downloaded pack is recorded before the job is held: an archive whose observed facts break the release profile is kept for review without aborting the rest of the payload (the job is not re-run while it waits, so a file left unprocessed would never reach review).
 
-Review proposes what a waiting file holds when its own name resolves it, read against every edition of the series, collected or not (D16). A number with no volume or chapter marker ("Kagurabachi 067") takes its kind from the download it came in: the volumes or chapters the release names, or the kind of books it was grabbed for. It stays unread outside a download. An unnumbered pack vouches for the planned kind only while every number its files carry is a book of it: a pack numbered past the planned edition (200 chapter files against 15 volumes) is another numbering, and none of its files is proposed onto it; a number zero-padded to three or more digits ("001") is written the chapter way and never read as a volume. A name not all of whose numbers resolve to books of the edition proposes nothing, rather than a subset of them. A name without the series title ("Volume_01.cbz") is only proposed inside a download of the series. Among editions holding the books, the collected one wins; still several, or a number shared by two books, and nothing is proposed. Within that edition, a proposal selects a collected version only when exactly one profile accepts the file, and names that profile when several versions exist. Refused files and overlapping profiles require an explicit choice instead of silently using the default version. Proposals are computed when review is read and recorded only on Accept (one, or all at once); Review file opens the confirmed/proposed contents pre-filled. Confirming those contents and selecting the archive that supplies a collected book are separate choices. File questions group by the release they arrived in, and a group carries the pack-level answers: **Decline all** marks every file of the pack reviewed and unmapped in one transaction (a confirmation lists what will be marked; files that no longer wait are skipped, never overwritten), and **Match whole release** previews one chosen card (or the proposed editions) across the pack, resolving each file by its own numbers and offering the same explicit per-book copy choices as single-file review. A waiting file whose only claims are the import's own unconfirmed ones can be re-mapped this way onto another collected version of the edition (a colored pack onto a Colored card); a file with claims a person confirmed (manually confirmed contents, a pin, a recorded decision) stays for individual review. Files whose numbers do not resolve (an unreadable name, the other ledger, numbers the edition does not hold, a number two books share) are left for individual review rather than guessed. Retrying a fully reviewed payload completes from its recorded files without fetching it again. Partial retries preserve already confirmed bytes and mappings. Confirming or editing a file mapping also organizes that file using the current import naming and metadata settings, moving it out of the review folder. Other series files are left alone. A failed move preserves the mapping and reports that organization still needs to finish.
+Partial imports record verified files and hold the job in `needs_review` until unresolved coverage is reviewed. Books already verified and accepted remain owned while the rest of the batch waits for review; an active transfer still shows pending. Activity reports the imported count and unmatched books separately, and its replacement search selects unmatched books without downloading verified ones again. Saving the mapping of its last waiting file imports the job, releases its reservations (planned books no accepted file held are wanted again and searched for within the next queue pass) and records "imported after review" in History.
 
-Bulk-match preview and submission use the same service resolver, including book
-kind and duplicate-number checks. Pack choices are applied in batches of at most
-500 files, with 25 archives shown per page; any remaining batch stays in Review.
+### Review
+
+How review works inside (the proposal rules, the preview token, the locks and the recovery of interrupted trash moves) is described in [import, review and settlement](import-review.md). This section keeps what review means for ownership and what a person sees.
+
+Review proposes what a waiting file holds when its own name resolves it, read against every edition of the series, collected or not (D16). The reading rules are in [the review inbox and proposals](import-review.md#the-review-inbox-and-proposals): a bare number takes its kind from the download, a name all of whose numbers do not resolve proposes nothing, a collected edition wins, and a collected version is proposed only when exactly one profile accepts the file. Refused files and overlapping profiles require an explicit choice instead of silently using the default version.
+
+Proposals are accepted one at a time or all at once; **Review file** opens the confirmed or proposed contents pre-filled. Confirming those contents and selecting the archive that supplies a collected book are separate choices.
+
+File questions group by the release they arrived in, and a group carries the pack-level answers described in [bulk match and decline](import-review.md#bulk-match-and-decline). **Decline all** first lists what will be marked. **Match whole release** previews one chosen card (or the proposed editions) across the pack and offers the same explicit per-book copy choices as single-file review; it can re-map a file whose only claims are the import's own onto another collected version of the edition (a colored pack onto a Colored card).
+
+Retrying a fully reviewed payload completes from its recorded files without fetching it again. Partial retries preserve already confirmed bytes and mappings. Confirming or editing a file mapping also organizes that file using the current import naming and metadata settings, moving it out of the review folder; other series files are left alone. A failed move preserves the mapping and reports that organization still needs to finish.
+
+Pack choices are applied in batches of at most 500 files, with 25 archives
+shown per page; any remaining batch stays in Review.
 
 The choice list leads with the running counts (imports, keeps, replacements,
 trash, missing, left for later), and past one page each archive opens as a
 one-line summary of its planned outcome, expanded on demand; a single file or
 a one-page pack opens expanded. Both endpoints of each named range must be
 books of the edition; a range extending past it stays for review instead of
-being clipped. Submission rechecks current review state and serializes file
-mutations with import, cleanup and organization. Large packs use bounded batches;
-each decline batch is transactional.
+being clipped.
 
 Partial-import counts identify files from that download. An existing copy from
 another release does not count as imported by the unfinished job.
@@ -194,59 +239,27 @@ selection. Keeping that mapping leaves other owners and pins intact; the refusal
 still blocks adopting unused contents or replacing a different copy.
 
 A live archive whose fingerprint differs from its recorded evidence must be
-rescanned before review. A fresh preview cannot confirm old contents or facts
-against different bytes; rescan discards the old evidence and matches it anew.
-
-Fingerprinting an archive decompresses every page, so Sento records the
-archive's **stat signature** (device, inode, size, modification time and inode
-change time) with the fingerprint it read under it, and reads the archive again
-only when the live signature differs. Userspace cannot set the change time, so
-a rewrite that restores the modification time still changes the signature. As
-with git's index, a signature is trusted only once the archive's timestamps are
-two seconds older than the stat, so a later write cannot share a coarse
-filesystem timestamp. The signature is read through an open file, which makes
-NFS revalidate cached attributes. Platforms without inode metadata always
-fingerprint.
-
-A preview fingerprints an archive unless its recorded signature still matches.
-
-Its token covers each signature and the preview's time, so apply reuses the
-preview's fingerprint while the archive keeps that signature; a change in
-between rejects the token. Apply judges each signature against the preview's
-time, not its own, so an unchanged archive that settles in between keeps its
-token. Imports and scans record the signature with the fingerprint they read,
-and a preview that has to fingerprint an archive records the signature it read
-under the confirmed hash (the same rule a scan applies), so only the first
-preview of an archive, or one whose bytes changed, reads its pages. Review
-preview/apply requests sit outside the global 120 s API timeout,
-because that first read of a large pack runs long by design; each signature
-recorded along the way is kept, so a retry after a disconnect makes progress
-instead of starting over.
-
-After acquiring the decision locks and before writing any choices, apply
-compares the live signatures again (or fingerprints an archive whose signature
-was not trusted), so an archive changed or replaced during a lock wait rejects
-the entire batch. The commit records the signature with the confirmed
-fingerprint. Library scans use the same rule; a file without a signature falls
-back to its size and modification time.
-
-The transaction locks the series before its editions, keeping inherited series
-policy stable through commit as well as version, profile and global settings.
+rescanned before review: a preview cannot confirm old contents or facts against
+different bytes. Previews and apply avoid re-reading unchanged archives through
+the stat signature ([files and fingerprints](library-files.md#files-and-fingerprints)),
+and a token binds apply to what the preview showed
+([review choices](import-review.md#review-choices-preview-token-apply)).
 
 An archive currently selected by any book or version is protected from review
-trash, including when that mapping appears in the same request. Clearing or
-replacing its selection in the batch does not bypass this protection. Review
-trash is for unused archives; previously selected copies can be kept and then
-reassessed for cleanup after their selection changes are saved. The one-file editor
-does that for a person who unticks every edition and picks the trash: it saves
-the file as unused, previews again and only then asks for the trash move
-(`trashWhenUnused` on the plan says nothing else stands in the way).
+trash, even when the same request clears or replaces that selection. Review
+trash is for unused archives; a previously selected copy is kept, then
+reassessed for cleanup once its selection changes are saved (the
+[file dialog](#file-dialog) does those two steps for a person).
 
 For an unused incoming archive, **Keep unused file** confirms/resolves the review while retaining its bytes and content knowledge; **Move incoming file to trash** records rejection and requests recoverable cleanup directly, without first accepting ownership. **Leave for later** leaves the review unresolved. **Apply choices** summarizes imports, existing copies kept, explicit replacements, and trash moves. A multi-book archive stays intact when it supplies any selected book; skipping one book never removes pages, and an archive selected elsewhere or pinned cannot be trashed. Restoring a skipped duplicate preserves its confirmed contents and does not adopt it as the selected copy.
 
-Review previews bind the file fingerprints, facts, current selections/pins, edition/book identities and profile settings. Apply rereads the evidence and checks the revision under the edition mutation locks (and configuration locks on PostgreSQL); a changed decision context requires a fresh preview before any mapping changes. Facts, verified contents and explicit selections commit together across the chosen batch. Filesystem work follows that commit and reports per-file results. A durable `files.review_action` records keep/trash decisions for the file's fingerprint, including an unused or trashed archive. The trash journal makes moves recoverable; failed pending moves remain visible and retry on queue passes. The download-client payload is untouched. Identical retry payloads and rescans preserve reviewed selections and skips instead of reopening or automatically accepting the duplicate. Changed bytes require review again. Download settlement counts files from the release separately from books already held by other releases, reports **Kept existing** for those books, and releases reservations when every actual question is answered.
+Facts, verified contents and explicit selections commit together across the chosen batch, and filesystem work follows that commit with per-file results. A durable `files.review_action` records keep/trash decisions for the file's fingerprint, including an unused or trashed archive. Failed pending trash moves remain visible and retry on queue passes ([review trash recovery](import-review.md#review-trash-recovery)). The download-client payload is untouched.
+
+Identical retry payloads and rescans preserve reviewed selections and skips instead of reopening or automatically accepting the duplicate. Changed bytes require review again. Download settlement counts files from the release separately from books already held by other releases, reports **Kept existing** for those books, and releases reservations when every actual question is answered.
 
 File review can map an archive to several books and versions. Editing one version's mappings preserves the others. Clearing coverage keeps the file without claiming ownership. Coverage pins survive edits to retained mappings. Removing a version preserves intrinsic content knowledge and files; deleting a pinned file requires unpinning first. Duplicate-edition merges require unique book matches and preserve version policies, pins, coverage, and paths. Pending downloads block destructive identity changes.
+
+### Client errors and dispatch
 
 Transient client errors back off from 30 seconds up to 32 minutes. If dispatch succeeded but saving its handle was interrupted, reconciliation checks the stable provider key without submitting again. Unresolved dispatch after ten minutes enters review, where a user can attach the client ID or cancel the reservation. Cancelling leaves remote downloads and files intact; an active import must finish before cancellation. Pending plans and edition identity edits use a common transactional parent lock.
 
@@ -259,7 +272,17 @@ The series page has one tab row: Editions, Files, Activity (`web/src/pages/Serie
 
 ### Edition cards
 
-Collected editions, local publications, and editions with files each render as one card per collected version (`useSeriesEditions` splits the list into collected and the rest); Other editions is a collapsed catalog chooser. The edition action menu holds Search releases, Edit edition (what the edition is: name, language, publisher, numbering, and its name in readers under "In readers": same as the library, the series and edition name, or a custom template, with a live preview of what each edition will show; saving a new name opens the organize preview of the series' files, which carry the old one until it is applied) and Download settings (how the edition collects: profile, chapter cutoff, extras, undated books); Collect again with another profile sits beside them; Stop collecting this way (removing the version) and catalog maintenance are under More. An edition whose name in readers differs from the series title says so in its subtitle (`in readers: ONE PIECE Colored`). The profile summary explains inheritance. A card with nothing on disk, nothing wanted and nothing to review opens folded. The header carries Search & download and Monitor series; Refresh, the release profile (shown in the header only when the series chose one) and Sources, the per-series source settings where each source match carries its edition mapping, are in its menu.
+Collected editions, local publications, and editions with files each render as one card per collected version (`useSeriesEditions` splits the list into collected and the rest); Other editions is a collapsed catalog chooser. A card with nothing on disk, nothing wanted and nothing to review opens folded.
+
+The edition action menu holds:
+
+- **Search releases**.
+- **Edit edition**: what the edition is: name, language, publisher, numbering, and its name in readers under "In readers": same as the library, the series and edition name, or a custom template, with a live preview of what each edition will show. Saving a new name opens the organize preview of the series' files, which carry the old one until it is applied.
+- **Download settings**: how the edition collects: profile, chapter cutoff, extras, undated books.
+
+**Collect again with another profile** sits beside them; **Stop collecting this way** (removing the version) and catalog maintenance are under More. An edition whose name in readers differs from the series title says so in its subtitle (`in readers: ONE PIECE Colored`). The profile summary explains inheritance.
+
+The header carries Search & download and Monitor series. Its menu holds Refresh, the release profile (shown in the header only when the series chose one) and Sources, the per-series source settings where each source match carries its edition mapping.
 
 ### Book list and grid
 
@@ -280,21 +303,7 @@ Each book's display state comes from the ledger (`BookStatus.state`) and maps to
 | `needs_review` | Needs review | yellow | Needs attention |
 | `storage_unavailable` | Storage unavailable | yellow | Needs attention |
 
-The filter bar always offers All, On disk and Wanted, plus Downloading, Upcoming, Paused and Needs attention when any book matches. The same states drive the grid cells and the status badges:
-
-```mermaid
-stateDiagram-v2
-  owned: Owned · green
-  upgrade_eligible: Upgrade wanted · green
-  pending: Pending · blue
-  missing: Missing · red
-  not_released: Upcoming · gray
-  unknown: Date unknown · gray
-  unmonitored: Paused · gray
-  unsatisfactory: On disk, not accepted · yellow
-  needs_review: Needs review · yellow
-  storage_unavailable: Storage unavailable · yellow
-```
+The filter bar always offers All, On disk and Wanted, plus Downloading, Upcoming, Paused and Needs attention when any book matches. The same states drive the grid cells and the status badges.
 
 ### Files table
 

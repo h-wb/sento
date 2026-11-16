@@ -61,6 +61,28 @@ flowchart TD
     K --> J
 ```
 
+### Words used throughout
+
+Each word means one thing on every page. This table gives the short meaning
+and the page that defines it.
+
+| Word | Meaning | Defined in |
+| --- | --- | --- |
+| Edition | What is collected: MangaBaka's edition of one series in one language and type, or a local one. An edition is a numbering | [editions](domain/editions.md#catalog-identity-and-local-editions) |
+| Book | A volume, chapter, extra, special or revision within an edition, known by its local ID, never by its displayed number | [editions](domain/editions.md#catalog-identity-and-local-editions) |
+| Collected version | One way of collecting an edition: the edition with a release profile and the books it wants | [editions](domain/editions.md#collected-versions-and-profiles) |
+| Card | The layout's word for one collected version on the series page; the interface names the edition | [editions](domain/editions.md#collected-versions-and-profiles) |
+| Ledger | One of the two bookkeeping axes, volumes or chapters, kept apart everywhere; the ledger view is the computed state of every book of a series | [editions](domain/editions.md#numbers-and-chapter-discovery), [shared ledger](domain/profiles-ledger.md#shared-ledger) |
+| Profile | Reusable release eligibility, scoring and upgrade policy, set on a collected version, a series or the instance | [profiles](domain/profiles-ledger.md#profiles-scores--funnel-knobs) |
+| Custom format | A named list of conditions on a release's facts; a profile scores, requires or refuses formats | [profiles](domain/profiles-ledger.md#custom-formats-sonarrs-matching-semantics) |
+| Release candidate | One search result a provider returns (`provider.Candidate`), before the funnel judges it | [acquisition](domain/acquisition.md#the-search-run) |
+| Funnel | The stages every candidate passes: read the release, route it to collected versions, reject with a reason, score, plan | [acquisition](domain/acquisition.md#routing-and-the-funnel) |
+| Binding | A series' match on an extension source listing (`source_bindings`); the interface calls it a source match | [acquisition](domain/acquisition.md#binding-auto-resolution) |
+| Observation | A chapter a source listing reported, recorded before the funnel runs; accepting it adds one book | [acquisition](domain/acquisition.md#chapter-observation-and-discovery) |
+| File asset | One physical archive with observed facts and a content fingerprint (`files`) | [library files](domain/library-files.md#files-and-fingerprints) |
+| Coverage | A file's selection of a book inside one collected version (`asset_coverage`), apart from the books the file holds (`asset_contents`) | [data model](domain/data-model.md#files) |
+| Fulfillment | Whether a present, verified file asset meets a collected version's current rules; derived, not stored | [editions](domain/editions.md) |
+
 ## Index
 
 ### Run it

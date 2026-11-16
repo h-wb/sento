@@ -4,14 +4,14 @@ Sento is one Go process: an HTTP API and background loops over a SQL
 database, talking to external services (a metadata provider, download
 clients, indexers and the extension sidecar) and to the library on disk.
 
-[../README.md](README.md) summarizes how Sento works end to end before the
+[The documentation index](README.md) summarizes how Sento works end to end before the
 parts. This page describes how that process is organized: the system
 context, the package dependency graph, the service structs, startup and the
 background tasks, and the persistence layer. The browser app that talks to
 this API is described in [web.md](web.md). The [domain guides](domain/)
 describe the implemented data flows; the [specs](spec/) (`spec.md`,
 `decision-engine.md`, `parser.md`) record intent and decisions. The current
-edition/acquisition model is described in [Editions, units, collected
+edition/acquisition model is described in [Editions, books, collected
 versions, and files](domain/editions.md).
 
 ## System context
@@ -92,22 +92,18 @@ graph TD
     cmd --> server
     cmd --> scheduler
     cmd --> service
-    cmd --> store
     cmd --> db
     cmd --> mangabaka
 
     server --> service
     server --> scheduler
-    server --> store
     server --> provider
     server --> extensions
     server --> profile
     server --> metadata
 
     scheduler --> service
-    scheduler --> store
 
-    service --> store
     service --> provider
     service --> metadata
     service --> parse
@@ -178,7 +174,8 @@ owns a set of files in `internal/service`:
 | `HealthService` | `NewHealthService` (`health.go`) | probes of everything Sento depends on, with a cached report | store, connections, library path, task-status source |
 
 This diagram shows how `server.New` wires them: one server, nine services,
-and the four shared dependencies underneath.
+and the shared dependencies that set the services apart. All nine services
+also take the store; the diagram leaves those nine edges out.
 
 ```mermaid
 flowchart TD
@@ -191,15 +188,6 @@ flowchart TD
     server --> extensions["ExtensionService"]
     server --> conns["Connections"]
     server --> health["HealthService"]
-    library --> store["store"]
-    scanner --> store
-    importer --> store
-    search --> store
-    profiles --> store
-    sites --> store
-    extensions --> store
-    conns --> store
-    health --> store
     conns --> registry["provider.Registry (shared, rebuilt in place)"]
     library --> registry
     importer --> registry

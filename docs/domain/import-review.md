@@ -2,7 +2,6 @@
 
 A finished download is only a folder of bytes until Sento reads each file's
 name, decides which books it holds and places it. Import does that reading:
-
 every archive of a payload is installed into the library and linked to its
 books, or exiled to `review/` when its name resolves nothing or its facts
 break the profile. A person confirms the waiting files in review, then the
@@ -56,7 +55,6 @@ flowchart TD
 ```
 
 `processItem` first reconciles a job whose remote handle was never saved:
-
 it asks the provider by the stable release key and adopts the handle if the
 download is done or in flight, never submitting twice. A job with no handle
 at all for more than 10 minutes becomes `dispatch_unknown` and enters review,
@@ -210,7 +208,7 @@ something about this series:
 | Step | Rule |
 | --- | --- |
 | `readsName` | the file waits for review (or is unclaimed for a bulk re-map), is not `unavailable` (a `missing` or `unknown` file still gets its name read), parses as manga with no title leftover, and either anchors on the series title or came from a download of this series; a bare `Volume_01.cbz` is only read inside such a download |
-| ledger | a marked number gives the ledger; a bare number (`067`) takes the kind the download's own name gives it, or the planned kind when every number the pack's files carry is a book of that kind (`packReadsAs`); a 3-plus-digit padded number (`001`) is never read as a volume inside a volume plan |
+| ledger | a marked number gives the ledger; a bare number (`067`) takes the kind the download's own name gives it, or the planned kind when every number the pack's files carry is a book of that kind (`packReadsAs`), so a pack numbered past the planned edition (200 chapter files against 15 volumes) is another numbering and none of its files is proposed onto it; a 3-plus-digit padded number (`001`) is never read as a volume inside a volume plan |
 | editions | the editions of that ledger the name fits (`shelf.fits`), narrowed by `shelf.prefer`; among editions holding the books, a collected one wins; still several, or a number two books share, and no proposal is made |
 | version | a collected version is proposed only when exactly one eligible version's profile accepts the file (and clears its minimum format score); overlapping profiles are a choice for the person, never a silent default. The proposal names the edition, plus the profile when the edition has several collected versions |
 | books | `resolveBooks` plus `everyNumberHeld`: all numbers of the name must resolve to books of the edition |
@@ -250,10 +248,10 @@ sequenceDiagram
 ```
 
 A preview fingerprints an archive unless its recorded stat signature still
-matches the recorded hash (`reviewFingerprint`). The signature is trusted only
-when the archive's timestamps are at least 2 seconds older than the preview
-(`racyStat`), the same rule a scan applies, so a later write cannot share a
-coarse filesystem timestamp. When a preview has to read the pages, it records
+matches the recorded hash (`reviewFingerprint`), with the preview's time as
+"now" in the trust rule of
+[files and fingerprints](library-files.md#files-and-fingerprints). When a
+preview has to read the pages, it records
 the signature it read under, so the next preview trusts it. A known
 fingerprint that disagrees with freshly read bytes is a conflict: rescan
 first, never renew.
@@ -283,7 +281,6 @@ imported file is moved into place by the organizer, displaced owners are
 exiled to review, and `SettleReviewedJobs` closes whatever jobs no longer wait
 on a file. The four `POST /series/{id}/review/*` routes sit outside the global
 120 second request cap, because a first preview of a large pack fingerprints
-
 every archive by design and each signature read along the way is kept, so a
 retry after a disconnect makes progress instead of starting over.
 
@@ -295,7 +292,12 @@ policy refusals force an explicit choice, and a pinned owner must be unpinned
 first. When several incoming archives hold the same book, the first eligible
 one is preselected and each book is counted once. Apply enforces one incoming
 archive per book and edition, and refuses to trash a file that is still
-selected anywhere or pinned.
+selected anywhere or pinned. The store checks this against the selections as
+they stood before the batch, so clearing or replacing an archive's selection
+in the same request does not make its trash move safe. The plan's
+`trashWhenUnused` is set when an edition's use is the only thing keeping a
+file out of trash; the one-file editor then saves the file as unused,
+previews again, and only then asks for the trash move.
 
 ## Bulk match and decline
 
@@ -346,9 +348,9 @@ pages through pending files by file ID (batches of 500) and resumes each move:
 | journal row, digest mismatch | conflict: the retained evidence changed, restore first |
 | trash path missing | verify the original (regular file, digest match), then link-and-unlink it into trash; changed bytes reopen the review instead |
 | both paths exist | they must be the same file (hardlink); verify retained bytes, then remove the original name |
-| then | record completion (`review_action='trashed'`) |
 
-A failure is logged and retried on the next pass; a page that fails to load
+Every resume path that completes the move ends by recording completion
+(`review_action='trashed'`). A failure is logged and retried on the next pass; a page that fails to load
 keeps its cursor and leaves the intents for later. A changed original returns
 to review without moving its new bytes.
 

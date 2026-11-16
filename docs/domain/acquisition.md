@@ -53,19 +53,10 @@ body selects what happens after the search:
 | `grab` (+ `force`, `grabProvider`, `grabSiteID`, `grabVersionID`) | grab one candidate by GUID: `Grab` |
 | none of these | `GrabBest`: plan and queue the default selection |
 
-`GET /api/v1/lookup?q=...` is the metadata title search behind the add-series dialog. Queue, blocklist and activity routes (`api_queue.go`):
-
-| Route | What it does |
-| --- | --- |
-| `GET /api/v1/queue` (`?all=1`) | the queue view; active jobs only unless `all` |
-| `POST /api/v1/queue/process` | run one queue pass now (`ProcessQueue`) |
-| `POST /api/v1/queue/{qid}/retry` | resume a `needs_review`/`retry_wait`/`dispatch_unknown` job, optionally attaching a client-side ID |
-| `POST /api/v1/queue/{qid}/cancel` | cancel (releases reservations; refused while importing) |
-| `POST /api/v1/queue/{qid}/blocklist` | block the job's release and fail the job |
-| `POST /api/v1/queue/another` | "try another release" for 1 to 500 jobs, then search again |
-| `GET /api/v1/activity` (`?seriesId=`) | the Activity page data |
-| `GET /api/v1/history`, `GET /api/v1/series/{id}/history` | decision events |
-| `GET /api/v1/blocklist`, `DELETE /api/v1/blocklist`, `DELETE /api/v1/blocklist/{bid}`, `POST /api/v1/blocklist/unblock` | list, clear (with confirmation), delete one, unblock selected releases |
+`GET /api/v1/lookup?q=...` is the metadata title search behind the add-series
+dialog. The queue, activity, history and blocklist routes (`api_queue.go`) are
+listed in
+[api.md](../api.md#queue-history-activity-and-blocklist).
 
 **Test search** on the Indexers page (`POST /api/v1/indexers/{iid}/search-test`, Torznab indexers only, query of 1 to 200 characters) sends one raw query with the Books category. If that returns nothing, it compares an unrestricted query and shows up to 5 sample titles with their categories. It never evaluates, plans or queues releases; it helps distinguish an empty query from a feed whose category settings need attention (`indexer_search.go`).
 
@@ -472,14 +463,9 @@ files and the queue applies its own backoff (below). `SweepStaging` removes
 leftovers of crashed downloads at startup: `.page-*`/`.part-*` files older than
 an hour and staged `.cbz` files older than 24 hours.
 
-Source downloads retry temporary HTTP failures (408, 425, 429 and 5xx), network
-failures and truncated page bodies for up to four attempts per page. Each
-attempt uses the source's shared page rate limiter; increasing delays with
-jitter and upstream `Retry-After` pause page requests across that source. After
-five queue retries a job moves to Review with its book reservations intact.
-Other permanent source errors go directly to Review.
-
-Neither outcome blocklists the release.
+After five queue retries a job moves to Review with its book reservations
+intact. Other permanent source errors go directly to Review. Neither outcome
+blocklists the release.
 
 ## The queue lifecycle
 
@@ -488,31 +474,37 @@ Every download is a `queue_items` row with one of nine statuses
 `queue-process` task and on `POST /queue/process`) advances the runnable ones,
 oldest first: `queued`, `downloading`, `importing` and `retry_wait` (past its
 `retry_at`). Jobs waiting on a person (`needs_review`, `dispatch_unknown`) are
-left out of the runnable list. This diagram shows the queue statuses and every
-transition:
+left out of the runnable list. This diagram shows the queue statuses and their
+transitions:
 
 ```mermaid
 stateDiagram-v2
     [*] --> queued: ReserveQueue (books reserved, snapshot stored)
     queued --> downloading: State reports InFlight
-    queued --> dispatch_unknown: no external ID after 10 minutes
-    downloading --> importing: State reports Done (BeginImport freezes the plan)
+    retry_wait --> downloading: State reports InFlight
+    queued --> importing: State reports Done (BeginImport freezes the plan)
+    downloading --> importing: State reports Done
+    retry_wait --> importing: State reports Done
     importing --> imported: payload imported, Cleanup done
     importing --> needs_review: import needs review (files or mapping)
-    queued --> retry_wait: failure, retry_at = now + backoff
+    queued --> retry_wait: submission uncertain, or a failure (backoff)
     downloading --> retry_wait: failure, retry_at = now + backoff
-    retry_wait --> downloading: retry_at reached, picked up directly
-    retry_wait --> importing: retry_at reached, picked up directly
-    retry_wait --> queued: retry (ResumeQueue), retry_count reset to 0
-    retry_wait --> needs_review: 5 source retries exhausted
+    importing --> retry_wait: payload fetch failed (backoff)
+    downloading --> needs_review: source failure not retryable
+    retry_wait --> needs_review: source failure not retryable, or 5 retries spent
+    queued --> dispatch_unknown: no external ID after 10 minutes
+    retry_wait --> dispatch_unknown: no external ID after 10 minutes
+    retry_wait --> queued: retry (ResumeQueue), or the client reports its key
     needs_review --> queued: retry (ResumeQueue), optionally with a client ID
     dispatch_unknown --> queued: retry with the attached ID
+    needs_review --> imported: review settled (SettleReviewedQueue)
+    downloading --> failed: dead download
+    retry_wait --> failed: dead download
     queued --> cancelled: cancel (reservations released)
     downloading --> cancelled: cancel
     retry_wait --> cancelled: cancel
-    needs_review --> imported: review settled (SettleReviewedQueue)
-    downloading --> failed: dead download after 10 minutes
-    retry_wait --> failed: dead download
+    needs_review --> cancelled: cancel
+    dispatch_unknown --> cancelled: cancel
     failed --> [*]
     imported --> [*]
     cancelled --> [*]
@@ -530,9 +522,20 @@ waits 30 seconds times
 `2^min(retryCount, 6)`, so doubling up to 32 minutes at the cap, longer when the
 source's `Retry-After` says so; timestamps are rounded up to the next second so
 a retry never fires early. `retry_wait` jobs past their `retry_at` are picked
-up by the worker again, straight into `downloading` or `importing`. Source failures retry up to 5 times (`maxSourceRetries`), then move to
-`needs_review` with their reservations intact. Cancel is refused while a job is
-`importing`; `UpdateQueueItem` never touches `cancelled` or `imported` rows.
+up by the worker again, straight into `downloading` or `importing`.
+Source failures retry up to 5 times (`maxSourceRetries`), then move to
+`needs_review` with their reservations intact; a source failure that is not
+retryable goes there at once, and a dead source download fails. These source
+failures, like a dead torrent, come from any status before import (`queued`,
+`downloading` or `retry_wait`); the diagram draws each once. A grab whose
+submission result is uncertain waits in `retry_wait` without an external ID
+until the client reports a download under its release key (the job goes
+back to `queued` with that ID) or the 10 minutes run out.
+
+Blocklisting a job by hand (`BlocklistQueueItem`) marks it `failed` from any
+status but `cancelled` and `imported`. Cancel (`CancelQueue`) is refused
+while a job is `importing` or `imported`; `UpdateQueueItem` never touches
+`cancelled` or `imported` rows.
 
 `PruneFinishedQueue` keeps the newest 200 terminal jobs
 (`imported`/`cancelled`/`failed`); the Activity page shows the newest 200

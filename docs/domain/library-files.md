@@ -6,7 +6,6 @@ content fingerprint, and which books it is linked to. This page covers how
 files get identified, how scans read the disk, how presence is checked, how
 an existing library is imported in place, and how files are removed, trashed,
 restored and purged. Downloads landing in the library are
-
 [import and review](import-review.md); folder and name templates are
 [naming](naming.md).
 
@@ -108,12 +107,9 @@ its size and signature refreshed. Different pages at a known path forget the
 old row entirely, manual confirmations included, and the file is matched
 anew.
 
-`rederiveFacts` re-reads, with the current parser, the name a file's facts
-were read from when the stored parser stamp is older than `parse.Version`.
-Only what a name says is replaced: flags, resolution, revision, digital mark,
-and a name-read language or group. A download renamed at import counts its
-recorded name only while that name still carries the group and digital mark
-the facts hold, so a template's own brackets never read as a group.
+`rederiveFacts` re-reads a file's name with the current parser when its
+parser stamp is older than `parse.Version`; see
+[re-reading names after a parser change](#re-reading-names-after-a-parser-change).
 
 `relink` gives a downloaded file that names no download back its release link
 from the series' download of the same release name, when exactly one release
@@ -198,40 +194,55 @@ A path that is a directory where an archive was expected is `unavailable`.
 
 Offer claims and per-file observed facts are stored separately. Filename
 observations take precedence over advertised language, group and quality;
-stream imports retain offer evidence. Facts read from a file's own name are
-stamped with the parser revision (`parse.Version`); a scan re-reads the name
-those facts came from with the current parser when the stored stamp is older.
+stream imports retain offer evidence.
 
-Only what a name says is replaced (flags, resolution, revision, digital, and
-a name-read language or group); the download the file came in, its site,
-profile, score and claims, and its bytes, fingerprint, links, presence,
-review state and manual corrections all stand. Facts that were not read from
-a name (an offer's, an embedded `Notes` line's) are left alone, and so are
-those of a download renamed at import, whose recorded name no longer says
-what was read: a download's name counts only while it still carries the group
-and digital mark the facts hold, and its re-read never adds a group or
-language (a template's own brackets would read as one). A downloaded file
-that names no download at all (the 0.7.0 re-read rebuilt such files' facts
-and emptied their claims) gets its release key and claims back on a scan
-from the series' download of the same release name, when one release goes by
-that name. Judging a file falls back to its release's claims for the fields
-its own facts do not carry, so a copy organized to a bare name
+Judging a file falls back to its release's claims for the fields its own
+facts do not carry (`backedFacts`), so a copy organized to a bare name
 ("Volume 1.cbz") keeps the digital, group and resolution score its release
-earned; a field the facts do carry wins, and a file without claims still
+earned. A field the facts do carry wins, and a file without claims still
 scores from its filename alone.
+
+### Re-reading names after a parser change
+
+Facts read from a file's own name are stamped with the parser revision
+(`parse.Version`, see [parsing](parsing.md#parser-version-and-stale-facts)).
+A scan re-reads the name those facts came from with the current parser when
+the stored stamp is older (`rederiveFacts`).
+
+- **Replaced:** only what a name says: flags, resolution, revision, digital
+  mark, and a name-read language or group.
+- **Kept:** the download the file came in, its site, profile, score and
+  claims, and its bytes, fingerprint, links, presence, review state and
+  manual corrections.
+- **Left alone:** facts that were not read from a name (an offer's, an
+  embedded `Notes` line's).
+- **Renamed downloads:** a download renamed at import counts its recorded
+  name only while that name still carries the group and digital mark the
+  facts hold; otherwise its facts are left alone. Its re-read never adds a
+  group or language, because a template's own brackets would read as one.
+
+A downloaded file that names no download at all (the 0.7.0 re-read rebuilt
+such files' facts and emptied their claims) gets its release key and claims
+back on a scan (`relink`) from the series' download of the same release
+name, when one release goes by that name.
+
+### Manual corrections
 
 A person can correct what a file is: its language, its group and each of its
 flags (colored, digital, scan and the rest of `store.FactFlags`), in the file
 dialog, or for several files at once from the Files table or from an edition.
+Each correction is marked as theirs in the facts' `sources`:
 
-Each correction is marked as theirs (`sources`: `manual`, per flag
-`flag:<name>`). A corrected flag is judged at once, is kept by every re-read
-and rescan, and is not put back by what the release claimed. Retrying or
-scanning identical bytes preserves manual corrections and content
-confirmation. Group contradictions remain visible for review. Manual
-corrections take precedence even when a language or group is explicitly
-cleared. Review proposals judge the same combined file and release evidence
-as ownership and upgrade scoring.
+| Correction | Marked in `sources` | What it beats | On a re-read or rescan |
+| --- | --- | --- | --- |
+| Language | `language` = `manual` | the name read and the release's claimed language, even when the person cleared it | kept (`KeepingManual`) |
+| Group | `group` = `manual` | the name read and the release's claimed group, even when the person cleared it | kept (`KeepingManual`) |
+| One flag | `flag:<name>` = `manual` | the name read and the release's claim, either way: a flag turned off stays off | kept (`KeepingManual`) |
+
+A corrected flag is judged at once. Retrying or scanning identical bytes
+preserves manual corrections and content confirmation. Group contradictions
+remain visible for review. Review proposals judge the same combined file and
+release evidence as ownership and upgrade scoring.
 
 ## Cleanup, trash, restore and purge
 
@@ -341,7 +352,6 @@ See [moving the library](../installation.md#moving-the-library).
 ## Concurrency: what `Importer.mu` serializes
 
 One mutex on the `Importer` serializes queue passes and every file mutation:
-
 review apply and bulk actions, organize, cleanup and trash, removal, and
 upgrades. Decisions and disk operations cannot interleave, so a cleanup
 preview cannot race a review commit, and two passes cannot move the same

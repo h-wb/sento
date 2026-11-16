@@ -149,6 +149,22 @@ overrides are merged on top by `store.EffectiveIndexer`; the routes are in
 garbage-collects its extension when no other entry references the package
 (`DeleteIndexerEntry` → `CleanupExtension`).
 
+### Empty indexer searches
+
+A successful connection test checks that the indexer answers, not that its
+feed contains manga. On **Indexers**, use **Test search** with a title you
+know the tracker has. Sento shows the Books result count, sample titles and
+their categories. An empty Books query also runs an unrestricted comparison.
+
+If the unrestricted samples are films or anime, check the tracker's own
+category setting in Prowlarr or Jackett. Some definitions fetch a fixed
+category and apply the requested Books filter only after the site's result
+limit. For Prowlarr's Nyaa definition, create a separate instance with
+**Category → Literature - English-translated** and use that instance's
+Torznab URL in Sento. Give it a separate tag if the existing instance also
+serves Sonarr or Radarr; each application's tags determine which indexers
+Prowlarr syncs to it. See [Prowlarr's settings guide](https://wiki.servarr.com/prowlarr/settings).
+
 ## Extension lifecycle
 
 Sento owns the desired extension list; the sidecar is stateless. The desired
