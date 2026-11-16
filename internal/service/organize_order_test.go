@@ -34,7 +34,7 @@ func twoCopies(t *testing.T) (im *Importer, st *store.Store, sid int64, standard
 		if err != nil {
 			t.Fatal(err)
 		}
-		fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Hash: hash}, nil, []store.BookLink{{EditionID: c.ID, BookID: ws[0].ID, VersionID: version.ID}})
+		fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, Hash: hash}, nil, []store.BookLink{{EditionID: c.ID, BookID: ws[0].ID, VersionID: version.ID}})
 		if err != nil {
 			t.Fatal(err)
 		}

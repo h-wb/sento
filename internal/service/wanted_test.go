@@ -87,7 +87,7 @@ func TestWantedListsMissingAndRescanReopens(t *testing.T) {
 	if err := os.Remove(file); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CheckFilePresence(ctx, sid); err != nil {
+	if err := CheckFilePresence(ctx, st, sid); err != nil {
 		t.Fatal(err)
 	}
 	rows, err = lib.Wanted(ctx)

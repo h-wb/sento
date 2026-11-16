@@ -221,7 +221,7 @@ func TestScanTrustsRecordedSignature(t *testing.T) {
 	// A presence check marks the file checked without reading it, so only
 	// the signature can reveal a rewrite that kept its size and mtime.
 	changeKeepingTimes(t, f.Path, archiveChanges["rewritten in place"])
-	if err = st.CheckFilePresence(ctx, sid); err != nil {
+	if err = CheckFilePresence(ctx, st, sid); err != nil {
 		t.Fatal(err)
 	}
 	f = fileRow(t, st, sid, fid)
@@ -286,7 +286,7 @@ func TestScanBackfillsSignatureForUntouchedLegacyFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(ctx, store.File{
+	fid, err := addFile(ctx, st, store.File{
 		SeriesID: sid, Path: path, Size: info.Size(), Hash: hash, Presence: "present",
 		Facts: store.AssetFacts{Title: "legacy.cbz", FactsKnown: true},
 	}, nil, nil)

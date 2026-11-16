@@ -195,7 +195,7 @@ reverse proxy. See [installation](installation.md#configuration).
 | GET | `/series/{id}/files/organize` | preview organizing this series' files | `api_files.go` | `Importer.PlanOrganize` |
 | GET | `/series/{id}/versions/{vid}/files/{fid}/score` | one file's score for one version | `api_files.go` | `Library.FileScore` |
 | PUT | `/series/{id}/files/{fid}/mapping` | remap a file to books, reporting displaced owners | `api_files.go` | `Importer.ApplySafeFileMapping` |
-| POST | `/series/{id}/check-files` | re-check file presence, 204 | `api_files.go` | `store.CheckFilePresence` |
+| POST | `/series/{id}/check-files` | re-check file presence, 204 | `api_files.go` | `service.CheckFilePresence` |
 
 ### Review
 

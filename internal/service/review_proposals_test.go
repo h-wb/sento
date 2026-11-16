@@ -57,7 +57,7 @@ func TestReviewProposesWhatTheFileNameSays(t *testing.T) {
 		{"3.cbz", "", "", ""},             // nothing ties it to the series
 		{"ONE PIECE 050 (Digital).cbz", "mixed", "", ""},
 	} {
-		fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/" + tc.name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: tc.name, ReleaseKey: tc.key}}, nil, nil)
+		fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: t.TempDir() + "/" + tc.name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: tc.name, ReleaseKey: tc.key}}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -84,7 +84,7 @@ func TestReviewProposesWhatTheFileNameSays(t *testing.T) {
 
 func addReviewFile(t *testing.T, st *store.Store, sid int64, name, key string) int64 {
 	t.Helper()
-	fid, err := st.AddFile(context.Background(), store.File{SeriesID: sid, Path: t.TempDir() + "/" + name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, ReleaseKey: key}}, nil, nil)
+	fid, err := addFile(context.Background(), st, store.File{SeriesID: sid, Path: t.TempDir() + "/" + name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, ReleaseKey: key}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 	if err = os.WriteFile(path, []byte("verified pages"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "1.cbz", ReleaseKey: "pack"}}, nil, nil)
+	fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "1.cbz", ReleaseKey: "pack"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +306,7 @@ func TestKeepingAnExtraResolvesReview(t *testing.T) {
 	if err = os.WriteFile(extra, []byte("pages"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: extra, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "ONE PIECE 092.1.cbz", ReleaseKey: "pack"}}, nil, nil)
+	fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: extra, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "ONE PIECE 092.1.cbz", ReleaseKey: "pack"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestReviewProposesOnlyProfileCompatibleVersion(t *testing.T) {
 	}
 	add := func(name string, isColor bool) int64 {
 		t.Helper()
-		id, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/" + name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, FactsKnown: true, Flags: map[string]bool{"colored": isColor}}}, nil, nil)
+		id, err := addFile(ctx, st, store.File{SeriesID: sid, Path: t.TempDir() + "/" + name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, FactsKnown: true, Flags: map[string]bool{"colored": isColor}}}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -479,7 +479,7 @@ func TestReviewHintSurvivesWithoutProposal(t *testing.T) {
 		{"ONE PIECE v03-04 (Digital).cbz", "volume", []string{"3–4"}},
 		{"ONE PIECE c07 (Digital).cbz", "chapter", []string{"7"}},
 	} {
-		fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/" + tc.name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: tc.name}}, nil, nil)
+		fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: t.TempDir() + "/" + tc.name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: tc.name}}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

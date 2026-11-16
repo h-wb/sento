@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/h-wb/sento/internal/apperr"
 )
@@ -47,17 +46,13 @@ type BookLink struct {
 // path updates the row in place (paths are unique) and adds any new links,
 // so an import retried after a partial failure converges instead of
 // tripping over what the first attempt already recorded.
-func (s *Store) AddFile(ctx context.Context, f File, parse any, links []BookLink) (int64, error) {
+func (s *Store) AddFile(ctx context.Context, f File, presence string, parse any, links []BookLink) (int64, error) {
 	if err := s.EnsureModels(ctx, f.SeriesID); err != nil {
 		return 0, err
 	}
 	parseJSON, _ := json.Marshal(parse)
 	factsJSON, _ := json.Marshal(f.Facts)
 	claimsJSON, _ := json.Marshal(f.Claims)
-	presence := "present"
-	if info, e := os.Stat(f.Path); e != nil || info.IsDir() {
-		presence = "unknown"
-	}
 	var fileID int64
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		cids := []int64{}

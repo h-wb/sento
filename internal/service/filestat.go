@@ -44,3 +44,11 @@ func trustedSignature(fi os.FileInfo, now time.Time) string {
 	}
 	return statSignature(fi)
 }
+
+// FilePresence is the presence a new file row starts with.
+func FilePresence(path string) string {
+	if info, err := os.Stat(path); err != nil || info.IsDir() {
+		return "unknown"
+	}
+	return "present"
+}

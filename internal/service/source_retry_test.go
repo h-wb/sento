@@ -237,7 +237,7 @@ func TestTryAnotherPreservesImportReview(t *testing.T) {
 	if err = st.UpdateQueueItem(ctx, qid, store.QueueNeedsReview, "partial import"); err != nil {
 		t.Fatal(err)
 	}
-	_, err = st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/review.cbz", NeedsReview: true, Facts: store.AssetFacts{ReleaseKey: "review-pack"}}, nil, nil)
+	_, err = addFile(ctx, st, store.File{SeriesID: sid, Path: t.TempDir() + "/review.cbz", NeedsReview: true, Facts: store.AssetFacts{ReleaseKey: "review-pack"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,4 +350,19 @@ func TestListingSuccessAndManualEnableResetFailures(t *testing.T) {
 	fail(false)
 	fail(false)
 	fail(true)
+}
+
+func TestQueueRetryAtCapsTheBackoffButNotTheSourceDeadline(t *testing.T) {
+	now := time.Now()
+	if at := queueRetryAt(0, time.Time{}); at.Before(now.Add(30*time.Second)) || at.After(time.Now().Add(30*time.Second)) {
+		t.Fatalf("first retry at %v, want 30s after %v", at, now)
+	}
+	capped := queueRetryAt(6, time.Time{})
+	if got := queueRetryAt(20, time.Time{}); got.Sub(capped) > time.Second || capped.Sub(got) > time.Second {
+		t.Fatalf("backoff not capped: %v vs %v", got, capped)
+	}
+	deadline := now.Add(24 * time.Hour)
+	if got := queueRetryAt(20, deadline); !got.Equal(deadline) {
+		t.Fatalf("source deadline %v not kept: %v", deadline, got)
+	}
 }

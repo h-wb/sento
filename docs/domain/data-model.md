@@ -338,7 +338,7 @@ the stored value of each status and the store method that writes it.
 | `queued` | active | `ReserveQueue` inserts the row; `ResumeQueue` (from `needs_review`, `retry_wait` or `dispatch_unknown`) and `SetQueueExternalID` (an attached or found client ID) put it back, both resetting `retry_count` to 0 |
 | `downloading` | active | `UpdateQueueItem`, when the client reports the download in flight |
 | `importing` | active | `BeginImport`, from `queued`, `downloading`, `importing` or `retry_wait`; it freezes the plan |
-| `retry_wait` | active | `DeferQueueUntil` (and `DeferQueue`), which also increments `retry_count` and sets `retry_at` |
+| `retry_wait` | active | `DeferQueue`, which also increments `retry_count` and sets `retry_at` |
 | `needs_review` | active | `UpdateQueueItem`: files await a person, or a source failure is not retryable or out of retries |
 | `dispatch_unknown` | active | `UpdateQueueItem`: no external ID after 10 minutes |
 | `imported` | terminal | `UpdateQueueItem` after an import; `SettleReviewedQueue` from `needs_review` once all files are reviewed |
@@ -348,24 +348,37 @@ the stored value of each status and the store method that writes it.
 `UpdateQueueItem` never changes a `cancelled` or `imported` row.
 `PruneFinishedQueue` deletes terminal rows beyond the newest 200.
 
-`DeferQueueUntil` waits 30 s × 2^`retry_count`, capped at 2^6 (about 32
-minutes), and longer when the source sent a Retry-After deadline; it
-rounds up to whole seconds so a retry never fires early. Reservations in
-`book_reservations` are released when a job reaches `failed`,
-`imported` or `cancelled`, and when a new `ReserveQueue` runs. A job of
-another series holding the same download (`DownloadShared`) is checked
-before dispatch. `ObserveDownload` records `download_progress`,
-`progress_at` (RFC 3339) and `observed_at` independently of status; a job
-is `stalled` when it is eligible, not transferring, and unobserved for
-20 minutes, with gaps over 5 minutes restarting the timer.
+The service computes the retry time: `queueRetryAt`
+(`internal/service/importer.go`) waits 30 s × 2^`retry_count`, capped at
+2^6 (about 32 minutes), and longer when the source sent a Retry-After
+deadline. `DeferQueue` stores it rounded up to whole seconds, the stored
+precision, so a retry never fires early.
+
+Reservations in `book_reservations` are released when a job reaches
+`failed`, `imported` or `cancelled`, and when a new `ReserveQueue` runs. A
+job of another series holding the same download (`DownloadShared`) is
+checked before dispatch.
+
+The service also decides the stall: `observeDownload`
+(`internal/service/progress.go`) marks a job `stalled` when it is
+eligible, not transferring, and unobserved for 20 minutes, with gaps over
+5 minutes restarting the timer. `RecordDownloadObservation` stores
+`download_progress`, `progress_at` (RFC 3339), `observed_at` and `stalled`
+independently of status.
 
 ### File presence and review action
 
-`files.presence` is written by `CheckFilePresence` during scans and before
-acquisition: `present`, `missing` (path does not exist), `unavailable`
-(storage error, or a directory where an archive was expected) or
-`unknown` (not checked yet; also set by `AddFile` when the path cannot be
-stat'ed). This diagram shows the presence states.
+The service reads the disk and the store records the result.
+`CheckFilePresence` (`internal/service/presence.go`) runs during scans and
+before acquisition, and writes each file's state with `SetFilePresence`:
+`present`, `missing` (path does not exist), `unavailable` (storage error,
+or a directory where an archive was expected) or `unknown` (not checked
+yet).
+
+`AddFile` stores the presence its caller passes. `FilePresence`
+(`internal/service/filestat.go`) gives `present` when the path is a file,
+and `unknown` when it cannot be stat'ed or is a directory. This diagram
+shows the presence states.
 
 ```mermaid
 stateDiagram-v2

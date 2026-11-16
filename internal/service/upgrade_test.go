@@ -45,7 +45,7 @@ func TestUpgradePathDisplacesOnlyBetterFiles(t *testing.T) {
 		}
 		facts.Title = name
 		facts.FactsKnown = true
-		fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Size: 13, Facts: facts}, nil, links)
+		fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Size: 13, Facts: facts}, FilePresence(path), nil, links)
 		if err != nil {
 			t.Fatal(err)
 		}

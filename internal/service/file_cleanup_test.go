@@ -167,7 +167,7 @@ func TestCleanupRechecksSelectionsPinsAndReview(t *testing.T) {
 	if err = os.WriteFile(path, []byte("archive"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	review, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Size: 7, NeedsReview: true}, nil, nil)
+	review, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, Size: 7, NeedsReview: true}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

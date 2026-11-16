@@ -30,7 +30,7 @@ func TestFileCleanupAPIRequiresSelectionAndScopesRecovery(t *testing.T) {
 	if err = os.WriteFile(path, []byte("original pages"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := s.store.AddFile(ctx, store.File{SeriesID: sid, Path: path, Size: 14}, nil, nil)
+	fid, err := addFile(ctx, s.store, store.File{SeriesID: sid, Path: path, Size: 14}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

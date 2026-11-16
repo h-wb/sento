@@ -205,7 +205,7 @@ func TestAddSeriesAndSlots(t *testing.T) {
 	}
 
 	// Link a file to vol 1 → no longer wanted.
-	_, err = st.AddFile(ctx, store.File{
+	_, err = addFile(ctx, st, store.File{
 		SeriesID: id, Path: "/library/One Piece/One Piece v01.cbz", Size: 1,
 		Provenance: "torrent",
 	}, nil, fixtureLinks(t, st, id, standard.ID, 100))

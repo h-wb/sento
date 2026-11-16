@@ -125,7 +125,7 @@ func TestFileScoreUsesConfirmedEditionAndMarksUnknownFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: "unknown.cbz", Facts: store.AssetFacts{Language: "en"}}, nil, nil)
+	fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: "unknown.cbz", Facts: store.AssetFacts{Language: "en"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

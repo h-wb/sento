@@ -142,7 +142,7 @@ func (im *Importer) recordFailure(ctx context.Context, prov provider.Provider, i
 			_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueNeedsReview, reason)
 		} else {
 			event = "download_retry"
-			_ = im.store.DeferQueueUntil(ctx, item, err.Error(), time.Now().Add(sourceFailure.RetryAfter))
+			_ = im.store.DeferQueue(ctx, item.ID, err.Error(), queueRetryAt(item.RetryCount, time.Now().Add(sourceFailure.RetryAfter)))
 		}
 	case errors.Is(err, errDownloadDead):
 		_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueFailed, err.Error())
@@ -151,7 +151,7 @@ func (im *Importer) recordFailure(ctx context.Context, prov provider.Provider, i
 	case errors.Is(err, errDispatchUnknown):
 		_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueDispatchUnknown, err.Error())
 	default:
-		_ = im.store.DeferQueue(ctx, item, err.Error())
+		_ = im.store.DeferQueue(ctx, item.ID, err.Error(), queueRetryAt(item.RetryCount, time.Time{}))
 	}
 	if errors.Is(err, errDownloadDead) || dead {
 		// Sonarr semantics: a download that never completes gets
@@ -172,6 +172,16 @@ func (im *Importer) recordFailure(ctx context.Context, prov provider.Provider, i
 		// The release is blocklisted: another is looked for now.
 		im.searchAgain(item)
 	}
+}
+
+// queueRetryAt respects both the queue's backoff and the source's
+// Retry-After deadline. The latter may exceed the usual backoff cap.
+func queueRetryAt(retryCount int, notBefore time.Time) time.Time {
+	at := time.Now().Add(30 * time.Second * time.Duration(1<<min(retryCount, 6)))
+	if notBefore.After(at) {
+		return notBefore
+	}
+	return at
 }
 
 // errDownloadDead marks downloads that never completed (vs import errors).
@@ -204,7 +214,7 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 	if err != nil {
 		return false, err
 	}
-	if err := im.store.ObserveDownload(ctx, item, state.Progress, state.Detail, state.StallEligible, state.Transferring, time.Now()); err != nil {
+	if err := observeDownload(ctx, im.store, item, state.Progress, state.Detail, state.StallEligible, state.Transferring, time.Now()); err != nil {
 		return false, err
 	}
 

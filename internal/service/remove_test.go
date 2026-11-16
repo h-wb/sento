@@ -46,7 +46,7 @@ func TestRemoveSeriesTakesItsFilesAndOwnTorrents(t *testing.T) {
 	if err = os.WriteFile(path, []byte("pages"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Size: 5}, nil, []store.BookLink{{Ledger: c.Type, EditionID: c.ID, Number: ws[0].SequenceNum, VersionID: version.ID, BookID: ws[0].ID}}); err != nil {
+	if _, err = addFile(ctx, st, store.File{SeriesID: sid, Path: path, Size: 5}, nil, []store.BookLink{{Ledger: c.Type, EditionID: c.ID, Number: ws[0].SequenceNum, VersionID: version.ID, BookID: ws[0].ID}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, q := range []store.QueueItem{
@@ -119,7 +119,7 @@ func TestDeleteFileRespectsPins(t *testing.T) {
 	if err := os.WriteFile(path, []byte("pages"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Size: 5}, nil, []store.BookLink{{Ledger: c.Type, EditionID: c.ID, Number: ws[0].SequenceNum, VersionID: version.ID, BookID: ws[0].ID}})
+	fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, Size: 5}, nil, []store.BookLink{{Ledger: c.Type, EditionID: c.ID, Number: ws[0].SequenceNum, VersionID: version.ID, BookID: ws[0].ID}})
 	if err != nil {
 		t.Fatal(err)
 	}

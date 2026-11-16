@@ -34,6 +34,11 @@ func (noMetadata) GetWorks(context.Context, int64) (map[string][]metadata.Work, 
 	return nil, nil
 }
 
+// addFile stores f with the presence a scan or an import gives it.
+func addFile(ctx context.Context, st *store.Store, f store.File, parse any, links []store.BookLink) (int64, error) {
+	return st.AddFile(ctx, f, service.FilePresence(f.Path), parse, links)
+}
+
 func testServer(t *testing.T) (http.Handler, string) {
 	t.Helper()
 	static := t.TempDir()

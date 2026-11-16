@@ -92,7 +92,7 @@ func TestCustomEditions(t *testing.T) {
 	}
 
 	// Different editions cannot be merged by number. Ownership is retained.
-	fileID, err := st.AddFile(ctx, store.File{SeriesID: id, Path: "/tmp/v9.cbz", Size: 1}, nil, fixtureLinks(t, st, id, scratchID, 200, 400))
+	fileID, err := addFile(ctx, st, store.File{SeriesID: id, Path: "/tmp/v9.cbz", Size: 1}, nil, fixtureLinks(t, st, id, scratchID, 200, 400))
 	if err != nil {
 		t.Fatal(err)
 	}

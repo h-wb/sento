@@ -41,7 +41,7 @@ func waitingFile(t *testing.T, st *store.Store, sid int64, dir, name, key string
 	if err = f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(context.Background(), store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, ReleaseKey: key}}, nil, nil)
+	fid, err := addFile(context.Background(), st, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, ReleaseKey: key}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestMatchReleaseRemapsImportClaimsToAnotherVersion(t *testing.T) {
 		t.Helper()
 		path := filepath.Join(root, name)
 		writeCBZ(t, path, name)
-		fid, err := st.AddFile(ctx, store.File{
+		fid, err := addFile(ctx, st, store.File{
 			SeriesID: sid, Path: path, NeedsReview: true, Presence: "present",
 			Facts: store.AssetFacts{Title: name, FactsKnown: true, Flags: map[string]bool{"colored": true}, ReleaseKey: "pack"},
 		}, nil, []store.BookLink{{Ledger: "volume", EditionID: standard.ID, Number: b.SequenceNum, VersionID: version.ID, BookID: b.ID}})

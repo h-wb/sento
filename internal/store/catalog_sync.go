@@ -490,7 +490,7 @@ func (s *Store) groupEditions(ctx context.Context, tx *sql.Tx, seriesID int64) e
 				return err
 			}
 			// Nobody asked for this, so it is said: History shows it.
-			note, _ := json.Marshal(DecisionBody{Event: "editions_grouped", Title: keep.Name + " · " + key[0] + ": MangaBaka lists its media as one edition, so they are collected as one", Provider: "mangabaka"})
+			note, _ := json.Marshal(DecisionBody{Event: "editions_grouped", Title: editionsGroupedTitle(keep.Name, key[0]), Provider: "mangabaka"})
 			if _, err = tx.ExecContext(ctx, s.q(`INSERT INTO decisions(series_id,body_json) VALUES(?,?)`), seriesID, string(note)); err != nil {
 				return err
 			}

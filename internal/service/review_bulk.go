@@ -31,12 +31,25 @@ func (im *Importer) ResolveFileReviews(ctx context.Context, seriesID int64, file
 	if err != nil {
 		return nil, err
 	}
+	for i, skip := range res.Skipped {
+		if reason, ok := skipReasons[skip.Code]; ok {
+			res.Skipped[i].Reason = reason
+		}
+	}
 	if len(res.Resolved) > 0 {
 		if err = im.SettleReviewedJobs(ctx, seriesID); err != nil {
 			slog.Warn("settling reviewed jobs failed", "series", seriesID, "error", err)
 		}
 	}
 	return res, nil
+}
+
+// skipReasons words the store's codes for a file a bulk decline left alone.
+var skipReasons = map[string]string{
+	"gone":         "File is no longer available",
+	"other_series": "File does not belong to this series",
+	"not_waiting":  "File is no longer waiting for review",
+	"protected":    "This archive already has confirmed contents or pins; review its selections individually",
 }
 
 // ReleaseFileMatch is one file's outcome of matching a whole release at

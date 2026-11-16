@@ -53,7 +53,7 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 	if inFileTrash(dir) {
 		return nil, fmt.Errorf("restore files from trash before scanning this folder")
 	}
-	if err := sc.store.CheckFilePresence(ctx, seriesID); err != nil {
+	if err := CheckFilePresence(ctx, sc.store, seriesID); err != nil {
 		return nil, err
 	}
 	if err := sc.store.EnsureModels(ctx, seriesID); err != nil {
@@ -221,7 +221,7 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 			Unrequested:   len(links) == 0,
 			NeedsReview:   len(links) == 0,
 			ParserVersion: parse.Version,
-		}, parsed, links)
+		}, FilePresence(path), parsed, links)
 		if aerr != nil {
 			return aerr
 		}
@@ -235,7 +235,7 @@ func (sc *Scanner) scan(ctx context.Context, seriesID int64, dir string, adopt b
 	if err != nil {
 		return nil, fmt.Errorf("scanning %s: %w", dir, err)
 	}
-	if err := sc.store.CheckFilePresence(ctx, seriesID); err != nil {
+	if err := CheckFilePresence(ctx, sc.store, seriesID); err != nil {
 		return nil, err
 	}
 	return res, nil

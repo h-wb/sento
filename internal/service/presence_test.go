@@ -1,4 +1,4 @@
-package store
+package service
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/h-wb/sento/internal/db/dbtest"
+	"github.com/h-wb/sento/internal/metadata"
+	"github.com/h-wb/sento/internal/store"
 )
 
 // A series whose books live in edition folders — siblings of its own,
@@ -14,7 +16,7 @@ import (
 // the folders they are in, not against the missing series folder.
 func TestCheckFilePresenceEditionFolders(t *testing.T) {
 	conn, dialect := dbtest.Open(t)
-	s := New(conn, dialect)
+	st := store.New(conn, dialect)
 	ctx := context.Background()
 	root := t.TempDir()
 	seriesDir := filepath.Join(root, "HUNTER [mangabaka-677]") // pruned: nothing lives here
@@ -27,13 +29,19 @@ func TestCheckFilePresenceEditionFolders(t *testing.T) {
 	if err := os.WriteFile(vol, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	var sid int64
-	if err := conn.QueryRowContext(ctx, s.q(`INSERT INTO series (mangabaka_id,title,sort_title,raw_json,path,chapter_path) VALUES (1,'Test','test','{}',?,?) RETURNING id`), seriesDir, chapterDir).Scan(&sid); err != nil {
+	sid, err := st.AddSeries(ctx, store.AddSeriesParams{Series: &metadata.Series{MangaBakaID: 1, Title: "Test", RawJSON: []byte("{}")}, MonitorNone: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.SetSeriesPath(ctx, sid, seriesDir); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.SetSeriesChapterPath(ctx, sid, chapterDir); err != nil {
 		t.Fatal(err)
 	}
 	insert := func(path string) {
 		t.Helper()
-		if _, err := conn.ExecContext(ctx, s.q(`INSERT INTO files (series_id,path,size,provenance,presence) VALUES (?,?,12,'scan','present')`), sid, path); err != nil {
+		if _, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Size: 12, Provenance: "scan"}, "present", nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -44,21 +52,16 @@ func TestCheckFilePresenceEditionFolders(t *testing.T) {
 	insert(nested) // its book folder is gone, the edition folder is not
 	offline := filepath.Join(root, "HUNTER [mangabaka-677] [Deluxe][en]", "(Colored)", "HUNTER v01.cbz")
 	insert(offline) // the whole edition folder is gone
-	if err := s.CheckFilePresence(ctx, sid); err != nil {
+	if err := CheckFilePresence(ctx, st, sid); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := conn.QueryContext(ctx, s.q(`SELECT path,presence FROM files WHERE series_id=?`), sid)
+	files, err := st.ListFiles(ctx, sid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = rows.Close() }()
 	got := map[string]string{}
-	for rows.Next() {
-		var p, state string
-		if err := rows.Scan(&p, &state); err != nil {
-			t.Fatal(err)
-		}
-		got[p] = state
+	for _, f := range files {
+		got[f.Path] = f.Presence
 	}
 	if got[vol] != "present" {
 		t.Errorf("book in the edition folder: %q, want present", got[vol])

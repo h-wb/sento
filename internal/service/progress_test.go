@@ -22,7 +22,7 @@ func TestPersistentStallDetectionAndRecovery(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		if e = st.ObserveDownload(ctx, *item, fraction, "downloading", eligible, transferring, at); e != nil {
+		if e = observeDownload(ctx, st, *item, fraction, "downloading", eligible, transferring, at); e != nil {
 			t.Fatal(e)
 		}
 		item, e = st.GetQueueItem(ctx, qid)

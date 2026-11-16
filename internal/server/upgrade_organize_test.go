@@ -75,7 +75,7 @@ func TestUpgradeDisplacementThenOrganizeDoesNotCollide(t *testing.T) {
 		if err = f.Close(); err != nil {
 			t.Fatal(err)
 		}
-		fid, err := srv.store.AddFile(ctx, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, FactsKnown: true}}, nil, nil)
+		fid, err := addFile(ctx, srv.store, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, FactsKnown: true}}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

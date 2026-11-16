@@ -145,10 +145,10 @@ func TestUnreachableChapterFolderLeavesVolumesWanted(t *testing.T) {
 	if err := st.SetSeriesChapterPath(ctx, sid, chapters); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: filepath.Join(chapters, "chapter.cbz")}, nil, nil); err != nil {
+	if _, err := addFile(ctx, st, store.File{SeriesID: sid, Path: filepath.Join(chapters, "chapter.cbz")}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.CheckFilePresence(ctx, sid); err != nil {
+	if err := CheckFilePresence(ctx, st, sid); err != nil {
 		t.Fatal(err)
 	}
 	view, err := loadLedger(ctx, st, sid)
@@ -233,7 +233,7 @@ func TestOrganizeKeepsAnAdditionalVersionsCopyInItsFolder(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ONE PIECE v01.cbz")
 	writeCBZ(t, path, "pages")
-	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path}, nil, []store.BookLink{{EditionID: c.ID, BookID: ws[0].ID, VersionID: other.ID}})
+	fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path}, nil, []store.BookLink{{EditionID: c.ID, BookID: ws[0].ID, VersionID: other.ID}})
 	if err != nil {
 		t.Fatal(err)
 	}

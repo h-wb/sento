@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/h-wb/sento/internal/service"
 )
 
 // File handlers: listing, scoring, mapping and deleting files, plus the
@@ -107,7 +109,7 @@ func (s *Server) handleCheckFiles(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.store.CheckFilePresence(r.Context(), sid); err != nil {
+	if err := service.CheckFilePresence(r.Context(), s.store, sid); err != nil {
 		writeErr(w, err)
 		return
 	}

@@ -15,7 +15,7 @@ func (im *Importer) reviewedJobComplete(ctx context.Context, item store.QueueIte
 	if item.ReleaseKey == "" {
 		return false, nil
 	}
-	if err := im.store.CheckFilePresence(ctx, item.SeriesID); err != nil {
+	if err := CheckFilePresence(ctx, im.store, item.SeriesID); err != nil {
 		return false, err
 	}
 	plan, err := queueBooksErr(&item)

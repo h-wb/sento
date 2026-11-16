@@ -58,7 +58,7 @@ func TestReviewTrashRecoversBeyondBlockedFirstBatch(t *testing.T) {
 	// Fill an entire batch with inaccessible originals. A later healthy move
 	// must still run, and the failures must remain retryable next pass.
 	for i := range 500 {
-		fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: filepath.Join(root, "missing-"+strconv.Itoa(i)+".cbz"), Hash: "saved", NeedsReview: true}, nil, nil)
+		fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: filepath.Join(root, "missing-"+strconv.Itoa(i)+".cbz"), Hash: "saved", NeedsReview: true}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -207,7 +207,7 @@ func TestReviewTrashRejectsChangedBytesAtEveryStage(t *testing.T) {
 				if err != nil || len(files) != 1 || !files[0].NeedsReview || files[0].Hash != f.Hash {
 					t.Fatalf("changed archive did not require fresh review: %+v %v", files, err)
 				}
-				questions, err := st.ReviewItems(ctx, f.SeriesID)
+				questions, err := NewLibrary(st, nil, nil).ReviewItems(ctx, f.SeriesID)
 				if err != nil || !slices.ContainsFunc(questions, func(q store.ReviewItem) bool {
 					return q.ItemID == f.ID && strings.Contains(q.Detail, "Archive contents changed")
 				}) {

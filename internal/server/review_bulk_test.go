@@ -50,7 +50,7 @@ func TestReviewBulkEndpoints(t *testing.T) {
 		if err = os.WriteFile(path, []byte("pages "+name), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		fid, err := srv.store.AddFile(ctx, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, ReleaseKey: "pack"}}, nil, nil)
+		fid, err := addFile(ctx, srv.store, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, ReleaseKey: "pack"}}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -52,7 +52,7 @@ func TestUpgradeKeepsBlackAndWhiteAndColoredCopies(t *testing.T) {
 		t.Helper()
 		path := filepath.Join(im.libraryRoot, name)
 		writeCBZ(t, path, name)
-		id, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Facts: store.AssetFacts{Title: name, FactsKnown: true, Flags: flags}}, nil, nil)
+		id, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, Facts: store.AssetFacts{Title: name, FactsKnown: true, Flags: flags}}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -180,7 +180,7 @@ func TestUpgradeScopesPinsAndBothVersionsOfTheSameBook(t *testing.T) {
 		t.Helper()
 		path := filepath.Join(im.libraryRoot, name)
 		writeCBZ(t, path, name)
-		id, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Facts: store.AssetFacts{FactsKnown: true, Flags: map[string]bool{"digital": digital}}}, nil, nil)
+		id, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, Facts: store.AssetFacts{FactsKnown: true, Flags: map[string]bool{"digital": digital}}}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

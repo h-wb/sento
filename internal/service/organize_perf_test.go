@@ -243,7 +243,7 @@ func buildBigSeries(t *testing.T, st *store.Store, lib *Library, libraryRoot str
 			t.Fatal(err)
 		}
 		facts := store.AssetFacts{Title: name, Group: "ScanGroup", FactsKnown: true, Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}}
-		if _, err = st.AddFile(ctx, store.File{
+		if _, err = addFile(ctx, st, store.File{
 			SeriesID: seriesID, Path: path, Size: size, Provenance: "torrent",
 			Facts: facts, Claims: facts, Hash: hash,
 			ContentBooks: []store.BookRef{{Ledger: "volume", EditionID: editionID, Number: num, BookID: bid}},

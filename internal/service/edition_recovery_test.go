@@ -128,7 +128,7 @@ func TestUnavailableRootBlocksRedownloadButMissingArchiveDoesNot(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Rename(root+"-offline", root) })
-	if err := st.CheckFilePresence(ctx, id); err != nil {
+	if err := CheckFilePresence(ctx, st, id); err != nil {
 		t.Fatal(err)
 	}
 	slots, err := lib.BooksByVersion(ctx, id)
@@ -146,7 +146,7 @@ func TestUnavailableRootBlocksRedownloadButMissingArchiveDoesNot(t *testing.T) {
 	if err = os.Remove(files[0].Path); err != nil {
 		t.Fatal(err)
 	}
-	if err = st.CheckFilePresence(ctx, id); err != nil {
+	if err = CheckFilePresence(ctx, st, id); err != nil {
 		t.Fatal(err)
 	}
 	slots, err = lib.BooksByVersion(ctx, id)

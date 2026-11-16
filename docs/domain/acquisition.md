@@ -29,13 +29,14 @@ and title matching](parsing.md) for how a release name becomes facts.
 | `internal/service/release_decision.go` | the `rejectionRules` table, `explain`, `ReleaseDecision` |
 | `internal/service/plan.go` | `BuildPlan`, `markAvailability`, `AcquisitionPlan` |
 | `internal/service/grab.go` | `Grab`, `SubmitPlan`, `GrabBest`, `grabClaims`, `retire`, `SearchAgain` |
-| `internal/service/importer.go` | `Importer.ProcessQueue`/`processItem`/`recordFailure`: the queue worker |
+| `internal/service/importer.go` | `Importer.ProcessQueue`/`processItem`/`recordFailure`: the queue worker; `queueRetryAt`, the retry backoff |
+| `internal/service/progress.go` | `observeDownload`: the stall timing (`observationGap`, `stallAfter`) |
 | `internal/service/queue_recovery.go` | blocklisting, the listing circuit breaker, `TryAnother`, `QueueView` |
 | `internal/service/activity.go` | `Library.Activity`: downloads, reviews, events, issue codes |
 | `internal/provider/provider.go` | the `Provider` interface, optional capabilities, `Registry`, `Candidate` |
 | `internal/provider/torrent.go`, `torrent_search.go` | Torznab search and qBittorrent grabs |
 | `internal/provider/source.go`, `source_fetch.go`, `source_retry.go` | extension-source jobs: slots, pacing, CBZ staging, retry classification |
-| `internal/store/queue.go`, `progress.go`, `blocklist.go`, `history.go` | queue rows and transitions, progress/stall, blocklist aliases, decision log |
+| `internal/store/queue.go`, `progress.go`, `blocklist.go`, `history.go` | queue rows and transitions, stored progress observations, blocklist aliases, decision log |
 | `internal/server/api_search.go`, `api_queue.go`, `api_indexers.go` | the HTTP endpoints below |
 
 ## Triggers and endpoints
@@ -341,7 +342,7 @@ sequenceDiagram
     loop queue-process task, every minute
         W->>P: State(externalID) in the job's client
         P-->>W: DownloadState (done / in flight / stuck)
-        W->>Q: ObserveDownload (progress, stall)
+        W->>Q: RecordDownloadObservation (progress, stall)
         alt done
             W->>Q: BeginImport (status importing, frozen plan)
             W->>P: Fetch(externalID)
@@ -517,11 +518,11 @@ release key is reconciled against `State` first).
 
 A job neither done nor in flight gets a `Recover` kick from a `Recoverer`
 provider on every queue pass once it is older than 2 minutes, and is declared
-dead (`errDownloadDead`) after 10 minutes. Queue backoff (`DeferQueueUntil`)
-waits 30 seconds times
+dead (`errDownloadDead`) after 10 minutes. Queue backoff (`queueRetryAt`, in
+the service) waits 30 seconds times
 `2^min(retryCount, 6)`, so doubling up to 32 minutes at the cap, longer when the
-source's `Retry-After` says so; timestamps are rounded up to the next second so
-a retry never fires early. `retry_wait` jobs past their `retry_at` are picked
+source's `Retry-After` says so; `DeferQueue` stores it rounded up to the next
+second so a retry never fires early. `retry_wait` jobs past their `retry_at` are picked
 up by the worker again, straight into `downloading` or `importing`.
 Source failures retry up to 5 times (`maxSourceRetries`), then move to
 `needs_review` with their reservations intact; a source failure that is not
@@ -551,8 +552,9 @@ The six active statuses (`queued`, `downloading`, `importing`, `needs_review`,
 `PendingBookStates` maps each reserved book to its holding job's phase, with
 `needs_review` yielding to an overlapping transfer.
 
-Progress and stall are recorded independently of status (`ObserveDownload`,
-`store/progress.go`): each poll stores the progress fraction (clamped to 0..1),
+Progress and stall are recorded independently of status: `observeDownload`
+(`service/progress.go`) decides the stall and `RecordDownloadObservation`
+(`store/progress.go`) stores it. Each poll stores the progress fraction (clamped to 0..1),
 the state detail, and timestamps. A job is `stalled` when it is stall-eligible,
 not transferring, and 20 minutes have passed since the last progress change; a
 gap of more than 5 minutes in observations (server or client downtime) restarts

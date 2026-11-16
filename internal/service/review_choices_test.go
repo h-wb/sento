@@ -540,7 +540,7 @@ func TestReviewChoicesUnusedDecisionSurvivesIdenticalRescan(t *testing.T) {
 	}
 	rescanned := files[0]
 	rescanned.NeedsReview, rescanned.Unrequested = true, true
-	if _, err = st.AddFile(ctx, rescanned, nil, nil); err != nil {
+	if _, err = addFile(ctx, st, rescanned, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	files, err = st.ListFiles(ctx, sid)

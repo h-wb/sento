@@ -324,6 +324,16 @@ Store conventions (`internal/store/store.go`, `query.go`, `tx.go`):
 - Rows map to structs with scany (`list`/`get`): columns match snake-cased
   field names or `db` tags. `inTx` runs one transaction; `touch` fails
   with `ErrNotFound` when no row was affected.
+- The store only stores. It reads no files and holds no timing policy:
+  the retry backoff (`queueRetryAt`), the stall timing (`observeDownload`,
+  `progress.go`) and file presence (`FilePresence`, `CheckFilePresence`,
+  `presence.go`) live in `internal/service`.
+- Sentences shown in the UI live in `internal/service` too. Review rows
+  carry `DetailCode` and `DetailArg`, which `Library.ReviewItems` words as
+  `Detail`; a bulk decline's skips carry a `Code` that
+  `ResolveFileReviews` words as `Reason`. The `editions_grouped` decision
+  title is stored data written inside the reconcile transaction, so it
+  stays in the store (`editionsGroupedTitle`, `history.go`).
 
 Concurrency and locks. All writes that change edition identity or take
 reservations lock the affected edition rows in ascending id order:

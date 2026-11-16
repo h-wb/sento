@@ -33,6 +33,11 @@ type DecisionBody struct {
 	By string `json:"by,omitempty" tstype:"'schedule' | 'you'"`
 }
 
+// editionsGroupedTitle is the stored title of an editions_grouped decision.
+func editionsGroupedTitle(name, language string) string {
+	return name + " · " + language + ": MangaBaka lists its media as one edition, so they are collected as one"
+}
+
 func (s *Store) AddDecision(ctx context.Context, seriesID int64, body DecisionBody) error {
 	raw, err := json.Marshal(body)
 	if err != nil {
