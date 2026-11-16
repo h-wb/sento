@@ -10,7 +10,7 @@ TypeScript types the web app imports from `web/src/types`.
 
 | File or package | What it holds |
 | --- | --- |
-| `internal/server/server.go` | `Server` struct, `New`, `Handler` (router, middleware, static SPA), `/system/health` and `/system/status`, the four long review routes |
+| `internal/server/server.go` | `Server` struct, `New`, `Handler` (router, middleware, static SPA, registers the four long review routes), `/system/health` and `/system/status` |
 | `internal/server/api.go` | `mountAPI`, system tasks and health-check handlers, request helpers (`pathID`, `queryID`, `queryIDs`, `decodeBody`, `respondList`, `writeError`, `writeErr`), health invalidation middleware |
 | `internal/server/api_series.go` … `api_profiles.go` | one mount function and the handlers per area (series, editions, books, files, review, queue, search, indexers, settings, profiles) |
 | `internal/server/types.go` | the DTOs; tygo turns them into `web/src/types/server.ts` |
@@ -38,7 +38,9 @@ Responses:
 
 - Lists are never null: `respondList` writes `[]` for an empty list.
 - Creates answer 201 with the created record; updates and deletes answer 204
-  with no body when they carry no result.
+  with no body when they carry no result. The two exceptions are
+  `POST /series/{id}/versions` and `POST /series/{id}/books`, which answer
+  200 with the saved record (`handleSaveVersion`, `handleSaveBook`).
 - Every error is `{"error": "<message>"}`, mapped from `apperr` sentinels in
   exactly one place, `writeErr`:
 
@@ -53,7 +55,9 @@ Responses:
 
 Handlers match kinds with `errors.Is` and never inspect error strings. ID
 path and query parameters are parsed by `pathID` / `queryID` / `queryIDs`:
-non-positive or non-numeric IDs are a 400.
+path IDs reject non-positive or non-numeric values with a 400; query IDs
+accept `0` (absent parameter, or explicitly `0`, meaning "all") and reject
+only negative or non-numeric values.
 
 Two query conventions recur:
 
@@ -77,9 +81,9 @@ error:
 flowchart TD
     A["request"] --> B["RequestID, Logger, Recoverer"]
     B --> C{"path under /api/v1/series/{id}/review?"}
-    C -->|"yes: 4 review routes"| D["no request cap"]
+    C -->|"yes: 4 review routes"| D["no request cap, no invalidateHealth"]
     C -->|"no: everything else"| E["Timeout 120s"]
-    D --> F["invalidateHealth on non-GET"]
+    D --> G["handler: pathID, queryID, decodeBody (1 MiB cap)"]
     E --> F
     F --> G["handler: pathID, queryID, decodeBody (1 MiB cap)"]
     G --> H["service or store method"]
@@ -201,10 +205,10 @@ reverse proxy. See [installation](installation.md#configuration).
 | GET | `/review` | review inbox items (`?seriesId=`) | `api_review.go` | `Library.ReviewItems` |
 | PATCH | `/series/{id}/files/{fid}/facts` | correct one file's facts, 204 | `api_review.go` | `store.CorrectFileFacts` |
 | PATCH | `/series/{id}/files/facts` | correct facts on several files, 204 | `api_review.go` | `store.CorrectFilesFacts` |
-| POST | `/series/{id}/review/match` | apply one version to a pack of files; `?preview=1` previews. Outside the 120s cap | `server.go` | `Importer.MatchReleaseFiles` / `Library.PreviewReleaseFiles` |
-| POST | `/series/{id}/review/resolve` | decline a pack of file reviews. Outside the cap | `server.go` | `Importer.ResolveFileReviews` |
-| POST | `/series/{id}/review/choices/preview` | preview a choices plan. Outside the cap | `server.go` | `Library.PreviewReviewChoices` |
-| POST | `/series/{id}/review/choices` | apply a choices plan. Outside the cap | `server.go` | `Importer.ApplyReviewChoices` |
+| POST | `/series/{id}/review/match` | apply one version to a pack of files; `?preview=1` previews. Outside the 120s cap | `api_review.go` | `Importer.MatchReleaseFiles` / `Library.PreviewReleaseFiles` |
+| POST | `/series/{id}/review/resolve` | decline a pack of file reviews. Outside the cap | `api_review.go` | `Importer.ResolveFileReviews` |
+| POST | `/series/{id}/review/choices/preview` | preview a choices plan. Outside the cap | `api_review.go` | `Library.PreviewReviewChoices` |
+| POST | `/series/{id}/review/choices` | apply a choices plan. Outside the cap | `api_review.go` | `Importer.ApplyReviewChoices` |
 
 ### Queue, history, activity and blocklist
 

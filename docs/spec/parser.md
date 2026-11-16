@@ -350,10 +350,11 @@ change). Matching:
 
 *Correction (2026-11-16):* production never builds the library index:
 `match.Index`/`Lookup` are used only by the build-tagged manual tool
-`cmd/matchcheck`. Production calls only `match.Similarity` +
-`match.AutoThreshold` (0.90), in binding auto-resolution and bulk import,
-so the 0.75–0.90 manual-confirm band is unused; `ManualThreshold` (0.75)
-only gates `Lookup` results. See
+`cmd/matchcheck`. Production calls only `match.Similarity`: binding
+auto-resolution accepts a score at or above `match.AutoThreshold` (0.90),
+and bulk import keeps the best score as the proposal's confidence for a
+person to confirm, with no threshold. The 0.75–0.90 manual-confirm band is
+unused; `ManualThreshold` (0.75) only gates `Lookup` results. See
 [title matching](../domain/parsing.md#title-matching-internalmatch).*
 
 ## 7. Resolver rules (context pass)

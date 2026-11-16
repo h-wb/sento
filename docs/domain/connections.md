@@ -243,8 +243,9 @@ background tasks are merged into the report live, not cached.
 | `extensions` | error | the sidecar does not answer a sources call |
 | `indexer` | error | an enabled source entry's source is missing on the host, or an enabled Torznab entry fails its ping |
 
-Each issue carries the UI route where it is fixed (`/connections`,
-`/indexers`). The `health-check` task runs `Check` every 15 minutes.
+Remote-probe issues carry the UI route where they are fixed (`/connections`,
+`/indexers`); the `library` issues are raised with no `Link` at all. The
+`health-check` task runs `Check` every 15 minutes.
 
 ## The MangaBaka client: retries and paging
 

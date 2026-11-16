@@ -61,8 +61,8 @@ it asks the provider by the stable release key and adopts the handle if the
 download is done or in flight, never submitting twice. A job with no handle
 at all for more than 10 minutes becomes `dispatch_unknown` and enters review,
 where a person attaches the client ID or cancels. A download that is neither
-done nor in flight gets a `Recover` kick once it is older than 2 minutes and
-fails as dead after 10 minutes.
+done nor in flight gets a `Recover` kick on every queue pass once it is older
+than 2 minutes and fails as dead after 10 minutes.
 
 ## Payload import: stream or directory
 
@@ -70,8 +70,10 @@ A provider's `Fetch` returns either a single archive as a stream (source
 downloads) or a directory plus a file list (torrents). Both paths end in the
 same per-file steps; only the payload shape differs.
 
-`importStream` stages the stream as a `.sento-stage-*.cbz` next to its
-destination, rewrites it through `mediafile.ImportCBZ` when metadata
+`importStream` stages the stream as a `.sento-stage-*.cbz` in the series
+folder (not next to its destination, which `place.dir` puts in the edition's
+folder and the configured book-folder layout below it), rewrites it through
+`mediafile.ImportCBZ` when metadata
 embedding is on, fingerprints it, picks the final path with `placeAsset`,
 installs it with `installAsset`, and records it with `recordAsset`. The file
 name is the sanitized release title plus `.cbz`, or the placement template's
@@ -91,8 +93,10 @@ and no duplicate relative path is processed twice.
 One archive waiting on a person does not abort the pack: a file whose
 observed facts break the release profile is recorded, counted, and the job is
 held for review at the end (`errAssetNeedsReview`). If the expected books are
-not all covered and nothing waits, the import reports a partial import, which
-also lands the job in `needs_review`. The queue worker wraps any import error
+not all covered, the import reports a partial import, whatever is waiting;
+`errAssetNeedsReview` is returned only when all expected books are linked but
+files still wait. Both errors land the job in `needs_review`. The queue worker
+wraps any import error
 in `errImportReview`, so the job is held, not failed; the download-client
 
 payload is cleaned up only after a successful import.
@@ -100,7 +104,8 @@ payload is cleaned up only after a successful import.
 ## Image folders in a payload
 
 A torrent folder of loose images becomes an archive too. In
-`payloadArchives`, every folder that holds page images but no archive is
+`payloadArchives`, every folder that holds page images but no book file
+(any archive, or a `.pdf`/`.epub`: `mediafile.IsBook`) is
 packed into a CBZ (`mediafile.WriteImageArchive`) in a temporary staging
 directory that is removed when the import ends. A folder whose name is only
 a volume or chapter marker (`v01`, `tome 2`, `ch. 3`, `c001` style) gets the
@@ -209,7 +214,7 @@ something about this series:
 
 | Step | Rule |
 | --- | --- |
-| `readsName` | the file waits for review (or is unclaimed for a bulk re-map), is present, parses as manga with no title leftover, and either anchors on the series title or came from a download of this series; a bare `Volume_01.cbz` is only read inside such a download |
+| `readsName` | the file waits for review (or is unclaimed for a bulk re-map), is not `unavailable` (a `missing` or `unknown` file still gets its name read), parses as manga with no title leftover, and either anchors on the series title or came from a download of this series; a bare `Volume_01.cbz` is only read inside such a download |
 | ledger | a marked number gives the ledger; a bare number (`067`) takes the kind the download's own name gives it, or the planned kind when every number the pack's files carry is a book of that kind (`packReadsAs`); a 3-plus-digit padded number (`001`) is never read as a volume inside a volume plan |
 | editions | the editions of that ledger the name fits (`shelf.fits`), narrowed by `shelf.prefer`; among editions holding the books, a collected one wins; still several, or a number two books share, and no proposal is made |
 | version | a collected version is proposed only when exactly one eligible version's profile accepts the file (and clears its minimum format score); overlapping profiles are a choice for the person, never a silent default. The proposal names the edition, plus the profile when the edition has several collected versions |
@@ -271,11 +276,13 @@ editions (and on PostgreSQL the profiles, custom formats and settings in
 share mode), re-reads the revision and rejects when it moved. The validation
 callback then re-checks each archive under those locks: by stat signature
 when one was trusted, otherwise by a fresh fingerprint, rejecting the whole
-batch when bytes changed during the lock wait. The write itself records
+batch when bytes changed during the lock wait. A `later` choice never
+reaches the commit: it is recorded as a `later` outcome and skipped before
+any store write. The write itself records
 
 corrected facts, the hash and signature, verified contents and selections,
-the replacement of former owners, and the disposition (`keep`, `trash` or
-`later`), plus a durable `review_action` on the file row.
+the replacement of former owners, and the disposition (`keep` or `trash`
+only), plus a durable `review_action` on the file row.
 
 After the commit, the filesystem work runs: a `trash` disposition journals
 and performs the recoverable move (see [library files](library-files.md)), an
@@ -359,8 +366,11 @@ A job held in `needs_review` completes without redownloading once no file it
 delivered still waits. `reviewedJobComplete` (checked before fetching the
 payload again) answers yes when every planned book is linked by a file of this
 release, or when at least one file of the release has an explicit review
-action and none waits. `SettleReviewedJobs` runs after review actions and on
-queue passes: for each `needs_review` job with delivered files, it settles the
+action and none waits. `SettleReviewedJobs` runs only after review actions
+(`ApplyReviewChoices`, `ResolveFileReviews`), never on queue passes: the worker
+(`ProcessQueue`) calls only `finishReviewTrash`, and `ListRunnableQueue`
+excludes `needs_review` jobs, so a queue pass cannot even see them. For each
+`needs_review` job with delivered files, it settles the
 
 queue row, resets the listing failure count, and records an
 `imported_after_review` decision naming how many files were confirmed, which

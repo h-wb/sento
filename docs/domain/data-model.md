@@ -284,7 +284,7 @@ in UTC, `YYYY-MM-DD HH:MM:SS`, written by the app.
 | Table | Purpose | Columns that matter | Keys and relations |
 | --- | --- | --- | --- |
 | `files` | one recorded library archive | `path`, `size`, `provenance`, `unrequested`; `hash`, `hash_stat` (stat signature of the hashed archive), `parser_version`; `facts_json`, `claims_json`, `parse_json`; `presence` present, missing, unavailable or unknown, `presence_error`, `checked_at`; `needs_review`; `review_action` empty, keep, trash or trashed; `added_at`, `modified_at` | PK `id`; UNIQUE `path`; `series_id` → `series` CASCADE |
-| `asset_contents` | the books a file verifiably holds, independent of versions | `verified`, `evidence` observed or manual | PK (`file_id`, `book_id`); both CASCADE; index (`book_id`) |
+| `asset_contents` | the books a file verifiably holds, independent of versions | `verified`, `evidence`: the file's provenance (`torrent`, `source`, `library-import`) falling back to `observed`, or `manual` when person-confirmed | PK (`file_id`, `book_id`); both CASCADE; index (`book_id`) |
 | `asset_coverage` | a file's selection of a book inside one collected version | `selected`, `pinned`, `verified`, `evidence` | PK (`file_id`, `version_id`, `book_id`); all three CASCADE |
 | `file_trash` | the journal of a reversible move to trash | `trash_path`, `digest`, `trashed_at`, `purge_after` | PK `file_id` → `files` CASCADE; UNIQUE `trash_path`; index (`purge_after`) |
 
@@ -345,7 +345,8 @@ stateDiagram-v2
     importing --> dispatch_unknown : UpdateQueueItem, no client accepted it
     queued --> retry_wait : DeferQueueUntil
     downloading --> retry_wait : DeferQueueUntil
-    retry_wait --> queued : worker past retry_at, or ResumeQueue
+    retry_wait --> downloading : worker past retry_at
+    retry_wait --> queued : ResumeQueue only, retry_count reset to 0
     needs_review --> queued : ResumeQueue, another release chosen
     needs_review --> imported : SettleReviewedQueue, all files reviewed
     retry_wait --> needs_review : UpdateQueueItem

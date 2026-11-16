@@ -96,7 +96,8 @@ Three manual commands live under `cmd/`, each behind its own build tag so
 - `cmd/e2estub` (tag `e2e`) serves deterministic stand-ins for every upstream
   Sento talks to on one port, each under its own prefix: MangaBaka
   (`/mangabaka/v1/...`), the extension sidecar (`/host/api/v1/...`), Prowlarr
-  (`/prowlarr/api/v1/...`), qBittorrent (`/qbittorrent/api/v2/...`) and Torznab
+  (`/prowlarr/api/v1/...`), qBittorrent (`/qbit/api/v2/...`, plus a second
+  client at `/qbit-vpn`) and Torznab
   (`/torznab/api`). Fixtures are fixed (the series search always returns the
   same three series) so tests can name them. Flags: `-addr` (default `:8899`)
   and `-control`, which enables the exploratory scenarios and the request

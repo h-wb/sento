@@ -252,10 +252,10 @@ float lives at the JSON boundary, immediately rounded. Alpha
 sub-chapters follow the Mihon convention: `4a` → 4.1
 (`alphaSuffixNum`: a→+10 … i→+90). `Range{From, To}` is inclusive; a
 single number is `From == To`. Custom JSON renders `3450` as `34.5` and
-ranges as `[from,to]`. Values above 2^40 and negative values are
-
-rejected at parse (`parseNum`), so ranges always satisfy `0 ≤ From ≤
-To`.
+ranges as `[from,to]`. `parseNum` rejects values above 2^40 but has no
+negative check (`parseNum("-3")` returns -300); ranges stay non-negative
+because the extraction patterns capture `\d+` and never a minus sign, so
+ranges always satisfy `0 ≤ From ≤ To`.
 
 ### The extraction cascade (`numbers.go`)
 
@@ -365,9 +365,11 @@ After segment classification, the free text is scanned in order:
 
 Free-text runs are concatenated; the title ends at the earliest consumed
 span (season marker, keyword, number). Trailing ` -–~:|/+&` characters
-are trimmed from the title. If the title contains ` / ` or ` | `, the
-first of the two separators found wins and splits it: the first part
-becomes `Title`, the rest `AltTitles` ("Only I Level Up / Solo Leveling"
+are trimmed from the title. If the title contains ` / ` or ` | `, a
+fixed preference order decides the split: ` / ` is always tried before
+` | `, regardless of which appears earlier in the title ("A | B / C"
+splits on ` / `); the first part becomes `Title`, the rest `AltTitles`
+("Only I Level Up / Solo Leveling"
 → title "only i level up", alt "solo leveling"). Titles are lowercased.
 
 Group election runs over the unrecognized, number-free segments: the
@@ -517,12 +519,15 @@ flowchart TD
     H -->|"no"| J["no match"]
 ```
 
-Where production uses it: binding auto-resolution and bulk import call
-only `match.Similarity` + `match.AutoThreshold`: a source auto-binds at
-score ≥ 0.90 against any known title (at most 3 queries, at most 5
+Where production uses it: binding auto-resolution gates on
+`match.Similarity` + `match.AutoThreshold` (a source auto-binds at
+score ≥ 0.90 against any known title: at most 3 queries, at most 5
 bindings, a 20 s budget, an "unmatched" sentinel when nothing reaches
-0.90, `search_bindings.go`), and bulk import compares the same score
-against each file's stored confidence (`bulkimport.go`). The 0.75–0.90
+0.90, `search_bindings.go`), while bulk import never uses
+`match.AutoThreshold`: `ProposeImports` scores each search candidate
+with `match.Similarity` and keeps the best as the proposal's
+`Confidence`, starting from 0, for the user to confirm (`bulkimport.go`).
+The 0.75–0.90
 
 manual-confirm band is not used in production; `Index`/`Lookup` are used
 only by the build-tagged manual tool `cmd/matchcheck` (`go run -tags

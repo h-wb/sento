@@ -144,7 +144,7 @@ flowchart LR
   R1["/"] --> LP["LibraryPage"] --> L1["library/ PosterGrid, SeriesTable, BulkBar"]
   R2["/series/:id"] --> SP["SeriesPage"] --> EM["EditionManager"] --> EC["editions/ EditionCard"] --> EB["EditionBooks (books/ grid + rows)"]
   SP --> AP["ActivityPanel (activity/ rows)"]
-  SP --> BD["BookDialog (search/ CandidateList, AcquisitionPlan)"]
+  SP --> BD["BookDialog (components/ root: CandidateList, AcquisitionPlan)"]
   R3["/queue"] --> QP["QueuePage"] --> AP
   R4["/add"] --> ADP["AddPage (AddSeriesForm, ImportSection)"]
   R5["/calendar"] --> CP["CalendarPage"]

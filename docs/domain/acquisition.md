@@ -147,7 +147,9 @@ retries.
 On the chapter ledger, every batch also records what the sources list, before
 the funnel runs (`observeCandidates`): a candidate whose anchored parse is manga
 and fits a chapter edition yields its single-number ranges as book observations,
-at most 100 per search run. Observations on bindings marked trusted (or placed
+at most 100 per batch (the counter is local to `observeCandidates`, which runs
+once per search book, so a run over N sites can record up to 100×N).
+Observations on bindings marked trusted (or placed
 by `placeChapterListings`) are auto-accepted, so new chapters appear as books.
 
 `placeChapterListings` places, without asking, a source's match whose edition is
@@ -203,8 +205,8 @@ flowchart TD
     E --> F{"shelf.judge verdict"}
     F -->|"fitNo, language"| G["rejected.language"]
     F -->|"fitNo"| H["rejected.edition_routing"]
-    F -->|"fitUnsure / fits another collected edition"| I["rejected.edition_ambiguous"]
-    F -->|"fitYes"| J["funnel: fitBooks, judgeByProfile, score"]
+    F -->|"fitYes / fitUnsure"| J["funnel: fitBooks, judgeByProfile, score"]
+    J -->|"fitUnsure / fits another collected edition"| I["rejected.edition_ambiguous"]
     J --> K["explain: ReleaseDecision (status, reasons, canForce)"]
     D --> K
     G --> K
@@ -215,8 +217,9 @@ flowchart TD
 Rejected candidates keep their parse and are shown in the UI with their
 reasons. A release no collected version takes is shown once, for the first one, with why
 not; a search scoped to one collected version always shows it. When several take
-it, each copy gets its own GUID suffix (`@versionID`) unless it is the default
-one.
+it, each copy gets its own GUID suffix (`@versionID`), including the default
+version's; the default copy goes unsuffixed only when it is the only
+compatible one.
 
 Inside the funnel for one collected version, three gates run in order and the
 first failure stops scoring:
@@ -500,7 +503,9 @@ stateDiagram-v2
     importing --> needs_review: import needs review (files or mapping)
     queued --> retry_wait: failure, retry_at = now + backoff
     downloading --> retry_wait: failure, retry_at = now + backoff
-    retry_wait --> queued: retry_at reached (retry_count kept)
+    retry_wait --> downloading: retry_at reached, picked up directly
+    retry_wait --> importing: retry_at reached, picked up directly
+    retry_wait --> queued: retry (ResumeQueue), retry_count reset to 0
     retry_wait --> needs_review: 5 source retries exhausted
     needs_review --> queued: retry (ResumeQueue), optionally with a client ID
     dispatch_unknown --> queued: retry with the attached ID
@@ -520,14 +525,14 @@ external ID after 10 minutes becomes `dispatch_unknown` (confirm the download in
 the client, then attach its ID or cancel; never resubmitted blindly, the stable
 release key is reconciled against `State` first).
 
-A job neither done nor in flight gets one `Recover` kick from a `Recoverer`
-provider after 2 minutes, and is declared dead (`errDownloadDead`) after 10
-minutes. Queue backoff (`DeferQueueUntil`) waits 30 seconds times
+A job neither done nor in flight gets a `Recover` kick from a `Recoverer`
+provider on every queue pass once it is older than 2 minutes, and is declared
+dead (`errDownloadDead`) after 10 minutes. Queue backoff (`DeferQueueUntil`)
+waits 30 seconds times
 `2^min(retryCount, 6)`, so doubling up to 32 minutes at the cap, longer when the
 source's `Retry-After` says so; timestamps are rounded up to the next second so
-a retry never fires early. `retry_wait` jobs past their `retry_at` are picked up
-
-again. Source failures retry up to 5 times (`maxSourceRetries`), then move to
+a retry never fires early. `retry_wait` jobs past their `retry_at` are picked
+up by the worker again, straight into `downloading` or `importing`. Source failures retry up to 5 times (`maxSourceRetries`), then move to
 `needs_review` with their reservations intact. Cancel is refused while a job is
 `importing`; `UpdateQueueItem` never touches `cancelled` or `imported` rows.
 
@@ -733,7 +738,8 @@ Needs attention (Blocked releases) with Unblock per release, which invalidates
 `['blocklist']` and reruns the search.
 
 The interactive search behind "Search releases" lives in the book dialog
-(`BookDialog` with `components/search/`): it streams `POST
+(`BookDialog` in `components/`, search logic in `components/search/`,
+`CandidateList` and `AcquisitionPlan` in `components/`): it streams `POST
 /series/{id}/search` as NDJSON (`sites`/`batch`/`done`/`error` events, reduced
 by `applySearchEvent`), so each provider's results render as they land. Results
 split into Matches, Ruled out and All (`CandidateList`): Matches shows
