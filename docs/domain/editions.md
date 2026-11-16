@@ -233,63 +233,10 @@ Review previews bind the file fingerprints, facts, current selections/pins, edit
 
 File review can map an archive to several books and versions. Editing one version's mappings preserves the others. Clearing coverage keeps the file without claiming ownership. Coverage pins survive edits to retained mappings. Removing a version preserves intrinsic content knowledge and files; deleting a pinned file requires unpinning first. Duplicate-edition merges require unique book matches and preserve version policies, pins, coverage, and paths. Pending downloads block destructive identity changes.
 
-## Presence, file facts, and recovery
-
-Scans and acquisition checks record `present`, `missing`, `unavailable`, or `unknown` presence. A file answers to the top folder it lives under — the series' own, its chapter folder, or the edition or version folder beside them, whatever book folders nest inside — and an unreadable/missing one blocks automatic acquisition for the files under it; a missing archive under a healthy root remains wanted. Page reads do not probe the filesystem or initialize models. Review provides an explicit recheck action.
-
-Offer claims and per-file observed facts are stored separately. Filename observations take precedence over advertised language/group/quality; stream imports retain offer evidence. Facts read from a file's own name are stamped with the parser revision (`parse.Version`); a scan re-reads the name those facts came from with the current parser when the stored stamp is older. Only what a name says is replaced (flags, resolution, revision, digital, and a name-read language or group); the download the file came in, its site, profile, score and claims, and its bytes, fingerprint, links, presence, review state and manual corrections all stand. Facts that were not read from a name (an offer's, an embedded `Notes` line's) are left alone, and so are those of a download renamed at import, whose recorded name no longer says what was read: a download's name counts only while it still carries the group and digital mark the facts hold, and its re-read never adds a group or language (a template's own brackets would read as one). A downloaded file that names no download at all — the 0.7.0 re-read rebuilt such files' facts and emptied their claims — gets its release key and claims back on a scan from the series' download of the same release name, when one release goes by that name. Judging a file falls back to its release's claims for the fields its own facts do not carry, so a copy organized to a bare name ("Volume 1.cbz") keeps the digital/group/resolution score its release earned; a field the facts do carry wins, and a file without claims still scores from its filename alone. A person can correct what a file is — its language, its group and each of its flags (colored, digital, scan and the rest of `store.FactFlags`) — in the file dialog, or for several files at once from the Files table or from a card; each correction is marked as theirs (`sources`: `manual`, per flag `flag:<name>`). A corrected flag is judged at once, is kept by every re-read and rescan, and is not put back by what the release claimed. Retrying or scanning identical bytes preserves manual corrections and content confirmation. Group contradictions remain visible for review.
-
-Manual corrections take precedence even when a language or group is explicitly
-cleared. Review proposals judge the same combined file and release evidence as
-ownership and upgrade scoring.
-
 Transient client errors back off from 30 seconds up to 32 minutes. If dispatch succeeded but saving its handle was interrupted, reconciliation checks the stable provider key without submitting again. Unresolved dispatch after ten minutes enters review, where a user can attach the client ID or cancel the reservation. Cancelling leaves remote downloads and files intact; an active import must finish before cancellation. Pending plans and edition identity edits use a common transactional parent lock.
 
-## File cleanup and trash
-
-**Clean up files**, available from Files and each edition menu, previews file
-sizes and explains whether each file is protected or eligible. The user must
-select files explicitly. Turning Collect off or pausing a series does not
-move files. Candidates include reviewed unmapped files, files used only by
-uncollected editions, and copies no collected version selects. A file still
-selected by any collected version, a pinned asset (including a deselected
-pin), unfinished file review, or an asset from an active download is protected.
-Shared assets are judged as a whole, across their edition and version mappings.
-The server checks current selections and pins again when applying a preview.
-
-Cleanup moves each selected archive into a hidden `.sento-trash` folder on
-the same filesystem. It retains file identity, observed facts, intrinsic
-contents and version selections, but excludes the file from ownership,
-review, scans and organization while it is in trash. Download-client payloads
-and other hardlinks remain intact; selected archive sizes do not promise
-immediate disk-space savings. Only regular files are moved, without overwriting
-another path or rewriting archive bytes. A journal retains interrupted moves
-for recovery.
-
-Review trash retries validate the saved archive fingerprint and resume moves
-interrupted before journaling, between linking and unlinking, or before recording
-completion. A changed original returns to review without moving its new bytes;
-completed moves leave the retry batch. Pending moves remain restorable and their
-deletion is paused. Retained archives whose fingerprint changes are protected
-from both manual and expired-trash deletion until the discrepancy is resolved.
-Recovery pages through pending intents by file ID, advancing past failed moves
-so a blocked batch cannot prevent later archives from being recovered. Each new
-queue pass retries earlier failures.
-Failures to load a pending page are logged with the cursor and database error
-and leave the intents available for the next pass.
-
-A missing trash entry is purged from the database only while its storage folder
-is accessible. Unavailable storage retains the journal and mappings for recovery.
-
-The confirmation chooses 7, 30 or 90 days of retention (30 by default).
-Trash can be inspected and restored from Files even after all active files
-are gone. Restore verifies retained bytes and refuses an occupied original
-path. It restores mappings and leaves collection preferences unchanged.
-Permanent deletion requires confirmation, or happens after expiry during the
-daily housekeeping task. Files whose interrupted move still leaves an original
-are retained for explicit restore. A series with recoverable trash must have
-its trash restored or emptied before series removal, so removing the series
-cannot orphan recovery records.
+Presence, file facts, cleanup and trash are documented in
+[library files](library-files.md).
 
 ## Screens and evaluation
 
