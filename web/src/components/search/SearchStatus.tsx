@@ -36,7 +36,7 @@ export function SearchStatus({
               : `Searched ${result.searched.length} ${plural(result.searched.length, 'source')}`}
         </Text>
         {result.queries.length > 0 && (
-          <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+          <Text size="xs" c="dimmed" className="wrapAnywhere">
             for {result.queries.join(' · ')}
           </Text>
         )}

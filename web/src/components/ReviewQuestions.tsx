@@ -36,7 +36,7 @@ function FilePack({
         <Text size="xs" c="dimmed">
           Release · {files.length} files waiting
         </Text>
-        <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>
+        <Text size="sm" fw={500} className="wrapAnywhere">
           {title}
         </Text>
         {note && (
@@ -102,7 +102,7 @@ export default function ReviewQuestions({
     const list = (): ReactNode => (
       <Stack gap={2} mt="xs">
         {head.map((n) => (
-          <Text key={n} size="xs" style={{ overflowWrap: 'anywhere' }}>
+          <Text key={n} size="xs" className="wrapAnywhere">
             {n}
           </Text>
         ))}
@@ -164,7 +164,7 @@ export default function ReviewQuestions({
             {kindLabel(i)}
           </Text>
         )}
-        <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>
+        <Text size="sm" fw={500} className="wrapAnywhere">
           {i.kind === 'file' ? fileName(i.title) : i.title}
         </Text>
         {i.proposal ? (
@@ -176,7 +176,7 @@ export default function ReviewQuestions({
           </Text>
         ) : (
           i.detail !== shared && (
-            <Text size="xs" c="dimmed" lineClamp={3} title={i.detail} style={{ overflowWrap: 'anywhere' }}>
+            <Text size="xs" c="dimmed" lineClamp={3} title={i.detail} className="wrapAnywhere">
               {i.detail}
             </Text>
           )

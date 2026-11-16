@@ -61,7 +61,7 @@ export function RemoveSeries({
           </Text>
           <List size="sm" spacing={4}>
             {kept.map((k) => (
-              <List.Item key={k} style={{ overflowWrap: 'anywhere' }}>
+              <List.Item key={k} className="wrapAnywhere">
                 {k}
               </List.Item>
             ))}

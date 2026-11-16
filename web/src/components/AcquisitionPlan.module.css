@@ -20,9 +20,8 @@
 .book[data-state='no_seeders'], .dot[data-state='no_seeders'] { border-color: var(--mantine-color-orange-6); color: var(--mantine-color-orange-6); }
 .book[data-state='not_found'], .dot[data-state='not_found'] { border-style: dashed; }
 .book[data-state='unknown'], .dot[data-state='unknown'] { border-style: dotted; }
-.picks { border: 1px solid var(--mantine-color-default-border); border-radius: var(--mantine-radius-md); overflow: hidden; }
-.pick { display: flex; gap: var(--mantine-spacing-sm); align-items: flex-start; padding: 8px 12px; border-top: 1px solid var(--mantine-color-default-border); }
-.pick:first-child { border-top: 0; }
+.picks { composes: list from '../styles/list.module.css'; }
+.pick { composes: item from '../styles/list.module.css'; display: flex; gap: var(--mantine-spacing-sm); align-items: flex-start; padding: 8px 12px; }
 .pick[data-off] .pickBody { opacity: 0.55; }
 .pickBody { min-width: 0; flex: 1; }
 .pickBooks { flex: none; }

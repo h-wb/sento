@@ -77,7 +77,7 @@ export default function CalendarPage() {
                     style={{ textDecoration: 'none' }}
                   >
                     <Group justify="space-between">
-                      <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+                      <Text size="sm" className="wrapAnywhere">
                         {e.seriesTitle} — Volume {e.sequenceStr || fmtNum(e.sequenceNum)}
                       </Text>
                       <Group gap={6} wrap="nowrap">

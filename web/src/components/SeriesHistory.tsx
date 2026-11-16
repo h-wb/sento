@@ -72,7 +72,7 @@ export function SeriesHistory({
             )}
           </Group>
           {event.body.title && (
-            <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+            <Text size="sm" className="wrapAnywhere">
               {event.body.title}
             </Text>
           )}

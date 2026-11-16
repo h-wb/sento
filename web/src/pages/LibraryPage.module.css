@@ -13,13 +13,13 @@
 .poster:hover .posterTitle { text-decoration: underline; text-underline-offset: 3px; }
 .progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgb(0 0 0 / 35%); }
 .progress > span { display: block; height: 100%; background: var(--mantine-color-blue-5); }
-.progress[data-complete='true'] > span { background: #69947a; }
+.progress[data-complete='true'] > span { background: var(--status-green); }
 .coverFallback { height: 100%; display: flex; flex-direction: column; gap: 20px; justify-content: center; align-items: center; padding: 20px; color: var(--mantine-color-dimmed); }
 .poster[data-monitored='false'] .cover { opacity: 0.6; }
 .posterTitle { letter-spacing: -0.015em; line-height: 1.45; }
 .metadata { color: var(--mantine-color-dimmed); }
 .releaseDot { width: 5px; height: 5px; border-radius: 50%; background: var(--mantine-color-dimmed); }
-.releaseDot[data-ongoing='true'] { background: #69947a; }
+.releaseDot[data-ongoing='true'] { background: var(--status-green); }
 .monitorFlag { position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 4px; color: #fff; background: #242422; }
 .empty { border-top: 1px solid var(--mantine-color-default-border); }
 .emptyIcon { width: 64px; height: 64px; display: grid; place-items: center; background: light-dark(#f5f5f2, #242422); border: 1px solid var(--mantine-color-default-border); border-radius: 12px; margin-bottom: 8px; }

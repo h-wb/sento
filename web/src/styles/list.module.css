@@ -1,0 +1,4 @@
+/* A bordered list of rows, each row ruled off from the one above. */
+.list { border: 1px solid var(--mantine-color-default-border); border-radius: var(--mantine-radius-md); overflow: hidden; }
+.item { border-top: 1px solid var(--mantine-color-default-border); }
+.item:first-child { border-top: 0; }

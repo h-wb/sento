@@ -54,7 +54,7 @@ export function SearchNotices({
           }}
         >
           {problems.map((p) => (
-            <Text key={p} size="xs" style={{ overflowWrap: 'anywhere' }}>
+            <Text key={p} size="xs" className="wrapAnywhere">
               {p}
             </Text>
           ))}
@@ -86,7 +86,7 @@ export function SearchNotices({
           </Group>
         ))}
       {notes.map((n) => (
-        <Text key={n} size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+        <Text key={n} size="xs" c="dimmed" className="wrapAnywhere">
           {n}
         </Text>
       ))}

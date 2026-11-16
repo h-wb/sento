@@ -20,10 +20,10 @@ export function OrganizeChanges({
     <Stack gap={6}>
       {selected.slice(0, limit).map((c) => (
         <div key={c.fileId}>
-          <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+          <Text size="xs" c="dimmed" className="wrapAnywhere">
             {c.from}
           </Text>
-          <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+          <Text size="sm" className="wrapAnywhere">
             {rename && c.rename ? `→ ${c.to}` : '→ same place'}
             {retag && c.retag && (
               <Text span size="xs" c="dimmed">
