@@ -18,7 +18,6 @@ import io.javalin.http.HttpStatus
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import suwayomi.tachidesk.manga.model.dataclass.ContentWarning
 
 private val json = Json { ignoreUnknownKeys = true }
 private val chapterRequests = ChapterRequests()
@@ -91,6 +90,19 @@ private fun Context.sourceOrNull(): CatalogueSource? {
     return suwayomi.tachidesk.manga.impl.util.source.GetSource.getSourceOrNull(id)
 }
 
+// mangaOrNull decodes the `manga` query parameter, or is null when it is missing.
+private fun Context.mangaOrNull(): SManga? {
+    val key = json.decodeFromString<MangaKey>(queryParam("manga") ?: return null)
+    return SManga.create().apply {
+        url = key.url
+        title = key.title
+    }
+}
+
+private fun SManga.toDto() = MangaDto(key = json.encodeToString(MangaKey(url, title)), title = title)
+
+private fun CatalogueSource.toDto() = SourceDto(id.toString(), name, lang, isNsfw(this))
+
 fun buildApi(): Javalin =
     Javalin.create { config ->
         config.startup.showJavalinBanner = false
@@ -111,7 +123,7 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
         ctx.respond(
             suwayomi.tachidesk.manga.impl.util.source.GetSource
                 .all()
-                .map { SourceDto(it.id.toString(), it.name, it.lang, isNsfw(it)) },
+                .map { it.toDto() },
         )
     }
 
@@ -119,22 +131,12 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
         val source = ctx.sourceOrNull() ?: return@get ctx.notFound("unknown source")
         val query = ctx.queryParam("q") ?: return@get ctx.badRequest("missing query parameter q")
         val page = runBlocking { source.getSearchManga(1, query, FilterList()) }
-        ctx.respond(
-            page.mangas.map {
-                MangaDto(key = json.encodeToString(MangaKey(it.url, it.title)), title = it.title)
-            },
-        )
+        ctx.respond(page.mangas.map { it.toDto() })
     }
 
     get("/api/v1/sources/{sid}/chapters") { ctx ->
         val source = ctx.sourceOrNull() ?: return@get ctx.notFound("unknown source")
-        val keyRaw = ctx.queryParam("manga") ?: return@get ctx.badRequest("missing query parameter manga")
-        val key = json.decodeFromString<MangaKey>(keyRaw)
-        val manga =
-            SManga.create().apply {
-                url = key.url
-                title = key.title
-            }
+        val manga = ctx.mangaOrNull() ?: return@get ctx.badRequest("missing query parameter manga")
         val chapters =
             runBlocking {
                 chapterRequests.chapters(source, manga)
@@ -159,16 +161,9 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
 
     get("/api/v1/sources/{sid}/listings") { ctx ->
         val source = ctx.sourceOrNull() ?: return@get ctx.notFound("unknown source")
-        val keyRaw = ctx.queryParam("manga") ?: return@get ctx.badRequest("missing query parameter manga")
-        val key = json.decodeFromString<MangaKey>(keyRaw)
-        val manga = SManga.create().apply {
-            url = key.url
-            title = key.title
-        }
+        val manga = ctx.mangaOrNull() ?: return@get ctx.badRequest("missing query parameter manga")
         val listings = runBlocking { directoryListings(source, manga) }
-        ctx.respond(listings.map {
-            MangaDto(key = json.encodeToString(MangaKey(it.url, it.title)), title = it.title)
-        })
+        ctx.respond(listings.map { it.toDto() })
     }
 
     get("/api/v1/sources/{sid}/pages") { ctx ->
@@ -240,63 +235,17 @@ private fun io.javalin.config.RoutesConfig.defineEndpoints() {
     // --- extension management ---
 
     get("/api/v1/extensions") { ctx ->
-        val installed = ExtensionManager.installedExtensions.associateBy { it.pkgName }
-        val available = runBlocking { ExtensionManager.available() }
-        val merged = LinkedHashMap<String, ExtensionDto>()
-        for (ext in available) {
-            val inst = installed[ext.pkgName]
-            val prev = merged[ext.pkgName]
-            if (prev != null && (prev.availableVersion ?: "") >= ext.versionName) continue
-            merged[ext.pkgName] =
-                ExtensionDto(
-                    pkgName = ext.pkgName,
-                    name = ext.name,
-                    lang = ext.lang,
-                    nsfw = ext.contentWarning != ContentWarning.SAFE,
-                    installedVersion = inst?.versionName,
-                    availableVersion = ext.versionName,
-                    hasUpdate = inst != null && ext.versionCode > inst.versionCode,
-                    sources =
-                        ext.sources.map {
-                            SourceDto(it.id.toString(), it.name, it.lang, it.contentWarning != ContentWarning.SAFE)
-                        },
-                )
-        }
-        for ((pkg, inst) in installed) {
-            merged.putIfAbsent(
-                pkg,
-                ExtensionDto(
-                    pkgName = pkg,
-                    name = inst.name,
-                    lang = inst.lang,
-                    nsfw = inst.isNsfw,
-                    installedVersion = inst.versionName,
-                ),
-            )
-        }
-        ctx.respond(merged.values.sortedBy { it.pkgName }.toList())
+        ctx.respond(runBlocking { ExtensionManager.catalogue() })
     }
 
     get("/api/v1/extensions/{pkg}/sources") { ctx ->
-        ctx.respond(
-            ExtensionManager.sourcesFor(ctx.pathParam("pkg")).map {
-                SourceDto(it.id.toString(), it.name, it.lang, isNsfw(it))
-            },
-        )
+        ctx.respond(ExtensionManager.sourcesFor(ctx.pathParam("pkg")).map { it.toDto() })
     }
 
     post("/api/v1/extensions/{pkg}") { ctx ->
         val record = runBlocking { ExtensionManager.install(ctx.pathParam("pkg")) }
         ctx.status(HttpStatus.CREATED)
-        ctx.respond(
-            ExtensionDto(
-                pkgName = record.pkgName,
-                name = record.name,
-                lang = record.lang,
-                nsfw = record.isNsfw,
-                installedVersion = record.versionName,
-            ),
-        )
+        ctx.respond(record.toDto())
     }
 
     delete("/api/v1/extensions/{pkg}") { ctx ->

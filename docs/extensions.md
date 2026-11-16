@@ -16,7 +16,8 @@ side is in [connections](domain/connections.md).
 | File | What it holds |
 | --- | --- |
 | `extensions/app/src/main/kotlin/sento/extensions/Api.kt` | the Javalin routes, DTOs and key envelopes |
-| `.../ExtensionManager.kt` | repo index resolution, install/uninstall, `installed.json` |
+| `.../ExtensionManager.kt` | the repo list, the merged catalogue, install/uninstall, `installed.json` |
+| `.../RepoIndex.kt` | repo index resolution: reading and caching a repository's index |
 | `.../SourceErrors.kt` | the `ErrorDto` and the retry classification |
 | `.../SourcePrefs.kt` | the preference form serialized to typed JSON and back |
 | `.../ChapterRequests.kt` | shares overlapping chapter requests per (source, manga) |
