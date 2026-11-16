@@ -80,7 +80,6 @@ and supply the existing release tag (for example `v0.1.0`). Recovery uses the
 current workflow but checks out the tagged source, validates its original CI
 run, and stamps its original commit. Artifact upload is repeatable and keeps
 the curated release notes. Do not move an existing release tag. A manual
-
 annotated tag on a passing main commit is supported for recovery, but the
 release-PR path is preferred.
 

@@ -85,7 +85,6 @@ name when `renameImports` is on.
 earlier attempt at the same release brought in: books already linked by this
 release key are skipped, and so are the hashes of files that are reviewed or
 still waiting in review, so a retry neither redoes work nor duplicates a file
-
 that sits in `review/`. Payload paths are checked for escapes: each entry
 must be local, resolve under the download folder after symlink evaluation,
 and no duplicate relative path is processed twice.
@@ -98,7 +97,6 @@ not all covered, the import reports a partial import, whatever is waiting;
 files still wait. Both errors land the job in `needs_review`. The queue worker
 wraps any import error
 in `errImportReview`, so the job is held, not failed; the download-client
-
 payload is cleaned up only after a successful import.
 
 ## Image folders in a payload
@@ -110,7 +108,6 @@ packed into a CBZ (`mediafile.WriteImageArchive`) in a temporary staging
 directory that is removed when the import ends. A folder whose name is only
 a volume or chapter marker (`v01`, `tome 2`, `ch. 3`, `c001` style) gets the
 series title prepended before parsing, so `Volume 1` inside a download of
-
 the series reads as that series' volume 1. Any other folder name is packed
 as it is. A packed folder is marked for review when its name does not parse
 to exactly one single number, and the normal per-archive checks still decide
@@ -164,7 +161,6 @@ language, group, flags, resolution, revision, digital mark, format score,
 profile and release key, marked with `offer` sources. The facts come from the
 file's own parsed name where one was read: flags, language, group, resolution,
 revision and digital mark, marked with `filename` sources. Judging a file
-
 falls back to its claims for fields its own facts do not carry, so a copy
 organized to a bare name still scores as its release did.
 
@@ -174,7 +170,6 @@ fingerprint and the current parser version, and links the expected books. It
 then judges the file against each slot's current profile: if any slot's
 profile is broken by the observed facts, the file is marked `needs_review`
 and reported as `errAssetNeedsReview`. After recording, `DisplaceOwners` runs
-
 the upgrade path (below). A file that names no download and matches nothing is
 recorded by `importReviewFile` in the series' `review/` folder with
 `needs_review` and `unrequested` set, keeping its offer claims beside its
@@ -260,7 +255,6 @@ when the archive's timestamps are at least 2 seconds older than the preview
 (`racyStat`), the same rule a scan applies, so a later write cannot share a
 coarse filesystem timestamp. When a preview has to read the pages, it records
 the signature it read under, so the next preview trusts it. A known
-
 fingerprint that disagrees with freshly read bytes is a conflict: rescan
 first, never renew.
 
@@ -279,7 +273,6 @@ when one was trusted, otherwise by a fresh fingerprint, rejecting the whole
 batch when bytes changed during the lock wait. A `later` choice never
 reaches the commit: it is recorded as a `later` outcome and skipped before
 any store write. The write itself records
-
 corrected facts, the hash and signature, verified contents and selections,
 the replacement of former owners, and the disposition (`keep` or `trash`
 only), plus a durable `review_action` on the file row.
@@ -300,7 +293,6 @@ preselected: yes when no present owner exists, the file is already selected,
 or a replacement was explicitly requested at grab time; unknown facts and
 policy refusals force an explicit choice, and a pinned owner must be unpinned
 first. When several incoming archives hold the same book, the first eligible
-
 one is preselected and each book is counted once. Apply enforces one incoming
 archive per book and edition, and refuses to trash a file that is still
 selected anywhere or pinned.
@@ -371,7 +363,6 @@ action and none waits. `SettleReviewedJobs` runs only after review actions
 (`ProcessQueue`) calls only `finishReviewTrash`, and `ListRunnableQueue`
 excludes `needs_review` jobs, so a queue pass cannot even see them. For each
 `needs_review` job with delivered files, it settles the
-
 queue row, resets the listing failure count, and records an
 `imported_after_review` decision naming how many files were confirmed, which
 planned books were kept from existing copies, and which were not in the

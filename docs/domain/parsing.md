@@ -6,7 +6,6 @@ release, file or chapter name; `parse` turns one name string into
 structured facts, and `match` resolves a parsed title back to a library
 series. The parser is the highest-risk component in Sento: the input
 space is two decades of inconsistent human naming conventions. The
-
 contract and decisions behind it are in [parser.md](../spec/parser.md).
 
 ## In the code
@@ -49,7 +48,6 @@ their `BarePadded` padding fact, `Season`, `Year` and `YearRange`,
 `Group`, `Languages` and the folded `Language` (`"multi"` when more than
 one language is claimed), `ContentType` (`manga` by default), `Edition`
 hints, the `Claim` the name makes about its numbering, `Quality` hints,
-
 `Anchored` and `TitleLeftover`, the flags `Complete`, `CompleteInferred`,
 `Ongoing` and `Extra`, the release `Version`, `Confidence`, and the
 `Trace`. `Season`, `Year`, `YearRange`, `AltTitles` and `Ongoing` are
@@ -89,7 +87,6 @@ extension (`.cbz`, `.cbr`, `.cb7`, `.zip`, `.rar`, `.7z`, `.pdf`,
 `.5` in "v1.5" survives), then canonicalizes: `_` → space, full-width
 → ASCII (`width.Fold`), Unicode NFKC (visually identical characters
 become byte-identical), whitespace collapsed to single spaces. There is
-
 no path split: the whole input string, path segments included, is the
 name. Every later stage assumes this boring representation.
 
@@ -153,7 +150,6 @@ unambiguous words (`french`, `vf`, `vostfr`, `english`, `japanese`,
 `russian`, `polish`, `multi`) count anywhere; bare two-letter codes
 (`FR`, `JP`, `JA`, `KR`, `CN`, `RU`, `PL`) count only as standalone
 UPPERCASE words (`sceneLangCodes`); `EN`/`DE`/`ES`/`IT` stay out because
-
 they collide with shouting-case title words. A word followed by `name`,
 `names`, `honorific`, `honorifics` or `sfx` ("Japanese Names", "JP
 Honorifics", "Korean SFX") is a note about retained source style, not a
@@ -170,7 +166,6 @@ Resolution tokens must match a whole token, so group names like
 directly; integer `K` notation multiplies by 1024 (`2K` = 2048,
 `4K` = 4096, `10K` = 10240). A `-Repack` suffix (`1800px-Repack`,
 `2k-Repack`) also sets `Version` to at least 2 without replacing a
-
 higher explicit revision. The highest stated resolution wins; names
 without a resolution tag keep 0. Resolution tags never become the group
 or book numbers. These facts feed custom format matching (High
@@ -222,7 +217,6 @@ name the same one. In a delimited segment, a color word claims color
 only when the whole segment is a color tag or carries the `Digital
 Colored Comics` imprint; otherwise the color words are masked
 (`maskGroupColor`), so a group name like `(Colored Council)` is the
-
 group, not a color claim. In free text the words claim color wherever
 they appear, because imprints sit mid-name. `scanTags` folds the claim
 into `Edition`: regroupings set `Omnibus` (or `Deluxe` for the `deluxe`
@@ -385,7 +379,6 @@ sets `Complete` and `CompleteInferred` ("Solo Leveling (2021-2026)
 (Digital) (1r0n)"). A bare numberless title is more likely a one-shot
 than a pack, so no year range means no pack. The search funnel adds a
 second inferred-pack rule for anchored, leftover-free torrents on the
-
 volume ledger (`funnel.go`), offered for review but never grabbed
 automatically (`rejected.pack_unverified`).
 
@@ -462,7 +455,6 @@ from the name of the listing it sits in ("Vol. 001 (Digital)" inside
 color edition and written name (only when the release's own claim names
 nothing), color and box, the edition hints (OR), the verbatim edition
 names (merged), the quality hints (OR, resolution max), the group, and
-
 the language, each only where the release itself is empty. What the
 release says of itself always wins. The search funnel calls it for
 source releases that carry a listing name (`funnel.go`): `rc.Parse.Inherit(parse.ParseAnchored(cand.Source.Listing, channel, run.titles))`.
@@ -475,7 +467,6 @@ file whose filename-derived facts were read from its name
 output for existing names may change: a scan re-reads the name those
 facts came from with the current parser when the stored stamp is older
 (`scan.go`, `rederiveFacts`), replacing only what a name says (flags,
-
 resolution, revision, digital, and a name-read language or group); the
 download's provenance, claims, bytes and manual corrections stand.
 
@@ -528,7 +519,6 @@ bindings, a 20 s budget, an "unmatched" sentinel when nothing reaches
 with `match.Similarity` and keeps the best as the proposal's
 `Confidence`, starting from 0, for the user to confirm (`bulkimport.go`).
 The 0.75–0.90
-
 manual-confirm band is not used in production; `Index`/`Lookup` are used
 only by the build-tagged manual tool `cmd/matchcheck` (`go run -tags
 matchcheck ./cmd/matchcheck`, never built by CI). `match.Normalize` also

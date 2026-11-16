@@ -152,7 +152,6 @@ facts or its release's claims say enough to judge it), the owner not pinned, the
 owner below the until-score ceiling, and the incoming file beating it by at
 least `max(MinUpgradeScore, 1)`. Automatic replacement never touches pinned
 holds; `force`, a person's explicit choice in review, overrides both the pin and
-
 the score rule.
 
 `DisplaceOwners` enforces one owner per collected version's book: when another
@@ -300,7 +299,6 @@ chapter cutoff (`SequenceNum > CutoffNum`; books without a known number are not
 cut). A per-book override replaces the computed scope. Availability is
 `released`, `upcoming` or `unknown` from the book's release date against today;
 unknown dates follow the version's `AcquireUnknown` policy. Monitoring is
-
 therefore gated by the series, edition, book, version, extras rule, cutoff, and
 individual overrides; retired or catalog-missing publications stop automation.
 
@@ -325,7 +323,6 @@ language that is not the edition's (and not `multi`) refuses the file; then
 `assetJudgement` runs `Profile.Judge` over the facts, and a broken
 required/refused rule or, when the facts are known, a summed score below
 `MinFormatScore`, refuses it too. The Files tab and file-matching dialog show
-
 exactly this: current custom-format score, effective profile, matched formats
 with their individual scores, `FactsKnown`, and the refusal reason; a zero score
 is displayed explicitly, and unknown facts are identified as potentially
@@ -353,7 +350,6 @@ file), `OnDisk` (books with any present file), `Wanted`, `Review` (`needs_review
 or `storage_unavailable` books), and the effective profile's name and source
 (`collected version` → `series` → `instance default`); plus `BooksOnDisk`
 (distinct books with a file on disk), `WantedCopies` (sum of wanted over all
-
 versions) and `ReviewFiles` (files needing review).
 
 `Progress` counts, for every series, `Owned` (books in state `owned` or

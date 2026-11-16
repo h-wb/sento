@@ -31,7 +31,6 @@ order. Each file runs in one transaction and is recorded in
 `MAX(version)` are applied, so a shipped file is never re-run and never
 edited. PostgreSQL starts at a consolidated baseline, `postgres/0013_init.sql`,
 which carries the schema as of SQLite 0013; from 0014 on, every migration
-
 exists in both dialect directories under the same number. Version numbers
 mean the same schema state in both dialects. The header comment of
 `sqlite/0001_init.sql` cites `specs/data-api.md`, which does not exist; the
@@ -368,7 +367,6 @@ rounds up to whole seconds so a retry never fires early. Reservations in
 `book_reservations` are released when a job reaches `failed`,
 `imported` or `cancelled`, and when a new `ReserveQueue` runs. A job of
 another series holding the same download (`DownloadShared`) is checked
-
 before dispatch. `ObserveDownload` records `download_progress`,
 `progress_at` (RFC 3339) and `observed_at` independently of status; a job
 is `stalled` when it is eligible, not transferring, and unobserved for

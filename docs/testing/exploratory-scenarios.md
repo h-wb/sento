@@ -21,7 +21,6 @@ sources keep their normal behavior. Root and nested directory fixtures are
 available in every scenario. Series 105/106 are searchable when controls are
 enabled. Three chapter releases have distinct page refs so attempts do not leak
 from one chapter into another. Existing attempts are intentionally retained
-
 when selecting another scenario; “first attempt” means since the last reset.
 
 - `GET /_control`: service marker, current/available scenarios, per-ref attempt

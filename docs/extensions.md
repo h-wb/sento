@@ -115,7 +115,6 @@ own 502, whose `Retryable` defaults to "408, 425, 429 or >= 500, unless
 unreadable" but follows the body's `retryable` flag when present, and whose
 `RetryAfter` comes from the `Retry-After` header or the body, parsed as
 seconds or an HTTP date. Two more rules live in
-
 `internal/provider/source_retry.go`: `sourceDead` treats 404, 410 or
 `unreadable` as "the source cannot give this release, now or later", and
 `sourceRetry` otherwise maps the error to retryable plus wait.
@@ -147,7 +146,6 @@ list itself is never read, because repos that moved on serve only
 5 minutes. `repos()` is the env-provided extras plus the list Sento pushed,
 deduplicated; the pushed list is volatile and Sento reconciles it. When a
 repo publishes a ready-built jar per extension it is used instead of
-
 converting the APK with dex2jar. Install picks the highest `versionCode`
 across all repos; the installed set lives in `installed.json` next to the
 jars under the data root.
@@ -160,7 +158,6 @@ the refs, then up to `pageConc` pages (default 3,
 `retryPage`: at most 4 attempts, every attempt passing the same per-source
 cooldown and rate limiter (default 4 requests/second per source,
 `SENTO_DOWNLOADS_PAGE_RATE`, burst of 1; 0 disables), at most 2 chapters in
-
 flight at once. A retryable failure sets a source-wide cooldown of
 `max(retryAfter, 2^attempt + jitter)`; a dead failure (404, 410, unreadable)
 stops immediately. Each page streams to a temp file whose extension is

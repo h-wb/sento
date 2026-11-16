@@ -464,7 +464,6 @@ bucket, burst 1, default 4 requests/second per source,
 `SENTO_DOWNLOADS_PAGE_CONCURRENCY`, default 3) and the source-wide cooldown: a
 failed attempt sets a cooldown of `Retry-After` (never shortened) or `2^attempt`
 seconds plus up to a quarter of that in jitter, whichever is longer, and every
-
 later page request of that source waits it out. Successful pages stay staged
 while a sibling retries.
 
@@ -490,7 +489,6 @@ Every download is a `queue_items` row with one of nine statuses
 oldest first: `queued`, `downloading`, `importing` and `retry_wait` (past its
 `retry_at`). Jobs waiting on a person (`needs_review`, `dispatch_unknown`) are
 left out of the runnable list. This diagram shows the queue statuses and every
-
 transition:
 
 ```mermaid
@@ -744,14 +742,12 @@ The interactive search behind "Search releases" lives in the book dialog
 by `applySearchEvent`), so each provider's results render as they land. Results
 split into Matches, Ruled out and All (`CandidateList`): Matches shows
 releases ready to grab or to review, sorted by score, number or size, filtered
-
 by text, site and packs/singles, 25 per page; Ruled out groups the rejected
 releases by reason and by who decides it (Not this book, Your profile, To
 confirm, Other), each row expandable to the full reason, with Unblock on
 blocklisted ones. An edition-wide search (more than one book in the plan)
 shows the acquisition plan instead (`AcquisitionPlan`): a shelf of the planned
 books with per-book states (Will download, Will upgrade, Available not
-
 selected, Found needs review, No seeders, Not found, Not checked), tickable
 releases, and Queued/Skipped/Failed outcomes after sending. Grabbing posts
 `grab` to the same search endpoint; the library queries (`['series']`,

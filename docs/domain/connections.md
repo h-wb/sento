@@ -60,7 +60,6 @@ Testing before saving: `POST /api/v1/settings/connections/test` runs
 `ConnectionTest {service, ok, error, detail}` each. Download clients are
 probed with a qBittorrent version call as `downloadClient:<id>`; the sidecar
 with a sources call, the detail reporting the source count (`3 sources`,
-
 `1 source`).
 
 ## Saving a connection: `Save` to the registry swap
@@ -148,7 +147,6 @@ are read live at search time, so edits apply without rewiring. Per-series
 overrides are merged on top by `store.EffectiveIndexer`; the routes are in
 [api.md](../api.md#indexers-and-extension-sources). Deleting a source entry
 garbage-collects its extension when no other entry references the package
-
 (`DeleteIndexerEntry` → `CleanupExtension`).
 
 ## Extension lifecycle
@@ -215,7 +213,6 @@ managed: `SetRepos` refuses and the config list wins. Otherwise `SetRepos`
 trims, drops empties, requires an `http(s)://` prefix, dedupes, pushes to
 the host first, and only then stores. `RepoStatus` pairs every stored URL
 with what the host currently gets from it: the repo's own name and usable
-
 extension count, or the error (including "not loaded on the host yet" and
 host-unreachable reasons).
 

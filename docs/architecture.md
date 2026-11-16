@@ -10,7 +10,6 @@ context, the package dependency graph, the service structs, startup and the
 background tasks, and the persistence layer. The browser app that talks to
 this API is described in [web.md](web.md). The [domain guides](domain/)
 describe the implemented data flows; the [specs](spec/) (`spec.md`,
-
 `decision-engine.md`, `parser.md`) record intent and decisions. The current
 edition/acquisition model is described in [Editions, units, collected
 versions, and files](domain/editions.md).
@@ -38,7 +37,6 @@ extension sources on Sento's behalf; Sento never talks to those sites
 directly. Prowlarr is used only for the Add Indexer browse assist, not for
 searching. qBittorrent runs wherever the user runs it; Sento reads its
 completed downloads through the path mappings when the storage is mounted
-
 elsewhere.
 
 ## Package dependency graph
@@ -289,7 +287,6 @@ best-effort after every tick. On `Start`, a task that never ran waits a full
 interval; one that ran resumes the remainder of its interval, with a minimum
 of 30s (`startupGrace`) so a restart does not fire every overdue sweep at
 once. A manual trigger (`POST /api/v1/system/tasks/{slug}/run`) while a tick
-
 is running makes the loop run once more when the tick finishes; the ticker
 cadence is unchanged. The System → Tasks page reads each loop's slug, name,
 interval, last run, duration, error, next run and running flag.
@@ -374,7 +371,6 @@ The review revision is a SHA-256 over the JSON-encoded rows of: `series`,
 `id`, `books_json`, `snapshot_json`, `release_key`, `external_id`),
 `profiles`, `custom_formats`, and `settings` keys `default_profile_id`
 and `media`. `refreshed_at` is skipped because a refresh stamps the series
-
 even when nothing changed. Because the hash reads `SELECT *`, it is taken
 by column name: never rely on column order.
 

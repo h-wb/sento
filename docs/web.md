@@ -95,7 +95,6 @@ followed within one second by a page's letter navigates to it, `g n` opens the
 global Add series dialog, `/` or Cmd/Ctrl+K opens Spotlight, `?` opens the
 shortcuts help (`shell/ShortcutsHelp.tsx`). Shortcuts are ignored while typing
 in an input, textarea or contenteditable element, and when a modifier key is
-
 held. The `⌘`/`Ctrl` prefix is chosen per platform in `navigation.ts`.
 
 `shell/useSpotlightActions.tsx` builds the Spotlight actions: Add series, every
@@ -166,7 +165,6 @@ void response, and on a non-OK status throws an `Error` whose message is the
 response body's `error` field, or `HTTP <status>` when the body has none
 (`readError`). One `api` object is assembled in `api/index.ts` from one module
 per resource, and the generated types are re-exported alongside it so
-
 components import both from `./api`:
 
 | Module | Covers |
@@ -184,7 +182,6 @@ response body as NDJSON, one event per line. The events are `sites` (which
 providers are searching), `batch` (one provider's results, possibly with an
 error or a fresh provisional plan), `done` and `error`. If the stream ends
 without a `done` or `error`, the client raises "Search ended before all
-
 sources replied…" so an incomplete result is never mistaken for a complete
 one. Review requests are batched in `request.ts`: `reviewBatchSize` is 500 and
 `batched()` slices long id lists, so previews and bulk actions share the
@@ -279,7 +276,6 @@ closes immediately when the form is clean, and asks first ("Discard unsaved
 changes?") through `useConfirmAction` when `dirty` is set. `dirty` also
 registers with the global `UnsavedChangesProvider` (`useUnsavedChanges`), which
 blocks route changes (`useBlocker`) and tab close (`useBeforeUnload`) while any
-
 form is dirty, with the same confirm dialog. `useEditor` gives an editor its
 `run`/`busy`/`error` triple: `run` sets busy, keeps the error message to show
 in the dialog (via `errorMessage`, without the "Error: " prefix) and always

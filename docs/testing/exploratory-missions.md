@@ -86,7 +86,6 @@ other, then change the policy after importing a file or queuing a job. Verify
 search eligibility, rejection owner/reason, existing-file fulfillment and
 Wanted agree with the current profiles. A force action must not bypass hard
 profile gates. Where profiles overlap, do not assume separate cards promise
-
 exclusive file ownership; inspect what the dialog explains.
 
 Change inherited versus explicit profiles, chapter cutoff (including zero),
@@ -103,7 +102,6 @@ actual paths and ComicInfo, then rescan twice. Coverage and file identities
 must remain stable; no duplicate files or invented ownership. Copy a tagged
 fixture into a separate worktree-local import folder and import it: Sento
 should identify its series/edition from metadata, including into an existing
-
 series. Explicitly record whether a test used Sento tags or only filenames.
 
 Exercise a boxset modeled as unit 0 containing 1/2 plus an extra, an overlapping

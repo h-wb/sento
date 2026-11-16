@@ -161,7 +161,6 @@ one-line summary of its planned outcome, expanded on demand; a single file or
 a one-page pack opens expanded. Both endpoints of each named range must be
 books of the edition; a range extending past it stays for review instead of
 being clipped. Submission rechecks current review state and serializes file
-
 mutations with import, cleanup and organization. Large packs use bounded batches;
 each decline batch is transactional.
 
@@ -204,7 +203,6 @@ change time) with the fingerprint it read under it, and reads the archive again
 only when the live signature differs. Userspace cannot set the change time, so
 a rewrite that restores the modification time still changes the signature. As
 with git's index, a signature is trusted only once the archive's timestamps are
-
 two seconds older than the stat, so a later write cannot share a coarse
 filesystem timestamp. The signature is read through an open file, which makes
 NFS revalidate cached attributes. Platforms without inode metadata always
@@ -218,7 +216,6 @@ between rejects the token. Apply judges each signature against the preview's
 time, not its own, so an unchanged archive that settles in between keeps its
 token. Imports and scans record the signature with the fingerprint they read,
 and a preview that has to fingerprint an archive records the signature it read
-
 under the confirmed hash (the same rule a scan applies), so only the first
 preview of an archive, or one whose bytes changed, reads its pages. Review
 preview/apply requests sit outside the global 120 s API timeout,
@@ -242,7 +239,6 @@ replacing its selection in the batch does not bypass this protection. Review
 trash is for unused archives; previously selected copies can be kept and then
 reassessed for cleanup after their selection changes are saved. The one-file editor
 does that for a person who unticks every edition and picks the trash: it saves
-
 the file as unused, previews again and only then asks for the trash move
 (`trashWhenUnused` on the plan says nothing else stands in the way).
 

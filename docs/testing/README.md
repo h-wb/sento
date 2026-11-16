@@ -54,7 +54,6 @@ creates its own schema on the shared server (`sento_test_<pid>_<random>`),
 scopes the connection to it with `options=-csearch_path=<schema>`, runs the
 full PostgreSQL migration set there, and drops the schema with `CASCADE` on
 cleanup. The same Go suite therefore doubles as the dialect conformance
-
 run: `db.Open` migrates whatever schema its URL points at. PostgreSQL 16 or
 later is required (migration 0030 uses `IS JSON OBJECT`); mise pins 17.
 

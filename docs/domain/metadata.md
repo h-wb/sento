@@ -73,7 +73,6 @@ default, so `ONE PIECE` beside `ONE PIECE Colored`) and `SeriesGroup` =
 the copies; folders keep editions apart (spec §11.2). A reader that files
 by ComicInfo rather than folders (Kavita) keeps copies apart only when the
 series name says which is which, so an edition can set its own template
-
 (`{Series Title} {edition} {version}`, or a fixed name); an organize pass
 rewrites the files. A template names a copy, not one book, so it cannot use
 `{volume}`/`{chapter}`/`{group}`/`{isbn}`, nor `{Reader Series}`, which is
@@ -93,7 +92,6 @@ publisher or platform (the `official` flag). Everything else is taken to be
 a copy of the edition it was matched to: a scan or rip of the published
 volume is published material. Sento has no evidence of who colored a
 colored release, so `Colorist` is never written; `flags:colored` says only
-
 that it is colored.
 
 ## The `Notes` line
@@ -129,7 +127,6 @@ than deflated), one common top folder flattened, junk entries and
 duplicate names dropped, and `ComicInfo.xml` replaced. The result is
 written to a `.sento-import-*` temp in the destination folder, chmod 0644,
 then renamed onto the destination, so a reader never sees a half-written
-
 file. An archive with no image members is refused.
 
 This diagram shows one `Process` run:
@@ -195,7 +192,6 @@ a local edition, its name), language and ledger; the books by number, `work`
 telling apart two books that share one. Its facts are the release's: group,
 language, flags, provider and site, so a profile judges it as it judged the
 download. When any of that does not resolve (an edition renamed or merged
-
 since), the file is matched by its name, as any other.
 
 Importing a library reads it first too (spec §11.4, step 1): a folder
@@ -210,7 +206,6 @@ stops after 3 that agree. Each must carry Sento's own provenance in its
 `Notes` (`sento:v1`); the proposal's title is those archives' `Series`
 field, which Sento itself wrote. Archives that disagree make the folder
 fall through to name matching. ComicInfo written by other tools is not
-
 read for identification; see the correction under
 [spec §11.4](../spec/spec.md#114-existing-library-import--rescan-d14).
 

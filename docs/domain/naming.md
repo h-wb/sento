@@ -31,7 +31,6 @@ With the defaults a volume lands at
 folder per series. The `{type}` token puts the split inside the series
 instead (`<series>/Volumes/…`). Scans cover both folders, and storage
 availability is judged per folder, so an unreachable chapter tree does not
-
 block volumes.
 
 **The copy's folder** is the series folder template rendered for that
