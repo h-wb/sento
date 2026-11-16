@@ -1,6 +1,7 @@
 # Domain guides
 
-These guides describe the implemented model. Start with editions: the meaning
+These guides describe the implemented model. [How Sento works](../README.md#how-sento-works)
+summarizes the end-to-end path first. Start here with editions: the meaning
 of a book, version and owned file determines how search and import work.
 
 - [Editions, books, versions and files](editions.md): identity, collection and ownership.

@@ -31,6 +31,7 @@ With the defaults a volume lands at
 folder per series. The `{type}` token puts the split inside the series
 instead (`<series>/Volumes/…`). Scans cover both folders, and storage
 availability is judged per folder, so an unreachable chapter tree does not
+
 block volumes.
 
 **The copy's folder** is the series folder template rendered for that
@@ -224,8 +225,8 @@ show an edition as its own series, give it its own name in Edit edition.
 Chapters kept apart from volumes by top folders belong in a second Kavita
 library.
 
-The page's tree draws three sample books — a volume, the same volume
-collected again as Colored, and a chapter — level by level, each level
+The page's tree draws three sample books (a volume, the same volume
+collected again as Colored, and a chapter), level by level, each level
 naming the setting that makes it (`service.PreviewPaths`). Below it, every
 ComicInfo field Sento writes is listed with where its value comes from
 (`mediafile.WrittenFields`; a test keeps it in step with the struct).

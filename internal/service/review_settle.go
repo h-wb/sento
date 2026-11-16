@@ -62,7 +62,7 @@ func (im *Importer) reviewedJobComplete(ctx context.Context, item store.QueueIte
 }
 
 // SettleReviewedJobs finishes the series' jobs held for review once no
-// file they delivered still waits for it (propose-dont-ask.md §A2): the
+// file they delivered still waits for it (docs/domain/import-review.md, "Settling jobs"): the
 // last confirmation closes the job, not another run of the importer.
 // History says how many files were confirmed and which planned books no
 // file turned out to hold; those are wanted again.

@@ -6,6 +6,7 @@ content fingerprint, and which books it is linked to. This page covers how
 files get identified, how scans read the disk, how presence is checked, how
 an existing library is imported in place, and how files are removed, trashed,
 restored and purged. Downloads landing in the library are
+
 [import and review](import-review.md); folder and name templates are
 [naming](naming.md).
 
@@ -44,6 +45,7 @@ is rewritten: `Thumbs.db`, `.DS_Store`, `desktop.ini`, `._*` resource forks
 and `__MACOSX/` members. Sento keeps any book file whose extension is an
 archive (`.cbz` `.zip` `.cbr` `.rar`) or a document (`.pdf` `.epub`);
 only archives can be rewritten into a tagged CBZ (`.7z`/`.cb7` are read as
+
 books but never rewritten).
 
 Fingerprinting decompresses every page, which is slow, so Sento records a
@@ -52,6 +54,7 @@ time and inode change time, read through an open file descriptor so NFS
 revalidates cached attributes. A signature is trusted only once the archive's
 timestamps are at least 2 seconds old (`racyStat`), the same rule as git's
 index, so a later write cannot share a coarse filesystem timestamp. Userspace
+
 cannot set the change time, so restoring the modification time after a rewrite
 still changes the signature. Platforms without inode metadata return an empty
 signature and always fingerprint.
@@ -63,12 +66,14 @@ hour is removed.
 ## Scanning
 
 A scan links archives where they are: nothing is moved, renamed or rewritten.
+
 `ScanSeriesFolder` walks the given folder (or, by default, everywhere the
 series lives: its own folder, the separate chapter folder when chapters are
 kept apart, and its edition/version sibling folders), and `LinkFolder` links
 a folder outside the series' own while the series keeps its folder. A series
 without a folder adopts the one scanned. Scanning a folder inside
 `.sento-trash` is refused until the files are restored, and the trash folder
+
 itself is skipped while walking.
 
 This diagram shows what one scanned file goes through; the rules below give
@@ -102,6 +107,7 @@ fingerprint, or, for rows without one, the size differs or the file was
 modified after it was last checked. Sento's own retagging trips this too and
 is told apart by the fingerprint, which ignores metadata; the row then gets
 its size and signature refreshed. Different pages at a known path forget the
+
 old row entirely, manual confirmations included, and the file is matched
 anew.
 
@@ -111,6 +117,7 @@ Only what a name says is replaced: flags, resolution, revision, digital mark,
 and a name-read language or group. A download renamed at import counts its
 recorded name only while that name still carries the group and digital mark
 the facts hold, so a template's own brackets never read as a group.
+
 `relink` gives a downloaded file that names no download back its release link
 from the series' download of the same release name, when exactly one release
 goes by that name.
@@ -121,6 +128,7 @@ editions, chapter files to the chapter editions, monitored ones first. The
 editions the name fits are narrowed by `shelf.prefer`; exactly one fitting
 edition takes the file, and the books come from `resolveBooks`, with an
 ambiguous shared number leaving the file for review. The link uses the
+
 edition's default version. A file Sento tagged itself is linked by its
 embedded Notes line first (`linksFromProvenance`): the edition by MangaBaka's
 edition ID or the local edition's name in the file's language, the books by
@@ -161,12 +169,14 @@ flowchart TD
 ```
 
 A folder whose path is already a series' path is proposed as that series.
+
 Otherwise `taggedSeries` walks the folder reading at most 20 `.cbz` files and
 stops after 3 that agree: archives Sento tagged name their series exactly in
 the `Notes` line, which makes re-adoption after a reinstall exact. Failing
 that, a `[mangabaka-N]` bracket in the folder name is definitive. Otherwise
 the folder name is cleaned (brackets stripped, `_` and `.` become spaces) and
 searched; the top 5 candidates are returned with the best `match.Similarity`
+
 score as the proposal's confidence. Unreadable roots and trash folders are
 refused.
 
@@ -181,11 +191,13 @@ scanned.
 `CheckFilePresence` records `present`, `missing`, `unavailable`, or `unknown`
 presence. It runs during scans and before acquisition checks, never on
 ordinary page reads, and `POST /series/{id}/check-files` runs it on demand.
+
 A file answers to the top folder it lives under: the series' own folder, its
 chapter folder, or the edition or version folder beside them, whatever book
 folders nest inside. An unreadable or missing root makes every file under it
 `unavailable` with the error, which blocks automatic acquisition for those
 files; a missing archive under a healthy root is `missing` and stays wanted.
+
 A path that is a directory where an archive was expected is `unavailable`.
 
 Offer claims and per-file observed facts are stored separately. Filename
@@ -193,18 +205,21 @@ observations take precedence over advertised language, group and quality;
 stream imports retain offer evidence. Facts read from a file's own name are
 stamped with the parser revision (`parse.Version`); a scan re-reads the name
 those facts came from with the current parser when the stored stamp is older.
+
 Only what a name says is replaced (flags, resolution, revision, digital, and
 a name-read language or group); the download the file came in, its site,
 profile, score and claims, and its bytes, fingerprint, links, presence,
 review state and manual corrections all stand. Facts that were not read from
 a name (an offer's, an embedded `Notes` line's) are left alone, and so are
 those of a download renamed at import, whose recorded name no longer says
+
 what was read: a download's name counts only while it still carries the group
 and digital mark the facts hold, and its re-read never adds a group or
 language (a template's own brackets would read as one). A downloaded file
 that names no download at all (the 0.7.0 re-read rebuilt such files' facts
 and emptied their claims) gets its release key and claims back on a scan
 from the series' download of the same release name, when one release goes by
+
 that name. Judging a file falls back to its release's claims for the fields
 its own facts do not carry, so a copy organized to a bare name
 ("Volume 1.cbz") keeps the digital, group and resolution score its release
@@ -214,12 +229,14 @@ scores from its filename alone.
 A person can correct what a file is: its language, its group and each of its
 flags (colored, digital, scan and the rest of `store.FactFlags`), in the file
 dialog, or for several files at once from the Files table or from an edition.
+
 Each correction is marked as theirs (`sources`: `manual`, per flag
 `flag:<name>`). A corrected flag is judged at once, is kept by every re-read
 and rescan, and is not put back by what the release claimed. Retrying or
 scanning identical bytes preserves manual corrections and content
 confirmation. Group contradictions remain visible for review. Manual
 corrections take precedence even when a language or group is explicitly
+
 cleared. Review proposals judge the same combined file and release evidence
 as ownership and upgrade scoring.
 
@@ -231,6 +248,7 @@ select files explicitly (1 to 500 per run). Turning Collect off or pausing a
 series does not move files. Candidates include reviewed unmapped files,
 files used only by uncollected editions, and copies no collected version
 selects. A file still selected by any collected version, a pinned asset
+
 (including a deselected pin), an unfinished file review, an asset from an
 active download, or a file whose presence is not `present` is protected, each
 with its reason. Shared assets are judged as a whole, across their edition
@@ -244,6 +262,7 @@ retains file identity, observed facts, intrinsic contents and version
 selections, but excludes the file from ownership, review, scans and
 organization while it is in trash. Download-client payloads and other
 hardlinks remain intact; selected archive sizes do not promise immediate
+
 disk-space savings. Only regular files are moved, without overwriting
 another path or rewriting archive bytes: the move is link-then-unlink, and the
 trash folder must be a regular directory, not a symlink. A journal row
@@ -272,6 +291,7 @@ recording completion. A changed original returns to review without moving
 its new bytes; completed moves leave the retry batch. Pending moves remain
 restorable and their deletion is paused. Retained archives whose fingerprint
 changes are protected from both manual and expired-trash deletion until the
+
 discrepancy is resolved. Recovery pages through pending intents by file ID,
 advancing past failed moves so a blocked batch cannot prevent later archives
 from being recovered. Each new queue pass retries earlier failures. Failures
@@ -288,6 +308,7 @@ all active files are gone. Restore verifies retained bytes and refuses an
 occupied original path (or one recorded by another file row). It restores
 mappings and leaves collection preferences unchanged, and clears a trash
 review action back to keep. Permanent deletion requires confirmation, or
+
 happens after expiry during the daily `housekeeping` task
 (`PurgeExpiredTrash`), which never falls back to deleting the original
 library path. Files whose interrupted move still leaves an original are
@@ -303,6 +324,7 @@ failing a removal that already happened. A series with trash entries refuses
 removal until the trash is restored or emptied. With `deleteFiles`, every
 recorded file is deleted from disk and the folders that leaves empty are
 pruned, inside the library only, never the library root itself. With
+
 `removeDownloads`, each torrent the series added is removed from its client
 with its data, unless another series shares the download or the client is
 not configured; those are listed as kept. Imports are hardlinks, so deleting
@@ -321,21 +343,25 @@ stopped. `ReconcileLibraryRoot` records the first root, or rewrites every
 stored path when it changes, in one transaction: `series.path`,
 `series.chapter_path`, `root_folders.path`, `files.path` and
 `file_trash.trash_path`. Only paths inside the old root are rewritten, matched
+
 by path components, so `/books-old` is not inside `/books`. Before any
 reference changes, every physical destination (files and trash entries) is
 validated: the archive must exist and be a regular file. Paths outside the
 old root stay unchanged, and already-missing files keep their missing state.
+
 See [moving the library](../installation.md#moving-the-library).
 
 ## Concurrency: what `Importer.mu` serializes
 
 One mutex on the `Importer` serializes queue passes and every file mutation:
+
 review apply and bulk actions, organize, cleanup and trash, removal, and
 upgrades. Decisions and disk operations cannot interleave, so a cleanup
 preview cannot race a review commit, and two passes cannot move the same
 archive. All of these also take the database's edition locks inside their
 transactions, which is what makes a stale preview safe to reject: the
 review revision, the cleanup eligibility check and the trash journal are all
+
 rechecked under those locks before writing. `ProcessQueue` holds `mu` for the
 whole pass; `ApplyReviewChoices`, `ApplyUpgrades`, `CleanupFiles`,
 `RestoreTrashedFile`, `PurgeTrashedFile`, `RemoveSeries` and `DeleteFile`

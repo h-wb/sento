@@ -13,7 +13,8 @@ import (
 )
 
 // ReviewItems is the review inbox with a proposal on every file whose own
-// name resolves it (docs/reviews/propose-dont-ask.md §A1). Proposals are
+// name resolves it (docs/domain/import-review.md, "The review inbox and
+// proposals"). Proposals are
 // read against today's editions and recorded only when accepted.
 func (l *Library) ReviewItems(ctx context.Context, seriesID int64) ([]store.ReviewItem, error) {
 	items, err := l.store.ReviewItems(ctx, seriesID)

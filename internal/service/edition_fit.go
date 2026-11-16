@@ -11,7 +11,7 @@ import (
 )
 
 // Whether a release belongs to an edition is decided here and nowhere
-// else (docs/reviews/edition-rules.md). An edition is a numbering; what a
+// else (docs/domain/editions.md). An edition is a numbering; what a
 // name says about it is read by parse.ReadEdition, for release names and
 // edition names alike. A release is judged against one edition of a
 // series, in view of the series' other editions: the shelf.

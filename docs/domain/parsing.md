@@ -6,6 +6,7 @@ release, file or chapter name; `parse` turns one name string into
 structured facts, and `match` resolves a parsed title back to a library
 series. The parser is the highest-risk component in Sento: the input
 space is two decades of inconsistent human naming conventions. The
+
 contract and decisions behind it are in [parser.md](../spec/parser.md).
 
 ## In the code
@@ -48,6 +49,7 @@ their `BarePadded` padding fact, `Season`, `Year` and `YearRange`,
 `Group`, `Languages` and the folded `Language` (`"multi"` when more than
 one language is claimed), `ContentType` (`manga` by default), `Edition`
 hints, the `Claim` the name makes about its numbering, `Quality` hints,
+
 `Anchored` and `TitleLeftover`, the flags `Complete`, `CompleteInferred`,
 `Ongoing` and `Extra`, the release `Version`, `Confidence`, and the
 `Trace`. `Season`, `Year`, `YearRange`, `AltTitles` and `Ongoing` are
@@ -56,8 +58,8 @@ parser-internal facts: nothing outside `internal/parse` reads them.
 ## The pipeline
 
 `Parse` and `ParseAnchored` share one pipeline; anchored mode only adds
-a title-stripping step at the front. The stages run in this order, each
-consuming what the previous one blanked out:
+a title-stripping step at the front. This diagram shows the stages of one
+parse, in running order, each consuming what the previous one blanked out:
 
 ```mermaid
 flowchart TD
@@ -77,8 +79,7 @@ flowchart TD
     L --> M["torrent only: detectMedia; then scoreConfidence"]
 ```
 
-This diagram shows the stages of one parse, in running order; the text
-below fills in each stage.
+The text below fills in each stage.
 
 ## preClean (`preclean.go`)
 
@@ -88,12 +89,14 @@ extension (`.cbz`, `.cbr`, `.cb7`, `.zip`, `.rar`, `.7z`, `.pdf`,
 `.5` in "v1.5" survives), then canonicalizes: `_` → space, full-width
 → ASCII (`width.Fold`), Unicode NFKC (visually identical characters
 become byte-identical), whitespace collapsed to single spaces. There is
+
 no path split: the whole input string, path segments included, is the
 name. Every later stage assumes this boring representation.
 
 ## Segments (`segment.go`)
 
 `segments` splits the cleaned name into delimited runs and free text:
+
 `[..]`, `(..)` and `{..}` each form one segment whose inner text is
 kept with its delimiter and its order of appearance. The scan is flat,
 no nesting: a segment ends at the first matching closer, and an opener
@@ -125,23 +128,38 @@ is a year, a year range, or a version tag with no resolution (a bare
 | Raw | `raw` | `Edition.Raw` and `Language` `ja` unless already set |
 | Resolution | token forms below | `Quality.Resolution` |
 
-Language vocabulary (`languageTags`, whole-segment or scanned in
-compound segments): `eng`/`english`/`en` → `en`; `fr`/`vf`/`french`/
-`fre` → `fr`; `jp`/`ja`/`jap`/`japanese` → `ja`; `es`/`esp`/`spanish` →
-`es`; `pt-br`/`brazilian portuguese` → `pt-BR`, `pt` → `pt`; `de`/
-`german`/`deutsch` → `de`; `it`/`italian`/`italiano` → `it`; `ru`/
-`russian` → `ru`; `pl`/`polish` → `pl`; `kr`/`ko`/`korean` → `ko`;
-`zh`/`chinese` → `zh`; `multi`/`multilingual` → `multi`. In free text,
+Language vocabulary (`languageTags`, whole-segment or scanned in compound
+segments):
+
+| Language | Tags |
+| --- | --- |
+| `en` | `eng`, `english`, `en` |
+| `fr` | `fr`, `vf`, `french`, `fre` |
+| `ja` | `jp`, `ja`, `jap`, `japanese` |
+| `es` | `es`, `esp`, `spanish` |
+| `pt-BR` | `pt-br`, `brazilian portuguese` |
+| `pt` | `pt` |
+| `de` | `de`, `german`, `deutsch` |
+| `it` | `it`, `italian`, `italiano` |
+| `ru` | `ru`, `russian` |
+| `pl` | `pl`, `polish` |
+| `ko` | `kr`, `ko`, `korean` |
+| `zh` | `zh`, `chinese` |
+| `multi` | `multi`, `multilingual` |
+
+In free text,
 unambiguous words (`french`, `vf`, `vostfr`, `english`, `japanese`,
 `spanish`, `korean`, `chinese`, `german`, `italian`, `portuguese`,
 `russian`, `polish`, `multi`) count anywhere; bare two-letter codes
 (`FR`, `JP`, `JA`, `KR`, `CN`, `RU`, `PL`) count only as standalone
 UPPERCASE words (`sceneLangCodes`); `EN`/`DE`/`ES`/`IT` stay out because
+
 they collide with shouting-case title words. A word followed by `name`,
 `names`, `honorific`, `honorifics` or `sfx` ("Japanese Names", "JP
 Honorifics", "Korean SFX") is a note about retained source style, not a
 language claim, and never becomes the group; every other occurrence in
 the same name still counts ("Japanese Names, Japanese" claims `ja`).
+
 `pt-BR` suppresses a plain `pt` in the same scan. More than one
 distinct language sets `Language` to `multi` and collects them sorted in
 `Languages`; a conflicting second segment fold also yields `multi`.
@@ -152,6 +170,7 @@ Resolution tokens must match a whole token, so group names like
 directly; integer `K` notation multiplies by 1024 (`2K` = 2048,
 `4K` = 4096, `10K` = 10240). A `-Repack` suffix (`1800px-Repack`,
 `2k-Repack`) also sets `Version` to at least 2 without replacing a
+
 higher explicit revision. The highest stated resolution wins; names
 without a resolution tag keep 0. Resolution tags never become the group
 or book numbers. These facts feed custom format matching (High
@@ -203,6 +222,7 @@ name the same one. In a delimited segment, a color word claims color
 only when the whole segment is a color tag or carries the `Digital
 Colored Comics` imprint; otherwise the color words are masked
 (`maskGroupColor`), so a group name like `(Colored Council)` is the
+
 group, not a color claim. In free text the words claim color wherever
 they appear, because imprints sit mid-name. `scanTags` folds the claim
 into `Edition`: regroupings set `Omnibus` (or `Deluxe` for the `deluxe`
@@ -226,20 +246,22 @@ key), `Color` → `Colored`, `Box` → `BoxSet`.
 ### The number domain (`num.go`)
 
 `Num` is a fixed-point hundredths integer: chapter 34.5 = `Num(3450)`.
+
 No floats anywhere (exact comparisons, exact DB round-trips); the only
 float lives at the JSON boundary, immediately rounded. Alpha
 sub-chapters follow the Mihon convention: `4a` → 4.1
 (`alphaSuffixNum`: a→+10 … i→+90). `Range{From, To}` is inclusive; a
 single number is `From == To`. Custom JSON renders `3450` as `34.5` and
 ranges as `[from,to]`. Values above 2^40 and negative values are
+
 rejected at parse (`parseNum`), so ranges always satisfy `0 ≤ From ≤
 To`.
 
 ### The extraction cascade (`numbers.go`)
 
 `extractNumbers` runs over a mutable buffer, consuming each match by
-blanking it, in this fixed order. Later passes only see what earlier
-ones left:
+blanking it. This diagram shows the number-extraction cascade in the fixed
+order the patterns run; later passes only see what earlier ones left:
 
 ```mermaid
 flowchart TD
@@ -252,9 +274,6 @@ flowchart TD
     G --> H["bare numbers in the remainder, only when not glued to a letter, a dot or a #"]
     H --> I["collected into Bare, padded ones also into BarePadded"]
 ```
-
-This diagram shows the number-extraction cascade in the order the
-patterns run.
 
 Rule tables, with examples from `internal/parse/testdata/corpus/`:
 
@@ -293,7 +312,8 @@ overlapping ranges fuse, and consecutive whole numbers fuse
 Bare numbers left over from the cascade get their axis from the channel
 priors, in this order; the first rule that fires claims the number as a
 chapter, and whatever remains stays in `Bare` with its axis deliberately
-unresolved (nothing downstream reads `Bare` for book coverage):
+unresolved (nothing downstream reads `Bare` for book coverage). This diagram
+shows the bare-number resolution cascade:
 
 ```mermaid
 flowchart TD
@@ -310,10 +330,11 @@ flowchart TD
     G -->|"no"| H["stays in Bare, axis unresolved"]
 ```
 
-This diagram shows the bare-number resolution cascade; "far above" is
+"Far above" is
 strictly more than twice the highest marked volume, so `v05` with a
 bare `11` resolves as chapter 11, and a 4-digit number in free text
 becomes a chapter through the ≥1000 rule. The padding fact survives:
+
 numbers written zero-padded to three or more digits (only digits before
 the decimal point count, so `01.0` is not padded but `001.0` is) are
 kept in `BarePadded` for whoever resolves the axis: `Solo Leveling
@@ -362,6 +383,7 @@ sets `Complete` and `CompleteInferred` ("Solo Leveling (2021-2026)
 (Digital) (1r0n)"). A bare numberless title is more likely a one-shot
 than a pack, so no year range means no pack. The search funnel adds a
 second inferred-pack rule for anchored, leftover-free torrents on the
+
 volume ledger (`funnel.go`), offered for review but never grabbed
 automatically (`rejected.pack_unverified`).
 
@@ -373,6 +395,7 @@ folded with `foldRunes` (case and diacritics folded 1:1 rune-for-rune,
 so byte offsets stay valid for blanking; that is why it is not
 `match.Normalize`), located as a whole-token sequence, and the longest
 match by joined token length wins ("Berserk of Gluttony" beats "Berserk").
+
 The title is blanked in place and its last rune replaced by a private
 use mark, the edition claim is re-read without it, and the rest parses
 normally: numbers inside titles ("Mob Psycho 100", "86", "Steins;Gate 0")
@@ -385,6 +408,7 @@ leftover stopwords (edition/quality words like `digital`, `colored`,
 dual-title part that overlaps another known title at ≥75% of the shorter
 token count is excused ("Only I Level Up / Solo Leveling" leaves nothing).
 What remains signals a different work that merely contains the title:
+
 "WANTED! Eiichiro Oda Before One Piece" → leftover "wanted eiichiro oda
 before"; "One Piece Party - Deluxe Edition" → "party". After the anchor,
 an edition marker (`deluxe`, `omnibus`, `digital`, `colored`, `full
@@ -436,6 +460,7 @@ from the name of the listing it sits in ("Vol. 001 (Digital)" inside
 color edition and written name (only when the release's own claim names
 nothing), color and box, the edition hints (OR), the verbatim edition
 names (merged), the quality hints (OR, resolution max), the group, and
+
 the language, each only where the release itself is empty. What the
 release says of itself always wins. The search funnel calls it for
 source releases that carry a listing name (`funnel.go`): `rc.Parse.Inherit(parse.ParseAnchored(cand.Source.Listing, channel, run.titles))`.
@@ -448,8 +473,10 @@ file whose filename-derived facts were read from its name
 output for existing names may change: a scan re-reads the name those
 facts came from with the current parser when the stored stamp is older
 (`scan.go`, `rederiveFacts`), replacing only what a name says (flags,
+
 resolution, revision, digital, and a name-read language or group); the
 download's provenance, claims, bytes and manual corrections stand.
+
 Revision 2 exists because 0.7.0 stamped reviewed files as read by
 revision 1 without re-reading them. `Result.Mentions(phrase)` reports
 whether the cleaned name contains a phrase as whole words (phrase must
@@ -474,7 +501,8 @@ token count, so extra tokens dilute the score. Equal strings score 1.
 for exact normalized hits and otherwise returns every entry at or above
 `ManualThreshold` (0.75), sorted by score descending with ties broken to
 the longest title (the containment rule: "Berserk of Gluttony" beats
-"Berserk"). Thresholds: `AutoThreshold` 0.90, `ManualThreshold` 0.75.
+"Berserk"). Thresholds: `AutoThreshold` 0.90, `ManualThreshold` 0.75. This
+diagram shows the title-matching flow from a parsed guess to a decision:
 
 ```mermaid
 flowchart TD
@@ -489,15 +517,13 @@ flowchart TD
     H -->|"no"| J["no match"]
 ```
 
-This diagram shows the title-matching flow from a parsed guess to a
-decision.
-
 Where production uses it: binding auto-resolution and bulk import call
 only `match.Similarity` + `match.AutoThreshold`: a source auto-binds at
 score ≥ 0.90 against any known title (at most 3 queries, at most 5
 bindings, a 20 s budget, an "unmatched" sentinel when nothing reaches
 0.90, `search_bindings.go`), and bulk import compares the same score
 against each file's stored confidence (`bulkimport.go`). The 0.75–0.90
+
 manual-confirm band is not used in production; `Index`/`Lookup` are used
 only by the build-tagged manual tool `cmd/matchcheck` (`go run -tags
 matchcheck ./cmd/matchcheck`, never built by CI). `match.Normalize` also

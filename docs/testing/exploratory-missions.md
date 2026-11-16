@@ -5,11 +5,12 @@ not a rigid click script. Investigate deviations and vary the action order.
 Record individual subcases; a mission is not passed if a required subcase is
 untested. A full offline pass covers M1–M6. Real-source checks are supplemental.
 
-## M1 — Find the right release and source matches
+## M1: Find the right release and source matches
 
 Use Directory Kingdom (105), Scenario Source, and `nested-listings`.
 Search its volume edition from the UI. Inspect the root and both child matches,
 including `!(Digital) [1r0n]` and `!ED-Japanese Names (Digital) [1r0n, Bingbong]`.
+
 The adapter deliberately repeats a child: Sento must retain distinct folders
 without duplicate bindings or releases. Inspect profile scoring and acceptance;
 a root scan must not hide the Digital candidates. “Japanese Names” describes
@@ -19,11 +20,12 @@ Disable one match, search again and reload: the other matches still work and
 the disabled match stays disabled. Search twice; bindings must not accumulate.
 Try a near-title collision (Stub Blade versus Stub Blade: Afterstory), and an
 explicitly conflicting language/edition using a local profile/edition.
+
 Record fit, ambiguity and rejection explanations. No automatic grab may rely on
 an ambiguous edition match. This simulator checks the adapter protocol; raw
 Madokami HTML traversal is a separate JVM/real-source check.
 
-## M2 — Understand and recover from a source failure
+## M2: Understand and recover from a source failure
 
 Use Recovery Chapters (106). Collect chapters from 1, search Scenario Source,
 and choose one chapter. Use a new chapter/ref or a fresh reset for each fault:
@@ -54,7 +56,7 @@ blocklist a source release. Do not claim successful pages persist across an
 entire failed chapter attempt or process restart: currently they survive
 individual page retries; an exhausted chapter attempt cleans them up.
 
-## M3 — Send a torrent to the intended client
+## M3: Send a torrent to the intended client
 
 Add two clients: regular (`/qbit`) and VPN (`/qbit-vpn`), `stub` credentials,
 `sento-test` category. Add a fake Nyaa Torznab indexer at `/torznab/api`, English,
@@ -76,7 +78,7 @@ versus remove torrents, correct client and exact hashes. Inspect deletion
 journal flags. Fake torrents carry no payload; mark actual file-deletion
 verification under M5, not as proved by a successful fake-client response.
 
-## M4 — Keep editions and profile-based copies coherent
+## M4: Keep editions and profile-based copies coherent
 
 Use Standard and a local Deluxe edition with different numbering; collect the
 same edition with two profiles. Require a group/format in one, refuse it in the
@@ -84,6 +86,7 @@ other, then change the policy after importing a file or queuing a job. Verify
 search eligibility, rejection owner/reason, existing-file fulfillment and
 Wanted agree with the current profiles. A force action must not bypass hard
 profile gates. Where profiles overlap, do not assume separate cards promise
+
 exclusive file ownership; inspect what the dialog explains.
 
 Change inherited versus explicit profiles, chapter cutoff (including zero),
@@ -92,7 +95,7 @@ pending, missing, upcoming and unknown. Remove one card while keeping another;
 then test the last-card behavior. Reload and restart to verify saved intent.
 Try One Piece-like long lists, descending/ascending order, filters and mobile.
 
-## M5 — Import, organize, rescan and remove files without losing them
+## M5: Import, organize, rescan and remove files without losing them
 
 Use successful source imports to obtain real local CBZs. Keep Standard and
 Deluxe and chapter/volume paths separate. Preview naming and organize, inspect
@@ -100,6 +103,7 @@ actual paths and ComicInfo, then rescan twice. Coverage and file identities
 must remain stable; no duplicate files or invented ownership. Copy a tagged
 fixture into a separate worktree-local import folder and import it: Sento
 should identify its series/edition from metadata, including into an existing
+
 series. Explicitly record whether a test used Sento tags or only filenames.
 
 Exercise a boxset modeled as unit 0 containing 1/2 plus an extra, an overlapping
@@ -115,7 +119,7 @@ ability to ingest the naming is judged from the output layout/metadata, not by
 modifying a real Codex/Kavita instance. If a needed payload is unavailable,
 record the subcase untested instead of faking its result.
 
-## M6 — Finish Review and explain the result
+## M6: Finish Review and explain the result
 
 Create a partial/mismatched import (a completed fake torrent has no payload,
 which exercises the failure path; use local tagged files for mapping). Follow

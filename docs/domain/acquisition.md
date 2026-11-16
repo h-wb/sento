@@ -191,8 +191,8 @@ feed GUID.
 
 Each surviving candidate is routed to every collected version that has wanted
 books (`route`), judged against that edition by `shelf.judge` (see
-[editions](editions.md)), and then run through the funnel. The stages run in
-this order:
+[editions](editions.md)), and then run through the funnel. This diagram shows
+the stages every candidate passes, in running order:
 
 ```mermaid
 flowchart TD
@@ -212,9 +212,8 @@ flowchart TD
     I --> K
 ```
 
-This diagram shows the stages every candidate passes, in running order; rejected
-candidates keep their parse and are shown in the UI with their reasons. A
-release no collected version takes is shown once, for the first one, with why
+Rejected candidates keep their parse and are shown in the UI with their
+reasons. A release no collected version takes is shown once, for the first one, with why
 not; a search scoped to one collected version always shows it. When several take
 it, each copy gets its own GUID suffix (`@versionID`) unless it is the default
 one.
@@ -330,7 +329,8 @@ retains or trashes unused incoming archives. See [review and file
 ownership](editions.md) for preview validation, recoverable trash, and durable
 skip behavior.
 
-A grab then runs to import as the queue worker advances it:
+This sequence shows one grab from dispatch to import, as the queue worker
+advances it:
 
 ```mermaid
 sequenceDiagram
@@ -359,10 +359,10 @@ sequenceDiagram
     end
 ```
 
-This sequence shows one grab from dispatch to import; the queue statuses between
-are detailed below. Loose-image imports must map a folder confidently to one
-book, order and validate its pages, build a staged CBZ, and pass through the
-normal non-overwriting import path; ambiguous folders require review.
+The queue statuses between are detailed below. Loose-image imports must map a
+folder confidently to one book, order and validate its pages, build a staged
+CBZ, and pass through the normal non-overwriting import path; ambiguous
+folders require review.
 
 ## Providers
 
@@ -423,12 +423,14 @@ adopted: lookups are bound to the job's client via `InClient`. `State` lists the
 client's torrents and reports done/in-flight/progress; the stall-eligible
 qBittorrent states are `downloading`, `stalledDL`, `metaDL`, `forcedDL`,
 `forcedMetaDL`. `Fetch` returns the torrent's save directory and file list.
+
 `Cleanup` is a no-op (data stays for seeding, imports hardlink); `Remove`
 deletes the torrent with its data, searching only Sento's own category.
 
 ### Source jobs
 
-`SourceProvider` adapts the extensions sidecar: search lists the chapters of every bound listing in parallel; downloads are done by Sento itself (page fetch, then CBZ assembled in a staging dir). A grab just starts the job and returns `sourceID|chapterKey` as the external ID. All download state is in memory (the queue row is the durable record): jobs are bounded to 2 concurrent chapter downloads (a semaphore), and each download gets a 30-minute timeout that starts when a slot opens, not when the grab was sent.
+`SourceProvider` adapts the extensions sidecar: search lists the chapters of every bound listing in parallel; downloads are done by Sento itself (page fetch, then CBZ assembled in a staging dir). A grab just starts the job and returns `sourceID|chapterKey` as the external ID. All download state is in memory (the queue row is the durable record): jobs are bounded to 2 concurrent chapter downloads (a semaphore), and each download gets a 30-minute timeout that starts when a slot opens, not when the grab was sent. This diagram shows the
+states of one source download as `State` reports them:
 
 ```mermaid
 stateDiagram-v2
@@ -443,11 +445,10 @@ stateDiagram-v2
     failed --> [*]: Stop cancels and cleans up
 ```
 
-This diagram shows the states of one source download as `State` reports them:
-`waiting for download slot`, `downloading`, `waiting for source cooldown`,
-`staged` (done), `restarted`, or the error text. A missing job for an unstaged
-item is restarted on the next poll, because the queue is durable but the job
-table is not.
+The reported states are `waiting for download slot`, `downloading`, `waiting
+for source cooldown`, `staged` (done), `restarted`, or the error text. A
+missing job for an unstaged item is restarted on the next poll, because the
+queue is durable but the job table is not.
 
 Each page is fetched with up to 4 attempts (`retryPage`). Retryable failures are
 temporary HTTP statuses (408, 425, 429 and 5xx), network errors, deadlines and
@@ -460,6 +461,7 @@ bucket, burst 1, default 4 requests/second per source,
 `SENTO_DOWNLOADS_PAGE_CONCURRENCY`, default 3) and the source-wide cooldown: a
 failed attempt sets a cooldown of `Retry-After` (never shortened) or `2^attempt`
 seconds plus up to a quarter of that in jitter, whichever is longer, and every
+
 later page request of that source waits it out. Successful pages stay staged
 while a sibling retries.
 
@@ -484,7 +486,9 @@ Every download is a `queue_items` row with one of nine statuses
 `queue-process` task and on `POST /queue/process`) advances the runnable ones,
 oldest first: `queued`, `downloading`, `importing` and `retry_wait` (past its
 `retry_at`). Jobs waiting on a person (`needs_review`, `dispatch_unknown`) are
-left out of the runnable list.
+left out of the runnable list. This diagram shows the queue statuses and every
+
+transition:
 
 ```mermaid
 stateDiagram-v2
@@ -511,8 +515,7 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-This diagram shows the queue statuses and every transition. The timers, all
-measured from the job's `created_at` unless said otherwise: a job with no
+The timers, all measured from the job's `created_at` unless said otherwise: a job with no
 external ID after 10 minutes becomes `dispatch_unknown` (confirm the download in
 the client, then attach its ID or cancel; never resubmitted blindly, the stable
 release key is reconciled against `State` first).
@@ -523,9 +526,11 @@ minutes. Queue backoff (`DeferQueueUntil`) waits 30 seconds times
 `2^min(retryCount, 6)`, so doubling up to 32 minutes at the cap, longer when the
 source's `Retry-After` says so; timestamps are rounded up to the next second so
 a retry never fires early. `retry_wait` jobs past their `retry_at` are picked up
+
 again. Source failures retry up to 5 times (`maxSourceRetries`), then move to
 `needs_review` with their reservations intact. Cancel is refused while a job is
 `importing`; `UpdateQueueItem` never touches `cancelled` or `imported` rows.
+
 `PruneFinishedQueue` keeps the newest 200 terminal jobs
 (`imported`/`cancelled`/`failed`); the Activity page shows the newest 200
 finished ones plus all active ones.
@@ -694,6 +699,7 @@ history, grouped by series; Needs attention groups the rest by problem (a
 repeated source-listing failure is one group, a pack with several unmatched
 files is one group, one file or chapter review is one group), sorted by series
 title; History lists completed, cancelled and resolved attempts, newest first,
+
 30 per page. A text filter narrows all three by series and release title.
 
 Each download row (`DownloadActivityRow`) shows the release title, a status
@@ -732,12 +738,14 @@ The interactive search behind "Search releases" lives in the book dialog
 by `applySearchEvent`), so each provider's results render as they land. Results
 split into Matches, Ruled out and All (`CandidateList`): Matches shows
 releases ready to grab or to review, sorted by score, number or size, filtered
+
 by text, site and packs/singles, 25 per page; Ruled out groups the rejected
 releases by reason and by who decides it (Not this book, Your profile, To
 confirm, Other), each row expandable to the full reason, with Unblock on
 blocklisted ones. An edition-wide search (more than one book in the plan)
 shows the acquisition plan instead (`AcquisitionPlan`): a shelf of the planned
 books with per-book states (Will download, Will upgrade, Available not
+
 selected, Found needs review, No seeders, Not found, Not checked), tickable
 releases, and Queued/Skipped/Failed outcomes after sending. Grabbing posts
 `grab` to the same search endpoint; the library queries (`['series']`,

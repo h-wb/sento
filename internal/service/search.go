@@ -378,7 +378,7 @@ func (run *searchRun) buildPlan(cs []ReleaseCandidate, complete bool) Acquisitio
 // planCandidates is what the default selection is planned from. An
 // all-books search lists every book a release holds, but only proposes
 // the ones the edition wants: downloading the rest is a choice, never
-// the default (propose-dont-ask.md §B2).
+// the default (docs/domain/acquisition.md, "The plan").
 func (run *searchRun) planCandidates(cs []ReleaseCandidate) []ReleaseCandidate {
 	if run.scope == nil || !run.scope.AllBooks {
 		return cs

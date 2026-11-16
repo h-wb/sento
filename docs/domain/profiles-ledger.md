@@ -23,6 +23,7 @@ is the subtle part and worth stating precisely:
 
 Condition types (`CondTitle`, `CondGroup`, `CondLanguage`, `CondFlag`,
 `CondProtocol`, `CondSite`, `CondResolution`) each have a `test`:
+
 title/group/site are case-insensitive regex; language is base-language equality
 (`fr` matches `fr-ca` via `baseLang`), or `*` for any stated language; flag
 looks up a boolean parse fact; protocol is case-insensitive equality; resolution
@@ -37,7 +38,7 @@ does NOT re-tokenize names, which is why `profile` does not depend on I/O.)
 `Format.Matches` decides in three steps: an empty condition list matches
 nothing, every required condition must be satisfied (a failed one rejects
 immediately), and each condition type that has non-required conditions must have
-at least one hit:
+at least one hit. This diagram shows the matching rule as a flow:
 
 ```mermaid
 flowchart TD
@@ -51,8 +52,8 @@ flowchart TD
     G -->|yes| H["true"]
 ```
 
-This diagram shows the matching rule as a flow; the bullets at the top of this
-section state it in words. Title, group and site conditions are case-insensitive
+The bullets at the top of this section state the same rule in words. Title,
+group and site conditions are case-insensitive
 regexes (compiled once into a process-wide `regexCache`; a failed compile is
 cached too and never matches). Language is base-language equality via `BaseLang`
 (`fr` matches `fr-ca`), or `*` for any stated language. Protocol is
@@ -115,6 +116,7 @@ matching format (in list order), the matched formats, and `Broken`, the first
 hard rule in words ("does not match \"X\", which Y requires" / "matches \"X\",
 which Y refuses"), empty when none breaks. A nil profile judges nothing: score
 0, no matches, no broken rule, and the built-in `DefaultRules` apply at the call
+
 sites.
 
 Search, the ledger and the importer all ask here, so a release and a file are
@@ -150,6 +152,7 @@ facts or its release's claims say enough to judge it), the owner not pinned, the
 owner below the until-score ceiling, and the incoming file beating it by at
 least `max(MinUpgradeScore, 1)`. Automatic replacement never touches pinned
 holds; `force`, a person's explicit choice in review, overrides both the pin and
+
 the score rule.
 
 `DisplaceOwners` enforces one owner per collected version's book: when another
@@ -170,7 +173,7 @@ series and shared by search and UI evaluation. It batches the series, its
 editions, collected versions, books, per-book overrides, file coverage and
 contents, presence, pending jobs and effective profiles; then `cardBooks`
 evaluates each version/book pair. GETs never initialize chapters or check paths.
-These are its inputs:
+These are its inputs; the diagram shows how they relate:
 
 ```mermaid
 erDiagram
@@ -218,8 +221,7 @@ erDiagram
     }
 ```
 
-This diagram shows the rows `loadLedger` reads for one series and how they
-relate; `profiles` and `custom_formats` are loaded alongside by
+`profiles` and `custom_formats` are loaded alongside by
 `ProfileService.seriesProfiles`. Reservations from active queue jobs feed the
 `Reserved`/`Reviewing` facts below.
 
@@ -262,7 +264,8 @@ volume/chapter number. The earlier number-keyed slot model (`internal/ledger`,
 | `unsatisfactory` | a file on disk holds it, but not one this version accepts | yes |
 | `missing` | wanted, nothing holds it | yes |
 
-The guard cascade, in the order `bookState` checks it, decides the state:
+The guard cascade decides the state in the order `bookState` checks it. This
+diagram shows the ten states and the guard that selects each:
 
 ```mermaid
 stateDiagram-v2
@@ -278,8 +281,7 @@ stateDiagram-v2
     [*] --> missing : otherwise (wanted)
 ```
 
-This diagram shows the ten states and the guard that selects each; the table
-above gives each state's meaning. The order matters: a reserved book that is
+The table above gives each state's meaning. The order matters: a reserved book that is
 also owned reads as `owned` with the note "a verified file is available; the
 download is awaiting review", and a reserved book reads as `pending` before any
 ownership is weighed.
@@ -298,6 +300,7 @@ chapter cutoff (`SequenceNum > CutoffNum`; books without a known number are not
 cut). A per-book override replaces the computed scope. Availability is
 `released`, `upcoming` or `unknown` from the book's release date against today;
 unknown dates follow the version's `AcquireUnknown` policy. Monitoring is
+
 therefore gated by the series, edition, book, version, extras rule, cutoff, and
 individual overrides; retired or catalog-missing publications stop automation.
 
@@ -322,6 +325,7 @@ language that is not the edition's (and not `multi`) refuses the file; then
 `assetJudgement` runs `Profile.Judge` over the facts, and a broken
 required/refused rule or, when the facts are known, a summed score below
 `MinFormatScore`, refuses it too. The Files tab and file-matching dialog show
+
 exactly this: current custom-format score, effective profile, matched formats
 with their individual scores, `FactsKnown`, and the refusal reason; a zero score
 is displayed explicitly, and unknown facts are identified as potentially
@@ -338,10 +342,8 @@ profile score, then the lower file ID. A pin holds whether or not the pinned
 file is confirmed yet. A shared asset may win several versions; incompatible
 profiles may choose different files for the same underlying book.
 
-On-disk contents are independent of fulfillment: a confirmed archive can
-satisfy multiple versions of the same edition when it meets each version's
-language, group and profile requirements, and policy changes may leave an
-existing copy unsatisfactory without deleting what is known about it.
+On-disk contents are independent of fulfillment, as described under [Shared
+ledger](#shared-ledger).
 
 ### Overview and progress counts
 
@@ -351,6 +353,7 @@ file), `OnDisk` (books with any present file), `Wanted`, `Review` (`needs_review
 or `storage_unavailable` books), and the effective profile's name and source
 (`collected version` → `series` → `instance default`); plus `BooksOnDisk`
 (distinct books with a file on disk), `WantedCopies` (sum of wanted over all
+
 versions) and `ReviewFiles` (files needing review).
 
 `Progress` counts, for every series, `Owned` (books in state `owned` or

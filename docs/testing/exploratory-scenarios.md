@@ -21,6 +21,7 @@ sources keep their normal behavior. Root and nested directory fixtures are
 available in every scenario. Series 105/106 are searchable when controls are
 enabled. Three chapter releases have distinct page refs so attempts do not leak
 from one chapter into another. Existing attempts are intentionally retained
+
 when selecting another scenario; “first attempt” means since the last reset.
 
 - `GET /_control`: service marker, current/available scenarios, per-ref attempt
@@ -37,6 +38,7 @@ when selecting another scenario; “first attempt” means since the last reset.
 
 Client endpoints `/qbit` and `/qbit-vpn` accept magnets, remember category,
 return hashes/progress, and journal exact deletion hashes and `deleteFiles`.
+
 The Torznab fixture `/torznab/api` supplies three volume releases with stable
 hashes ending 1, 2, 3. Different series share these fixture hashes: finish or
 cancel/clean up one routing mission before starting another. This deliberate

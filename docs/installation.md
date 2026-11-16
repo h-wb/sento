@@ -50,12 +50,14 @@ container can write to the library and staging directories.
 
 Configuration loads in three layers: built-in defaults, then an optional
 YAML file, then `SENTO_*` environment variables, which win over the file.
+
 The binary takes `-config <path>` (default `config.yml`); the image runs
 `sento -config /config/config.yml` and sets `SENTO_DB_PATH=/config/sento.db`,
 `SENTO_LIBRARY_PATH=/library`, `SENTO_DOWNLOADS_DIR=/downloads` and
 `SENTO_STATIC_DIR=/app/web/dist` in the [Dockerfile](../Dockerfile), with
 `/config`, `/library` and `/downloads` as volumes. A missing YAML file is
 not an error. An environment value that does not parse as a number is
+
 ignored, keeping the file value. The full set with defaults is in
 [config.go](../internal/config/config.go).
 
@@ -100,6 +102,7 @@ settings are different: `SENTO_EXTENSIONS_URL` and `SENTO_EXTENSIONS_REPOS`
 stay in force, are reported as managed, and are read-only in the UI. Note
 the separator differs on the two sides of the sidecar link: the Go side
 splits `SENTO_EXTENSIONS_REPOS` on commas or any whitespace and enforces the
+
 list, while the sidecar itself splits on commas only and treats the variable
 as an additive extra.
 
@@ -139,6 +142,7 @@ moving library files or changing their container mount paths. Move the complete 
 including `review/` and `.sento-trash/`, then set `SENTO_LIBRARY_PATH` to the
 new root as seen inside the Sento container. Sento remembers its root and
 rewrites stored series, chapter, file, trash and root-folder paths at startup,
+
 before the API and background tasks start. This updates references; it does
 not move files on disk.
 
@@ -156,6 +160,7 @@ series folders need not exist. Validation errors or database path collisions
 abort startup and roll back all path changes. Restore the files/configuration
 and retry. The new root is recorded in the same transaction, so restarting
 does not repeat the rewrite.
+
 Only paths inside the old root are rewritten. Torrent payload paths, source
 download staging, and series adopted outside it remain unchanged. Update
 reader library paths and other applications' mount/configuration separately.
@@ -173,6 +178,7 @@ category and apply the requested Books filter only after the site's result
 limit. For Prowlarr's Nyaa definition, create a separate instance with
 **Category → Literature - English-translated** and use that instance's
 Torznab URL in Sento. Give it a separate tag if the existing instance also
+
 serves Sonarr or Radarr; each application's tags determine which indexers
 Prowlarr syncs to it. See [Prowlarr's settings guide](https://wiki.servarr.com/prowlarr/settings).
 

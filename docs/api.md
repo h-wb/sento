@@ -290,10 +290,12 @@ reverse proxy. See [installation](installation.md#configuration).
 is cached or the report was invalidated (a write under `/indexers`,
 `/settings/connections` or `/extensions`). Each remote probe is bounded by a
 10s timeout (`probeTimeout`) and all probes run in parallel. The checks:
+
 the library folder exists, is a directory and accepts a new file; every
 download client answers, one exists when torrent indexers need it, and every
 torrent indexer's chosen client still exists; the extensions sidecar answers
 and still carries the source behind every enabled source entry; every enabled
 Torznab entry pings. A warning is raised when no indexer is enabled at all.
+
 Failed background tasks are merged into the report live (not cached) via
 `Scheduler.TaskIssues`.

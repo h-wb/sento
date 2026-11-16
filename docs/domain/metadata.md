@@ -7,7 +7,7 @@ after a reinstall or a rescan, without guessing from its name (D17).
 
 Only facts are written, never preferences: the release profile and the
 edition a file fills are choices you make and can change; what the file is
-does not change. Presentation — the name a reader files the copy under — is a choice
+does not change. Presentation, the name a reader files the copy under, is a choice
 too, so it is written but never read back for identity (D18): a rescan
 adopts a file from its `Notes` line, not from its `Series`.
 
@@ -23,7 +23,7 @@ elements they do not know.
 | Series | `Web`; `Notes` `mangabaka:` (the name a reader files it under is the presented `Series` field, below) | `Nausicaä of the Valley of the Wind` |
 | Edition, a numbering | `Format`: what its name says it is, as `parse.ReadEdition` reads it; nothing for a standard edition. `Notes` `edition:` and, for a catalog edition, `mb-edition:` | `Deluxe`, `Box Set`, `Full Color` |
 | Language | `LanguageISO` | `en` |
-| Book | `Volume` for a volume book, `Number` for a chapter — never both, and a reader that files by ComicInfo lists the book once; `Title` for several; `Notes` `ledger:`, `books:`, `work:` | `Volumes 1–3` |
+| Book | `Volume` for a volume book, `Number` for a chapter, never both; a reader that files by ComicInfo lists the book once; `Title` for several; `Notes` `ledger:`, `books:`, `work:` | `Volumes 1–3` |
 | Published material | `Publisher`: the edition's publisher | `VIZ Media` |
 | Fan translation | `Translator`: the group; no `Publisher` | `Some Scans` |
 | Group | `ScanInformation` | `1r0n` |
@@ -63,20 +63,22 @@ archive (below). Where each written field comes from:
 ## Presented fields: the name a reader files a copy under
 
 `Series` and `SeriesGroup` are presented fields (D18): each renders per
-copy from a template — library-wide in Settings → Media, with an optional
-per-edition override in Edit edition — defined in one list in code
+copy from a template: library-wide in Settings → Media, with an optional
+per-edition override in Edit edition, defined in one list in code
 (`mediafile.PresentedFields`). The defaults keep one series per work:
+
 `Series` = `{Series Title} {version}` (empty version for an edition's
 default, so `ONE PIECE` beside `ONE PIECE Colored`) and `SeriesGroup` =
 `{Series Title}`, so readers that build collections from it still group
 the copies; folders keep editions apart (spec §11.2). A reader that files
 by ComicInfo rather than folders (Kavita) keeps copies apart only when the
 series name says which is which, so an edition can set its own template
+
 (`{Series Title} {edition} {version}`, or a fixed name); an organize pass
 rewrites the files. A template names a copy, not one book, so it cannot use
 `{volume}`/`{chapter}`/`{group}`/`{isbn}`, nor `{Reader Series}`, which is
 the name it sets. On merge the presented fields
-are written exactly — a source's own `Series` never survives — and a
+are written exactly (a source's own `Series` never survives), and a
 rescan never reads them back for identity; adoption goes through `Notes`.
 
 `Series` is also a naming token, `{Reader Series}`, for folder and file
@@ -91,6 +93,7 @@ publisher or platform (the `official` flag). Everything else is taken to be
 a copy of the edition it was matched to: a scan or rip of the published
 volume is published material. Sento has no evidence of who colored a
 colored release, so `Colorist` is never written; `flags:colored` says only
+
 that it is colored.
 
 ## The `Notes` line
@@ -126,6 +129,7 @@ than deflated), one common top folder flattened, junk entries and
 duplicate names dropped, and `ComicInfo.xml` replaced. The result is
 written to a `.sento-import-*` temp in the destination folder, chmod 0644,
 then renamed onto the destination, so a reader never sees a half-written
+
 file. An archive with no image members is refused.
 
 This diagram shows one `Process` run:
@@ -191,6 +195,7 @@ a local edition, its name), language and ledger; the books by number, `work`
 telling apart two books that share one. Its facts are the release's: group,
 language, flags, provider and site, so a profile judges it as it judged the
 download. When any of that does not resolve (an edition renamed or merged
+
 since), the file is matched by its name, as any other.
 
 Importing a library reads it first too (spec §11.4, step 1): a folder
@@ -205,6 +210,7 @@ stops after 3 that agree. Each must carry Sento's own provenance in its
 `Notes` (`sento:v1`); the proposal's title is those archives' `Series`
 field, which Sento itself wrote. Archives that disagree make the folder
 fall through to name matching. ComicInfo written by other tools is not
+
 read for identification; see the correction under
 [spec §11.4](../spec/spec.md#114-existing-library-import--rescan-d14).
 

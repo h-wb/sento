@@ -88,12 +88,14 @@ to:
 `shell/navigation.ts` holds the nav items in two groups. Day-to-day pages:
 Library (`g l`), Calendar (`g c`), Activity (`g a`), Wanted (`g w`). Setup
 pages, ordered to mirror the pipeline (search, download, quality, import):
+
 Indexers (`g i`), Connections (`g o`), Profiles (`g p`), Media (`g m`), and
 System (`g s`) at the bottom. `shell/useShortcuts.ts` binds the keys: `g`
 followed within one second by a page's letter navigates to it, `g n` opens the
 global Add series dialog, `/` or Cmd/Ctrl+K opens Spotlight, `?` opens the
 shortcuts help (`shell/ShortcutsHelp.tsx`). Shortcuts are ignored while typing
 in an input, textarea or contenteditable element, and when a modifier key is
+
 held. The `⌘`/`Ctrl` prefix is chosen per platform in `navigation.ts`.
 
 `shell/useSpotlightActions.tsx` builds the Spotlight actions: Add series, every
@@ -164,6 +166,7 @@ void response, and on a non-OK status throws an `Error` whose message is the
 response body's `error` field, or `HTTP <status>` when the body has none
 (`readError`). One `api` object is assembled in `api/index.ts` from one module
 per resource, and the generated types are re-exported alongside it so
+
 components import both from `./api`:
 
 | Module | Covers |
@@ -181,6 +184,7 @@ response body as NDJSON, one event per line. The events are `sites` (which
 providers are searching), `batch` (one provider's results, possibly with an
 error or a fresh provisional plan), `done` and `error`. If the stream ends
 without a `done` or `error`, the client raises "Search ended before all
+
 sources replied…" so an incomplete result is never mistaken for a complete
 one. Review requests are batched in `request.ts`: `reviewBatchSize` is 500 and
 `batched()` slices long id lists, so previews and bulk actions share the
@@ -275,11 +279,13 @@ closes immediately when the form is clean, and asks first ("Discard unsaved
 changes?") through `useConfirmAction` when `dirty` is set. `dirty` also
 registers with the global `UnsavedChangesProvider` (`useUnsavedChanges`), which
 blocks route changes (`useBlocker`) and tab close (`useBeforeUnload`) while any
+
 form is dirty, with the same confirm dialog. `useEditor` gives an editor its
 `run`/`busy`/`error` triple: `run` sets busy, keeps the error message to show
 in the dialog (via `errorMessage`, without the "Error: " prefix) and always
 clears busy. `useConfirmAction` keeps its confirm dialog open when the action
 fails, so the same action can be retried. The small shared pieces:
+
 `QueryFeedback` (pending skeleton or error with retry), `EmptyState`,
 `PageHeader`, `usePageTitle` (`ui.ts`), and `usePaged` for client-side paging.
 
@@ -311,6 +317,7 @@ is a 10-shade `brand` color tuple (index 6 is the primary), a radius, and an
 optional `darkFill` override. A neutral preset's dark-scheme fill would be
 nearly the page color, so `darkFill` substitutes a light fill with dark text
 for filled primary controls in dark mode. `buildTheme` sets `primaryColor:
+
 'brand'`, the Inter font stack, and per-component class names from
 `theme.module.css` (table headers, inputs, modal titles, tab lists, badges).
 `cssVariables` maps light and dark schemes to body and border colors and
@@ -323,6 +330,7 @@ Global styles live in `index.css`: the color scheme follows
 tables, a visible focus outline, reduced-motion support, and the shared
 utility classes (`.formFields`, `.settingsLayout`, `.emptyStateIcon`,
 `.tabCount`, `.dataTable`, and `details.more` for quiet expandable sections).
+
 Components style themselves with a sibling `*.module.css`, using `light-dark()`
 where a color depends on the scheme.
 
@@ -346,7 +354,8 @@ file under `web/src/types/`, with `type_mappings` for cross-package types:
 generated files are committed in the same change, and `mise run gen:check`
 regenerates and fails on any diff (CI runs it). The client re-exports the types
 from `api/index.ts`, and components import them from there or from
-`../types/…` directly.
+`../types/…` directly. This diagram shows the flow from Go structs to
+components:
 
 ```mermaid
 flowchart LR

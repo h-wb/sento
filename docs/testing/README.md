@@ -54,6 +54,7 @@ creates its own schema on the shared server (`sento_test_<pid>_<random>`),
 scopes the connection to it with `options=-csearch_path=<schema>`, runs the
 full PostgreSQL migration set there, and drops the schema with `CASCADE` on
 cleanup. The same Go suite therefore doubles as the dialect conformance
+
 run: `db.Open` migrates whatever schema its URL points at. PostgreSQL 16 or
 later is required (migration 0030 uses `IS JSON OBJECT`); mise pins 17.
 
@@ -85,6 +86,7 @@ and qBittorrent. It returns tiny real images for CBZ imports. Nothing is
 sent to real download clients.
 
 The suite uses one worker because tests share mutable application state.
+
 Each invocation clears its run directory and starts new upstreams; it never
 reuses an already-running server. Ports are derived from the checkout path,
 so worktrees can test alongside one another and the dev stack. If necessary,
@@ -106,6 +108,7 @@ and [scenario reference](exploratory-scenarios.md).
 Put parser cases in `internal/parse/testdata/corpus/`. Use service/store tests
 for edition matching, book coverage, migrations and acquisition decisions;
 use browser tests when the user interaction or persisted UI state matters.
+
 Every schema migration needs a matching numbered file in both dialect
 directories, and its test should use `dbtest` so the migration runs on both
 (see [PostgreSQL](#postgresql)). Sidecar behavior belongs
