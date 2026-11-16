@@ -74,3 +74,12 @@ export const plural = (n: number, one: string, many?: string) =>
 // Book numbers are stored in hundredths ("1.5" is 150).
 export const toHundredths = (n: number) => Math.round(n * 100)
 export const fromHundredths = (h: number) => h / 100
+
+// The host part of a URL for display, or the input itself if it is not one.
+export function hostOf(url: string) {
+  try {
+    return new URL(url).host
+  } catch {
+    return url
+  }
+}
