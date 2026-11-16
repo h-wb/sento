@@ -243,7 +243,54 @@ Presence, file facts, cleanup and trash are documented in
 
 ## Screens and evaluation
 
-Your editions contains selected editions, local publications, and editions with files. Other editions is a collapsed catalog chooser. The edition action menu holds Search releases, Edit edition (what the edition is: name, language, publisher, numbering, and its name in readers under "In readers" — same as the library, the series and edition name, or a custom template, with a live preview of what each card will show; saving a new name opens the organize preview of the series' files, which carry the old one until it is applied) and Download settings (how a card collects: profile, chapter cutoff, extras, undated books); Collect again with another profile sits beside them; Stop collecting this way (removing a card) and catalog maintenance are under More. An edition card whose name in readers differs from the series title says so in its subtitle (`in readers: ONE PIECE Colored`). The profile summary explains inheritance. Book lists load every book of a version at once, newest first (one toggle turns the order, remembered for volumes and chapters apart): state counts double as filters, long editions open as a colour-coded grid (a dense list is the alternative view), and monitoring actions apply to a filter, a number range, or a selection. In the list a book's checkbox selects it (Shift extends a range) and its bookmark collects or pauses it; the grid selects through Select mode or Ctrl/Shift-click. A card with nothing on disk, nothing wanted and nothing to review opens folded. The series page has one tab row: Editions, Files, Activity. Activity shares the global progress, attention and history views, scoped to this series, with a badge for unresolved issues. Files is a table: what each file is used for (its books and the cards that use it), what it is (language, group, flags) and where it came from, with a selection that can be corrected or given to another edition together (Use for an edition…). Correcting a selection shows what the files read as now: a flag every file carries is ticked, one none carries is not, and a dash marks one only some carry; ticking or unticking sets it for all of them, and language and group left empty stay as read. Giving a selection to an edition lists each file with the book it becomes there or the reason it stays as it is, and asks whether the editions using the files now keep them only when one does. A file opens as what it is (its name, where it came from, one line of what was read, opened to correct it, and where it is stored), the books it holds (an edition and its numbers; picking another edition moves the file there, and a file read as another language than the edition's is flagged), and the editions that use it: one row per edition and book, ticked when the edition uses the file, saying what a change does (use this file, use its other copy, stop using it) with the profile's score or its reason for refusing. With no row ticked, the file is kept on disk or moved to trash; a file an edition used until then is first saved as unused and then trashed, in two requests, so the store's protection of selected archives holds. A card whose books are on disk in files no card accepts names those books and the profile's reason once, with the ways out: correct what the files are, collect them with another profile, or find other releases; a book's own dialog lists such a file as on disk but unused by the edition. Choices on files say only what will happen ("Import 5 · Keep existing 1"). Files in review are matched the same way from Activity. The header carries Search & download and Monitor series; Refresh, the release profile (shown in the header only when the series chose one) and Sources — the per-series source settings, where each source match carries its edition mapping — are in its menu.
+The series page has one tab row: Editions, Files, Activity (`web/src/pages/SeriesPage.tsx`; the open tab lives in `?view=`). Activity shares the global In progress, Needs attention and History views, scoped to this series, with a badge for unresolved issues; see [In the UI](acquisition.md#in-the-ui). The other two tabs work like this.
+
+### Edition cards
+
+Collected editions, local publications, and editions with files each render as one card per collected version (`useSeriesEditions` splits the list into collected and the rest); Other editions is a collapsed catalog chooser. The edition action menu holds Search releases, Edit edition (what the edition is: name, language, publisher, numbering, and its name in readers under "In readers": same as the library, the series and edition name, or a custom template, with a live preview of what each edition will show; saving a new name opens the organize preview of the series' files, which carry the old one until it is applied) and Download settings (how the edition collects: profile, chapter cutoff, extras, undated books); Collect again with another profile sits beside them; Stop collecting this way (removing the version) and catalog maintenance are under More. An edition whose name in readers differs from the series title says so in its subtitle (`in readers: ONE PIECE Colored`). The profile summary explains inheritance. A card with nothing on disk, nothing wanted and nothing to review opens folded. The header carries Search & download and Monitor series; Refresh, the release profile (shown in the header only when the series chose one) and Sources, the per-series source settings where each source match carries its edition mapping, are in its menu.
+
+### Book list and grid
+
+Book lists load every book of a version at once, newest first; one toggle turns the order, remembered for volumes and chapters apart (`sento.bookOrder.<ledger>`). State counts double as filters. Editions longer than 50 books open as a colour-coded grid; shorter ones open as the list, where every book shows its details, and the list is 100 books per page. Monitoring actions apply to a filter, a number range, or a selection. In the list a book's checkbox selects it (Shift extends a range) and its bookmark collects or pauses it; the grid selects through Select mode or Ctrl/Shift-click. A "go to" box jumps to the first book numbered at least the entered one.
+
+Each book's display state comes from the ledger (`BookStatus.state`) and maps to one colour (`tone` in `components/books/bookStatus.ts`) and one filter:
+
+| State | Shown as | Colour | Filter |
+| --- | --- | --- | --- |
+| `owned` | Owned | green | On disk |
+| `upgrade_eligible` | Upgrade wanted | green | On disk |
+| `pending` | Pending | blue | Downloading |
+| `missing` | Missing | red | Wanted |
+| `not_released` | Upcoming | gray | Upcoming |
+| `unknown` | Date unknown | gray | Upcoming |
+| `unmonitored` | Paused | gray | Paused |
+| `unsatisfactory` | On disk, not accepted | yellow | Needs attention |
+| `needs_review` | Needs review | yellow | Needs attention |
+| `storage_unavailable` | Storage unavailable | yellow | Needs attention |
+
+The filter bar always offers All, On disk and Wanted, plus Downloading, Upcoming, Paused and Needs attention when any book matches. The same states drive the grid cells and the status badges:
+
+```mermaid
+stateDiagram-v2
+  owned: Owned · green
+  upgrade_eligible: Upgrade wanted · green
+  pending: Pending · blue
+  missing: Missing · red
+  not_released: Upcoming · gray
+  unknown: Date unknown · gray
+  unmonitored: Paused · gray
+  unsatisfactory: On disk, not accepted · yellow
+  needs_review: Needs review · yellow
+  storage_unavailable: Storage unavailable · yellow
+```
+
+### Files table
+
+Files is a table (`SeriesFiles`): what each file is used for (its books and the editions that use it, as "Vol. 2 · Standard Edition and Standard Edition · Colored"), what it is (language, group, flags) and where it came from, 20 rows per page, files needing review sorted first. A selection can be corrected or given to another edition together (Use for an edition…). Correcting a selection shows what the files read as now: a flag every file carries is ticked, one none carries is not, and a dash marks one only some carry; ticking or unticking sets it for all of them, and language and group left empty stay as read. Giving a selection to an edition lists each file with the book it becomes there or the reason it stays as it is, and asks whether the editions using the files now keep them only when one does.
+
+### File dialog
+
+A file opens as what it is (its name, where it came from, one line of what was read, opened to correct it, and where it is stored), the books it holds (an edition and its numbers; picking another edition moves the file there, and a file read as another language than the edition's is flagged), and the editions that use it: one row per edition and book, ticked when the edition uses the file, saying what a change does (use this file, use its other copy, stop using it) with the profile's score or its reason for refusing. With no row ticked, the file is kept on disk or moved to trash; a file an edition used until then is first saved as unused and then trashed, in two requests, so the store's protection of selected archives holds. An edition whose books are on disk in files no version accepts names those books and the profile's reason once, with the ways out: correct what the files are, collect them with another profile, or find other releases; a book's own dialog lists such a file as on disk but unused by the edition. Choices on files say only what will happen ("Import 5 · Keep existing 1"). Files in review are matched the same way from Activity.
 
 Where information comes from is marked the same way everywhere (`web/src/components/Origin.tsx`): **MangaBaka**, shown as a small “MB” mark that opens the series’ MangaBaka page (listed in the catalog, updated by a refresh; the mark alone labels values pre-filled from MangaBaka), **Local edition** / **Added by you** (never touched by a refresh), **Edited** (a catalog value changed by hand, which a refresh keeps), and **No longer in MangaBaka**. An edition carries one marker (a local edition numbered from MangaBaka's count says so in its tooltip); a book carries one only where it differs from its edition. Edit book lists the copies MangaBaka has behind the book, one per medium, and says which supplies the ISBN and that the date is the earliest. When a refresh groups editions on its own, History records it.
 

@@ -10,6 +10,7 @@ Start with the guide for what you want to do:
 | [Releases](releases.md) | Conventional Commits, version policy and publishing |
 | [Architecture](architecture.md) | System context, package map, service internals, startup and background tasks |
 | [HTTP API](api.md) | Routes, conventions, errors and health checks |
+| [Web app](web.md) | The browser UI: providers, routes, server state, streaming search, dialogs, styling |
 | [Extensions sidecar](extensions.md) | The sidecar HTTP contract: routes, keys, errors, retries and page fetching |
 | [Domain](domain) | Editions, acquisition, parsing and library behavior |
 | [Specifications](spec) | Product decisions, release parser and decision engine |

@@ -5,7 +5,8 @@ database, talking to external services (a metadata provider, download
 clients, indexers and the extension sidecar) and to the library on disk.
 This page describes how that process is organized: the system context, the
 package dependency graph, the service structs, startup and the background
-tasks, and the persistence layer. The [domain guides](domain/) describe the
+tasks, and the persistence layer. The browser app that talks to this API is
+described in [web.md](web.md). The [domain guides](domain/) describe the
 implemented data flows; the [specs](spec/) (`spec.md`, `decision-engine.md`,
 `parser.md`) record intent and decisions. The current edition/acquisition
 model is described in [Editions, units, collected versions, and files](domain/editions.md).

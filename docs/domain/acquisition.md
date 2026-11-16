@@ -678,3 +678,68 @@ original release, leaves its files and job intact until another release is
 selected, and does not reacquire books already accepted from the partial import.
 Retry times interpret stored UTC timestamps consistently with the other Activity
 dates.
+
+## In the UI
+
+The web app shows all of this in two places: the global Activity page
+(`/queue`, `web/src/pages/QueuePage.tsx`) and the Activity tab of a series
+page, both rendering `ActivityPanel`. The data is one query,
+`['activity', seriesID]`, polled every 10 seconds; the tab lives in
+`?activity=progress|attention|history` and defaults to Needs attention when
+anything needs it, else In progress (`components/activityModel.ts`).
+
+The three tabs group the same rows differently: In progress holds the downloads
+whose job is `queued`, `downloading`, `importing` or `retry_wait` and not
+history, grouped by series; Needs attention groups the rest by problem (a
+repeated source-listing failure is one group, a pack with several unmatched
+files is one group, one file or chapter review is one group), sorted by series
+title; History lists completed, cancelled and resolved attempts, newest first,
+30 per page. A text filter narrows all three by series and release title.
+
+Each download row (`DownloadActivityRow`) shows the release title, a status
+badge (`downloadLabel`), the source, the age, a progress bar while downloading,
+and one primary action picked by state, plus a menu:
+
+| Condition | Action |
+| --- | --- |
+| Files waiting | Review N files (expands the file questions in place) |
+| `dispatch_unknown` | Confirm download (attach the client ID) |
+| Source `access` failure | Check source settings |
+| `failed`, or `gone`/`damaged` | Try another release |
+| Stalled and downloading | Choose a replacement (opens the replacement search, the old job keeps running) |
+| `retry_wait`, `needs_review` | Retry now |
+| Menu, any non-importing job | Try another release, Find releases for unmatched books, Recheck files, Stop tracking download (confirmed; reservations are released, client files stay) |
+
+Raw errors, the source folder and the last update sit under Details. Which tab
+a row lands in, and what it offers there:
+
+```mermaid
+flowchart TD
+  Row["download row"] --> Q{"job status and resolution"}
+  Q -->|"queued, downloading, importing, retry_wait, not history"| P["In progress: progress bar, Retry now on retry_wait"]
+  Q -->|"failed, needs_review, dispatch_unknown, stalled, or unresolved file reviews"| A["Needs attention: Review files, Confirm download, Try another release, Choose a replacement, Check source settings, Details"]
+  Q -->|"imported, cancelled, or books owned, uncollected or covered elsewhere"| H["History: resolution line, previous attempts, 30 per page"]
+```
+
+The shell badge on the Activity nav link is the count of attention groups,
+falling back to active downloads. The blocklist is a secondary section of
+Needs attention (Blocked releases) with Unblock per release, which invalidates
+`['blocklist']` and reruns the search.
+
+The interactive search behind "Search releases" lives in the book dialog
+(`BookDialog` with `components/search/`): it streams `POST
+/series/{id}/search` as NDJSON (`sites`/`batch`/`done`/`error` events, reduced
+by `applySearchEvent`), so each provider's results render as they land. Results
+split into Matches, Ruled out and All (`CandidateList`): Matches shows
+releases ready to grab or to review, sorted by score, number or size, filtered
+by text, site and packs/singles, 25 per page; Ruled out groups the rejected
+releases by reason and by who decides it (Not this book, Your profile, To
+confirm, Other), each row expandable to the full reason, with Unblock on
+blocklisted ones. An edition-wide search (more than one book in the plan)
+shows the acquisition plan instead (`AcquisitionPlan`): a shelf of the planned
+books with per-book states (Will download, Will upgrade, Available not
+selected, Found needs review, No seeders, Not found, Not checked), tickable
+releases, and Queued/Skipped/Failed outcomes after sending. Grabbing posts
+`grab` to the same search endpoint; the library queries (`['series']`,
+`['activity']`, `['wanted']`, `['blocklist']`) are invalidated afterwards, so
+the new job appears on the next poll.

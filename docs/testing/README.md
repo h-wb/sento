@@ -17,13 +17,18 @@ regression tests use local fixtures after that setup.
 | `mise run test:tooling` | Repository workflow helpers |
 | `mise run e2e` | Chromium, real Go backend and simulated upstreams |
 | `mise run lint` | Go formatting and static checks |
-| `mise run lint:web` | Web lint rules |
+| `mise run lint:web` | Web lint rules (ESLint only, see below) |
 | `mise run lint:ci` | Actions YAML and embedded shell scripts |
 | `mise run lint:docs` | Local file links in maintained Markdown |
 | `mise run gen:check` | Generated TypeScript matches Go API structs |
 | `mise run extensions:test` | Kotlin sidecar tests against directory fixtures |
 | `mise run extensions:contract` | Built JVM sidecar and Go client contract |
 | `mise run test:contract` | Live MangaBaka API contract; requires network access |
+
+`mise run lint:web` runs only ESLint (`npm run lint` in `web/`); it does not
+type-check. The type check runs as part of `mise run web:build`
+(`tsc -b && vite build`, the `build` script in `web/package.json`), so run
+`web:build` before pushing web changes.
 
 `mise run ci` combines the standard lint, generated types, harness, race and
 browser checks. GitHub Actions runs PostgreSQL as a separate job and sidecar
