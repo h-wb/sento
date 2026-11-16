@@ -89,3 +89,36 @@ export function downloadLabel(d: ActivityDownload) {
 export function activityTime(value: string) {
   return parseServerTime(value).getTime() || 0
 }
+
+export function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
+  const groups = new Map<K, T[]>()
+  for (const item of items) {
+    const list = groups.get(key(item)) ?? []
+    list.push(item)
+    groups.set(key(item), list)
+  }
+  return groups
+}
+
+export function filterActivity(data: ActivityData | undefined, search: string) {
+  const matches = (title: string) => title.toLowerCase().includes(search.toLowerCase())
+  const progress = (data?.downloads ?? [])
+    .filter(inProgress)
+    .filter((d) => matches(`${d.job.seriesTitle} ${d.job.title}`))
+  const progressGroups = groupBy(progress, (d) => d.job.seriesId)
+  const attention = attentionGroups(data).filter((g) =>
+    matches(
+      `${g.title} ${g.downloads.map((d) => `${d.job.title} ${d.sourceName} ${d.explanation}`).join(' ')} ${g.reviews.map((r) => r.title).join(' ')}`,
+    ),
+  )
+  const attentionSeries = groupBy(attention, (g) => g.seriesID)
+  const history = (data?.downloads ?? [])
+    .filter((d) => d.history)
+    .filter((d) => matches(`${d.job.seriesTitle} ${d.job.title}`))
+    .sort(
+      (a, b) =>
+        activityTime(b.job.updatedAt || b.job.createdAt) -
+          activityTime(a.job.updatedAt || a.job.createdAt) || b.job.id - a.job.id,
+    )
+  return { progress, progressGroups, attention, attentionSeries, history }
+}

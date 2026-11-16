@@ -64,7 +64,11 @@ export const acquisitionApi = {
   retryQueue: (id: number, remoteId = '') =>
     request<void>(`/queue/${id}/retry`, { method: 'POST', body: JSON.stringify({ remoteId }) }),
   cancelQueue: (id: number) => request<void>(`/queue/${id}/cancel`, { method: 'POST' }),
-  tryAnotherRelease: (ids: number[]) => request<void>('/queue/another', { method: 'POST', body: JSON.stringify({ ids }) }),
+  tryAnotherRelease: async (ids: number[]) => {
+    for (let i = 0; i < ids.length; i += 500) {
+      await request<void>('/queue/another', { method: 'POST', body: JSON.stringify({ ids: ids.slice(i, i + 500) }) })
+    }
+  },
   processQueue: () => request<{ processed: number }>('/queue/process', { method: 'POST' }),
   activity: (seriesId = 0) => request<ActivityData>(`/activity?seriesId=${seriesId}`),
   history: (seriesId?: number, limit = 100) =>

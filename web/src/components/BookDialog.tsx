@@ -1,12 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Badge,
   Button,
-  Card,
   Checkbox,
   Group,
-  Loader,
   Modal,
   SegmentedControl,
   Stack,
@@ -14,19 +11,21 @@ import {
   Text,
 } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
+import { IconFile, IconListSearch, IconSearch } from '@tabler/icons-react'
 import { useQueryClient } from '@tanstack/react-query'
-import { IconFile, IconListSearch, IconRefresh, IconSearch, IconTrash } from '@tabler/icons-react'
+import { useState } from 'react'
 import { api, type ReleaseCandidate, type SeriesFile } from '../api'
-import { fmtNum, fmtSize, plural } from '../format'
-import { errorMessage, notify } from '../ui'
-import CandidateList from './CandidateList'
+import { fmtNum } from '../format'
+import { notify } from '../ui'
 import AcquisitionPlan from './AcquisitionPlan'
 import type { EditionStart } from './AddEdition'
-import type { AcquisitionPlan as Plan } from '../types/service'
+import CandidateList from './CandidateList'
 import { useConfirmAction } from './ConfirmAction'
-import { FileScoreDetails } from './FileScoreDetails'
-import { fileName } from './editionText'
-import { fileOrigin } from './factFlags'
+import { BookFiles } from './search/BookFiles'
+import { tidyProblem } from './search/releaseModel'
+import { SearchNotices } from './search/SearchNotices'
+import { SearchStatus } from './search/SearchStatus'
+import { useReleaseSearch } from './search/useReleaseSearch'
 
 export type BookSelection = {
   // A download this search looks to replace: it keeps running until a
@@ -52,30 +51,6 @@ export type BookSelection = {
   // Fire the streaming search as soon as the modal opens (the
   // interactive-search buttons; a plain row click opens quietly).
   autoSearch?: boolean
-}
-
-// Accumulated state of one streaming search: batches land per provider.
-type StreamResult = {
-  plan?: Plan
-  queries: string[]
-  searched: string[]
-  pending: string[] // "provider/site" entries still searching
-  candidates: ReleaseCandidate[]
-  dropped: number
-  notes: string[]
-  errors: string[]
-  done: boolean
-  stopped?: boolean
-}
-
-// "host/Japscan (fr): binding 9 (Japscan (fr)): host: Cloudflare…" reads
-// as "Japscan (fr): Cloudflare…": the routing detail is for logs.
-function tidyProblem(message: string): string {
-  return message
-    .replace(/^(host|torrent)\//, '')
-    .split(': ')
-    .filter((part) => part !== 'host' && !/^binding \d+ \(/.test(part))
-    .join(': ')
 }
 
 export default function BookDialog({
@@ -133,11 +108,7 @@ function Inner({
 
   const { confirm, confirmation } = useConfirmAction()
   const qc = useQueryClient()
-  const searchController = useRef<AbortController | null>(null)
-  useEffect(() => () => searchController.current?.abort(), [])
   const [busy, setBusy] = useState(false)
-  const [searching, setSearching] = useState(false)
-  const [result, setResult] = useState<StreamResult | null>(null)
   // Edition-wide searches cover the wanted books unless widened to all.
   const [allBooks, setAllBooks] = useState(false)
   const [replaceOnReview, setReplaceOnReview] = useState(false)
@@ -148,120 +119,13 @@ function Inner({
   )
   const small = useMediaQuery('(max-width: 48em)')
 
-  // Streaming search: each provider's batch renders as soon as it lands,
-  // so fast extension sources show up while torrent indexers still load.
-  const searchScope = (everyBook: boolean) => ({
-    replaceQueueId: sel.replaceQueueId,
-    versionId: sel.versionId,
-    bookId: sel.bookId,
-    all: sel.all,
-    allBooks: editionWide && everyBook ? true : undefined,
-  })
-  const interactiveSearch = async (everyBook = allBooks) => {
-    if (searching || busy) return
-    const controller = new AbortController()
-    searchController.current = controller
-    setSearching(true)
-    setResult({
-      queries: [],
-      searched: [],
-      pending: [],
-      candidates: [],
-      dropped: 0,
-      notes: [],
-      errors: [],
-      done: false,
-    })
-    try {
-      await api.searchStream(
-        seriesID,
-        { ledger: sel.ledger, scope: searchScope(everyBook) },
-        (ev) => {
-          setResult((prev) => {
-            if (!prev) return prev
-            switch (ev.type) {
-              case 'sites':
-                return {
-                  ...prev,
-                  notes: ev.bindingNotes ?? [],
-                  searched: ev.searched ?? [],
-                  pending: ev.searched ?? [],
-                }
-              case 'batch':
-                return {
-                  ...prev,
-                  queries: [...new Set([...prev.queries, ...(ev.queries ?? [])])],
-                  pending: prev.pending.filter((p) => !(ev.sites ?? []).includes(p)),
-                  candidates: [...prev.candidates, ...(ev.candidates ?? [])],
-                  dropped: prev.dropped + (ev.dropped ?? 0),
-                  notes: [...prev.notes, ...(ev.bindingNotes ?? [])],
-                  errors: ev.error ? [...prev.errors, ev.error] : prev.errors,
-                  plan: ev.plan ?? prev.plan,
-                }
-              case 'done':
-                return { ...prev, pending: [], done: true, plan: ev.plan ?? prev.plan }
-              case 'error':
-                return {
-                  ...prev,
-                  pending: [],
-                  done: true,
-                  errors: [...prev.errors, ev.error ?? 'search failed'],
-                }
-              default:
-                return prev
-            }
-          })
-        },
-        controller.signal,
-      )
-    } catch (e) {
-      if (controller.signal.aborted) setResult((prev) => (prev ? { ...prev, stopped: true } : prev))
-      if (!controller.signal.aborted)
-        setResult((prev) =>
-          prev
-            ? {
-                ...prev,
-                errors: [...prev.errors, errorMessage(e)],
-              }
-            : prev,
-        )
-    } finally {
-      setSearching(false)
-      setResult((prev) => (prev ? { ...prev, pending: [], done: true } : prev))
-    }
-  }
-
-  // The interactive-search buttons open the modal already searching.
-  // Deferred so the modal paints first (and StrictMode's double-invoke
-  // cancels via cleanup).
-  useEffect(() => {
-    if (!sel.autoSearch) return
-    const id = setTimeout(() => void interactiveSearch(), 0)
-    return () => clearTimeout(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const { searchController, searching, result, searchScope, interactiveSearch } = useReleaseSearch(seriesID, sel, editionWide, allBooks, busy)
 
   // Source failures are secondary to the results: one line, opened on
   // demand, or straight away when they are all there is to show. Notes
   // ("no results", "no confident match") are answers, not failures.
   const problems = [...new Set(result?.errors ?? [])].map(tidyProblem)
   const notes = [...new Set(result?.notes ?? [])].map(tidyProblem)
-  // Releases ruled out for being an edition the series has none of, by
-  // edition: the one thing to do about them is add that edition.
-  const byEdition = new Map<
-    string,
-    { name: string; language: string; volumes: number; titles: Set<string> }
-  >()
-  for (const c of result?.candidates ?? []) {
-    const o = c.otherEdition
-    if (!o || o.inLibrary) continue
-    const key = `${o.name}/${o.language}`
-    const group = byEdition.get(key) ?? { name: o.name, language: o.language, volumes: 0, titles: new Set() }
-    group.titles.add(c.title)
-    group.volumes = Math.max(group.volumes, o.volumes)
-    byEdition.set(key, group)
-  }
-  const missing = [...byEdition.values()].map((m) => ({ ...m, releases: m.titles.size }))
   const [problemsOpen, setProblemsOpen] = useState<boolean | null>(null)
   const showProblems =
     problems.length > 0 && (problemsOpen ?? (!!result?.done && result.candidates.length === 0))
@@ -391,120 +255,11 @@ function Inner({
                 </Button>
               )}
               {result && (
-                <Group justify="space-between" gap="xs">
-                  <Group gap={6}>
-                    <Text size="sm" role="status">
-                      {searching
-                        ? result.pending.length > 0
-                          ? `Searching ${result.pending.length} of ${result.searched.length} ${plural(result.searched.length, 'source')}…`
-                          : 'Searching…'
-                        : result.stopped
-                          ? 'Search stopped. Results already received are still available.'
-                          : `Searched ${result.searched.length} ${plural(result.searched.length, 'source')}`}
-                    </Text>
-                    {result.queries.length > 0 && (
-                      <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-                        for {result.queries.join(' · ')}
-                      </Text>
-                    )}
-                    {result.pending.map((p) => (
-                      <Badge
-                        key={p}
-                        size="sm"
-                        variant="light"
-                        color="gray"
-                        leftSection={<Loader size={10} />}
-                      >
-                        {p.split('/')[1] ?? p}
-                      </Badge>
-                    ))}
-                    {problems.length > 0 && (
-                      <Button
-                        size="compact-xs"
-                        variant="subtle"
-                        color="orange"
-                        aria-expanded={showProblems}
-                        onClick={() => setProblemsOpen(!showProblems)}
-                      >
-                        {problems.length} {plural(problems.length, 'source')} had
-                        problems
-                      </Button>
-                    )}
-                  </Group>
-                  {searching ? (
-                    <Button
-                      size="compact-xs"
-                      variant="default"
-                      onClick={() => searchController.current?.abort()}
-                    >
-                      Stop search
-                    </Button>
-                  ) : (
-                    <Button
-                      size="compact-xs"
-                      variant="default"
-                      leftSection={<IconRefresh size={12} />}
-                      onClick={() => void interactiveSearch()}
-                      disabled={busy}
-                    >
-                      Search again
-                    </Button>
-                  )}
-                </Group>
+                <SearchStatus result={result} searching={searching} problems={problems} showProblems={showProblems} setProblemsOpen={setProblemsOpen} searchController={searchController} interactiveSearch={interactiveSearch} busy={busy} />
               )}
               {result && (
                 <Stack gap={4}>
-                  {showProblems && (
-                    <Stack
-                      gap={2}
-                      p="xs"
-                      style={{
-                        borderLeft: '3px solid var(--mantine-color-orange-6)',
-                        background: 'var(--mantine-color-orange-light)',
-                        borderRadius: 'var(--mantine-radius-sm)',
-                      }}
-                    >
-                      {problems.map((p) => (
-                        <Text key={p} size="xs" style={{ overflowWrap: 'anywhere' }}>
-                          {p}
-                        </Text>
-                      ))}
-                    </Stack>
-                  )}
-                  {!searching &&
-                    onAddEdition &&
-                    missing.map((m) => (
-                      <Group key={`${m.name}/${m.language}`} gap="xs" justify="space-between">
-                        <Text size="sm">
-                          {m.releases === 1 ? '1 release calls itself' : `${m.releases} releases call themselves`}{' '}
-                          {m.name} ({m.language}); no edition of this series has that name.
-                        </Text>
-                        <Button
-                          size="compact-xs"
-                          variant="default"
-                          onClick={() =>
-                            onAddEdition({ editionName: m.name, language: m.language, volumes: m.volumes || undefined })
-                          }
-                        >
-                          Add {m.name}
-                        </Button>
-                      </Group>
-                    ))}
-                  {notes.map((n) => (
-                    <Text key={n} size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-                      {n}
-                    </Text>
-                  ))}
-                  {result.done &&
-                    !result.stopped &&
-                    problems.length === 0 &&
-                    notes.length === 0 &&
-                    result.candidates.length === 0 && (
-                      <Text size="sm" c="dimmed">
-                        No releases found. Check that this series has an enabled indexer for{' '}
-                        {sel.ledger}s and that its source matches the correct title.
-                      </Text>
-                    )}
+                  <SearchNotices result={result} searching={searching} problems={problems} notes={notes} showProblems={showProblems} onAddEdition={onAddEdition} sel={sel} />
                   {/* One book needs a choice of release, not a plan. */}
                   {result.plan && result.plan.books.length > 1 ? (
                     // Each batch brings a fresh provisional plan; nothing is
@@ -531,55 +286,7 @@ function Inner({
 
           {!editionWide && (
             <Tabs.Panel value="files" pt="sm">
-              <Stack gap="xs">
-                {shown.length === 0 && (
-                  <Text size="sm" c="dimmed">
-                    No file for this book.
-                  </Text>
-                )}
-                {shown.map((f) => (
-                  <Card key={f.id} withBorder padding="xs">
-                    <Group justify="space-between" wrap="nowrap">
-                      <div style={{ minWidth: 0 }}>
-                        <Text size="sm" title={f.path} style={{ overflowWrap: 'anywhere' }}>
-                          {fileName(f.path)}
-                        </Text>
-                        <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
-                          {fileOrigin(f)} · {fmtSize(f.size)}
-                        </Text>
-                        {/* Its score below says why. */}
-                        {unused.includes(f) && (
-                          <Text size="xs" c="orange" mt={2}>
-                            On disk, but this edition doesn’t use it.
-                          </Text>
-                        )}
-                        <FileScoreDetails seriesID={seriesID} versionID={sel.versionId} fileID={f.id} />
-                      </div>
-                      <Button
-                        size="compact-xs"
-                        color="red"
-                        variant="subtle"
-                        leftSection={<IconTrash size={14} />}
-                        disabled={busy}
-                        onClick={() =>
-                          confirm({
-                            title: 'Delete file from disk?',
-                            message: `Delete ${f.path}? This removes the archive from every book and edition that uses it. This cannot be undone. Missing books may download again.`,
-                            label: 'Delete file',
-                            onConfirm: async () => {
-                              await api.deleteFile(f.id)
-                              onChanged()
-                              notify.ok('File deleted')
-                            },
-                          })
-                        }
-                      >
-                        Delete
-                      </Button>
-                    </Group>
-                  </Card>
-                ))}
-              </Stack>
+              <BookFiles shown={shown} unused={unused} seriesID={seriesID} sel={sel} busy={busy} confirm={confirm} onChanged={onChanged} />
             </Tabs.Panel>
           )}
         </Tabs>
