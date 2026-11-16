@@ -84,15 +84,15 @@ func TestUpgradeDisplacementThenOrganizeDoesNotCollide(t *testing.T) {
 
 	// The first file claims the book and is organized into the book folder.
 	first, _ := add("Yotsuba v01.cbz")
-	if _, err := srv.importer.ApplyUpgrades(ctx, sid, first, []store.BookRef{slot}, false); err != nil {
+	if _, err := srv.files.ApplyUpgrades(ctx, sid, first, []store.BookRef{slot}, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.importer.OrganizeReviewedFile(ctx, sid, first); err != nil {
+	if err := srv.files.OrganizeReviewedFile(ctx, sid, first); err != nil {
 		t.Fatal(err)
 	}
 	// The second (better, forced) file takes the book; the first is exiled.
 	second, _ := add("Yotsuba v01 (Digital).cbz")
-	res, err := srv.importer.ApplyUpgrades(ctx, sid, second, []store.BookRef{slot}, true)
+	res, err := srv.files.ApplyUpgrades(ctx, sid, second, []store.BookRef{slot}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestUpgradeDisplacementThenOrganizeDoesNotCollide(t *testing.T) {
 		t.Fatalf("expected first file displaced, got %+v", res.Replaced)
 	}
 	// Organizing the winner must not collide with the exiled file's path.
-	if err := srv.importer.OrganizeReviewedFile(ctx, sid, second); err != nil {
+	if err := srv.files.OrganizeReviewedFile(ctx, sid, second); err != nil {
 		t.Fatalf("organizing the winning file failed: %v", err)
 	}
 	files, err := srv.store.ListFiles(ctx, sid)

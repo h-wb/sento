@@ -250,7 +250,7 @@ func TestImportReviewRetainsClaimsAndCompletesExistingPayload(t *testing.T) {
 	if err = st.SetQueueExternalID(ctx, qid, "remote"); err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, reg, t.TempDir(), nil)
+	im := testImporter(st, reg, t.TempDir(), nil)
 	if n, err := im.ProcessQueue(ctx); err != nil || n != 0 {
 		t.Fatalf("unexpected import: %d %v", n, err)
 	}
@@ -306,7 +306,7 @@ func TestImportReviewFileCarriesTheReleaseClaims(t *testing.T) {
 	if err = st.SetQueueExternalID(ctx, qid, "remote"); err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, provider.NewRegistry(p), t.TempDir(), nil)
+	im := testImporter(st, provider.NewRegistry(p), t.TempDir(), nil)
 	if _, err := im.ProcessQueue(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +338,7 @@ func TestTransientProviderErrorBacksOffAndRetainsClaims(t *testing.T) {
 	if err = st.SetQueueExternalID(ctx, qid, "remote"); err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, reg, t.TempDir(), nil)
+	im := testImporter(st, reg, t.TempDir(), nil)
 	if _, err = im.ProcessQueue(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestFileFactsAreSpecificAndManualCorrectionsSurviveRetry(t *testing.T) {
 	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
-	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+	im := testImporter(st, provider.NewRegistry(), t.TempDir(), nil)
 	snap, _ := json.Marshal(ReleaseCandidate{Title: "ONE PIECE v01 [Advertised]", Parse: parse.Result{Group: "Advertised", Language: "fr"}})
 	path := filepath.Join(t.TempDir(), "ONE PIECE v01 [Actual].cbz")
 	if err := os.WriteFile(path, []byte("bytes"), 0600); err != nil {
@@ -410,7 +410,7 @@ func TestRecordAssetRecordsStatSignatureWithFingerprint(t *testing.T) {
 	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
-	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+	im := testImporter(st, provider.NewRegistry(), t.TempDir(), nil)
 	snap, _ := json.Marshal(ReleaseCandidate{Title: "ONE PIECE v01 [Advertised]"})
 	path := filepath.Join(t.TempDir(), "ONE PIECE v01 [Actual].cbz")
 	if err := os.WriteFile(path, []byte("bytes"), 0600); err != nil {

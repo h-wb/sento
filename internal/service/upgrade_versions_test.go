@@ -16,7 +16,7 @@ func TestUpgradeKeepsBlackAndWhiteAndColoredCopies(t *testing.T) {
 	t.Parallel()
 	lib, st, sid, edition, books, bw := modelFixture(t)
 	ctx := context.Background()
-	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+	im := testImporter(st, provider.NewRegistry(), t.TempDir(), nil)
 	colored, err := st.AddFormat(ctx, profile.Format{Name: "Colored", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "colored"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +50,7 @@ func TestUpgradeKeepsBlackAndWhiteAndColoredCopies(t *testing.T) {
 	}
 	add := func(name string, flags map[string]bool) int64 {
 		t.Helper()
-		path := filepath.Join(im.libraryRoot, name)
+		path := filepath.Join(im.files.libraryRoot, name)
 		writeCBZ(t, path, name)
 		id, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, Facts: store.AssetFacts{Title: name, FactsKnown: true, Flags: flags}}, nil, nil)
 		if err != nil {
@@ -60,23 +60,23 @@ func TestUpgradeKeepsBlackAndWhiteAndColoredCopies(t *testing.T) {
 	}
 	colorSlot, bwSlot := modelRef(edition, books[0], color), modelRef(edition, books[0], bw)
 	colorFile := add("ONE PIECE v01 (Colored).cbz", map[string]bool{"digital": true, "colored": true})
-	if _, err := im.ApplyUpgrades(ctx, sid, colorFile, []store.BookRef{colorSlot}, false); err != nil {
+	if _, err := im.files.ApplyUpgrades(ctx, sid, colorFile, []store.BookRef{colorSlot}, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.PinCoverage(ctx, sid, store.AssetCoverage{FileID: colorFile, VersionID: color.ID, BookID: books[0].ID, Pinned: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := im.OrganizeReviewedFile(ctx, sid, colorFile); err != nil {
+	if err := im.files.OrganizeReviewedFile(ctx, sid, colorFile); err != nil {
 		t.Fatal(err)
 	}
 
 	// Equal scores and the other copy's pin must not block this copy.
 	bwFile := add("ONE PIECE v01 (Digital).cbz", map[string]bool{"digital": true})
-	result, err := im.ApplyUpgrades(ctx, sid, bwFile, []store.BookRef{bwSlot}, false)
+	result, err := im.files.ApplyUpgrades(ctx, sid, bwFile, []store.BookRef{bwSlot}, false)
 	if err != nil || len(result.Replaced) != 0 || len(result.Kept) != 0 {
 		t.Fatalf("another copy interfered: %+v, %v", result, err)
 	}
-	if err := im.OrganizeReviewedFile(ctx, sid, bwFile); err != nil {
+	if err := im.files.OrganizeReviewedFile(ctx, sid, bwFile); err != nil {
 		t.Fatal(err)
 	}
 	assertOwners := func(bwID int64) {
@@ -96,17 +96,17 @@ func TestUpgradeKeepsBlackAndWhiteAndColoredCopies(t *testing.T) {
 
 	// An upgrade of the default copy preserves the pinned colored copy.
 	better := add("ONE PIECE v01 (Premium).cbz", map[string]bool{"digital": true, "premium": true})
-	result, err = im.ApplyUpgrades(ctx, sid, better, []store.BookRef{bwSlot}, false)
+	result, err = im.files.ApplyUpgrades(ctx, sid, better, []store.BookRef{bwSlot}, false)
 	if err != nil || len(result.Replaced) != 1 || result.Replaced[0].FileID != bwFile || result.Replaced[0].VersionID != bw.ID {
 		t.Fatalf("wrong copy displaced: %+v, %v", result, err)
 	}
-	if err := im.OrganizeReviewedFile(ctx, sid, better); err != nil {
+	if err := im.files.OrganizeReviewedFile(ctx, sid, better); err != nil {
 		t.Fatal(err)
 	}
 	assertOwners(better)
 	// Even force cannot let a profile-refused file evict the accepted copy.
 	refused := add("ONE PIECE v01 (Colored Premium).cbz", map[string]bool{"digital": true, "premium": true, "colored": true})
-	result, err = im.ApplyUpgrades(ctx, sid, refused, []store.BookRef{bwSlot}, true)
+	result, err = im.files.ApplyUpgrades(ctx, sid, refused, []store.BookRef{bwSlot}, true)
 	if err != nil || len(result.Replaced) != 0 {
 		t.Fatalf("refused file displaced an accepted copy: %+v, %v", result, err)
 	}
@@ -149,7 +149,7 @@ func TestUpgradeKeepsBlackAndWhiteAndColoredCopies(t *testing.T) {
 	if err != nil || len(states[original.ID][0].FileIDs) != 1 || states[original.ID][0].FileIDs[0] != bwFile {
 		t.Fatalf("later copy could not reuse verified contents: %+v, %v", states[original.ID], err)
 	}
-	if err := im.OrganizeReviewedFile(ctx, sid, bwFile); err != nil {
+	if err := im.files.OrganizeReviewedFile(ctx, sid, bwFile); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -158,7 +158,7 @@ func TestUpgradeScopesPinsAndBothVersionsOfTheSameBook(t *testing.T) {
 	t.Parallel()
 	lib, st, sid, edition, books, first := modelFixture(t)
 	ctx := context.Background()
-	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+	im := testImporter(st, provider.NewRegistry(), t.TempDir(), nil)
 	digital, err := st.AddFormat(ctx, profile.Format{Name: "Digital", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "digital"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -178,7 +178,7 @@ func TestUpgradeScopesPinsAndBothVersionsOfTheSameBook(t *testing.T) {
 	slots := []store.BookRef{modelRef(edition, books[0], versions[0]), modelRef(edition, books[0], versions[1])}
 	add := func(name string, digital bool) int64 {
 		t.Helper()
-		path := filepath.Join(im.libraryRoot, name)
+		path := filepath.Join(im.files.libraryRoot, name)
 		writeCBZ(t, path, name)
 		id, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, Facts: store.AssetFacts{FactsKnown: true, Flags: map[string]bool{"digital": digital}}}, nil, nil)
 		if err != nil {
@@ -187,14 +187,14 @@ func TestUpgradeScopesPinsAndBothVersionsOfTheSameBook(t *testing.T) {
 		return id
 	}
 	old := add("ONE PIECE v01.cbz", false)
-	if _, err := im.ApplyUpgrades(ctx, sid, old, slots, false); err != nil {
+	if _, err := im.files.ApplyUpgrades(ctx, sid, old, slots, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.PinCoverage(ctx, sid, store.AssetCoverage{FileID: old, VersionID: versions[1].ID, BookID: books[0].ID, Pinned: true}); err != nil {
 		t.Fatal(err)
 	}
 	better := add("ONE PIECE v01 (Digital).cbz", true)
-	result, err := im.ApplyUpgrades(ctx, sid, better, slots, false)
+	result, err := im.files.ApplyUpgrades(ctx, sid, better, slots, false)
 	if err != nil || len(result.Replaced) != 1 || len(result.Kept) != 1 {
 		t.Fatalf("both copies were not evaluated: %+v, %v", result, err)
 	}

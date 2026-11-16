@@ -38,35 +38,35 @@ type CleanupResult struct {
 
 // CleanupPreview describes intent, never changes it. A paused edition supplies
 // candidates only; explicit selection is required for every file moved.
-func (im *Importer) CleanupPreview(ctx context.Context, sid, eid int64) ([]CleanupFile, error) {
-	files, err := im.store.ListFiles(ctx, sid)
+func (lf *LibraryFiles) CleanupPreview(ctx context.Context, sid, eid int64) ([]CleanupFile, error) {
+	files, err := lf.store.ListFiles(ctx, sid)
 	if err != nil {
 		return nil, err
 	}
-	editions, err := im.store.ListEditions(ctx, sid)
+	editions, err := lf.store.ListEditions(ctx, sid)
 	if err != nil {
 		return nil, err
 	}
 	if eid != 0 && editionByID(editions, eid) == nil {
 		return nil, store.ErrNotFound
 	}
-	books, err := im.store.SeriesBooksByNumber(ctx, sid)
+	books, err := lf.store.SeriesBooksByNumber(ctx, sid)
 	if err != nil {
 		return nil, err
 	}
-	contents, err := im.store.Contents(ctx, sid)
+	contents, err := lf.store.Contents(ctx, sid)
 	if err != nil {
 		return nil, err
 	}
-	coverage, err := im.store.Coverage(ctx, sid)
+	coverage, err := lf.store.Coverage(ctx, sid)
 	if err != nil {
 		return nil, err
 	}
-	versions, err := im.store.ListVersions(ctx, sid)
+	versions, err := lf.store.ListVersions(ctx, sid)
 	if err != nil {
 		return nil, err
 	}
-	jobs, err := im.store.SeriesQueueItems(ctx, sid)
+	jobs, err := lf.store.SeriesQueueItems(ctx, sid)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (im *Importer) CleanupPreview(ctx context.Context, sid, eid int64) ([]Clean
 		pinned[c.FileID] = pinned[c.FileID] || c.Pinned
 	}
 	// Pins on deselected copies still protect the asset.
-	pins, err := im.store.PinnedFiles(ctx, sid)
+	pins, err := lf.store.PinnedFiles(ctx, sid)
 	if err != nil {
 		return nil, err
 	}
@@ -158,16 +158,16 @@ func (im *Importer) CleanupPreview(ctx context.Context, sid, eid int64) ([]Clean
 	return out, nil
 }
 
-func (im *Importer) CleanupFiles(ctx context.Context, sid, eid int64, ids []int64, days int) (*CleanupResult, error) {
+func (lf *LibraryFiles) CleanupFiles(ctx context.Context, sid, eid int64, ids []int64, days int) (*CleanupResult, error) {
 	if len(ids) == 0 || len(ids) > 500 {
 		return nil, apperr.Invalidf("select between 1 and 500 files")
 	}
 	if days < 1 || days > 365 {
 		return nil, apperr.Invalidf("trash retention must be between 1 and 365 days")
 	}
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	preview, err := im.CleanupPreview(ctx, sid, eid)
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+	preview, err := lf.CleanupPreview(ctx, sid, eid)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func (im *Importer) CleanupFiles(ctx context.Context, sid, eid int64, ids []int6
 			result.Skipped = append(result.Skipped, CleanupSkipped{id, reason})
 			continue
 		}
-		if err = im.trashFile(ctx, sid, f, days, ""); err != nil {
+		if err = lf.trashFile(ctx, sid, f, days, ""); err != nil {
 			result.Skipped = append(result.Skipped, CleanupSkipped{id, err.Error()})
 			continue
 		}
@@ -195,7 +195,7 @@ func (im *Importer) CleanupFiles(ctx context.Context, sid, eid int64, ids []int6
 	return result, nil
 }
 
-func (im *Importer) trashFile(ctx context.Context, sid int64, f CleanupFile, days int, expectedDigest string) error {
+func (lf *LibraryFiles) trashFile(ctx context.Context, sid int64, f CleanupFile, days int, expectedDigest string) error {
 	info, err := os.Lstat(f.Path)
 	if err != nil {
 		return err
@@ -208,7 +208,7 @@ func (im *Importer) trashFile(ctx context.Context, sid int64, f CleanupFile, day
 		return err
 	}
 	if expectedDigest != "" && digest != expectedDigest {
-		return im.reopenChangedReviewTrash(ctx, f.FileID)
+		return lf.reopenChangedReviewTrash(ctx, f.FileID)
 	}
 	dir := filepath.Join(filepath.Dir(f.Path), fileTrashDir, strconv.FormatInt(f.FileID, 10))
 	if err = os.MkdirAll(dir, 0o700); err != nil {
@@ -219,20 +219,20 @@ func (im *Importer) trashFile(ctx context.Context, sid int64, f CleanupFile, day
 	}
 	dest := filepath.Join(dir, filepath.Base(f.Path))
 	now := time.Now().UTC()
-	if err = im.store.BeginFileTrash(ctx, sid, f.FileID, f.Path, dest, digest, now.Format(dbTimeLayout), now.AddDate(0, 0, days).Format(dbTimeLayout)); err != nil {
+	if err = lf.store.BeginFileTrash(ctx, sid, f.FileID, f.Path, dest, digest, now.Format(dbTimeLayout), now.AddDate(0, 0, days).Format(dbTimeLayout)); err != nil {
 		return err
 	}
 	// Link then unlink on the same filesystem: no overwrite, no payload rewrite.
 	if err = moveArchive(f.Path, dest); err != nil {
-		if rollback := im.store.AbortFileTrash(context.WithoutCancel(ctx), f.FileID); rollback != nil {
+		if rollback := lf.store.AbortFileTrash(context.WithoutCancel(ctx), f.FileID); rollback != nil {
 			return fmt.Errorf("move failed: %v; restore the retained trash entry: %w", err, rollback)
 		}
 		return err
 	}
-	if err = im.store.CompleteReviewTrash(ctx, f.FileID); err != nil {
+	if err = lf.store.CompleteReviewTrash(ctx, f.FileID); err != nil {
 		return err
 	}
-	_ = im.store.AddDecision(ctx, sid, store.DecisionBody{Event: "file_trashed", Title: filepath.Base(f.Path), Note: fmt.Sprintf("Recoverable for %d days. %s", days, f.Reason)})
+	_ = lf.store.AddDecision(ctx, sid, store.DecisionBody{Event: "file_trashed", Title: filepath.Base(f.Path), Note: fmt.Sprintf("Recoverable for %d days. %s", days, f.Reason)})
 	return nil
 }
 
@@ -276,10 +276,10 @@ func moveArchive(from, to string) error {
 	return nil
 }
 
-func (im *Importer) RestoreTrashedFile(ctx context.Context, sid, fid int64) error {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	f, err := im.store.GetFileTrash(ctx, fid)
+func (lf *LibraryFiles) RestoreTrashedFile(ctx context.Context, sid, fid int64) error {
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+	f, err := lf.store.GetFileTrash(ctx, fid)
 	if err != nil {
 		return err
 	}
@@ -317,7 +317,7 @@ func (im *Importer) RestoreTrashedFile(ctx context.Context, sid, fid int64) erro
 		if err = verifyRetained(f.TrashPath, trashInfo, f.Digest, "trash entry is not a regular file", "trash contents changed; retained mappings cannot be restored"); err != nil {
 			return err
 		}
-		taken, e := im.store.PathTaken(ctx, f.Path, fid)
+		taken, e := lf.store.PathTaken(ctx, f.Path, fid)
 		if e != nil {
 			return e
 		}
@@ -331,21 +331,21 @@ func (im *Importer) RestoreTrashedFile(ctx context.Context, sid, fid int64) erro
 			return fmt.Errorf("original path must be free before restoring: %w", err)
 		}
 	}
-	if err = im.store.RestoreFileRecord(ctx, fid); err != nil {
+	if err = lf.store.RestoreFileRecord(ctx, fid); err != nil {
 		return err
 	}
 	_ = os.Remove(filepath.Dir(f.TrashPath))
 	_ = os.Remove(filepath.Dir(filepath.Dir(f.TrashPath)))
-	return im.store.AddDecision(ctx, sid, store.DecisionBody{Event: "file_restored", Title: filepath.Base(f.Path), Note: "Restored from trash with its original mappings; collection settings unchanged."})
+	return lf.store.AddDecision(ctx, sid, store.DecisionBody{Event: "file_restored", Title: filepath.Base(f.Path), Note: "Restored from trash with its original mappings; collection settings unchanged."})
 }
 
-func (im *Importer) PurgeTrashedFile(ctx context.Context, sid, fid int64) error {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	return im.purgeTrashedFile(ctx, sid, fid)
+func (lf *LibraryFiles) PurgeTrashedFile(ctx context.Context, sid, fid int64) error {
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+	return lf.purgeTrashedFile(ctx, sid, fid)
 }
-func (im *Importer) purgeTrashedFile(ctx context.Context, sid, fid int64) error {
-	f, err := im.store.GetFileTrash(ctx, fid)
+func (lf *LibraryFiles) purgeTrashedFile(ctx context.Context, sid, fid int64) error {
+	f, err := lf.store.GetFileTrash(ctx, fid)
 	if err != nil {
 		return err
 	}
@@ -382,20 +382,20 @@ func (im *Importer) purgeTrashedFile(ctx context.Context, sid, fid int64) error 
 			return err
 		}
 	}
-	if _, err = im.store.DeleteFile(ctx, fid); err != nil {
+	if _, err = lf.store.DeleteFile(ctx, fid); err != nil {
 		return err
 	}
 	_ = os.Remove(filepath.Dir(f.TrashPath))
 	_ = os.Remove(filepath.Dir(filepath.Dir(f.TrashPath)))
-	return im.store.AddDecision(ctx, sid, store.DecisionBody{Event: "file_deleted", Title: filepath.Base(f.Path), Note: "Permanently deleted from library trash. Download-client payloads were not touched."})
+	return lf.store.AddDecision(ctx, sid, store.DecisionBody{Event: "file_deleted", Title: filepath.Base(f.Path), Note: "Permanently deleted from library trash. Download-client payloads were not touched."})
 }
 
 // PurgeExpiredTrash is run by housekeeping. A failure retains its record for
 // another pass, and never falls back to deleting the original library path.
-func (im *Importer) PurgeExpiredTrash(ctx context.Context) error {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	files, err := im.store.ListFileTrash(ctx, 0)
+func (lf *LibraryFiles) PurgeExpiredTrash(ctx context.Context) error {
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+	files, err := lf.store.ListFileTrash(ctx, 0)
 	if err != nil {
 		return err
 	}
@@ -403,7 +403,7 @@ func (im *Importer) PurgeExpiredTrash(ctx context.Context) error {
 	var failures []error
 	for _, f := range files {
 		if f.PurgeAfter <= now {
-			if err = im.purgeTrashedFile(ctx, f.SeriesID, f.FileID); err != nil {
+			if err = lf.purgeTrashedFile(ctx, f.SeriesID, f.FileID); err != nil {
 				failures = append(failures, fmt.Errorf("trash file %d: %w", f.FileID, err))
 			}
 		}

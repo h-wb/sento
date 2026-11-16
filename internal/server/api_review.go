@@ -45,7 +45,7 @@ func (s *Server) handleResolveFileReviews(w http.ResponseWriter, r *http.Request
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	res, err := s.importer.ResolveFileReviews(r.Context(), id, body.FileIDs)
+	res, err := s.files.ResolveFileReviews(r.Context(), id, body.FileIDs)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -70,7 +70,7 @@ func (s *Server) handleMatchRelease(w http.ResponseWriter, r *http.Request) {
 		respondList(w, matches, err)
 		return
 	}
-	matches, err := s.importer.MatchReleaseFiles(r.Context(), id, body.VersionID, body.FileIDs)
+	matches, err := s.files.MatchReleaseFiles(r.Context(), id, body.VersionID, body.FileIDs)
 	respondList(w, matches, err)
 }
 
@@ -141,7 +141,7 @@ func (s *Server) handleReviewChoicesApply(w http.ResponseWriter, r *http.Request
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	out, err := s.importer.ApplyReviewChoices(r.Context(), id, body)
+	out, err := s.files.ApplyReviewChoices(r.Context(), id, body)
 	if err != nil {
 		writeErr(w, err)
 		return

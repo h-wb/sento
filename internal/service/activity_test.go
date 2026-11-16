@@ -128,7 +128,7 @@ func TestActivityRetiresFailedAttemptsOnlyWhenAllBooksAreCovered(t *testing.T) {
 	check(false) // One replacement cannot clear a partly uncovered pack.
 	reserve("replacement-2", 1)
 	check(true)
-	targets, err := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil).TryAnother(ctx, []int64{old})
+	targets, err := testImporter(st, provider.NewRegistry(), t.TempDir(), nil).TryAnother(ctx, []int64{old})
 	if err != nil || len(targets) != 0 {
 		t.Fatalf("resolved failure was recovered again: %v %v", targets, err)
 	}

@@ -20,7 +20,9 @@ restored and purged. Downloads landing in the library are
 | `internal/service/filestat_linux.go` and siblings | `inodeStat` per platform |
 | `internal/service/scan.go` | `Scanner`, `scan`, `replaced`, `rederiveFacts`, `relink`, `linksFor`, `linksFromProvenance`, `ScanAndAdoptCutoff` |
 | `internal/service/bulkimport.go` | `ProposeImports`, `taggedSeries`, `ImportFolder` |
-| `internal/store/presence.go` | `CheckFilePresence`, folder attribution |
+| `internal/service/presence.go` | `CheckFilePresence`: the presence walk |
+| `internal/store/presence.go` | `SetFilePresence`, folder attribution (`InChapterFolder`) |
+| `internal/service/library_files.go` | `LibraryFiles`, its `mu` lock, `seriesDir` |
 | `internal/service/file_cleanup.go` | `CleanupPreview`, `CleanupFiles`, `trashFile`, `RestoreTrashedFile`, `PurgeTrashedFile`, `PurgeExpiredTrash` |
 | `internal/store/file_trash.go` | the trash journal: `BeginFileTrash`, `RestoreFileRecord`, `AbortFileTrash` |
 | `internal/service/review_trash.go` | resuming interrupted review-trash moves |
@@ -348,19 +350,23 @@ old root stay unchanged, and already-missing files keep their missing state.
 
 See [moving the library](../installation.md#moving-the-library).
 
-## Concurrency: what `Importer.mu` serializes
+## Concurrency: what `LibraryFiles.mu` serializes
 
-One mutex on the `Importer` serializes queue passes and every file mutation:
+One mutex on `LibraryFiles` serializes queue passes and every file mutation:
 review apply and bulk actions, organize, cleanup and trash, removal, and
 upgrades. Decisions and disk operations cannot interleave, so a cleanup
 preview cannot race a review commit, and two passes cannot move the same
-archive. All of these also take the database's edition locks inside their
+archive.
+
+The `Importer` takes the same mutex: `ProcessQueue` holds it for the whole
+pass, and `TryAnother` for one call. `ApplyReviewChoices`, `ApplyUpgrades`,
+`CleanupFiles`, `RestoreTrashedFile`, `PurgeTrashedFile`, `RemoveSeries` and
+`DeleteFile` each take it for one operation.
+
+All of these also take the database's edition locks inside their
 transactions, which is what makes a stale preview safe to reject: the
 review revision, the cleanup eligibility check and the trash journal are all
-rechecked under those locks before writing. `ProcessQueue` holds `mu` for the
-whole pass; `ApplyReviewChoices`, `ApplyUpgrades`, `CleanupFiles`,
-`RestoreTrashedFile`, `PurgeTrashedFile`, `RemoveSeries` and `DeleteFile`
-each take it for one operation.
+rechecked under those locks before writing.
 
 ## File and library endpoints
 

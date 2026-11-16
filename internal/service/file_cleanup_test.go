@@ -16,7 +16,7 @@ func TestCleanupTrashRestoresIdentityAndProtectsSharedAssets(t *testing.T) {
 	ctx := context.Background()
 	lib, st, sid, edition, books, version := modelFixture(t)
 	fid := ownedModelFile(t, st, sid, edition, books[0], version)
-	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+	im := testImporter(st, provider.NewRegistry(), t.TempDir(), nil)
 	files, _ := st.ListFiles(ctx, sid)
 	path := files[0].Path
 	// The download client's hardlink is never moved or removed.
@@ -28,7 +28,7 @@ func TestCleanupTrashRestoresIdentityAndProtectsSharedAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	preview, err := im.CleanupPreview(ctx, sid, edition.ID)
+	preview, err := im.files.CleanupPreview(ctx, sid, edition.ID)
 	if err != nil || len(preview) != 1 || preview[0].Eligible {
 		t.Fatalf("collected file unprotected: %+v %v", preview, err)
 	}
@@ -36,11 +36,11 @@ func TestCleanupTrashRestoresIdentityAndProtectsSharedAssets(t *testing.T) {
 	if _, err = st.SaveVersion(ctx, sid, version); err != nil {
 		t.Fatal(err)
 	}
-	preview, err = im.CleanupPreview(ctx, sid, edition.ID)
+	preview, err = im.files.CleanupPreview(ctx, sid, edition.ID)
 	if err != nil || !preview[0].Eligible || preview[0].Category != "uncollected" {
 		t.Fatal(preview, err)
 	}
-	result, err := im.CleanupFiles(ctx, sid, edition.ID, []int64{fid}, 30)
+	result, err := im.files.CleanupFiles(ctx, sid, edition.ID, []int64{fid}, 30)
 	if err != nil || len(result.Moved) != 1 || len(result.Skipped) != 0 {
 		t.Fatal(result, err)
 	}
@@ -61,7 +61,7 @@ func TestCleanupTrashRestoresIdentityAndProtectsSharedAssets(t *testing.T) {
 	if err != nil || len(byVersion[version.ID][0].FileIDs) != 0 || len(byVersion[version.ID][0].OnDiskFileIDs) != 0 {
 		t.Fatal("trash counted as ownership", byVersion, err)
 	}
-	scanner := NewScanner(st, im.libraryRoot)
+	scanner := NewScanner(st, im.files.libraryRoot)
 	scan, err := scanner.ScanSeriesFolder(ctx, sid, filepath.Dir(path))
 	if err != nil || scan.Scanned != 0 {
 		t.Fatal("scan adopted trash", scan, err)
@@ -73,14 +73,14 @@ func TestCleanupTrashRestoresIdentityAndProtectsSharedAssets(t *testing.T) {
 	if err = st.PinCoverage(ctx, sid, store.AssetCoverage{FileID: fid, VersionID: version.ID, BookID: books[0].ID, Pinned: true}); err == nil {
 		t.Fatal("pinned trashed file")
 	}
-	if _, err = im.RemoveSeries(ctx, sid, RemoveOptions{}); err == nil {
+	if _, err = im.files.RemoveSeries(ctx, sid, RemoveOptions{}); err == nil {
 		t.Fatal("forgot a recoverable trash entry")
 	}
 	// A restore must never overwrite a new file placed at the original path.
 	if err = os.WriteFile(path, []byte("replacement"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err = im.RestoreTrashedFile(ctx, sid, fid); err == nil {
+	if err = im.files.RestoreTrashedFile(ctx, sid, fid); err == nil {
 		t.Fatal("restore overwrote a different file")
 	}
 	if data, _ := os.ReadFile(path); string(data) != "replacement" {
@@ -89,7 +89,7 @@ func TestCleanupTrashRestoresIdentityAndProtectsSharedAssets(t *testing.T) {
 	if err = os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if err = im.RestoreTrashedFile(ctx, sid, fid); err != nil {
+	if err = im.files.RestoreTrashedFile(ctx, sid, fid); err != nil {
 		t.Fatal(err)
 	}
 	if data, err := os.ReadFile(path); err != nil || string(data) != string(original) {
@@ -130,8 +130,8 @@ func TestCleanupRechecksSelectionsPinsAndReview(t *testing.T) {
 	if err = st.MapFile(ctx, sid, fid, []store.BookRef{modelRef(e, books[0], v), modelRef(e, books[0], other)}); err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
-	preview, err := im.CleanupPreview(ctx, sid, e.ID)
+	im := testImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+	preview, err := im.files.CleanupPreview(ctx, sid, e.ID)
 	if err != nil || preview[0].Eligible {
 		t.Fatal("shared file not protected", preview, err)
 	}
@@ -142,7 +142,7 @@ func TestCleanupRechecksSelectionsPinsAndReview(t *testing.T) {
 	if err = st.PinCoverage(ctx, sid, pin); err != nil {
 		t.Fatal(err)
 	}
-	preview, err = im.CleanupPreview(ctx, sid, 0)
+	preview, err = im.files.CleanupPreview(ctx, sid, 0)
 	if err != nil || preview[0].Eligible {
 		t.Fatal("deselected pin not protected", preview, err)
 	}
@@ -150,7 +150,7 @@ func TestCleanupRechecksSelectionsPinsAndReview(t *testing.T) {
 	if err = st.PinCoverage(ctx, sid, pin); err != nil {
 		t.Fatal(err)
 	}
-	preview, err = im.CleanupPreview(ctx, sid, 0)
+	preview, err = im.files.CleanupPreview(ctx, sid, 0)
 	if err != nil || !preview[0].Eligible {
 		t.Fatal(preview, err)
 	}
@@ -159,7 +159,7 @@ func TestCleanupRechecksSelectionsPinsAndReview(t *testing.T) {
 	if _, err = st.SaveVersion(ctx, sid, v); err != nil {
 		t.Fatal(err)
 	}
-	result, err := im.CleanupFiles(ctx, sid, 0, []int64{fid}, 7)
+	result, err := im.files.CleanupFiles(ctx, sid, 0, []int64{fid}, 7)
 	if err != nil || len(result.Moved) != 0 || len(result.Skipped) != 1 {
 		t.Fatal("stale preview removed an active copy", result, err)
 	}
@@ -171,14 +171,14 @@ func TestCleanupRechecksSelectionsPinsAndReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err = im.CleanupFiles(ctx, sid, 0, []int64{review}, 7)
+	result, err = im.files.CleanupFiles(ctx, sid, 0, []int64{review}, 7)
 	if err != nil || len(result.Moved) != 0 {
 		t.Fatal("unfinished file review was cleaned", result, err)
 	}
 	if err = st.MapFile(ctx, sid, review, nil); err != nil {
 		t.Fatal(err)
 	}
-	result, err = im.CleanupFiles(ctx, sid, 0, []int64{review}, 7)
+	result, err = im.files.CleanupFiles(ctx, sid, 0, []int64{review}, 7)
 	if err != nil || len(result.Moved) != 1 {
 		t.Fatal("reviewed unmapped file not eligible", result, err)
 	}
@@ -207,11 +207,11 @@ func TestExpiredTrashPurgeAndInterruptedMoveRecovery(t *testing.T) {
 	if err = st.BeginFileTrash(ctx, sid, fid, path, dest, digest, at, at); err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
-	if err = im.PurgeExpiredTrash(ctx); err == nil {
+	im := testImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+	if err = im.files.PurgeExpiredTrash(ctx); err == nil {
 		t.Fatal("interrupted move lost its original")
 	}
-	if err = im.RestoreTrashedFile(ctx, sid, fid); err != nil {
+	if err = im.files.RestoreTrashedFile(ctx, sid, fid); err != nil {
 		t.Fatal(err)
 	}
 	if err = os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
@@ -223,10 +223,10 @@ func TestExpiredTrashPurgeAndInterruptedMoveRecovery(t *testing.T) {
 	if err = os.Link(path, dest); err != nil {
 		t.Fatal(err)
 	}
-	if err = im.PurgeExpiredTrash(ctx); err == nil {
+	if err = im.files.PurgeExpiredTrash(ctx); err == nil {
 		t.Fatal("partially linked move discarded its record")
 	}
-	if err = im.RestoreTrashedFile(ctx, sid, fid); err != nil {
+	if err = im.files.RestoreTrashedFile(ctx, sid, fid); err != nil {
 		t.Fatal(err)
 	}
 	if err = os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
@@ -238,7 +238,7 @@ func TestExpiredTrashPurgeAndInterruptedMoveRecovery(t *testing.T) {
 	if err = moveArchive(path, dest); err != nil {
 		t.Fatal(err)
 	}
-	if err = im.PurgeExpiredTrash(ctx); err != nil {
+	if err = im.files.PurgeExpiredTrash(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if trash, err := st.ListFileTrash(ctx, sid); err != nil || len(trash) != 0 {
@@ -258,8 +258,8 @@ func TestTrashPurgeRetainsRecordWhenStorageDisappears(t *testing.T) {
 	if _, err := st.SaveVersion(ctx, sid, v); err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
-	result, err := im.CleanupFiles(ctx, sid, 0, []int64{fid}, 7)
+	im := testImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+	result, err := im.files.CleanupFiles(ctx, sid, 0, []int64{fid}, 7)
 	if err != nil || len(result.Moved) != 1 {
 		t.Fatal(result, err)
 	}
@@ -272,13 +272,13 @@ func TestTrashPurgeRetainsRecordWhenStorageDisappears(t *testing.T) {
 	if err = os.Rename(root, root+"-offline"); err != nil {
 		t.Fatal(err)
 	}
-	if err = im.PurgeTrashedFile(ctx, sid, fid); err == nil {
+	if err = im.files.PurgeTrashedFile(ctx, sid, fid); err == nil {
 		t.Error("purged a record while its storage was unavailable")
 	}
 	if err = os.Rename(root+"-offline", root); err != nil {
 		t.Fatal(err)
 	}
-	if err = im.RestoreTrashedFile(ctx, sid, fid); err != nil {
+	if err = im.files.RestoreTrashedFile(ctx, sid, fid); err != nil {
 		t.Fatalf("lost retained identity or mappings: %v", err)
 	}
 }

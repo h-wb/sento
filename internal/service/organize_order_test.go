@@ -23,7 +23,7 @@ func twoCopies(t *testing.T) (im *Importer, st *store.Store, sid int64, standard
 		t.Fatal(err)
 	}
 	library := t.TempDir()
-	im = NewImporter(st, nil, library, nil)
+	im = testImporter(st, nil, library, nil)
 	add := func(name string, version store.CollectedVersion) int64 {
 		path := filepath.Join(library, "incoming", name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -44,7 +44,7 @@ func twoCopies(t *testing.T) (im *Importer, st *store.Store, sid int64, standard
 		return fid
 	}
 	standard, colored = add("standard.cbz", v), add("colored.cbz", other)
-	plans, err := im.PlanOrganize(ctx, sid)
+	plans, err := im.files.PlanOrganize(ctx, sid)
 	if err != nil || len(plans) != 2 {
 		t.Fatalf("plan: %+v %v", plans, err)
 	}
@@ -103,7 +103,7 @@ func TestOrganizeFreesADestinationBeforeUsingIt(t *testing.T) {
 	moveFile(t, st, sid, colored, toStandard)
 	moveFile(t, st, sid, standard, assetPath(filepath.Dir(toStandard), filepath.Base(toStandard), hash))
 
-	res, err := im.Organize(ctx, sid, true, true)
+	res, err := im.files.Organize(ctx, sid, true, true)
 	if err != nil || len(res.Errors) != 0 || res.Renamed != 2 {
 		t.Fatalf("organize: %+v %v", res, err)
 	}
@@ -113,7 +113,7 @@ func TestOrganizeFreesADestinationBeforeUsingIt(t *testing.T) {
 	if got := pathOf(t, st, sid, colored).Path; got != toColored {
 		t.Errorf("colored copy at %s, want %s", got, toColored)
 	}
-	if plan, err := im.PlanOrganize(ctx, sid); err != nil || len(plan) != 0 {
+	if plan, err := im.files.PlanOrganize(ctx, sid); err != nil || len(plan) != 0 {
 		t.Fatalf("a second run has work left: %+v %v", plan, err)
 	}
 }
@@ -126,7 +126,7 @@ func TestOrganizeSwapsTwoFiles(t *testing.T) {
 	moveFile(t, st, sid, standard, toColored)
 	moveFile(t, st, sid, colored, toStandard)
 
-	res, err := im.Organize(ctx, sid, true, true)
+	res, err := im.files.Organize(ctx, sid, true, true)
 	if err != nil || len(res.Errors) != 0 || res.Renamed != 2 {
 		t.Fatalf("organize: %+v %v", res, err)
 	}
@@ -136,7 +136,7 @@ func TestOrganizeSwapsTwoFiles(t *testing.T) {
 			t.Errorf("file %d at %s (%v), want %s", id, f.Path, err, want)
 		}
 	}
-	if plan, err := im.PlanOrganize(ctx, sid); err != nil || len(plan) != 0 {
+	if plan, err := im.files.PlanOrganize(ctx, sid); err != nil || len(plan) != 0 {
 		t.Fatalf("a second run has work left: %+v %v", plan, err)
 	}
 }
@@ -153,7 +153,7 @@ func TestOrganizeLeavesAFallbackNameWhoseOwnerStays(t *testing.T) {
 	if err := SaveMediaSettings(ctx, st, ms); err != nil {
 		t.Fatal(err)
 	}
-	res, err := im.Organize(ctx, sid, true, true)
+	res, err := im.files.Organize(ctx, sid, true, true)
 	if err != nil || len(res.Errors) != 0 || res.Renamed != 2 {
 		t.Fatalf("organize: %+v %v", res, err)
 	}
@@ -161,10 +161,10 @@ func TestOrganizeLeavesAFallbackNameWhoseOwnerStays(t *testing.T) {
 	if filepath.Dir(files[0].Path) != filepath.Dir(files[1].Path) || files[0].Path == files[1].Path {
 		t.Fatalf("copies should share the folder under two names: %s, %s", files[0].Path, files[1].Path)
 	}
-	if plan, err := im.PlanOrganize(ctx, sid); err != nil || len(plan) != 0 {
+	if plan, err := im.files.PlanOrganize(ctx, sid); err != nil || len(plan) != 0 {
 		t.Fatalf("the copy on its fallback name is planned again: %+v %v", plan, err)
 	}
-	if res, err = im.Organize(ctx, sid, true, true); err != nil || res.Renamed != 0 || res.Retagged != 0 {
+	if res, err = im.files.Organize(ctx, sid, true, true); err != nil || res.Renamed != 0 || res.Retagged != 0 {
 		t.Fatalf("a second run moved something: %+v %v", res, err)
 	}
 }

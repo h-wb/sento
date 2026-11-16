@@ -66,12 +66,12 @@ func (im *Importer) reviewedJobComplete(ctx context.Context, item store.QueueIte
 // "Settling jobs"): the last confirmation closes the job, not another run
 // of the importer. History says how many files were confirmed and which
 // planned books no file turned out to hold; those are wanted again.
-func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) error {
-	jobs, err := im.store.SeriesQueueItems(ctx, seriesID)
+func (lf *LibraryFiles) SettleReviewedJobs(ctx context.Context, seriesID int64) error {
+	jobs, err := lf.store.SeriesQueueItems(ctx, seriesID)
 	if err != nil {
 		return err
 	}
-	files, err := im.store.RecordedFiles(ctx, seriesID)
+	files, err := lf.store.RecordedFiles(ctx, seriesID)
 	if err != nil {
 		return err
 	}
@@ -92,13 +92,13 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 			continue
 		}
 		plan := queueBooks(&job)
-		linked, _, err := im.alreadyImported(ctx, job, plan)
+		linked, _, err := alreadyImported(ctx, lf.store, job, plan)
 		if err != nil {
 			return err
 		}
 		var missing []string
 		var kept []string
-		view, err := loadLedger(ctx, im.store, seriesID)
+		view, err := loadLedger(ctx, lf.store, seriesID)
 		if err != nil {
 			return err
 		}
@@ -107,18 +107,18 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 				book := view.book(ref.VersionID, ref.BookID)
 				owned := book != nil && len(book.FileIDs) > 0
 				if owned {
-					kept = append(kept, im.bookName(ctx, ref))
+					kept = append(kept, lf.bookName(ctx, ref))
 				} else {
-					missing = append(missing, im.bookName(ctx, ref))
+					missing = append(missing, lf.bookName(ctx, ref))
 				}
 			}
 		}
-		settled, err := im.store.SettleReviewedQueue(ctx, job.ID)
+		settled, err := lf.store.SettleReviewedQueue(ctx, job.ID)
 		if err != nil || !settled {
 			return err
 		}
 		if listing := jobListing(job); listing > 0 {
-			_ = im.store.ListingWorked(ctx, listing)
+			_ = lf.store.ListingWorked(ctx, listing)
 		}
 		note := fmt.Sprintf("%d %s confirmed in review.", len(delivered), plural(len(delivered), "file"))
 		if len(kept) > 0 {
@@ -126,9 +126,9 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 		}
 		if len(missing) > 0 {
 			note += " Not in this download, wanted again: " + strings.Join(missing, ", ") + "."
-			im.searchAgain(job)
+			lf.again.add(job)
 		}
-		if err := im.store.AddDecision(ctx, seriesID, store.DecisionBody{Event: "imported_after_review", Title: job.Title, Provider: job.ProviderID, Key: job.ExternalID, Note: note}); err != nil {
+		if err := lf.store.AddDecision(ctx, seriesID, store.DecisionBody{Event: "imported_after_review", Title: job.Title, Provider: job.ProviderID, Key: job.ExternalID, Note: note}); err != nil {
 			return err
 		}
 	}
@@ -136,13 +136,13 @@ func (im *Importer) SettleReviewedJobs(ctx context.Context, seriesID int64) erro
 }
 
 // bookName names a planned book for people: "Box Set Edition volume 0".
-func (im *Importer) bookName(ctx context.Context, ref store.BookRef) string {
-	book, err := im.store.GetBook(ctx, ref.BookID)
+func (lf *LibraryFiles) bookName(ctx context.Context, ref store.BookRef) string {
+	book, err := lf.store.GetBook(ctx, ref.BookID)
 	if err != nil {
 		return ref.Ledger + " " + mediafile.RenderPlainNum(ref.Number)
 	}
 	name := ref.Ledger + " " + book.SequenceStr
-	if ed, err := im.store.GetEdition(ctx, book.EditionID); err == nil {
+	if ed, err := lf.store.GetEdition(ctx, book.EditionID); err == nil {
 		name = ed.EditionName + " " + name
 	}
 	return name

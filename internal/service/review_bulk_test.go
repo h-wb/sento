@@ -57,7 +57,7 @@ func TestBulkDeclineResolvesAPackAtOnce(t *testing.T) {
 	_, st, sid, standard, books, version := modelFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "pack", Title: "ONE PIECE pack"}, []store.BookRef{modelRef(standard, books[0], version), modelRef(standard, books[1], version)})
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestBulkDeclineResolvesAPackAtOnce(t *testing.T) {
 		waitingFile(t, st, sid, root, "ONE PIECE 005 (Digital).cbz", "pack"),
 	}
 	owned := ownedModelFile(t, st, sid, standard, books[2], version)
-	res, err := im.ResolveFileReviews(ctx, sid, append(append([]int64{}, fids...), owned, 999999))
+	res, err := im.files.ResolveFileReviews(ctx, sid, append(append([]int64{}, fids...), owned, 999999))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestBulkDeclineResolvesAPackAtOnce(t *testing.T) {
 	if !strings.Contains(last.Note, "wanted again") {
 		t.Errorf("declined books must be wanted again: %q", last.Note)
 	}
-	cleanup, err := im.CleanupPreview(ctx, sid, 0)
+	cleanup, err := im.files.CleanupPreview(ctx, sid, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestBulkDeclineResolvesAPackAtOnce(t *testing.T) {
 		t.Errorf("%d eligible files, want the declined pack (%d)", eligible, len(fids))
 	}
 	for _, ids := range [][]int64{nil, make([]int64, 501)} {
-		if _, err = im.ResolveFileReviews(ctx, sid, ids); !errors.Is(err, apperr.ErrInvalid) {
+		if _, err = im.files.ResolveFileReviews(ctx, sid, ids); !errors.Is(err, apperr.ErrInvalid) {
 			t.Errorf("resolve of %d files: got %v, want invalid", len(ids), err)
 		}
 	}
@@ -146,7 +146,7 @@ func TestMatchWholeReleaseMapsFilesByTheirNumbers(t *testing.T) {
 	_, st, sid, standard, books, version := modelFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "pack", Title: "ONE PIECE pack"}, []store.BookRef{modelRef(standard, books[0], version), modelRef(standard, books[1], version)})
 	if err != nil {
 		t.Fatal(err)
@@ -173,7 +173,7 @@ func TestMatchWholeReleaseMapsFilesByTheirNumbers(t *testing.T) {
 		fid := waitingFile(t, st, sid, root, n.name, n.key)
 		ids = append(ids, fid)
 	}
-	matches, err := im.MatchReleaseFiles(ctx, sid, version.ID, ids)
+	matches, err := im.files.MatchReleaseFiles(ctx, sid, version.ID, ids)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,14 +217,14 @@ func TestMatchWholeReleaseMapsFilesByTheirNumbers(t *testing.T) {
 		t.Fatalf("pack settled while files still wait: %s %v", job.Status, err)
 	}
 	// Answering the rest finishes the import, like any other review.
-	if _, err = im.ResolveFileReviews(ctx, sid, ids[1:]); err != nil {
+	if _, err = im.files.ResolveFileReviews(ctx, sid, ids[1:]); err != nil {
 		t.Fatal(err)
 	}
 	job, err = st.GetQueueItem(ctx, qid)
 	if err != nil || job.Status != store.QueueImported {
 		t.Fatalf("pack not settled after the last answer: %s %v", job.Status, err)
 	}
-	if _, err = im.MatchReleaseFiles(ctx, sid, version.ID, nil); !errors.Is(err, apperr.ErrInvalid) {
+	if _, err = im.files.MatchReleaseFiles(ctx, sid, version.ID, nil); !errors.Is(err, apperr.ErrInvalid) {
 		t.Errorf("match of no files: got %v, want invalid", err)
 	}
 }
@@ -234,7 +234,7 @@ func TestReleaseMatchPreviewUsesBookIdentityAndRevalidatesOnSave(t *testing.T) {
 	lib, st, sid, _, books, version := modelFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	bonus := books[0]
 	bonus.ID, bonus.ProviderID, bonus.CountType, bonus.SequenceStr = 0, "", "extra", "Bonus 1"
 	bonusID, err := st.SaveBook(ctx, sid, bonus)
@@ -258,10 +258,10 @@ func TestReleaseMatchPreviewUsesBookIdentityAndRevalidatesOnSave(t *testing.T) {
 		t.Fatalf("preview guessed book identity from a display number: %+v", preview)
 	}
 	// A decision made after the preview must survive a stale submission.
-	if _, err = im.ResolveFileReviews(ctx, sid, []int64{main}); err != nil {
+	if _, err = im.files.ResolveFileReviews(ctx, sid, []int64{main}); err != nil {
 		t.Fatal(err)
 	}
-	matches, err := im.MatchReleaseFiles(ctx, sid, version.ID, ids)
+	matches, err := im.files.MatchReleaseFiles(ctx, sid, version.ID, ids)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestMatchReleaseRemapsImportClaimsToAnotherVersion(t *testing.T) {
 		}
 	}
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 
 	colored, err := st.AddFormat(ctx, profile.Format{Name: "Colored", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "colored"}}})
 	if err != nil {
@@ -351,7 +351,7 @@ func TestMatchReleaseRemapsImportClaimsToAnotherVersion(t *testing.T) {
 	}
 	ids = append(ids, owned)
 
-	matches, err := im.MatchReleaseFiles(ctx, sid, card.ID, ids)
+	matches, err := im.files.MatchReleaseFiles(ctx, sid, card.ID, ids)
 	if err != nil {
 		t.Fatal(err)
 	}

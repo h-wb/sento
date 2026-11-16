@@ -503,6 +503,16 @@ export interface EditionUpdate {
 }
 
 //////////
+// source: library_files.go
+
+/**
+ * LibraryFiles makes every change to the files in the library: review,
+ * organization, upgrades, removal and trash.
+ */
+export interface LibraryFiles {
+}
+
+//////////
 // source: listings.go
 
 

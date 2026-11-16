@@ -78,7 +78,7 @@ func run(configPath string) error {
 	schedCtx, stopSched := context.WithCancel(context.Background())
 	defer stopSched()
 	sched := scheduler.New(app.Store(), app.LibraryService(), app.SearchSvc(),
-		app.Importer(), app.Scanner(), app.ExtensionsSvc(), app.HealthSvc(), scheduler.DefaultIntervals())
+		app.Importer(), app.LibraryFiles(), app.Scanner(), app.ExtensionsSvc(), app.HealthSvc(), scheduler.DefaultIntervals())
 	app.SetScheduler(sched)
 	sched.Start(schedCtx)
 

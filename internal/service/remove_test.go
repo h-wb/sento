@@ -60,8 +60,8 @@ func TestRemoveSeriesTakesItsFilesAndOwnTorrents(t *testing.T) {
 	}
 
 	client := &removingProvider{}
-	im := NewImporter(st, provider.NewRegistry(client), root, nil)
-	got, err := im.RemoveSeries(ctx, sid, RemoveOptions{DeleteFiles: true, RemoveDownloads: true})
+	im := testImporter(st, provider.NewRegistry(client), root, nil)
+	got, err := im.files.RemoveSeries(ctx, sid, RemoveOptions{DeleteFiles: true, RemoveDownloads: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestRemoveSeriesKeepsFilesAndTorrentsByDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := &removingProvider{}
-	if _, err = NewImporter(st, provider.NewRegistry(client), t.TempDir(), nil).RemoveSeries(ctx, sid, RemoveOptions{}); err != nil {
+	if _, err = testImporter(st, provider.NewRegistry(client), t.TempDir(), nil).files.RemoveSeries(ctx, sid, RemoveOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = os.Stat(files[0].Path); err != nil || len(client.removed) != 0 {
@@ -123,17 +123,17 @@ func TestDeleteFileRespectsPins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, provider.NewRegistry(), root, nil)
+	im := testImporter(st, provider.NewRegistry(), root, nil)
 	if err = st.PinCoverage(ctx, sid, store.AssetCoverage{FileID: fid, VersionID: version.ID, BookID: ws[0].ID, Pinned: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err = im.DeleteFile(ctx, fid); err == nil {
+	if err = im.files.DeleteFile(ctx, fid); err == nil {
 		t.Fatal("a pinned file was deleted")
 	}
 	if err = st.PinCoverage(ctx, sid, store.AssetCoverage{FileID: fid, VersionID: version.ID, BookID: ws[0].ID}); err != nil {
 		t.Fatal(err)
 	}
-	if err = im.DeleteFile(ctx, fid); err != nil {
+	if err = im.files.DeleteFile(ctx, fid); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = os.Stat(dir); !os.IsNotExist(err) {
@@ -149,7 +149,7 @@ func TestRemoveSeriesForgetsItsHistory(t *testing.T) {
 	if err := st.AddDecision(ctx, sid, store.DecisionBody{Event: "grabbed", Title: "ONE PIECE v01"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil).RemoveSeries(ctx, sid, RemoveOptions{}); err != nil {
+	if _, err := testImporter(st, provider.NewRegistry(), t.TempDir(), nil).files.RemoveSeries(ctx, sid, RemoveOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if left, _ := st.ListDecisions(ctx, 0, 10); len(left) != 0 {

@@ -57,7 +57,7 @@ func TestReviewChoicesRejectsChangedBytesBeforePreview(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "keep"}}}); err != nil {
+				if _, err = testImporter(st, nil, root, nil).files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "keep"}}}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -105,7 +105,7 @@ func TestReviewChoicesExplainsDeselectedPinTrashBlocker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "keep"}}}); err != nil {
+	if _, err = testImporter(st, nil, root, nil).files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "keep"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err = st.PinCoverage(ctx, sid, store.AssetCoverage{FileID: fid, VersionID: version.ID, BookID: ref.BookID, Pinned: true}); err != nil {
@@ -126,7 +126,7 @@ func TestReviewChoicesKeepsExistingVolumeAndTrashesPackDuplicate(t *testing.T) {
 	lib, st, sid, col, books, version := factsClaimsFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	for n := 4; n <= 6; n++ {
 		b := books[0]
 		b.ID, b.ProviderID, b.SequenceNum, b.SequenceStr = 0, "", int64(n*100), strconv.Itoa(n)
@@ -166,7 +166,7 @@ func TestReviewChoicesKeepsExistingVolumeAndTrashesPackDuplicate(t *testing.T) {
 	}
 	choices := reviewDefaults(plan)
 	choices[3].Disposition = "trash"
-	out, err := im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: choices})
+	out, err := im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: choices})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestReviewChoicesKeepsExistingVolumeAndTrashesPackDuplicate(t *testing.T) {
 	if !strings.Contains(body.Note, "Kept existing") || strings.Contains(body.Note, "wanted again") {
 		t.Fatalf("misleading history: %s", body.Note)
 	}
-	linked, hashes, err := im.alreadyImported(ctx, *job, refs)
+	linked, hashes, err := alreadyImported(ctx, st, *job, refs)
 	if err != nil || len(linked) != 5 || len(hashes) != 6 {
 		t.Fatalf("retry lost skipped identity or delivery attribution: linked=%v hashes=%v err=%v", linked, hashes, err)
 	}
@@ -218,10 +218,10 @@ func TestReviewChoicesKeepsExistingVolumeAndTrashesPackDuplicate(t *testing.T) {
 	if err != nil || !complete {
 		t.Fatalf("reviewed pack would reopen on retry: %v %v", complete, err)
 	}
-	if err = im.RestoreTrashedFile(ctx, sid, trashed.FileID); err != nil {
+	if err = im.files.RestoreTrashedFile(ctx, sid, trashed.FileID); err != nil {
 		t.Fatal(err)
 	}
-	im.finishReviewTrash(ctx)
+	im.files.finishReviewTrash(ctx)
 	if _, err = st.GetFileTrash(ctx, trashed.FileID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("restored file was trashed again: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestReviewChoicesRejectsStaleOwnersPinsProfilesAndBytes(t *testing.T) {
 			lib, st, sid, col, books, version := factsClaimsFixture(t)
 			ctx := context.Background()
 			root := t.TempDir()
-			im := NewImporter(st, nil, root, nil)
+			im := testImporter(st, nil, root, nil)
 			old := addFactFile(t, st, sid, col, books[0], version, "old.cbz", store.AssetFacts{FactsKnown: true}, store.AssetFacts{})
 			fid := waitingScoredFile(t, st, sid, root, "ONE PIECE v01 (Digital).cbz", "")
 			req := ReviewPlanRequest{VersionID: version.ID, Files: []ReviewFileRequest{{FileID: fid}}}
@@ -266,7 +266,7 @@ func TestReviewChoicesRejectsStaleOwnersPinsProfilesAndBytes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: choices}); !errors.Is(err, apperr.ErrConflict) {
+			if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: choices}); !errors.Is(err, apperr.ErrConflict) {
 				t.Fatalf("stale %s applied: %v", change, err)
 			}
 			files, _ := st.ListFiles(ctx, sid)
@@ -284,7 +284,7 @@ func TestReviewChoicesSharedArchiveAndExplicitReplacement(t *testing.T) {
 	lib, st, sid, col, books, version := factsClaimsFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	old := addFactFile(t, st, sid, col, books[0], version, "old.cbz", store.AssetFacts{FactsKnown: true}, store.AssetFacts{})
 	fid := waitingScoredFile(t, st, sid, root, "ONE PIECE v01-02 (Digital).cbz", "")
 	req := ReviewPlanRequest{VersionID: version.ID, Files: []ReviewFileRequest{{FileID: fid}}}
@@ -297,11 +297,11 @@ func TestReviewChoicesSharedArchiveAndExplicitReplacement(t *testing.T) {
 		t.Fatalf("shared archive defaults: %+v", choices)
 	}
 	choices[0].Disposition = "trash"
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: choices}); !errors.Is(err, apperr.ErrConflict) {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: choices}); !errors.Is(err, apperr.ErrConflict) {
 		t.Fatalf("trashed selected shared archive: %v", err)
 	}
 	choices[0].Disposition = "keep"
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: choices}); err != nil {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: choices}); err != nil {
 		t.Fatal(err)
 	}
 	owners, _ := st.BookOwners(ctx, version.ID, books[0].ID)
@@ -330,7 +330,7 @@ func TestReviewChoicesSharedArchiveAndExplicitReplacement(t *testing.T) {
 	}
 	choices = reviewDefaults(plan)
 	choices[0].Use = append(choices[0].Use, plan.Files[0].Books[0].Book)
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: choices}); err != nil {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: choices}); err != nil {
 		t.Fatal(err)
 	}
 	for _, b := range books[:2] {
@@ -348,7 +348,7 @@ func TestReviewChoicesScoresDoNotConsentToReplacement(t *testing.T) {
 			lib, st, sid, col, books, v := factsClaimsFixture(t)
 			ctx := context.Background()
 			root := t.TempDir()
-			im := NewImporter(st, nil, root, nil)
+			im := testImporter(st, nil, root, nil)
 			old := addFactFile(t, st, sid, col, books[0], v, "current.cbz", store.AssetFacts{FactsKnown: true, Flags: map[string]bool{"digital": true}}, store.AssetFacts{})
 			fid := waitingScoredFile(t, st, sid, root, "ONE PIECE v01 (Digital).cbz", "")
 			prof, err := st.GetProfile(ctx, v.ProfileID)
@@ -375,7 +375,7 @@ func TestReviewChoicesScoresDoNotConsentToReplacement(t *testing.T) {
 			if plan.Files[0].Books[0].Incoming.Score != score || plan.Files[0].Books[0].UseIncoming {
 				t.Fatalf("score implied replacement: %+v", plan.Files[0].Books[0])
 			}
-			if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+			if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
 				t.Fatal(err)
 			}
 			owners, _ := st.BookOwners(ctx, v.ID, books[0].ID)
@@ -391,7 +391,7 @@ func TestReviewChoicesKeepsOtherVersionsAndRequestedIntent(t *testing.T) {
 	lib, st, sid, col, books, v := factsClaimsFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	old := addFactFile(t, st, sid, col, books[0], v, "old.cbz", store.AssetFacts{FactsKnown: true}, store.AssetFacts{})
 	pid, err := st.AddProfile(ctx, profile.Profile{Name: "Another version", MinFormatScore: profile.MinScoreOff})
 	if err != nil {
@@ -419,7 +419,7 @@ func TestReviewChoicesKeepsOtherVersionsAndRequestedIntent(t *testing.T) {
 	if !plan.Files[0].Books[0].RequestedReplacement || !plan.Files[0].Books[0].UseIncoming {
 		t.Fatal("explicit acquisition intent was lost")
 	}
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
 		t.Fatal(err)
 	}
 	owners, _ := st.BookOwners(ctx, v.ID, books[0].ID)
@@ -437,7 +437,7 @@ func TestReviewChoicesTrashFailureRetainsIntentAndRetries(t *testing.T) {
 	lib, st, sid, _, _, _ := factsClaimsFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	fid := waitingScoredFile(t, st, sid, root, "unmatched.cbz", "")
 	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{}}}}
 	plan, err := lib.PreviewReviewChoices(ctx, sid, req)
@@ -449,7 +449,7 @@ func TestReviewChoicesTrashFailureRetainsIntentAndRetries(t *testing.T) {
 		t.Fatal(err)
 	}
 	choice := ReviewFileChoice{FileID: fid, Disposition: "trash"}
-	out, err := im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}})
+	out, err := im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}})
 	if err != nil || len(out) != 1 || out[0].Status != "trash_pending" || out[0].Note == "" {
 		t.Fatalf("partial failure was hidden: %+v %v", out, err)
 	}
@@ -460,7 +460,7 @@ func TestReviewChoicesTrashFailureRetainsIntentAndRetries(t *testing.T) {
 	if err = os.Remove(blocker); err != nil {
 		t.Fatal(err)
 	}
-	im.finishReviewTrash(ctx)
+	im.files.finishReviewTrash(ctx)
 	if _, err = st.GetFileTrash(ctx, fid); err != nil {
 		t.Fatalf("pending trash did not recover: %v", err)
 	}
@@ -471,7 +471,7 @@ func TestReviewChoicesPreservesUsesInPausedVersions(t *testing.T) {
 	lib, st, sid, col, books, v := factsClaimsFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	pid, err := st.AddProfile(ctx, profile.Profile{Name: "Paused version", MinFormatScore: profile.MinScoreOff})
 	if err != nil {
 		t.Fatal(err)
@@ -491,7 +491,7 @@ func TestReviewChoicesPreservesUsesInPausedVersions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
 		t.Fatal(err)
 	}
 	// Revisiting a file without correcting its confirmed contents must retain
@@ -502,11 +502,11 @@ func TestReviewChoicesPreservesUsesInPausedVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	choice := ReviewFileChoice{FileID: fid, Disposition: "trash"}
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); !errors.Is(err, apperr.ErrConflict) {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); !errors.Is(err, apperr.ErrConflict) {
 		t.Fatalf("paused version's archive could be trashed: %v", err)
 	}
 	choice.Disposition = "keep"
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
 		t.Fatal(err)
 	}
 	owners, err := st.BookOwners(ctx, otherID, ref.BookID)
@@ -524,14 +524,14 @@ func TestReviewChoicesUnusedDecisionSurvivesIdenticalRescan(t *testing.T) {
 	lib, st, sid, _, _, _ := factsClaimsFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	fid := waitingScoredFile(t, st, sid, root, "unmatched.cbz", "skipped-pack")
 	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{}}}}
 	plan, err := lib.PreviewReviewChoices(ctx, sid, req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
 		t.Fatal(err)
 	}
 	files, err := st.ListFiles(ctx, sid)
@@ -554,7 +554,7 @@ func TestReviewChoicesSurvivesSchedulerTicks(t *testing.T) {
 	lib, st, sid, _, _, _ := factsClaimsFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	fid := waitingScoredFile(t, st, sid, root, "unmatched.cbz", "")
 	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{}}}}
 	plan, err := lib.PreviewReviewChoices(ctx, sid, req)
@@ -564,7 +564,7 @@ func TestReviewChoicesSurvivesSchedulerTicks(t *testing.T) {
 	if err = st.PutSetting(ctx, "scheduler", []byte(`{"queue":"2026-11-03T23:00:00Z"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
 		t.Fatalf("routine scheduler bookkeeping invalidated the review: %v", err)
 	}
 }
@@ -574,7 +574,7 @@ func TestReviewChoicesDefaultsToOneIncomingCopyPerBook(t *testing.T) {
 	lib, st, sid, _, books, version := factsClaimsFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	req := ReviewPlanRequest{VersionID: version.ID}
 	for _, name := range []string{"ONE PIECE v01 (Digital).cbz", "ONE PIECE v01 (Digital) [LuCaZ].cbz", "ONE PIECE v02 (Digital).cbz"} {
 		fid := waitingScoredFile(t, st, sid, root, name, "")
@@ -589,7 +589,7 @@ func TestReviewChoicesDefaultsToOneIncomingCopyPerBook(t *testing.T) {
 			t.Fatalf("duplicate incoming default at %d: %+v", i, f)
 		}
 	}
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
 		t.Fatalf("duplicate blocked unrelated imports: %v", err)
 	}
 	for i, fileIndex := range []int{0, 2} {
@@ -605,7 +605,7 @@ func TestReviewChoicesPolicyRefusalsAndUnknownFacts(t *testing.T) {
 	lib, st, sid, col, books, v := factsClaimsFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	fid := waitingScoredFile(t, st, sid, root, "ONE PIECE v01.cbz", "")
 	prof, err := st.GetProfile(ctx, v.ProfileID)
 	if err != nil {
@@ -625,7 +625,7 @@ func TestReviewChoicesPolicyRefusalsAndUnknownFacts(t *testing.T) {
 		t.Fatal("policy refusal was not shown")
 	}
 	choice := ReviewFileChoice{FileID: fid, Disposition: "keep", Use: []store.BookRef{ref}}
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); !errors.Is(err, apperr.ErrConflict) {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); !errors.Is(err, apperr.ErrConflict) {
 		t.Fatal("refused file was selected", err)
 	}
 	prof.MinFormatScore = profile.MinScoreOff
@@ -642,7 +642,7 @@ func TestReviewChoicesPolicyRefusalsAndUnknownFacts(t *testing.T) {
 	if plan.Files[0].Books[0].Incoming.FactsKnown || plan.Files[0].Books[0].UseIncoming {
 		t.Fatal("unknown facts silently selected")
 	}
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
 		t.Fatalf("explicit content confirmation refused unknown quality: %v", err)
 	}
 }

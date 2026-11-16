@@ -20,26 +20,26 @@ func TestReviewChoicesTrashAfterRelease(t *testing.T) {
 	lib, st, sid, col, books, version := factsClaimsFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	fid := waitingScoredFile(t, st, sid, root, "ONE PIECE v01 (Digital).cbz", "")
 	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{modelRef(col, books[0], version)}}}}
 	plan, err := lib.PreviewReviewChoices(ctx, sid, req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
 		t.Fatal(err)
 	}
 	if plan, err = lib.PreviewReviewChoices(ctx, sid, req); err != nil || !plan.Files[0].TrashWhenUnused {
 		t.Fatalf("a used file should be trashable once unused: %+v %v", plan, err)
 	}
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "keep"}}}); err != nil {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "keep"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if plan, err = lib.PreviewReviewChoices(ctx, sid, req); err != nil || plan.Files[0].TrashReason != "" || plan.Files[0].TrashWhenUnused {
 		t.Fatalf("an unused file should be free to trash: %+v %v", plan, err)
 	}
-	out, err := im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "trash"}}})
+	out, err := im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "trash"}}})
 	if err != nil || len(out) == 0 || out[0].Status != "trashed" {
 		t.Fatalf("released file was not trashed: %+v %v", out, err)
 	}
@@ -50,7 +50,7 @@ func TestReviewChoicesProtectsCurrentlySelectedArchive(t *testing.T) {
 	lib, st, sid, col, books, version := factsClaimsFixture(t)
 	ctx := context.Background()
 	root := t.TempDir()
-	im := NewImporter(st, nil, root, nil)
+	im := testImporter(st, nil, root, nil)
 	fid := waitingScoredFile(t, st, sid, root, "ONE PIECE v01 (Digital).cbz", "")
 	ref := modelRef(col, books[0], version)
 	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: []store.BookRef{ref}}}}
@@ -58,7 +58,7 @@ func TestReviewChoicesProtectsCurrentlySelectedArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
 		t.Fatal(err)
 	}
 	plan, err = lib.PreviewReviewChoices(ctx, sid, req)
@@ -68,7 +68,7 @@ func TestReviewChoicesProtectsCurrentlySelectedArchive(t *testing.T) {
 	if !plan.Files[0].Books[0].CurrentSelected || !plan.Files[0].Books[0].UseIncoming || !strings.Contains(plan.Files[0].TrashReason, "An edition uses this file") {
 		t.Fatalf("selected archive not represented/protected: %+v", plan.Files[0])
 	}
-	if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "trash"}}}); !errors.Is(err, apperr.ErrConflict) {
+	if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{{FileID: fid, Disposition: "trash"}}}); !errors.Is(err, apperr.ErrConflict) {
 		t.Fatalf("selected archive could be trashed: %v", err)
 	}
 	// A batch cannot replace the owner first and then trash it, bypassing
@@ -214,7 +214,7 @@ func TestReviewChoicesFactEditPreservesLegacyDeselection(t *testing.T) {
 	if !plan.Files[0].Books[0].UseIncoming || plan.Files[0].Books[1].UseIncoming || plan.Files[0].Books[1].CurrentSelected {
 		t.Fatalf("editor reselected confirmed but unused contents: %+v", plan.Files[0])
 	}
-	if _, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+	if _, err = testImporter(st, nil, root, nil).files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
 		t.Fatal(err)
 	}
 	for i, ref := range refs {
@@ -274,13 +274,13 @@ func TestReviewChoicesFactRefusalRetainsOwnersWithoutAdoptingUnusedContents(t *t
 			if plan.Files[0].Books[0].Incoming.Reason == "" || !plan.Files[0].Books[0].UseIncoming || plan.Files[0].Books[1].UseIncoming {
 				t.Fatalf("fact refusal changed saved selections: %+v", plan.Files[0])
 			}
-			im := NewImporter(st, nil, root, nil)
+			im := testImporter(st, nil, root, nil)
 			bad := reviewDefaults(plan)
 			bad[0].Use = append(bad[0].Use, plan.Files[0].Books[1].Book)
-			if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: bad}); !errors.Is(err, apperr.ErrConflict) {
+			if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: bad}); !errors.Is(err, apperr.ErrConflict) {
 				t.Fatalf("refused file could adopt unused contents: %v", err)
 			}
-			if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+			if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
 				t.Fatalf("could not retain refused selected copy: %v", err)
 			}
 			owners, err := st.BookOwners(ctx, version.ID, refs[0].BookID)
@@ -302,7 +302,7 @@ func TestReviewChoicesFactRefusalRetainsOwnersWithoutAdoptingUnusedContents(t *t
 			}
 			// Legacy mapping clients must get the same retention rule and
 			// must not report another unchanged owner as replaced.
-			result, err := im.ApplySafeFileMapping(ctx, sid, fid, refs, false)
+			result, err := im.files.ApplySafeFileMapping(ctx, sid, fid, refs, false)
 			if err != nil || len(result.Replaced) != 0 || len(result.Kept) != 1 {
 				t.Fatalf("legacy mapping did not retain ownership: %+v %v", result, err)
 			}

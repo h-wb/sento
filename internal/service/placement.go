@@ -23,10 +23,10 @@ type placement struct {
 	readers map[folderKey]map[string]string
 }
 
-func (im *Importer) newPlacement(ms MediaSettings, series *store.Series) *placement {
+func (lf *LibraryFiles) newPlacement(ms MediaSettings, series *store.Series) *placement {
 	return &placement{
-		root: im.libraryRoot, ms: ms, series: series,
-		cat:     newCatalogCache(im.store, series.ID),
+		root: lf.libraryRoot, ms: ms, series: series,
+		cat:     newCatalogCache(lf.store, series.ID),
 		readers: map[folderKey]map[string]string{},
 	}
 }

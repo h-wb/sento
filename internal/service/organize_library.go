@@ -60,8 +60,8 @@ type libraryOrganizer struct {
 }
 
 // librarySeries is every series, or the requested ones, in library order.
-func (im *Importer) librarySeries(ctx context.Context, ids []int64) ([]SeriesOrganizePlan, error) {
-	all, err := im.store.ListSeries(ctx)
+func (lf *LibraryFiles) librarySeries(ctx context.Context, ids []int64) ([]SeriesOrganizePlan, error) {
+	all, err := lf.store.ListSeries(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -76,14 +76,14 @@ func (im *Importer) librarySeries(ctx context.Context, ids []int64) ([]SeriesOrg
 
 // PlanOrganizeLibrary previews Organize across the library (or the given
 // series), listing only the series it would change.
-func (im *Importer) PlanOrganizeLibrary(ctx context.Context, ids []int64) ([]SeriesOrganizePlan, error) {
-	series, err := im.librarySeries(ctx, ids)
+func (lf *LibraryFiles) PlanOrganizeLibrary(ctx context.Context, ids []int64) ([]SeriesOrganizePlan, error) {
+	series, err := lf.librarySeries(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
 	out := []SeriesOrganizePlan{}
 	for _, s := range series {
-		changes, err := im.PlanOrganize(ctx, s.SeriesID)
+		changes, err := lf.PlanOrganize(ctx, s.SeriesID)
 		if err != nil {
 			return nil, err
 		}
@@ -97,11 +97,11 @@ func (im *Importer) PlanOrganizeLibrary(ctx context.Context, ids []int64) ([]Ser
 
 // QueueLibraryOrganize records the next library organize run; the
 // library-organize task carries it out. Only one run is held at a time.
-func (im *Importer) QueueLibraryOrganize(req LibraryOrganizeRequest) (LibraryOrganizeStatus, error) {
+func (lf *LibraryFiles) QueueLibraryOrganize(req LibraryOrganizeRequest) (LibraryOrganizeStatus, error) {
 	if !req.Rename && !req.Retag {
 		return LibraryOrganizeStatus{}, apperr.Invalidf("choose renaming, re-tagging or both")
 	}
-	o := &im.organizer
+	o := &lf.organizer
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.status.Running || o.status.Queued {
@@ -113,8 +113,8 @@ func (im *Importer) QueueLibraryOrganize(req LibraryOrganizeRequest) (LibraryOrg
 }
 
 // LibraryOrganizeStatus reports the current or last organize run.
-func (im *Importer) LibraryOrganizeStatus() LibraryOrganizeStatus {
-	o := &im.organizer
+func (lf *LibraryFiles) LibraryOrganizeStatus() LibraryOrganizeStatus {
+	o := &lf.organizer
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	st := o.status
@@ -130,8 +130,8 @@ func (im *Importer) LibraryOrganizeStatus() LibraryOrganizeStatus {
 // from its preview, never blind. Series are organized one at a time, so
 // imports interleave, and a run cut short is resumed by running it again:
 // files already in place drop out of the plan.
-func (im *Importer) RunLibraryOrganize(ctx context.Context) error {
-	o := &im.organizer
+func (lf *LibraryFiles) RunLibraryOrganize(ctx context.Context) error {
+	o := &lf.organizer
 	o.mu.Lock()
 	if o.pending == nil {
 		o.mu.Unlock()
@@ -142,7 +142,7 @@ func (im *Importer) RunLibraryOrganize(ctx context.Context) error {
 	o.status = LibraryOrganizeStatus{Running: true, StartedAt: time.Now().UTC().Format(time.RFC3339), Series: []SeriesOrganizeResult{}}
 	o.mu.Unlock()
 
-	err := im.organizeLibrary(ctx, req)
+	err := lf.organizeLibrary(ctx, req)
 
 	o.mu.Lock()
 	o.status.Running = false
@@ -155,9 +155,9 @@ func (im *Importer) RunLibraryOrganize(ctx context.Context) error {
 	return err
 }
 
-func (im *Importer) organizeLibrary(ctx context.Context, req LibraryOrganizeRequest) error {
-	o := &im.organizer
-	series, err := im.librarySeries(ctx, req.SeriesIDs)
+func (lf *LibraryFiles) organizeLibrary(ctx context.Context, req LibraryOrganizeRequest) error {
+	o := &lf.organizer
+	series, err := lf.librarySeries(ctx, req.SeriesIDs)
 	if err != nil {
 		return err
 	}
@@ -174,7 +174,7 @@ func (im *Importer) organizeLibrary(ctx context.Context, req LibraryOrganizeRequ
 		o.mu.Unlock()
 
 		r := SeriesOrganizeResult{SeriesID: s.SeriesID, Title: s.Title, Errors: []string{}}
-		res, err := im.Organize(ctx, s.SeriesID, req.Rename, req.Retag)
+		res, err := lf.Organize(ctx, s.SeriesID, req.Rename, req.Retag)
 		if res != nil {
 			r.Renamed, r.Retagged = res.Renamed, res.Retagged
 			r.Errors = append(r.Errors, res.Errors...)

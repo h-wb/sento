@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/h-wb/sento/internal/provider"
@@ -21,24 +20,12 @@ import (
 type Importer struct {
 	store        *store.Store
 	registry     *provider.Registry
-	libraryRoot  string
 	pathMappings []string // "remote=local" download-client path translations
-
-	// mu serializes queue passes and file mutations (review, organization,
-	// removal and trash), so decisions and disk operations cannot interleave.
-	mu sync.Mutex
-
-	// again holds the series whose download failed since the last
-	// TakeSearches: they are searched again within minutes, not at the
-	// next sweep.
-	againMu sync.Mutex
-	again   []SearchTarget
-
-	organizer libraryOrganizer
+	files        *LibraryFiles
 }
 
-func NewImporter(st *store.Store, registry *provider.Registry, libraryRoot string, pathMappings []string) *Importer {
-	return &Importer{store: st, registry: registry, libraryRoot: libraryRoot, pathMappings: pathMappings}
+func NewImporter(st *store.Store, registry *provider.Registry, files *LibraryFiles, pathMappings []string) *Importer {
+	return &Importer{store: st, registry: registry, pathMappings: pathMappings, files: files}
 }
 
 // mapPath translates a download-client path to a local one (longest
@@ -66,9 +53,9 @@ func (im *Importer) mapPath(p string) string {
 // ProcessQueue advances all active queue items. Returns the number of
 // items imported this pass.
 func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	im.finishReviewTrash(ctx)
+	im.files.mu.Lock()
+	defer im.files.mu.Unlock()
+	im.files.finishReviewTrash(ctx)
 
 	items, err := im.store.ListRunnableQueue(ctx)
 	if err != nil {

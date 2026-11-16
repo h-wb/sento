@@ -33,7 +33,7 @@ func pendingReviewTrash(t *testing.T) (*Importer, *store.Store, store.File) {
 	if err = st.CommitFileReviews(ctx, sid, revision, []store.FileReviewWrite{{FileID: fid, Facts: f.Facts, Hash: f.Hash, Reset: true, Disposition: "trash"}}, nil); err != nil {
 		t.Fatal(err)
 	}
-	return NewImporter(st, nil, root, nil), st, f
+	return testImporter(st, nil, root, nil), st, f
 }
 
 func journalReviewTrash(t *testing.T, st *store.Store, f store.File) string {
@@ -93,8 +93,8 @@ func TestReviewTrashRecoversBeyondBlockedFirstBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, nil, root, nil)
-	im.finishReviewTrash(ctx)
+	im := testImporter(st, nil, root, nil)
+	im.files.finishReviewTrash(ctx)
 	entry, err := st.GetFileTrash(ctx, fid)
 	if err != nil || entry.Pending {
 		t.Fatalf("blocked first batch starved healthy move: %+v %v", entry, err)
@@ -111,7 +111,7 @@ func TestReviewTrashRecoversBeyondBlockedFirstBatch(t *testing.T) {
 	if err = os.WriteFile(pending[0].Path, []byte("changed archive needs fresh review"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	im.finishReviewTrash(ctx)
+	im.files.finishReviewTrash(ctx)
 	pending, err = st.PendingReviewTrash(ctx, 0)
 	if err != nil || len(pending) != 499 {
 		t.Fatalf("earlier failure was not retried: %d %v", len(pending), err)
@@ -142,7 +142,7 @@ func TestReviewTrashRecoversEveryInterruptedMoveStage(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			im.finishReviewTrash(ctx)
+			im.files.finishReviewTrash(ctx)
 			entry, err := st.GetFileTrash(ctx, f.ID)
 			if err != nil || entry.Pending {
 				t.Fatalf("move did not finish: %+v %v", entry, err)
@@ -158,11 +158,11 @@ func TestReviewTrashRecoversEveryInterruptedMoveStage(t *testing.T) {
 			if err != nil || len(pending) != 0 {
 				t.Fatalf("completed moves would fill future retry batches: %+v %v", pending, err)
 			}
-			im.finishReviewTrash(ctx)
-			if err = im.RestoreTrashedFile(ctx, f.SeriesID, f.ID); err != nil {
+			im.files.finishReviewTrash(ctx)
+			if err = im.files.RestoreTrashedFile(ctx, f.SeriesID, f.ID); err != nil {
 				t.Fatal(err)
 			}
-			im.finishReviewTrash(ctx)
+			im.files.finishReviewTrash(ctx)
 			if restored, e := os.ReadFile(f.Path); e != nil || string(restored) != string(bytes) {
 				t.Fatalf("restore lost bytes or retried a completed choice: %v", e)
 			}
@@ -191,14 +191,14 @@ func TestReviewTrashRejectsChangedBytesAtEveryStage(t *testing.T) {
 					changedPath = dest
 				}
 				if stage == "completed" {
-					im.finishReviewTrash(ctx)
+					im.files.finishReviewTrash(ctx)
 				}
 			}
 			const changed = "a different unreviewed archive"
 			if err := os.WriteFile(changedPath, []byte(changed), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			im.finishReviewTrash(ctx)
+			im.files.finishReviewTrash(ctx)
 			if stage == "before journal" || stage == "after journal" {
 				if _, err := st.GetFileTrash(ctx, f.ID); !errors.Is(err, store.ErrNotFound) {
 					t.Fatalf("changed original was journaled as trash: %v", err)
@@ -214,21 +214,21 @@ func TestReviewTrashRejectsChangedBytesAtEveryStage(t *testing.T) {
 					t.Fatalf("fingerprint mismatch was not reported: %+v %v", questions, err)
 				}
 			} else {
-				if err := im.PurgeExpiredTrash(ctx); err == nil {
+				if err := im.files.PurgeExpiredTrash(ctx); err == nil {
 					t.Fatal("changed retained bytes could be purged")
 				}
 			}
 			if bytes, err := os.ReadFile(changedPath); err != nil || string(bytes) != changed {
 				t.Fatalf("unreviewed archive was moved or deleted: %v", err)
 			}
-			im.finishReviewTrash(ctx)
+			im.files.finishReviewTrash(ctx)
 			if bytes, err := os.ReadFile(changedPath); err != nil || string(bytes) != changed {
 				t.Fatalf("a later pass retried an invalid choice: %v", err)
 			}
 			if stage == "before journal" || stage == "after journal" {
 				// Different bytes must be rescanned to discard the old evidence
 				// before a new keep choice can cancel the former trash intent.
-				if _, err := NewScanner(st, im.libraryRoot).ScanSeriesFolder(ctx, f.SeriesID, filepath.Dir(f.Path)); err != nil {
+				if _, err := NewScanner(st, im.files.libraryRoot).ScanSeriesFolder(ctx, f.SeriesID, filepath.Dir(f.Path)); err != nil {
 					t.Fatal(err)
 				}
 				files, err := st.ListFiles(ctx, f.SeriesID)
@@ -240,10 +240,10 @@ func TestReviewTrashRejectsChangedBytesAtEveryStage(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err = im.ApplyReviewChoices(ctx, f.SeriesID, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+				if _, err = im.files.ApplyReviewChoices(ctx, f.SeriesID, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
 					t.Fatalf("fresh review could not retain the changed archive: %v", err)
 				}
-				im.finishReviewTrash(ctx)
+				im.files.finishReviewTrash(ctx)
 				if _, err = os.Stat(f.Path); err != nil {
 					t.Fatalf("fresh keep choice did not cancel old trash intent: %v", err)
 				}
@@ -263,7 +263,7 @@ func TestReviewTrashRecoveryRejectsSubstitutedDirectory(t *testing.T) {
 	if err := os.Symlink(filepath.Dir(f.Path), filepath.Dir(dest)); err != nil {
 		t.Fatal(err)
 	}
-	im.finishReviewTrash(context.Background())
+	im.files.finishReviewTrash(context.Background())
 	if _, err := os.Stat(f.Path); err != nil {
 		t.Fatalf("unsafe recovery removed the original archive: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestReviewTrashRecoveryRejectsSubstitutedDirectory(t *testing.T) {
 	if err != nil || !entry.Pending {
 		t.Fatalf("unsafe recovery marked a move complete: %+v %v", entry, err)
 	}
-	if err = im.RestoreTrashedFile(context.Background(), f.SeriesID, f.ID); err == nil {
+	if err = im.files.RestoreTrashedFile(context.Background(), f.SeriesID, f.ID); err == nil {
 		t.Fatal("restore followed a substituted trash directory")
 	}
 	if _, err = os.Stat(f.Path); err != nil {

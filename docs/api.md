@@ -126,15 +126,15 @@ reverse proxy. See [installation](installation.md#configuration).
 | GET | `/wanted` | missing and upgrade-eligible books across monitored series | `api_series.go` | `Library.Wanted` |
 | POST | `/library/import/scan` | propose MangaBaka matches for a folder's subfolders (`root` defaults to the library) | `api_series.go` | `Library.ProposeImports` |
 | POST | `/library/import` | confirm one proposal: add the series and link its files in place (55s handler cap) | `api_series.go` | `Library.ImportFolder` |
-| GET | `/library/organize` | preview organizing every series, or `?series=1,2,3` | `api_series.go` | `Importer.PlanOrganizeLibrary` |
-| POST | `/library/organize` | queue a library organize and trigger the task (202) | `api_series.go` | `Importer.QueueLibraryOrganize`, `Scheduler.Run` |
-| GET | `/library/organize/status` | progress of the running organize | `api_series.go` | `Importer.LibraryOrganizeStatus` |
+| GET | `/library/organize` | preview organizing every series, or `?series=1,2,3` | `api_series.go` | `LibraryFiles.PlanOrganizeLibrary` |
+| POST | `/library/organize` | queue a library organize and trigger the task (202) | `api_series.go` | `LibraryFiles.QueueLibraryOrganize`, `Scheduler.Run` |
+| GET | `/library/organize/status` | progress of the running organize | `api_series.go` | `LibraryFiles.LibraryOrganizeStatus` |
 | GET | `/library/progress` | per-series owned/wanted counts for posters | `api_series.go` | `Library.Progress` |
 | GET | `/series/` | list all series | `api_series.go` | `store.ListSeries` |
 | POST | `/series/` | add a series from a MangaBaka id (55s handler cap) | `api_series.go` | `Library.AddSeries`, 201 |
 | GET | `/series/{id}/` | series detail with editions and publishers | `api_series.go` | `store.GetSeries`, `store.ListEditions`, `Library.SeriesPublishers` |
 | PUT | `/series/{id}/` | patch monitored / profile, 204 | `api_series.go` | `Library.UpdateSeries` |
-| DELETE | `/series/{id}/` | remove the series; `?deleteFiles=true`, `?removeDownloads=true` opt in | `api_series.go` | `Importer.RemoveSeries` |
+| DELETE | `/series/{id}/` | remove the series; `?deleteFiles=true`, `?removeDownloads=true` opt in | `api_series.go` | `LibraryFiles.RemoveSeries` |
 | POST | `/series/{id}/refresh` | re-fetch metadata from MangaBaka | `api_series.go` | `Library.Refresh` |
 | POST | `/series/{id}/import` | scan the series folder, link existing files in place | `api_series.go` | `Scanner.ScanAndAdoptCutoff` |
 | GET | `/series/{id}/bindings` | the series' source bindings | `api_series.go` | `store.ListBindings` |
@@ -185,16 +185,16 @@ reverse proxy. See [installation](installation.md#configuration).
 
 | Method | Path | What it does | Handler file | Behind it |
 | --- | --- | --- | --- | --- |
-| DELETE | `/files/{fid}` | unlink a file and delete it from disk, 204 | `api_files.go` | `Importer.DeleteFile` |
+| DELETE | `/files/{fid}` | unlink a file and delete it from disk, 204 | `api_files.go` | `LibraryFiles.DeleteFile` |
 | GET | `/series/{id}/files` | the series' files | `api_files.go` | `store.ListFiles` |
-| GET | `/series/{id}/files/cleanup` | preview cleanup candidates (`?editionId=`) | `api_files.go` | `Importer.CleanupPreview` |
-| POST | `/series/{id}/files/cleanup` | run cleanup (edition, file ids, retention days) | `api_files.go` | `Importer.CleanupFiles` |
+| GET | `/series/{id}/files/cleanup` | preview cleanup candidates (`?editionId=`) | `api_files.go` | `LibraryFiles.CleanupPreview` |
+| POST | `/series/{id}/files/cleanup` | run cleanup (edition, file ids, retention days) | `api_files.go` | `LibraryFiles.CleanupFiles` |
 | GET | `/series/{id}/files/trash` | trashed files | `api_files.go` | `store.ListFileTrash` |
-| POST | `/series/{id}/files/trash/{fid}/restore` | restore from trash, 204 | `api_files.go` | `Importer.RestoreTrashedFile` |
-| DELETE | `/series/{id}/files/trash/{fid}` | purge from trash, 204 | `api_files.go` | `Importer.PurgeTrashedFile` |
-| GET | `/series/{id}/files/organize` | preview organizing this series' files | `api_files.go` | `Importer.PlanOrganize` |
+| POST | `/series/{id}/files/trash/{fid}/restore` | restore from trash, 204 | `api_files.go` | `LibraryFiles.RestoreTrashedFile` |
+| DELETE | `/series/{id}/files/trash/{fid}` | purge from trash, 204 | `api_files.go` | `LibraryFiles.PurgeTrashedFile` |
+| GET | `/series/{id}/files/organize` | preview organizing this series' files | `api_files.go` | `LibraryFiles.PlanOrganize` |
 | GET | `/series/{id}/versions/{vid}/files/{fid}/score` | one file's score for one version | `api_files.go` | `Library.FileScore` |
-| PUT | `/series/{id}/files/{fid}/mapping` | remap a file to books, reporting displaced owners | `api_files.go` | `Importer.ApplySafeFileMapping` |
+| PUT | `/series/{id}/files/{fid}/mapping` | remap a file to books, reporting displaced owners | `api_files.go` | `LibraryFiles.ApplySafeFileMapping` |
 | POST | `/series/{id}/check-files` | re-check file presence, 204 | `api_files.go` | `service.CheckFilePresence` |
 
 ### Review
@@ -204,10 +204,10 @@ reverse proxy. See [installation](installation.md#configuration).
 | GET | `/review` | review inbox items (`?seriesId=`) | `api_review.go` | `Library.ReviewItems` |
 | PATCH | `/series/{id}/files/{fid}/facts` | correct one file's facts, 204 | `api_review.go` | `store.CorrectFileFacts` |
 | PATCH | `/series/{id}/files/facts` | correct facts on several files, 204 | `api_review.go` | `store.CorrectFilesFacts` |
-| POST | `/series/{id}/review/match` | apply one version to a pack of files; `?preview=1` previews. Outside the 120s cap | `api_review.go` | `Importer.MatchReleaseFiles` / `Library.PreviewReleaseFiles` |
-| POST | `/series/{id}/review/resolve` | decline a pack of file reviews. Outside the cap | `api_review.go` | `Importer.ResolveFileReviews` |
+| POST | `/series/{id}/review/match` | apply one version to a pack of files; `?preview=1` previews. Outside the 120s cap | `api_review.go` | `LibraryFiles.MatchReleaseFiles` / `Library.PreviewReleaseFiles` |
+| POST | `/series/{id}/review/resolve` | decline a pack of file reviews. Outside the cap | `api_review.go` | `LibraryFiles.ResolveFileReviews` |
 | POST | `/series/{id}/review/choices/preview` | preview a choices plan. Outside the cap | `api_review.go` | `Library.PreviewReviewChoices` |
-| POST | `/series/{id}/review/choices` | apply a choices plan. Outside the cap | `api_review.go` | `Importer.ApplyReviewChoices` |
+| POST | `/series/{id}/review/choices` | apply a choices plan. Outside the cap | `api_review.go` | `LibraryFiles.ApplyReviewChoices` |
 
 ### Queue, history, activity and blocklist
 

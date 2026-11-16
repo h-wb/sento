@@ -299,22 +299,22 @@ status the dialog polls:
 ```mermaid
 sequenceDiagram
     participant UI
-    participant Importer
+    participant LibraryFiles
     participant Store
     participant Disk
-    UI->>Importer: queue the run (POST /library/organize)
-    Importer->>Importer: library-organize task, one series at a time, under mu
-    Importer->>Importer: plan, then moveOrder (each file after the one on its destination)
+    UI->>LibraryFiles: queue the run (POST /library/organize)
+    LibraryFiles->>LibraryFiles: library-organize task, one series at a time, under mu
+    LibraryFiles->>LibraryFiles: plan, then moveOrder (each file after the one on its destination)
     loop each planned file
-        Importer->>Disk: re-tag staged via mediafile.Process (.sento-stage)
-        Importer->>Disk: installAsset, hardlink or copy, never overwriting
-        Importer->>Store: SetFileLocation with new path, size, fingerprint
-        Importer->>Disk: prune emptied folders up to the library root
+        LibraryFiles->>Disk: re-tag staged via mediafile.Process (.sento-stage)
+        LibraryFiles->>Disk: installAsset, hardlink or copy, never overwriting
+        LibraryFiles->>Store: SetFileLocation with new path, size, fingerprint
+        LibraryFiles->>Disk: prune emptied folders up to the library root
     end
     loop swapped names, second pass
-        Importer->>Disk: move to the name the other file just left
+        LibraryFiles->>Disk: move to the name the other file just left
     end
-    Importer->>UI: status, renamed and retagged counts, per-series errors
+    LibraryFiles->>UI: status, renamed and retagged counts, per-series errors
 ```
 
 ## API and code

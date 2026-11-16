@@ -20,6 +20,11 @@ func addFile(ctx context.Context, st *store.Store, f store.File, parse any, link
 	return st.AddFile(ctx, f, FilePresence(f.Path), parse, links)
 }
 
+// testImporter builds an importer with its own library files under root.
+func testImporter(st *store.Store, reg *provider.Registry, root string, pathMappings []string) *Importer {
+	return NewImporter(st, reg, NewLibraryFiles(st, reg, root), pathMappings)
+}
+
 func modelFixture(t *testing.T) (*Library, *store.Store, int64, store.Edition, []store.Book, store.CollectedVersion) {
 	t.Helper()
 	lib, st := setup(t)
@@ -537,7 +542,7 @@ func TestModelPackStaysOneAssetAcrossUnitsAndVersions(t *testing.T) {
 	dir := t.TempDir()
 	name := "ONE PIECE v01-v02 (Digital).cbz"
 	writeCBZ(t, filepath.Join(dir, name), "one unsplit pack")
-	im := NewImporter(st, nil, t.TempDir(), nil)
+	im := testImporter(st, nil, t.TempDir(), nil)
 	if err = im.importFiles(ctx, store.QueueItem{SeriesID: id, Protocol: "torrent", Books: raw}, dir, []string{name}); err != nil {
 		t.Fatal(err)
 	}

@@ -242,8 +242,8 @@ func TestAcquisitionRecordsOnlyExplicitReviewReplacements(t *testing.T) {
 				t.Fatalf("review did not respect the explicit choice: %+v", b)
 			}
 			if !explicit {
-				im := NewImporter(st, nil, root, nil)
-				if _, err = im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
+				im := testImporter(st, nil, root, nil)
+				if _, err = im.files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: reviewDefaults(plan)}); err != nil {
 					t.Fatal(err)
 				}
 				owners, err := st.BookOwners(ctx, version.ID, ref.BookID)

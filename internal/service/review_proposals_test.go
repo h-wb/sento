@@ -224,7 +224,7 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 	t.Parallel()
 	_, st, sid, standard, books, version := modelFixture(t)
 	ctx := context.Background()
-	im := NewImporter(st, nil, t.TempDir(), nil)
+	im := testImporter(st, nil, t.TempDir(), nil)
 	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "pack", Title: "ONE PIECE pack"}, []store.BookRef{modelRef(standard, books[0], version), modelRef(standard, books[1], version)})
 	if err != nil {
 		t.Fatal(err)
@@ -248,13 +248,13 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 		}
 		return job.Status
 	}
-	if err = im.SettleReviewedJobs(ctx, sid); err != nil || status() != store.QueueNeedsReview {
+	if err = im.files.SettleReviewedJobs(ctx, sid); err != nil || status() != store.QueueNeedsReview {
 		t.Fatalf("closed with a file still waiting: %s %v", status(), err)
 	}
 	if err = st.MapFile(ctx, sid, fid, []store.BookRef{modelRef(standard, books[0], version)}); err != nil {
 		t.Fatal(err)
 	}
-	if err = im.SettleReviewedJobs(ctx, sid); err != nil || status() != store.QueueImported {
+	if err = im.files.SettleReviewedJobs(ctx, sid); err != nil || status() != store.QueueImported {
 		t.Fatalf("not closed after the last confirmation: %s %v", status(), err)
 	}
 	job, _ := st.GetQueueItem(ctx, qid)
@@ -276,7 +276,7 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 	if searches := im.TakeSearches(); len(searches) != 1 || searches[0].SeriesID != sid || searches[0].Ledger != LedgerVolume {
 		t.Fatalf("unmatched books did not schedule recovery: %+v", searches)
 	}
-	if err = im.SettleReviewedJobs(ctx, sid); err != nil {
+	if err = im.files.SettleReviewedJobs(ctx, sid); err != nil {
 		t.Fatal(err)
 	}
 	if searches := im.TakeSearches(); len(searches) != 0 {
@@ -322,7 +322,7 @@ func TestKeepingAnExtraResolvesReview(t *testing.T) {
 			t.Fatalf("a file kept as an extra is still waiting: %+v", i)
 		}
 	}
-	if err = NewImporter(st, nil, t.TempDir(), nil).SettleReviewedJobs(ctx, sid); err != nil {
+	if err = testImporter(st, nil, t.TempDir(), nil).files.SettleReviewedJobs(ctx, sid); err != nil {
 		t.Fatal(err)
 	}
 	if job, _ := st.GetQueueItem(ctx, qid); job.Status != store.QueueImported {

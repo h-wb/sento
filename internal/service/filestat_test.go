@@ -138,7 +138,7 @@ func TestReviewChoicesTrustRecordedSignature(t *testing.T) {
 		t.Fatalf("preview read the archive despite its recorded signature: %v", err)
 	}
 	choice := ReviewFileChoice{FileID: fid, Disposition: "keep", Use: []store.BookRef{plan.Files[0].Books[0].Book}}
-	if _, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
+	if _, err = testImporter(st, nil, root, nil).files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
 		t.Fatalf("apply read the archive despite its recorded signature: %v", err)
 	}
 }
@@ -181,7 +181,7 @@ func TestApplyReviewChoicesRejectsArchiveChangedSincePreview(t *testing.T) {
 			changeKeepingTimes(t, fileRow(t, st, sid, fid).Path, change)
 			settleArchives(t) // so only the token's signature reveals it
 			choice := ReviewFileChoice{FileID: fid, Disposition: "keep", Use: []store.BookRef{plan.Files[0].Books[0].Book}}
-			_, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}})
+			_, err = testImporter(st, nil, root, nil).files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}})
 			if !errors.Is(err, apperr.ErrConflict) {
 				t.Fatalf("apply accepted an archive changed since its preview: %v", err)
 			}
@@ -330,7 +330,7 @@ func TestApplyReviewChoicesAcceptsArchiveSettledSincePreview(t *testing.T) {
 	}
 	settleArchives(t)
 	choice := ReviewFileChoice{FileID: fid, Disposition: "keep", Use: []store.BookRef{plan.Files[0].Books[0].Book}}
-	if _, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
+	if _, err = testImporter(st, nil, root, nil).files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
 		t.Fatalf("apply rejected an unchanged archive: %v", err)
 	}
 }

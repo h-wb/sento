@@ -29,7 +29,7 @@ func TestBlocklistCoversTheListingAndItsHash(t *testing.T) {
 	if err = st.SetQueueExternalID(ctx, qid, "derived-infohash"); err != nil {
 		t.Fatal(err)
 	}
-	if err = NewImporter(st, nil, t.TempDir(), nil).BlocklistQueueItem(ctx, qid); err != nil {
+	if err = testImporter(st, nil, t.TempDir(), nil).BlocklistQueueItem(ctx, qid); err != nil {
 		t.Fatal(err)
 	}
 	svc := NewSearchService(st, torrentRegistry(st))
@@ -171,7 +171,7 @@ func TestZipPayloadIsImported(t *testing.T) {
 	const name = "ONE PIECE v01 (Digital).zip"
 	writeCBZ(t, filepath.Join(dir, name), "pages")
 	raw, _ := json.Marshal([]store.BookRef{modelRef(c, ws[0], v)})
-	err := NewImporter(st, nil, t.TempDir(), nil).importFiles(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", Books: raw}, dir, []string{name})
+	err := testImporter(st, nil, t.TempDir(), nil).importFiles(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", Books: raw}, dir, []string{name})
 	if err != nil {
 		t.Fatalf("zip payload was not imported: %v", err)
 	}
@@ -237,11 +237,11 @@ func TestOrganizeKeepsAnAdditionalVersionsCopyInItsFolder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, nil, dir, nil)
+	im := testImporter(st, nil, dir, nil)
 	if err = st.MapFile(ctx, sid, fid, []store.BookRef{modelRef(c, ws[0], other)}); err != nil {
 		t.Fatal(err)
 	}
-	plans, err := im.PlanOrganize(ctx, sid)
+	plans, err := im.files.PlanOrganize(ctx, sid)
 	if err != nil || len(plans) != 1 || !strings.Contains(plans[0].To, "Scanlation copy") {
 		t.Fatalf("additional-only copy: %+v, %v", plans, err)
 	}
@@ -249,7 +249,7 @@ func TestOrganizeKeepsAnAdditionalVersionsCopyInItsFolder(t *testing.T) {
 	if err = st.MapFile(ctx, sid, fid, []store.BookRef{modelRef(c, ws[0], v), modelRef(c, ws[0], other)}); err != nil {
 		t.Fatal(err)
 	}
-	plans, err = im.PlanOrganize(ctx, sid)
+	plans, err = im.files.PlanOrganize(ctx, sid)
 	if err != nil || len(plans) != 1 || strings.Contains(plans[0].To, "Scanlation copy") {
 		t.Fatalf("shared copy should sit under the default version: %+v, %v", plans, err)
 	}

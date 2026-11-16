@@ -61,7 +61,7 @@ graph TD
     end
 
     subgraph core [Use-cases]
-        service[service<br/>library · scan · search · funnel<br/>grab · importer · connections<br/>indexers · sites · extensions]
+        service[service<br/>library · scan · search · funnel<br/>grab · importer · library files<br/>connections · indexers · sites · extensions]
     end
 
     subgraph persistence [Persistence]
@@ -165,7 +165,8 @@ owns a set of files in `internal/service`:
 | --- | --- | --- | --- |
 | `Library` | `NewLibrary` (`library.go`) | series add/refresh, catalog, editions, versions, books views, review inbox, activity, calendar, wanted, progress; caches the fetched editions behind `editionsMu` | store, metadata provider, registry |
 | `Scanner` | `NewScanner` (`scan.go`) | existing-library import: links files in place, never renames | store, library root |
-| `Importer` | `NewImporter` (`importer.go`) | queue passes plus every file mutation (organize, cleanup, trash, removal, review apply); `mu` serializes queue passes and file changes so decisions and disk operations cannot interleave; `again` lists series to search again after a failed download | store, registry, library root, path mappings |
+| `Importer` | `NewImporter` (`importer.go`) | queue passes: poll, fetch, import into the library, failure recovery, the queue view; `ProcessQueue` and `TryAnother` take `LibraryFiles.mu` | store, registry, `LibraryFiles`, path mappings |
+| `LibraryFiles` | `NewLibraryFiles` (`library_files.go`) | every file mutation (organize, cleanup, trash, removal, upgrades, review apply); `mu` serializes queue passes and file changes so decisions and disk operations cannot interleave; `again` lists series to search again after a failed download | store, registry, library root |
 | `SearchService` | `NewSearchService` (`search.go`) | the unified release search for both ledgers: providers, parse, funnel, grab | store, registry, profiles |
 | `ProfileService` | `NewProfiles` (`profiles.go`) | release profiles and custom formats: validation, default, seeding, import/export | store |
 | `SiteService` | `NewSiteService` (`sites.go`) | indexer entries with live reachability, per-series overrides | store, connections, registry |
@@ -173,15 +174,17 @@ owns a set of files in `internal/service`:
 | `Connections` | `NewConnections` (`connections.go`) | connection settings in the `settings` table, the live clients, and the shared registry rebuilt in place on save | store, config |
 | `HealthService` | `NewHealthService` (`health.go`) | probes of everything Sento depends on, with a cached report | store, connections, library path, task-status source |
 
-This diagram shows how `server.New` wires them: one server, nine services,
-and the shared dependencies that set the services apart. All nine services
-also take the store; the diagram leaves those nine edges out.
+This diagram shows how `server.New` wires them: one server, ten services,
+and the shared dependencies that set the services apart. All ten services
+also take the store; the diagram leaves those ten edges out.
 
 ```mermaid
 flowchart TD
     server["server.New (server.go)"] --> library["Library"]
     server --> scanner["Scanner"]
+    server --> files["LibraryFiles"]
     server --> importer["Importer"]
+    importer --> files
     server --> search["SearchService"]
     server --> profiles["ProfileService"]
     server --> sites["SiteService"]
@@ -191,6 +194,7 @@ flowchart TD
     conns --> registry["provider.Registry (shared, rebuilt in place)"]
     library --> registry
     importer --> registry
+    files --> registry
     search --> registry
     sites --> registry
     library --> md["metadata.Provider (MangaBaka)"]
@@ -265,8 +269,8 @@ each calls:
 | `library-scan` | 12 h | scanner present | `Scanner.ScanSeriesFolder` for every series with a folder |
 | `chapter-check` | 2 h | providers registered | wanted-chapter sweep over monitored, active series |
 | `volume-sweep` | 12 h | providers registered | wanted-volume sweep over monitored series |
-| `library-organize` | on demand only | importer present | `Importer.RunLibraryOrganize` |
-| `housekeeping` | 24 h | always | `Importer.PurgeExpiredTrash`, `store.PruneFinishedQueue` (keeps 200), `store.PruneDecisions` (keeps 1000) |
+| `library-organize` | on demand only | library files present | `LibraryFiles.RunLibraryOrganize` |
+| `housekeeping` | 24 h | always | `LibraryFiles.PurgeExpiredTrash`, `store.PruneFinishedQueue` (keeps 200), `store.PruneDecisions` (keeps 1000) |
 | `health-check` | 15 min | health service present | `HealthService.Check` |
 
 Cadence survives restarts: each task's last-run time is persisted in the
