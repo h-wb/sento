@@ -3,7 +3,6 @@ import {
   Button,
   Divider,
   Group,
-  Modal,
   NumberInput,
   Select,
   Stack,
@@ -16,6 +15,8 @@ import { useMutation } from '@tanstack/react-query'
 import { api, type Format, type Profile } from '../../api'
 import { notify } from '../../ui'
 import { MinScoreOff } from '../../types/profile'
+import { EditorModal } from '../EditorModal'
+import { sameJSON } from '../sameJSON'
 
 export function ProfileModal({
   profile,
@@ -55,22 +56,23 @@ export function ProfileModal({
     },
   )
 
+  const body = {
+    name,
+    minFormatScore: minScore,
+    upgradesEnabled,
+    upgradeUntilScore,
+    minUpgradeScore,
+    required,
+    refused,
+    formatScores: Object.fromEntries(Object.entries(scores).filter(([, v]) => v !== 0)),
+    volume,
+    chapter,
+  }
+  const [opened] = useState(body)
+
   const save = useMutation({
-    mutationFn: () => {
-      const body = {
-        name,
-        minFormatScore: minScore,
-        upgradesEnabled,
-        upgradeUntilScore,
-        minUpgradeScore,
-        required,
-        refused,
-        formatScores: Object.fromEntries(Object.entries(scores).filter(([, v]) => v !== 0)),
-        volume,
-        chapter,
-      }
-      return profile ? api.updateProfile(profile.id, body) : api.createProfile(body).then(() => {})
-    },
+    mutationFn: () =>
+      profile ? api.updateProfile(profile.id, body) : api.createProfile(body).then(() => {}),
     onSuccess: () => {
       onSaved()
       onClose()
@@ -79,8 +81,9 @@ export function ProfileModal({
   })
 
   return (
-    <Modal
-      opened
+    <EditorModal
+      dirty={!sameJSON(body, opened)}
+      busy={save.isPending}
       onClose={onClose}
       title={profile ? `Edit ${profile.name}` : 'Add profile'}
       size="lg"
@@ -206,7 +209,7 @@ export function ProfileModal({
           </Button>
         </Group>
       </Stack>
-    </Modal>
+    </EditorModal>
   )
 }
 

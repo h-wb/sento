@@ -2,7 +2,6 @@ import { useRef, useState } from 'react'
 import {
   Button,
   Group,
-  Modal,
   PasswordInput,
   SegmentedControl,
   Select,
@@ -14,6 +13,8 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { api, type IndexerBody, type IndexerView } from '../../api'
 import { connectionsQuery, extensionsQuery } from '../../queries'
 import { notify } from '../../ui'
+import { EditorModal } from '../EditorModal'
+import { sameJSON } from '../sameJSON'
 import { ExtensionSourcePicker } from './ExtensionSourcePicker'
 import { ProwlarrBrowse } from './ProwlarrBrowse'
 
@@ -61,6 +62,8 @@ export function IndexerModal({
   })
   const [pkg, setPkg] = useState(init?.pkgName ?? '')
   const pickedExt = (extensions.data ?? []).find((e) => e.pkgName === pkg)
+  const values = { protocol, name, torznab, source, prefValues, pkg }
+  const [saved, setSaved] = useState(values)
 
   // Auto-name follows the picked source as long as the user hasn't typed
   // a name themselves: re-picking overwrites our suggestion, never theirs.
@@ -117,6 +120,7 @@ export function IndexerModal({
     onSuccess: (hasSettings) => {
       if (hasSettings) {
         notify.ok('Indexer added — this source has settings of its own')
+        setSaved(values)
         setConfiguring(true)
         return
       }
@@ -127,15 +131,13 @@ export function IndexerModal({
   })
 
   return (
-    <Modal
-      opened
+    <EditorModal
+      dirty={!sameJSON(values, saved)}
+      busy={save.isPending}
       // Once the entry exists, closing by any route has to refresh the list.
       onClose={configuring ? onSaved : onClose}
       title={isEdit ? `Edit ${initial.name}` : configuring ? `${name} — settings` : 'Add indexer'}
       size="lg"
-      closeOnClickOutside={!save.isPending}
-      closeOnEscape={!save.isPending}
-      withCloseButton={!save.isPending}
     >
       <fieldset className="formFields" disabled={save.isPending}>
         <Stack gap="sm">
@@ -266,6 +268,6 @@ export function IndexerModal({
           </Group>
         </Stack>
       </fieldset>
-    </Modal>
+    </EditorModal>
   )
 }
