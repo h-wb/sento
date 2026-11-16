@@ -8,7 +8,8 @@ Start with the guide for what you want to do:
 | [Development](development.md) | Local setup, dev services and common tasks |
 | [Testing](testing/README.md) | Go, PostgreSQL, browser and sidecar checks |
 | [Releases](releases.md) | Conventional Commits, version policy and publishing |
-| [Architecture](architecture.md) | Package map and dependency boundaries |
+| [Architecture](architecture.md) | System context, package map, service internals, startup and background tasks |
+| [HTTP API](api.md) | Routes, conventions, errors and health checks |
 | [Domain](domain) | Editions, acquisition, parsing and library behavior |
 | [Specifications](spec) | Product decisions, release parser and decision engine |
 | [Exploratory testing](exploratory-testing.md) | Testing missions and controllable upstreams |

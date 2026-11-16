@@ -1,13 +1,39 @@
 # Backend architecture
 
-The current edition/acquisition model is described in [Editions, units, collected versions, and files](domain/editions.md). Stable work IDs identify memberships, targets express independently collected versions, and verified asset coverage determines ownership. Release evaluations and queue snapshots preserve acquisition decisions.
+Sento is one Go process: an HTTP API and background loops over a SQL
+database, talking to external services (a metadata provider, download
+clients, indexers and the extension sidecar) and to the library on disk.
+This page describes how that process is organized: the system context, the
+package dependency graph, the service structs, startup and the background
+tasks, and the persistence layer. The [domain guides](domain/) describe the
+implemented data flows; the [specs](spec/) (`spec.md`, `decision-engine.md`,
+`parser.md`) record intent and decisions. The current edition/acquisition
+model is described in [Editions, units, collected versions, and files](domain/editions.md).
 
-A map of the Go backend: packages, their dependencies, and the data flows
-that run through them. Product behavior is specified in [spec/](spec/)
-(`spec.md`, `decision-engine.md`, `parser.md`); this document is about how
-the code is organized.
+## System context
 
-The [domain guides](domain/) describe the implemented data flows.
+Everything Sento talks to, and what flows between them:
+
+```mermaid
+flowchart LR
+    browser["browser (web UI)"] -->|"HTTP /api/v1, SPA"| sento["Sento (cmd/sento): API + scheduler"]
+    sento -->|"host API"| sidecar["extension sidecar (extensions/)"]
+    sidecar -->|"page fetches"| sources["extension sources on the internet"]
+    sento -->|"WebUI API"| qb["qBittorrent"]
+    sento -->|"Torznab XML"| torznab["Torznab indexers"]
+    sento -->|"browse assist only"| prowlarr["Prowlarr"]
+    sento -->|"REST"| mangabaka["MangaBaka"]
+    sento <-->|"read/write CBZ files"| library["library on disk"]
+    readers["reader apps"] -->|"read CBZ files"| library
+```
+
+The browser only ever talks to Sento. Sento is the single writer to the
+library folder; readers only read it. The sidecar fetches pages from
+extension sources on Sento's behalf; Sento never talks to those sites
+directly. Prowlarr is used only for the Add Indexer browse assist, not for
+searching. qBittorrent runs wherever the user runs it; Sento reads its
+completed downloads through the path mappings when the storage is mounted
+elsewhere.
 
 ## Package dependency graph
 
@@ -61,6 +87,8 @@ graph TD
 
     cmd --> server
     cmd --> scheduler
+    cmd --> service
+    cmd --> store
     cmd --> db
     cmd --> mangabaka
 
@@ -68,6 +96,7 @@ graph TD
     server --> scheduler
     server --> store
     server --> provider
+    server --> extensions
     server --> profile
     server --> metadata
 
@@ -92,6 +121,7 @@ graph TD
     provider --> torznab
     provider --> qbittorrent
     provider --> extensions
+    provider --> match
 
     mangabaka --> metadata
 ```
@@ -103,12 +133,12 @@ service → {persistence, acquisition, metadata, domain}.
 
 | Package | Role |
 |---|---|
-| `internal/service` | All use-cases. Library side (library, scan, bulkimport), acquisition side (search, funnel, grab, importer), configuration (connections, indexers, sites, extensions, profiles, mediasettings) |
-| `internal/server` | HTTP layer: chi router, JSON handlers, DTOs (`types.go` feeds tygo → TS types) |
+| `internal/service` | All use-cases. Library side (library, scan, bulkimport, ledger and versions, organize, cleanup and trash), acquisition side (search, funnel, grab, importer), configuration (connections, indexers, sites, extensions, profiles, mediasettings, health) |
+| `internal/server` | HTTP layer: chi router, JSON handlers, DTOs (`types.go` feeds tygo → TS types); see [api.md](api.md) |
 | `internal/store` | Persistence: hand-written SQL via scany, portable across SQLite and PostgreSQL (`?` rebound per dialect) |
 | `internal/parse` | Pure release/file/chapter-name parser (spec/parser.md); no I/O, regression corpus |
 | `internal/provider` | Abstraction over release sources + download clients. `TorrentProvider` (torznab + qBittorrent) and `SourceProvider` (extension sources; Sento assembles CBZs itself) |
-| `internal/mediafile` | CBZ import (atomic), ComicInfo.xml merge, naming templates and their token list, hardlink-or-copy |
+| `internal/mediafile` | CBZ reading and writing (atomic), ComicInfo.xml merge, naming templates and their token list; the hardlink-or-copy install lives in `service` (`installAsset`) |
 | `internal/extensions` | Protocol-adapter contract for extension sources + HTTP client for the Kotlin sidecar (`extensions/`). Host keys are opaque; Sento owns all state |
 | `internal/metadata/mangabaka` | The one `metadata.Provider` implementation |
 | `internal/scheduler` | Background loops, crash-isolated; observable via System → Tasks |
@@ -124,6 +154,137 @@ service → {persistence, acquisition, metadata, domain}.
 | `internal/apperr` | Error classification sentinels (`ErrNotFound`, `ErrConflict`, …) mapped to HTTP statuses |
 | `internal/version` | Version string |
 | `internal/db/dbtest` | Test helper: per-test database |
+
+## Service internals
+
+`server.New` builds one struct per use-case area out of the store, the
+metadata provider, the shared provider registry and the connections. Each
+owns a set of files in `internal/service`:
+
+| Service struct | Constructor | Owns | Depends on |
+| --- | --- | --- | --- |
+| `Library` | `NewLibrary` (`library.go`) | series add/refresh, catalog, editions, versions, books views, review inbox, activity, calendar, wanted, progress; caches the fetched editions behind `editionsMu` | store, metadata provider, registry |
+| `Scanner` | `NewScanner` (`scan.go`) | existing-library import: links files in place, never renames | store, library root |
+| `Importer` | `NewImporter` (`importer.go`) | queue passes plus every file mutation (organize, cleanup, trash, removal, review apply); `mu` serializes queue passes and file changes so decisions and disk operations cannot interleave; `again` lists series to search again after a failed download | store, registry, library root, path mappings |
+| `SearchService` | `NewSearchService` (`search.go`) | the unified release search for both ledgers: providers, parse, funnel, grab | store, registry, profiles |
+| `ProfileService` | `NewProfiles` (`profiles.go`) | release profiles and custom formats: validation, default, seeding, import/export | store |
+| `SiteService` | `NewSiteService` (`sites.go`) | indexer entries with live reachability, per-series overrides | store, connections, registry |
+| `ExtensionService` | `NewExtensionService` (`extensions.go`) | extension lifecycle on the sidecar: desired list, install, repos, preferences; the host accessor is indirect because connections can swap the backend at runtime | store, host accessor, managed repos |
+| `Connections` | `NewConnections` (`connections.go`) | connection settings in the `settings` table, the live clients, and the shared registry rebuilt in place on save | store, config |
+| `HealthService` | `NewHealthService` (`health.go`) | probes of everything Sento depends on, with a cached report | store, connections, library path, task-status source |
+
+This diagram shows how `server.New` wires them: one server, nine services,
+and the four shared dependencies underneath.
+
+```mermaid
+flowchart TD
+    server["server.New (server.go)"] --> library["Library"]
+    server --> scanner["Scanner"]
+    server --> importer["Importer"]
+    server --> search["SearchService"]
+    server --> profiles["ProfileService"]
+    server --> sites["SiteService"]
+    server --> extensions["ExtensionService"]
+    server --> conns["Connections"]
+    server --> health["HealthService"]
+    library --> store["store"]
+    scanner --> store
+    importer --> store
+    search --> store
+    profiles --> store
+    sites --> store
+    extensions --> store
+    conns --> store
+    health --> store
+    conns --> registry["provider.Registry (shared, rebuilt in place)"]
+    library --> registry
+    importer --> registry
+    search --> registry
+    sites --> registry
+    library --> md["metadata.Provider (MangaBaka)"]
+    health --> conns
+    sites --> conns
+    extensions --> host["sidecar host accessor"]
+```
+
+## Startup
+
+`cmd/sento/main.go` runs in this order; each step fails startup on error:
+
+1. Parse `-config` (default `config.yml`) and `config.Load`: defaults, then
+   YAML, then `SENTO_*` environment overrides.
+2. Require a library path and make it absolute.
+3. `db.Open(cfg.Database.URL, cfg.Database.Path)`: PostgreSQL when a URL is
+   set, otherwise one SQLite connection; migrations run inside (see
+   [Persistence](#persistence)).
+4. Log a warning when `SENTO_API_KEY` is set: the key is not enforced.
+5. `store.New`, then `PrepareLibraryRoot` (records the library root and
+   rewrites stored paths when it changed), `EnsureDefaults` (seed release
+   profiles) and `MigrateCopyRules` (legacy version flags into profiles).
+6. `mangabaka.New(cfg.MangaBaka.BaseURL)`, the one metadata provider.
+7. `server.New`: builds the services above, loads and applies the connection
+   settings, and starts the extension-reconcile goroutine.
+8. `scheduler.New` + `SetScheduler` + `Start`: launches the background loops
+   (below).
+9. `http.Server` with a 10s `ReadHeaderTimeout`, `ListenAndServe` on
+   `host:port` (default `0.0.0.0:8484`).
+
+On SIGINT/SIGTERM the scheduler context is cancelled first (no new sweeps
+while requests drain), then the HTTP server shuts down with a 10s timeout.
+
+```mermaid
+sequenceDiagram
+    participant M as main (cmd/sento)
+    participant C as config
+    participant D as db
+    participant S as server.New
+    participant R as reconcile goroutine
+    participant H as scheduler
+    participant W as http.Server
+    M->>C: Load(-config): defaults, YAML, SENTO_* env
+    M->>D: Open(url, path) + migrations
+    M->>S: New(cfg, store, db, mangabaka provider)
+    S->>S: Connections.Load + Apply (registry swap)
+    S->>R: go reconcileExtensions (10 min budget, retry 5s up to 1 min)
+    M->>H: New + SetScheduler + Start (30s startup grace, resume last run)
+    M->>W: ListenAndServe (ReadHeaderTimeout 10s)
+    W-->>M: SIGINT/SIGTERM
+    M->>H: cancel context
+    M->>W: Shutdown(10s)
+```
+
+The extension reconcile converges a fresh or replaced sidecar to the desired
+extension list. Because the sidecar starts beside Sento and is often not up
+yet, a failure is retried with a wait that starts at 5s, doubles to at most
+1 minute, and stops after a 10-minute budget.
+
+## Background tasks
+
+`internal/scheduler` runs every loop in its own goroutine; a panic in a tick
+is recovered and logged, never fatal. The loops, their intervals and what
+each calls:
+
+| Slug | Interval | Condition | What it calls |
+| --- | --- | --- | --- |
+| `queue-process` | 1 min | always | `Importer.ProcessQueue`, then `SearchService.SearchAgain` for series whose download failed |
+| `extension-sync` | 30 min | sidecar configured | `ExtensionService.Reconcile` |
+| `metadata-refresh` | 1 h | always | `Library.Refresh` for stale series: releasing or hiatus and older than 24 h, everything else older than 7 days |
+| `library-scan` | 12 h | scanner present | `Scanner.ScanSeriesFolder` for every series with a folder |
+| `chapter-check` | 2 h | providers registered | wanted-chapter sweep over monitored, active series |
+| `volume-sweep` | 12 h | providers registered | wanted-volume sweep over monitored series |
+| `library-organize` | on demand only | importer present | `Importer.RunLibraryOrganize` |
+| `housekeeping` | 24 h | always | `Importer.PurgeExpiredTrash`, `store.PruneFinishedQueue` (keeps 200), `store.PruneDecisions` (keeps 1000) |
+| `health-check` | 15 min | health service present | `HealthService.Check` |
+
+Cadence survives restarts: each task's last-run time is persisted in the
+`settings` table under the `scheduler` key (slug to RFC3339), written
+best-effort after every tick. On `Start`, a task that never ran waits a full
+interval; one that ran resumes the remainder of its interval, with a minimum
+of 30s (`startupGrace`) so a restart does not fire every overdue sweep at
+once. A manual trigger (`POST /api/v1/system/tasks/{slug}/run`) while a tick
+is running makes the loop run once more when the tick finishes; the ticker
+cadence is unchanged. The System → Tasks page reads each loop's slug, name,
+interval, last run, duration, error, next run and running flag.
 
 ## Persistence
 
