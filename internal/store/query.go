@@ -19,18 +19,18 @@ type execer interface {
 
 // listQ runs a query on q and scans every row into T. Columns map to
 // snake-cased field names or `db` tags (scany); an empty result is a nil slice.
-func listQ[T any](ctx context.Context, q querier, query string, args ...any) ([]T, error) {
+func listQ[T any](ctx context.Context, s *Store, q querier, query string, args ...any) ([]T, error) {
 	var out []T
-	if err := sqlscan.Select(ctx, q, &out, query, args...); err != nil {
+	if err := sqlscan.Select(ctx, q, &out, s.q(query), args...); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
 // getQ scans exactly one row on q into T; no row maps to ErrNotFound.
-func getQ[T any](ctx context.Context, q querier, query string, args ...any) (*T, error) {
+func getQ[T any](ctx context.Context, s *Store, q querier, query string, args ...any) (*T, error) {
 	var v T
-	err := sqlscan.Get(ctx, q, &v, query, args...)
+	err := sqlscan.Get(ctx, q, &v, s.q(query), args...)
 	if sqlscan.NotFound(err) {
 		return nil, ErrNotFound
 	}
@@ -43,12 +43,12 @@ func getQ[T any](ctx context.Context, q querier, query string, args ...any) (*T,
 // list runs a query and scans every row into T. Columns map to snake-cased
 // field names or `db` tags (scany); an empty result is a nil slice.
 func list[T any](ctx context.Context, s *Store, query string, args ...any) ([]T, error) {
-	return listQ[T](ctx, s.db, s.q(query), args...)
+	return listQ[T](ctx, s, s.db, query, args...)
 }
 
 // get scans exactly one row into T; no row maps to ErrNotFound.
 func get[T any](ctx context.Context, s *Store, query string, args ...any) (*T, error) {
-	return getQ[T](ctx, s.db, s.q(query), args...)
+	return getQ[T](ctx, s, s.db, query, args...)
 }
 
 // touch runs an update/delete that must affect at least one row; affecting

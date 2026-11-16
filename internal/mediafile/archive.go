@@ -25,6 +25,11 @@ func junk(name string) bool {
 		strings.HasPrefix(base, "._") || strings.HasPrefix(name, "__MACOSX/") || strings.Contains(name, "/__MACOSX/")
 }
 
+var imageExts = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true,
+	".avif": true, ".jxl": true, ".bmp": true,
+}
+
 func isImage(name string) bool { return imageExts[strings.ToLower(path.Ext(name))] }
 
 func isComicInfo(name string) bool { return strings.EqualFold(path.Base(name), "ComicInfo.xml") }

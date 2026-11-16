@@ -23,27 +23,25 @@ func (s *Store) lockEditions(ctx context.Context, tx *sql.Tx, allowPending bool,
 		if allowPending {
 			continue
 		}
-		rows, err := s.pendingRefs(ctx, tx, sid)
+		pending, err := s.pendingEditions(ctx, tx, sid)
 		if err != nil {
 			return err
 		}
-		pending := false
-		for _, row := range rows {
-			slots, err := row.bookRefs()
-			if err != nil {
-				return err
-			}
-			for _, sl := range slots {
-				if sl.EditionID == id {
-					pending = true
-				}
-			}
-		}
-		if pending {
+		if pending[id] {
 			return apperr.Conflictf("finish or cancel this edition's pending downloads first")
 		}
 	}
 	return nil
+}
+
+// lockSeriesEditions locks every edition of a series, pending downloads
+// allowed.
+func (s *Store) lockSeriesEditions(ctx context.Context, tx *sql.Tx, sid int64) error {
+	ids, err := listQ[int64](ctx, s, tx, `SELECT id FROM editions WHERE series_id=? ORDER BY id`, sid)
+	if err != nil {
+		return err
+	}
+	return s.lockEditions(ctx, tx, true, ids...)
 }
 
 // lockRow takes the dialect's write lock on one row and returns the selected

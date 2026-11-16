@@ -70,7 +70,7 @@ func loadLedger(ctx context.Context, st *store.Store, seriesID int64) (*ledgerVi
 	if err != nil {
 		return nil, err
 	}
-	works, err := st.SeriesBooks(ctx, seriesID)
+	works, err := st.SeriesBooksByNumber(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}

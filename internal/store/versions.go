@@ -38,7 +38,7 @@ func (s *Store) insertDefaultVersion(ctx context.Context, tx *sql.Tx, editionID 
 // bookInVersion reports whether the book is in the version in the edition of
 // the series.
 func (s *Store) bookInVersion(ctx context.Context, q querier, seriesID, bookID, versionID, editionID int64) (bool, error) {
-	n, err := getQ[int](ctx, q, s.q(`SELECT COUNT(*) FROM books w JOIN versions t ON t.edition_id=w.edition_id JOIN editions c ON c.id=w.edition_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`), bookID, versionID, editionID, seriesID)
+	n, err := getQ[int](ctx, s, q, `SELECT COUNT(*) FROM books w JOIN versions t ON t.edition_id=w.edition_id JOIN editions c ON c.id=w.edition_id WHERE w.id=? AND t.id=? AND c.id=? AND c.series_id=?`, bookID, versionID, editionID, seriesID)
 	if err != nil {
 		return false, err
 	}
@@ -50,7 +50,7 @@ func (s *Store) filePins(ctx context.Context, q querier, fileID int64) (map[stri
 	rows, err := listQ[struct {
 		VersionID int64 `db:"version_id"`
 		BookID    int64 `db:"book_id"`
-	}](ctx, q, s.q(`SELECT version_id,book_id FROM asset_coverage WHERE file_id=? AND pinned=TRUE`), fileID)
+	}](ctx, s, q, `SELECT version_id,book_id FROM asset_coverage WHERE file_id=? AND pinned=TRUE`, fileID)
 	if err != nil {
 		return nil, err
 	}

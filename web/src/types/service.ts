@@ -1216,7 +1216,8 @@ export interface SearchEvent {
 
 /**
  * SiteService backs the Indexers UI: the configured entries with
- * reachability, plus per-series override views.
+ * reachability, adding, updating, patching and testing them, the source
+ * search of the manual bind, plus per-series override views.
  */
 export interface SiteService {
 }
@@ -1234,6 +1235,15 @@ export interface IndexerView extends Indexer {
 export interface SeriesIndexerView extends IndexerView {
   override?: SiteOverride;
   bindings?: Binding[];
+}
+/**
+ * IndexerPatch toggles entry fields inline (nil = keep).
+ */
+export interface IndexerPatch {
+  enabled?: boolean;
+  useVolumes?: boolean;
+  useChapters?: boolean;
+  priority?: number /* int */;
 }
 
 //////////

@@ -12,17 +12,13 @@ import (
 	"github.com/h-wb/sento/internal/apperr"
 )
 
-type reviewQuerier interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
-
 // ReviewRevision identifies the facts a review decision depends on. Stable
 // ordering includes deselected mappings and pins, not just accepted owners.
 func (s *Store) ReviewRevision(ctx context.Context, sid int64) (string, error) {
 	return s.reviewRevision(ctx, s.db, sid)
 }
 
-func (s *Store) reviewRevision(ctx context.Context, db reviewQuerier, sid int64) (string, error) {
+func (s *Store) reviewRevision(ctx context.Context, db querier, sid int64) (string, error) {
 	h := sha256.New()
 	queries := []string{
 		`SELECT * FROM series WHERE id=? ORDER BY id`,
@@ -115,11 +111,7 @@ func (s *Store) CommitFileReviews(ctx context.Context, sid int64, revision strin
 		if _, err := s.lockRow(ctx, tx, "series", "id", sid); err != nil {
 			return err
 		}
-		eids, err := listQ[int64](ctx, tx, s.q(`SELECT id FROM editions WHERE series_id=? ORDER BY id`), sid)
-		if err != nil {
-			return err
-		}
-		if err := s.lockEditions(ctx, tx, true, eids...); err != nil {
+		if err := s.lockSeriesEditions(ctx, tx, sid); err != nil {
 			return err
 		}
 		if s.pg {

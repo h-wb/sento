@@ -32,15 +32,6 @@ type AssetFacts struct {
 	ReleaseKey  string            `json:"releaseKey,omitempty"`
 }
 
-func (s *Store) SetAssetFacts(ctx context.Context, id int64, f AssetFacts, hash string) error {
-	raw, err := json.Marshal(f)
-	if err != nil {
-		return err
-	}
-	// A different fingerprint was not read from the archive the signature describes.
-	return s.touch(ctx, `UPDATE files SET facts_json=?,hash_stat=CASE WHEN COALESCE(hash,'')=? THEN hash_stat ELSE '' END,hash=? WHERE id=?`, string(raw), hash, hash, id)
-}
-
 func (f *AssetFacts) Scan(src any) error {
 	switch v := src.(type) {
 	case string:

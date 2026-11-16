@@ -26,7 +26,7 @@ type rejectionRule struct {
 }
 
 // rejectionRules is the one table keyed by rejection code. Owner "other" is
-// the default for codes not listed (this search: not needed, blocklisted).
+// the default for codes not listed.
 var rejectionRules = map[string]rejectionRule{
 	"rejected.series_match": {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string {
 		return "The release name does not identify this series unambiguously."
@@ -34,14 +34,24 @@ var rejectionRules = map[string]rejectionRule{
 	"rejected.content_type": {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string {
 		return "Classified as " + string(c.Parse.ContentType) + ", not manga."
 	}},
-	"rejected.language":        {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string { return "The stated language does not match this edition." }},
-	"rejected.edition_routing": {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string { return "The release states a different edition than this one." }},
+	"rejected.language": {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string { return "The stated language does not match this edition." }},
+	"rejected.edition_routing": {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string {
+		if c.editionWhy != "" {
+			return c.editionWhy
+		}
+		return "The release states a different edition than this one."
+	}},
 	"rejected.numbers_unknown": {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string { return "No confirmed volume or chapter numbers were found." }},
 	"rejected.book_ambiguous": {Hard: true, Owner: "book", Label: func(c *ReleaseCandidate) string {
 		return "Several books share this number. Search from the specific book to disambiguate."
 	}},
-	"rejected.profile_rule": {Hard: true, Owner: "profile", Label: func(c *ReleaseCandidate) string { return "The release breaks a required or refused format rule." }},
-	"rejected.no_upgrade":   {Hard: true, Owner: "profile", Label: func(c *ReleaseCandidate) string { return "This release does not improve the file on disk enough." }},
+	"rejected.profile_rule": {Hard: true, Owner: "profile", Label: func(c *ReleaseCandidate) string {
+		if c.profileWhy != "" {
+			return c.profileWhy
+		}
+		return "The release breaks a required or refused format rule."
+	}},
+	"rejected.no_upgrade": {Hard: true, Owner: "profile", Label: func(c *ReleaseCandidate) string { return "This release does not improve the file on disk enough." }},
 	"rejected.no_coverage": {Hard: true, Owner: "other", Label: func(c *ReleaseCandidate) string {
 		return "No books in this release need a download in the current selection."
 	}},
@@ -60,6 +70,9 @@ var rejectionRules = map[string]rejectionRule{
 		return fmt.Sprintf("Only %d of %d represented books are wanted; automatic packs require at least half.", len(c.Coverage), c.RepresentedBooks)
 	}},
 	"rejected.edition_ambiguous": {Hard: false, Owner: "confirm", Label: func(c *ReleaseCandidate) string {
+		if c.editionWhy != "" {
+			return c.editionWhy
+		}
 		return "This release also fits another edition you collect. Confirm it belongs to this one."
 	}},
 	"rejected.pack_unverified": {Hard: false, Owner: "confirm", Label: func(c *ReleaseCandidate) string {
@@ -140,12 +153,6 @@ func (c *ReleaseCandidate) explain() {
 		message := ""
 		if rule.Label != nil {
 			message = rule.Label(c)
-		}
-		if code == "rejected.profile_rule" && c.profileWhy != "" {
-			message = c.profileWhy
-		}
-		if (code == "rejected.edition_routing" || code == "rejected.edition_ambiguous") && c.editionWhy != "" {
-			message = c.editionWhy
 		}
 		if message == "" {
 			message = "Does not meet rule: " + strings.TrimPrefix(code, "rejected.")

@@ -121,11 +121,11 @@ func (s *Server) handlePatchIndexer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body IndexerPatch
+	var body service.IndexerPatch
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	ix, err := s.sites.Patch(r.Context(), iid, body.Enabled, body.UseVolumes, body.UseChapters, body.Priority)
+	ix, err := s.sites.Patch(r.Context(), iid, body)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -156,12 +156,7 @@ func (s *Server) handleTestIndexerSearch(w http.ResponseWriter, r *http.Request)
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	ix, err := s.store.GetIndexer(r.Context(), iid)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	result, err := service.TestIndexerSearch(r.Context(), *ix, body.Query)
+	result, err := s.sites.TestSearch(r.Context(), iid, body.Query)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -174,12 +169,7 @@ func (s *Server) handleTestIndexer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ix, err := s.store.GetIndexer(r.Context(), iid)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	if err := service.TestIndexer(r.Context(), *ix, s.conns.Host()); err != nil {
+	if err := s.sites.Test(r.Context(), iid); err != nil {
 		writeErr(w, err)
 		return
 	}

@@ -100,7 +100,7 @@ func (l *Library) activityRow(ctx context.Context, data *ActivityData, job store
 		}
 	}
 	withLiveProgress(l.registry, &job)
-	job.CanTryAnother = CanTryAnother(job, sets.files[job.SeriesID])
+	job.CanTryAnother = canTryAnother(job, sets.files[job.SeriesID])
 	d := ActivityDownload{Job: job, Files: []store.ReviewItem{}, ListingID: jobListing(job)}
 	snap := jobSnapshot(job)
 	d.SourceName = snap.Site

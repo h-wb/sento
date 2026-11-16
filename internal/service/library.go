@@ -348,17 +348,14 @@ func (l *Library) UpdateBinding(ctx context.Context, seriesID, bindingID int64, 
 		if err := l.store.SetBindingTrust(ctx, seriesID, bindingID, *trustChapters); err != nil {
 			return err
 		}
-		if editionID == nil && state == "" {
-			return nil
-		}
 	}
 	if editionID != nil {
 		if err := l.store.SetBindingEdition(ctx, seriesID, bindingID, *editionID); err != nil {
 			return err
 		}
-		if state == "" {
-			return nil
-		}
+	}
+	if state == "" && (trustChapters != nil || editionID != nil) {
+		return nil
 	}
 	if state != "active" && state != "disabled" {
 		return apperr.Invalidf("state must be active or disabled")

@@ -23,7 +23,11 @@ func (s *Server) mountReviewAPI(r chi.Router) {
 }
 
 func (s *Server) handleReview(w http.ResponseWriter, r *http.Request) {
-	sid, _ := queryID(r, "seriesId")
+	sid, ok := queryID(r, "seriesId")
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid series ID")
+		return
+	}
 	data, err := s.library.ReviewItems(r.Context(), sid)
 	respondList(w, data, err)
 }

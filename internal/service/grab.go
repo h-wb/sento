@@ -192,9 +192,9 @@ func (s *SearchService) retire(ctx context.Context, queueID int64, claims []stor
 	return s.store.CancelQueue(ctx, queueID)
 }
 
+// queueBooks decodes a queue item's books, ignoring a bad mapping.
 func queueBooks(q *store.QueueItem) []store.BookRef {
-	var refs []store.BookRef
-	_ = json.Unmarshal(q.Books, &refs)
+	refs, _ := queueBooksErr(q)
 	return refs
 }
 

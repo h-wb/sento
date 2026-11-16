@@ -13,15 +13,15 @@ import (
 )
 
 // SiteService backs the Indexers UI: the configured entries with
-// reachability, plus per-series override views.
+// reachability, adding, updating, patching and testing them, the source
+// search of the manual bind, plus per-series override views.
 type SiteService struct {
-	store    *store.Store
-	conns    *Connections
-	registry *provider.Registry
+	store *store.Store
+	conns *Connections
 }
 
 func NewSiteService(st *store.Store, conns *Connections) *SiteService {
-	return &SiteService{store: st, conns: conns, registry: conns.Registry()}
+	return &SiteService{store: st, conns: conns}
 }
 
 // IndexerView is one entry with live reachability and a display summary.
@@ -139,7 +139,7 @@ func (s *SiteService) List(ctx context.Context) ([]IndexerView, error) {
 	if err != nil {
 		return nil, err
 	}
-	reach := reachability(ctx, s.registry)
+	reach := reachability(ctx, s.conns.Registry())
 	out := make([]IndexerView, 0, len(entries))
 	for _, ix := range entries {
 		out = append(out, IndexerView{
@@ -159,7 +159,7 @@ func (s *SiteService) List(ctx context.Context) ([]IndexerView, error) {
 
 // Add validates and stores a new indexer entry.
 func (s *SiteService) Add(ctx context.Context, ix store.Indexer) (store.Indexer, error) {
-	if err := ValidateIndexer(ix); err != nil {
+	if err := validateIndexer(ix); err != nil {
 		return ix, err
 	}
 	id, err := s.store.AddIndexer(ctx, ix)
@@ -178,7 +178,7 @@ func (s *SiteService) Update(ctx context.Context, iid int64, ix store.Indexer) (
 	}
 	ix.ID = iid
 	ix.Protocol = existing.Protocol // protocol is immutable
-	if err := ValidateIndexer(ix); err != nil {
+	if err := validateIndexer(ix); err != nil {
 		return ix, err
 	}
 	if err := s.store.UpdateIndexer(ctx, ix); err != nil {
@@ -187,30 +187,56 @@ func (s *SiteService) Update(ctx context.Context, iid int64, ix store.Indexer) (
 	return ix, nil
 }
 
-// Patch applies inline field toggles to one entry (nil = keep). Unlike Add
-// and Update it does not re-validate: the switches only flip fields of an
-// existing entry.
-func (s *SiteService) Patch(ctx context.Context, iid int64, enabled, useVolumes, useChapters *bool, priority *int) (store.Indexer, error) {
+// IndexerPatch toggles entry fields inline (nil = keep).
+type IndexerPatch struct {
+	Enabled     *bool `json:"enabled"`
+	UseVolumes  *bool `json:"useVolumes"`
+	UseChapters *bool `json:"useChapters"`
+	Priority    *int  `json:"priority"`
+}
+
+// Patch applies inline field toggles to one entry. Unlike Add and Update
+// it does not re-validate: the switches only flip fields of an existing
+// entry.
+func (s *SiteService) Patch(ctx context.Context, iid int64, patch IndexerPatch) (store.Indexer, error) {
 	ix, err := s.store.GetIndexer(ctx, iid)
 	if err != nil {
 		return store.Indexer{}, err
 	}
-	if enabled != nil {
-		ix.Enabled = *enabled
+	if patch.Enabled != nil {
+		ix.Enabled = *patch.Enabled
 	}
-	if useVolumes != nil {
-		ix.UseVolumes = *useVolumes
+	if patch.UseVolumes != nil {
+		ix.UseVolumes = *patch.UseVolumes
 	}
-	if useChapters != nil {
-		ix.UseChapters = *useChapters
+	if patch.UseChapters != nil {
+		ix.UseChapters = *patch.UseChapters
 	}
-	if priority != nil {
-		ix.Priority = *priority
+	if patch.Priority != nil {
+		ix.Priority = *patch.Priority
 	}
 	if err := s.store.UpdateIndexer(ctx, *ix); err != nil {
 		return store.Indexer{}, err
 	}
 	return *ix, nil
+}
+
+// Test probes one entry: torznab caps, or source presence on the host.
+func (s *SiteService) Test(ctx context.Context, iid int64) error {
+	ix, err := s.store.GetIndexer(ctx, iid)
+	if err != nil {
+		return err
+	}
+	return testIndexer(ctx, *ix, s.conns.Host())
+}
+
+// TestSearch runs the search diagnostic against one torznab entry.
+func (s *SiteService) TestSearch(ctx context.Context, iid int64, query string) (*IndexerSearchCheck, error) {
+	ix, err := s.store.GetIndexer(ctx, iid)
+	if err != nil {
+		return nil, err
+	}
+	return testIndexerSearch(ctx, *ix, query)
 }
 
 // SearchSource searches one source entry's manga catalog on the host (the

@@ -7,9 +7,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/h-wb/sento/internal/config"
+	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -40,7 +42,7 @@ func TestHealthChecks(t *testing.T) {
 	cfg := config.Default()
 	conns := NewConnections(st, cfg)
 	library := filepath.Join(t.TempDir(), "library")
-	health := NewHealthService(st, conns, library, nil)
+	health := NewHealthService(st, conns, library)
 
 	// A fresh install: nothing to search with, and a library folder that
 	// has not been created yet is not a problem.
@@ -122,5 +124,40 @@ func TestHealthLibraryPath(t *testing.T) {
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("the write probe left files behind: %v %v", entries, err)
+	}
+}
+
+// countingHost counts the source-list fetches a check makes.
+type countingHost struct {
+	fakeExtHost
+	mu    sync.Mutex
+	calls int
+}
+
+func (h *countingHost) Sources(context.Context) ([]extensions.Source, error) {
+	h.mu.Lock()
+	h.calls++
+	h.mu.Unlock()
+	return []extensions.Source{{ID: "1"}, {ID: "2"}}, nil
+}
+
+// One health run asks the sidecar for its sources once, however many
+// source indexers it checks.
+func TestHealthSourcesFetchedOnce(t *testing.T) {
+	t.Parallel()
+	host := &countingHost{}
+	var indexers []store.Indexer
+	for i, id := range []string{"1", "2", "3"} {
+		indexers = append(indexers, store.Indexer{
+			ID: int64(i + 1), Name: "Source " + id, Protocol: store.IndexerSource, Enabled: true,
+			Settings: store.JSONText(fmt.Sprintf(`{"sourceId":%q}`, id)),
+		})
+	}
+	issues := checkSources(context.Background(), host, indexers)
+	if host.calls != 1 {
+		t.Errorf("Sources called %d times, want 1", host.calls)
+	}
+	if len(issues) != 1 || issues[0].Message != "Indexer Source 3 is unavailable" {
+		t.Errorf("issues = %+v", issues)
 	}
 }

@@ -32,7 +32,7 @@ func (s *Store) loadReleaseBlocks(ctx context.Context, tx *sql.Tx) ([]BlocklistE
 	rows, err := listQ[struct {
 		BlocklistEntry
 		Aliases JSONText `db:"aliases_json"`
-	}](ctx, tx, `SELECT id, protocol, key, COALESCE(reason,'') AS reason, created_at, title, aliases_json FROM blocklist ORDER BY id DESC`)
+	}](ctx, s, tx, `SELECT id, protocol, key, COALESCE(reason,'') AS reason, created_at, title, aliases_json FROM blocklist ORDER BY id DESC`)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -194,19 +194,6 @@ type BlocklistEntry struct {
 	Key       string `json:"key"`
 	Reason    string `json:"reason"`
 	CreatedAt string `json:"createdAt"`
-}
-
-func (s *Store) AddBlocklist(ctx context.Context, protocol, key, reason string) error {
-	_, err := s.db.ExecContext(ctx, s.q(`
-		INSERT INTO blocklist (protocol, key, reason) VALUES (?,?,?)
-		ON CONFLICT(protocol, key) DO UPDATE SET reason = excluded.reason`),
-		protocol, key, reason)
-	return err
-}
-
-func (s *Store) ListBlocklist(ctx context.Context) ([]BlocklistEntry, error) {
-	return list[BlocklistEntry](ctx, s, `
-		SELECT id, protocol, key, COALESCE(reason,'') AS reason, created_at, title FROM blocklist ORDER BY id DESC`)
 }
 
 func (s *Store) DeleteBlocklist(ctx context.Context, id int64) error {

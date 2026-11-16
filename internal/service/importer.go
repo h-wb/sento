@@ -267,6 +267,9 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 	return true, im.store.UpdateQueueItem(ctx, item.ID, store.QueueImported, "")
 }
 
+// dbTimeLayout is the timestamp layout the database stores.
+const dbTimeLayout = "2006-01-02 15:04:05"
+
 func parseTime(s string) time.Time {
 	for _, layout := range []string{dbTimeLayout, time.RFC3339} {
 		if t, err := time.Parse(layout, s); err == nil {

@@ -251,11 +251,23 @@ func fileByID(t *testing.T, st *store.Store, sid, fid int64) store.File {
 	return store.File{}
 }
 
-// Every flag the parser produces can be corrected.
+// Every flag the parser produces can be corrected, and every flag a format
+// can name is read from the parse.
 func TestFactFlagsCoverTheParsersFlags(t *testing.T) {
-	for flag := range parseFlags(parse.Result{}) {
+	p := parse.Result{
+		Quality:  parse.QualityHints{Digital: true, Scan: true, Web: true, Premium: true},
+		Edition:  parse.EditionHints{Colored: true, Omnibus: true, Deluxe: true, BoxSet: true, Official: true, Raw: true},
+		Complete: true,
+	}
+	flags := parseFlags(p)
+	for flag := range flags {
 		if !slices.Contains(store.FactFlags, flag) {
 			t.Errorf("flag %q is read from names but cannot be corrected", flag)
+		}
+	}
+	for _, flag := range profile.Flags {
+		if !flags[flag] {
+			t.Errorf("flag %q is never read from the parse", flag)
 		}
 	}
 }

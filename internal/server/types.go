@@ -127,14 +127,6 @@ type IndexerBody struct {
 	Settings    json.RawMessage `json:"settings" tstype:"any"`
 }
 
-// IndexerPatch toggles entry fields inline (nil = keep).
-type IndexerPatch struct {
-	Enabled     *bool `json:"enabled"`
-	UseVolumes  *bool `json:"useVolumes"`
-	UseChapters *bool `json:"useChapters"`
-	Priority    *int  `json:"priority"`
-}
-
 // BrowseProwlarrBody asks for the Add Indexer discovery assist.
 type BrowseProwlarrBody struct {
 	URL    string `json:"url"`

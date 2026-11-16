@@ -95,7 +95,26 @@ type pendingRow struct {
 
 // pendingRefs lists the active queue items of a series.
 func (s *Store) pendingRefs(ctx context.Context, q querier, seriesID int64) ([]pendingRow, error) {
-	return listQ[pendingRow](ctx, q, s.q(`SELECT books_json,status FROM queue_items WHERE series_id=? AND status IN`+activeQueueStatuses), seriesID)
+	return listQ[pendingRow](ctx, s, q, `SELECT books_json,status FROM queue_items WHERE series_id=? AND status IN`+activeQueueStatuses, seriesID)
+}
+
+// pendingEditions lists the editions of a series with downloads under way.
+func (s *Store) pendingEditions(ctx context.Context, q querier, seriesID int64) (map[int64]bool, error) {
+	rows, err := s.pendingRefs(ctx, q, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64]bool{}
+	for _, row := range rows {
+		books, err := row.bookRefs()
+		if err != nil {
+			return nil, fmt.Errorf("invalid pending download mapping: %w", err)
+		}
+		for _, b := range books {
+			out[b.EditionID] = true
+		}
+	}
+	return out, nil
 }
 
 func (r pendingRow) bookRefs() ([]BookRef, error) {
@@ -111,14 +130,6 @@ type BookRef struct {
 	Ledger    string `json:"ledger"`
 	EditionID int64  `json:"editionId"`
 	Number    int64  `json:"number"`
-}
-
-func (s *Store) AddQueueItem(ctx context.Context, q QueueItem) (int64, error) {
-	return s.insert(ctx, `
-		INSERT INTO queue_items (series_id, protocol, external_id, title, status, books_json)
-		VALUES (?,?,?,?,?,?) RETURNING id`,
-		q.SeriesID, q.Protocol, q.ExternalID, q.Title, orDefault(q.Status, QueueQueued),
-		string(q.Books))
 }
 
 func (s *Store) UpdateQueueItem(ctx context.Context, id int64, status, errMsg string) error {
@@ -211,18 +222,6 @@ func (s *Store) PendingBookStates(ctx context.Context, seriesID int64) (map[stri
 				}
 			}
 		}
-	}
-	return out, nil
-}
-
-func (s *Store) PendingBooks(ctx context.Context, seriesID int64) (map[string]bool, error) {
-	states, err := s.PendingBookStates(ctx, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]bool{}
-	for key := range states {
-		out[key] = true
 	}
 	return out, nil
 }

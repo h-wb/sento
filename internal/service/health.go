@@ -8,11 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/extensions"
 	"github.com/h-wb/sento/internal/qbittorrent"
 	"github.com/h-wb/sento/internal/store"
-	"github.com/h-wb/sento/internal/torznab"
 )
 
 // Health levels. An error stops something from working now; a warning is
@@ -46,58 +44,6 @@ type taskStatusSource interface {
 	TaskIssues() []HealthIssue
 }
 
-// probeTimeout bounds one remote probe, so a hung service costs a check
-// run seconds rather than the request timeout.
-const probeTimeout = 10 * time.Second
-
-// runParallel runs probes concurrently — each bounded by timeout when
-// positive — and returns their results in probe order.
-func runParallel[T any](ctx context.Context, timeout time.Duration, probes []func(context.Context) T) []T {
-	out := make([]T, len(probes))
-	var wg sync.WaitGroup
-	for i, probe := range probes {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			pctx := ctx
-			if timeout > 0 {
-				var cancel context.CancelFunc
-				pctx, cancel = context.WithTimeout(ctx, timeout)
-				defer cancel()
-			}
-			out[i] = probe(pctx)
-		}()
-	}
-	wg.Wait()
-	return out
-}
-
-// probeSource checks that a source is present on the extensions host.
-func probeSource(ctx context.Context, host extensions.Host, sourceID string) error {
-	if host == nil {
-		return apperr.Unavailablef("no extensions sidecar is configured")
-	}
-	sources, err := host.Sources(ctx)
-	if err != nil {
-		return apperr.Upstreamf("%w", err)
-	}
-	for _, s := range sources {
-		if s.ID == sourceID {
-			return nil
-		}
-	}
-	return apperr.Upstreamf("source %s is not present on the host (extension uninstalled?)", sourceID)
-}
-
-// probeTorznab pings one torznab entry (settings decode included).
-func probeTorznab(ctx context.Context, ix store.Indexer) error {
-	e, err := parseEntry(ix)
-	if err == nil {
-		err = torznab.New(e.URL, e.APIKey).Ping(ctx)
-	}
-	return err
-}
-
 // HealthService probes what Sento depends on — the library folder, the
 // download client, the extensions sidecar and every enabled indexer — and keeps
 // the last report. Probing is remote I/O, so reads are served from that
@@ -115,8 +61,16 @@ type HealthService struct {
 	fresh  bool
 }
 
-func NewHealthService(st *store.Store, conns *Connections, libraryPath string, tasks taskStatusSource) *HealthService {
-	return &HealthService{store: st, conns: conns, libraryPath: libraryPath, tasks: tasks}
+func NewHealthService(st *store.Store, conns *Connections, libraryPath string) *HealthService {
+	return &HealthService{store: st, conns: conns, libraryPath: libraryPath}
+}
+
+// SetTaskSource wires in the background tasks whose failures the report
+// includes (the scheduler, built after this service).
+func (h *HealthService) SetTaskSource(tasks taskStatusSource) {
+	h.mu.Lock()
+	h.tasks = tasks
+	h.mu.Unlock()
 }
 
 // Invalidate marks the report stale after a settings change; the next
@@ -157,11 +111,14 @@ func (h *HealthService) Check(ctx context.Context) HealthReport {
 // withTaskFailures merges the background tasks whose last run failed into
 // the report — live state, not part of the cached report.
 func (h *HealthService) withTaskFailures(report HealthReport) HealthReport {
-	if h.tasks == nil {
+	h.mu.RLock()
+	tasks := h.tasks
+	h.mu.RUnlock()
+	if tasks == nil {
 		return report
 	}
 	issues := append([]HealthIssue{}, report.Issues...)
-	issues = append(issues, h.tasks.TaskIssues()...)
+	issues = append(issues, tasks.TaskIssues()...)
 	report.Issues = issues
 	return report
 }
@@ -301,7 +258,8 @@ func checkSources(ctx context.Context, host extensions.Host, indexers []store.In
 			Message: "No extensions sidecar is configured, so source indexers cannot be searched",
 		}}
 	}
-	if _, err := host.Sources(ctx); err != nil {
+	sources, err := host.Sources(ctx)
+	if err != nil {
 		return []HealthIssue{{
 			Source: "extensions", Level: HealthError, Link: "/connections",
 			Message: "The extensions sidecar is unavailable", Detail: err.Error(),
@@ -310,19 +268,22 @@ func checkSources(ctx context.Context, host extensions.Host, indexers []store.In
 	var issues []HealthIssue
 	for _, ix := range indexers {
 		e, err := parseEntry(ix)
-		if err != nil {
+		switch {
+		case err != nil:
 			issues = append(issues, indexerIssue(ix, err.Error()))
-			continue
-		}
-		if err := probeSource(ctx, host, e.SourceID); err != nil {
-			issues = append(issues, indexerIssue(ix, err.Error()))
+		case !sourcePresent(sources, e.SourceID):
+			issues = append(issues, indexerIssue(ix, errSourceMissing(e.SourceID).Error()))
 		}
 	}
 	return issues
 }
 
 func checkTorznab(ctx context.Context, ix store.Indexer) []HealthIssue {
-	if err := probeTorznab(ctx, ix); err != nil {
+	e, err := parseEntry(ix)
+	if err == nil {
+		err = probeTorznab(ctx, e)
+	}
+	if err != nil {
 		return []HealthIssue{indexerIssue(ix, err.Error())}
 	}
 	return nil

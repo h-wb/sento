@@ -165,7 +165,7 @@ func (c *Connections) RequireHost() (extensions.Host, error) {
 // endpoints (the Add Indexer assist), remembering the entered credentials
 // in the connection settings for next time.
 func (c *Connections) BrowseProwlarr(ctx context.Context, baseURL, apiKey string) ([]ProwlarrIndexer, error) {
-	indexers, err := BrowseProwlarr(ctx, baseURL, apiKey)
+	indexers, err := browseProwlarr(ctx, baseURL, apiKey)
 	if err != nil {
 		return nil, err
 	}

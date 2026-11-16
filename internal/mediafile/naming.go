@@ -51,7 +51,8 @@ func RenderFolder(template string, t NameTokens) []string {
 
 // Render fills a template; empty values collapse their bracket/paren wrapper
 // ("[{group}]" with no group disappears). Values lose the characters a
-// path cannot hold.
+// path cannot hold. Numbers come in hundredths and render in plain books,
+// with {token:000} padding the integer part (spec.md §11.2).
 func Render(template string, t NameTokens) string {
 	return render(template, t, sanitize)
 }

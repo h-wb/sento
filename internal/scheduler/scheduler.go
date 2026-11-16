@@ -75,7 +75,6 @@ type Scheduler struct {
 	importer   *service.Importer
 	scanner    *service.Scanner
 	extensions *service.ExtensionService
-	health     *service.HealthService
 	intervals  Intervals
 	tasks      []*task
 
@@ -100,7 +99,7 @@ func New(st *store.Store, lib *service.Library, search *service.SearchService,
 ) *Scheduler {
 	s := &Scheduler{
 		store: st, libraries: lib, search: search,
-		importer: importer, scanner: scanner, extensions: extensions, health: health,
+		importer: importer, scanner: scanner, extensions: extensions,
 		intervals: intervals, startupGrace: 30 * time.Second,
 	}
 	s.tasks = append(s.tasks, &task{

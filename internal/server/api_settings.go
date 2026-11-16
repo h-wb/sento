@@ -46,6 +46,28 @@ func (s *Server) handlePutMediaSettings(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, m)
 }
 
+func (s *Server) handlePreviewMediaSettings(w http.ResponseWriter, r *http.Request) {
+	var m service.MediaSettings
+	if !decodeBody(w, r, &m) {
+		return
+	}
+	p := service.PreviewMediaSettings(m)
+	writeJSON(w, http.StatusOK, NamingPreview{
+		VolumePath: p["volumePath"], ChapterPath: p["chapterPath"],
+		BookFolder:   p["bookFolder"],
+		SeriesFolder: p["seriesFolder"], VolumeFile: p["volumeFile"], ChapterFile: p["chapterFile"],
+		Paths:   service.PreviewPaths(m),
+		Reader:  service.PreviewReaderFields(m),
+		Readers: service.CheckReaders(m),
+		Errors:  service.MediaSettingsProblems(m),
+	})
+}
+
+// handleMediaSchema lists the naming tokens and reader fields.
+func (s *Server) handleMediaSchema(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, service.MediaSettingsSchema())
+}
+
 // --- connection settings ---
 
 func (s *Server) handleGetConnections(w http.ResponseWriter, r *http.Request) {
@@ -74,28 +96,6 @@ func (s *Server) handleTestConnections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondList(w, service.TestConnections(r.Context(), cs), nil)
-}
-
-func (s *Server) handlePreviewMediaSettings(w http.ResponseWriter, r *http.Request) {
-	var m service.MediaSettings
-	if !decodeBody(w, r, &m) {
-		return
-	}
-	p := service.PreviewMediaSettings(m)
-	writeJSON(w, http.StatusOK, NamingPreview{
-		VolumePath: p["volumePath"], ChapterPath: p["chapterPath"],
-		BookFolder:   p["bookFolder"],
-		SeriesFolder: p["seriesFolder"], VolumeFile: p["volumeFile"], ChapterFile: p["chapterFile"],
-		Paths:   service.PreviewPaths(m),
-		Reader:  service.PreviewReaderFields(m),
-		Readers: service.CheckReaders(m),
-		Errors:  service.MediaSettingsProblems(m),
-	})
-}
-
-// handleMediaSchema lists the naming tokens and reader fields.
-func (s *Server) handleMediaSchema(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, service.MediaSettingsSchema())
 }
 
 // --- extensions (sidecar host management) ---

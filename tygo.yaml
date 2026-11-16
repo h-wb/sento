@@ -44,7 +44,7 @@ packages:
 
   - path: "github.com/h-wb/sento/internal/service"
     output_path: "web/src/types/service.ts"
-    exclude_files: ["catalog_cache.go", "layout.go", "placement.go"] # no exported API types
+    exclude_files: ["catalog_cache.go", "layout.go", "placement.go", "probe.go"] # no exported API types
     frontmatter: |
       /* eslint-disable */
       import type { SeriesRef } from "./metadata"
@@ -76,6 +76,7 @@ packages:
       import type { ScanResult, SearchResult, SearchScope, PlanPick, PlanOutcome, SeriesPublisher, ReaderPreview } from "./service"
       import type { Edition, Series } from "./store"
       import type { RepoStatus } from "./extensions"
+      export type { IndexerPatch } from "./service"
     type_mappings:
       extensions.RepoStatus: "RepoStatus"
       service.SearchScope: "SearchScope"

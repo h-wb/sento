@@ -210,7 +210,7 @@ func (s *Store) syncCatalog(ctx context.Context, tx *sql.Tx, seriesID int64, col
 	if err := s.groupEditions(ctx, tx, seriesID); err != nil {
 		return err
 	}
-	ids, err := listQ[int64](ctx, tx, s.q(`SELECT id FROM editions WHERE series_id=? AND custom=FALSE ORDER BY id`), seriesID)
+	ids, err := listQ[int64](ctx, s, tx, `SELECT id FROM editions WHERE series_id=? AND custom=FALSE ORDER BY id`, seriesID)
 	if err != nil {
 		return err
 	}
@@ -353,7 +353,7 @@ type workRow struct {
 // pages; its date is the earliest any copy came out, since a book that
 // exists in print exists. Fields edited by hand are left alone.
 func (s *Store) deriveEdition(ctx context.Context, tx *sql.Tx, edID int64) error {
-	cols, err := listQ[Collection](ctx, tx, s.q(`SELECT `+collectionColumns+` FROM collections c WHERE c.edition_id=? ORDER BY c.id`), edID)
+	cols, err := listQ[Collection](ctx, s, tx, `SELECT `+collectionColumns+` FROM collections c WHERE c.edition_id=? ORDER BY c.id`, edID)
 	if err != nil {
 		return err
 	}
@@ -388,7 +388,7 @@ func (s *Store) deriveEdition(ctx context.Context, tx *sql.Tx, edID int64) error
 		return err
 	}
 
-	works, err := listQ[workRow](ctx, tx, s.q(`SELECT `+workColumns+`,w.raw_json FROM works w JOIN collections c ON c.id=w.collection_id WHERE c.edition_id=? ORDER BY w.id`), edID)
+	works, err := listQ[workRow](ctx, s, tx, `SELECT `+workColumns+`,w.raw_json FROM works w JOIN collections c ON c.id=w.collection_id WHERE c.edition_id=? ORDER BY w.id`, edID)
 	if err != nil {
 		return err
 	}
@@ -445,13 +445,13 @@ func (s *Store) groupEditions(ctx context.Context, tx *sql.Tx, seriesID int64) e
 		Busy              bool
 		Monitored         bool
 	}
-	rows, err := listQ[row](ctx, tx, s.q(`SELECT e.id,e.language,e.type,e.provider_edition_id,e.edition_name AS name,
+	rows, err := listQ[row](ctx, s, tx, `SELECT e.id,e.language,e.type,e.provider_edition_id,e.edition_name AS name,
 		(EXISTS(SELECT 1 FROM asset_contents a JOIN books b ON b.id=a.book_id WHERE b.edition_id=e.id)
 		 OR EXISTS(SELECT 1 FROM asset_coverage a JOIN books b ON b.id=a.book_id WHERE b.edition_id=e.id)
 		 OR EXISTS(SELECT 1 FROM book_reservations r JOIN books b ON b.id=r.book_id WHERE b.edition_id=e.id)
 		 OR (SELECT COUNT(*) FROM versions v WHERE v.edition_id=e.id)>1) AS busy,
 		EXISTS(SELECT 1 FROM versions v WHERE v.edition_id=e.id AND v.monitored=TRUE) AS monitored
-		FROM editions e WHERE e.series_id=? AND e.custom=FALSE AND e.split=FALSE AND COALESCE(e.provider_edition_id,'')<>'' ORDER BY e.id`), seriesID)
+		FROM editions e WHERE e.series_id=? AND e.custom=FALSE AND e.split=FALSE AND COALESCE(e.provider_edition_id,'')<>'' ORDER BY e.id`, seriesID)
 	if err != nil {
 		return err
 	}
@@ -499,38 +499,19 @@ func (s *Store) groupEditions(ctx context.Context, tx *sql.Tx, seriesID int64) e
 	return nil
 }
 
-// pendingEditions lists the editions of a series with downloads under way.
-func (s *Store) pendingEditions(ctx context.Context, tx *sql.Tx, seriesID int64) (map[int64]bool, error) {
-	rows, err := s.pendingRefs(ctx, tx, seriesID)
-	if err != nil {
-		return nil, err
-	}
-	out := map[int64]bool{}
-	for _, row := range rows {
-		books, err := row.bookRefs()
-		if err != nil {
-			return nil, err
-		}
-		for _, b := range books {
-			out[b.EditionID] = true
-		}
-	}
-	return out, nil
-}
-
 // foldEdition empties one edition into another and deletes it. mapping
 // says which book of from is which book of into; a nil mapping pairs them
 // by number. A paired book hands its catalog works, files and per-book
 // choices to its counterpart; an unpaired one moves over whole. The
 // versions of from are the caller's to move first, or they go with it.
 func (s *Store) foldEdition(ctx context.Context, tx *sql.Tx, from, into int64, mapping map[int64]int64) error {
-	fromBooks, err := listQ[Book](ctx, tx, s.q(`SELECT `+bookColumns+` FROM books WHERE edition_id=? ORDER BY sequence_num,id`), from)
+	fromBooks, err := listQ[Book](ctx, s, tx, `SELECT `+bookColumns+` FROM books WHERE edition_id=? ORDER BY sequence_num,id`, from)
 	if err != nil {
 		return err
 	}
 	var intoBooks []Book
 	if mapping == nil {
-		if intoBooks, err = listQ[Book](ctx, tx, s.q(`SELECT `+bookColumns+` FROM books WHERE edition_id=? ORDER BY sequence_num,id`), into); err != nil {
+		if intoBooks, err = listQ[Book](ctx, s, tx, `SELECT `+bookColumns+` FROM books WHERE edition_id=? ORDER BY sequence_num,id`, into); err != nil {
 			return err
 		}
 		mapping = pairBooks(fromBooks, intoBooks)
@@ -586,7 +567,7 @@ func (s *Store) detach(ctx context.Context, tx *sql.Tx, colID, edID int64, ctype
 	if _, err := tx.ExecContext(ctx, s.q(`INSERT INTO versions(edition_id,name,is_default,monitored) VALUES(?,'Default',TRUE,FALSE)`), newID); err != nil {
 		return 0, err
 	}
-	works, err := listQ[Work](ctx, tx, s.q(`SELECT `+workColumns+` FROM works w JOIN collections c ON c.id=w.collection_id WHERE w.collection_id=? ORDER BY w.id`), colID)
+	works, err := listQ[Work](ctx, s, tx, `SELECT `+workColumns+` FROM works w JOIN collections c ON c.id=w.collection_id WHERE w.collection_id=? ORDER BY w.id`, colID)
 	if err != nil {
 		return 0, err
 	}

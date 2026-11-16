@@ -99,8 +99,8 @@ func IndexerEntries(st *store.Store, protocol string) func(ctx context.Context) 
 
 var reLanguageCode = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z]{2,4})?$`)
 
-// ValidateIndexer checks an entry before save.
-func ValidateIndexer(ix store.Indexer) error {
+// validateIndexer checks an entry before save.
+func validateIndexer(ix store.Indexer) error {
 	if strings.TrimSpace(ix.Name) == "" {
 		return apperr.Invalidf("name is required")
 	}
@@ -130,16 +130,16 @@ func ValidateIndexer(ix store.Indexer) error {
 	return nil
 }
 
-// TestIndexer probes one entry: torznab caps, or source presence on the
+// testIndexer probes one entry: torznab caps, or source presence on the
 // host.
-func TestIndexer(ctx context.Context, ix store.Indexer, host extensions.Host) error {
+func testIndexer(ctx context.Context, ix store.Indexer, host extensions.Host) error {
 	e, err := parseEntry(ix)
 	if err != nil {
 		return err
 	}
 	switch ix.Protocol {
 	case store.IndexerTorznab:
-		if err := probeTorznab(ctx, ix); err != nil {
+		if err := probeTorznab(ctx, e); err != nil {
 			return apperr.Upstreamf("%w", err)
 		}
 		return nil
@@ -156,9 +156,9 @@ type ProwlarrIndexer struct {
 	URL string `json:"url"`
 }
 
-// BrowseProwlarr lists a Prowlarr's indexers as ready-to-add Torznab
+// browseProwlarr lists a Prowlarr's indexers as ready-to-add Torznab
 // endpoints (the Add Indexer assist).
-func BrowseProwlarr(ctx context.Context, baseURL, apiKey string) ([]ProwlarrIndexer, error) {
+func browseProwlarr(ctx context.Context, baseURL, apiKey string) ([]ProwlarrIndexer, error) {
 	indexers, err := prowlarr.New(baseURL, apiKey).ListIndexers(ctx)
 	if err != nil {
 		return nil, apperr.Upstreamf("%w", err)

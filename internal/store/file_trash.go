@@ -34,11 +34,7 @@ func (s *Store) GetFileTrash(ctx context.Context, fid int64) (*TrashedFile, erro
 // locks as mapping/monitoring make stale previews safe to reject.
 func (s *Store) BeginFileTrash(ctx context.Context, sid, fid int64, path, trashPath, digest, at, expiry string) error {
 	return s.inTx(ctx, func(tx *sql.Tx) error {
-		ids, err := listQ[int64](ctx, tx, s.q(`SELECT id FROM editions WHERE series_id=? ORDER BY id`), sid)
-		if err != nil {
-			return err
-		}
-		if err := s.lockEditions(ctx, tx, true, ids...); err != nil {
+		if err := s.lockSeriesEditions(ctx, tx, sid); err != nil {
 			return err
 		}
 		var facts, claims AssetFacts
@@ -55,7 +51,7 @@ func (s *Store) BeginFileTrash(ctx context.Context, sid, fid int64, path, trashP
 			return apperr.Conflictf("finish this file's download before cleanup")
 		}
 		var valid int
-		err = tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM files f WHERE f.id=? AND f.series_id=? AND f.path=? AND f.needs_review=FALSE
+		err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM files f WHERE f.id=? AND f.series_id=? AND f.path=? AND f.needs_review=FALSE
  AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=f.id)
  AND NOT EXISTS(SELECT 1 FROM asset_coverage WHERE file_id=f.id AND pinned=TRUE)
  AND NOT EXISTS(SELECT 1 FROM asset_contents c WHERE c.file_id=f.id AND c.verified=FALSE)
@@ -91,7 +87,7 @@ func (s *Store) AbortFileTrash(ctx context.Context, fid int64) error {
 	return s.touch(ctx, `DELETE FROM file_trash WHERE file_id=?`, fid)
 }
 
-// RejectTrashEdit runs inside the caller's edition-locked transaction.
+// rejectTrashEdit runs inside the caller's edition-locked transaction.
 func (s *Store) rejectTrashEdit(ctx context.Context, tx *sql.Tx, fid int64) error {
 	var n int
 	if err := tx.QueryRowContext(ctx, s.q(`SELECT COUNT(*) FROM file_trash WHERE file_id=?`), fid).Scan(&n); err != nil {

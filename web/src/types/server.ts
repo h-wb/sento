@@ -3,6 +3,7 @@
 import type { ScanResult, SearchResult, SearchScope, PlanPick, PlanOutcome, SeriesPublisher, ReaderPreview } from "./service"
 import type { Edition, Series } from "./store"
 import type { RepoStatus } from "./extensions"
+export type { IndexerPatch } from "./service"
 
 //////////
 // source: api.go
@@ -149,15 +150,6 @@ export interface IndexerBody {
   useChapters: boolean;
   priority: number /* int */;
   settings: any;
-}
-/**
- * IndexerPatch toggles entry fields inline (nil = keep).
- */
-export interface IndexerPatch {
-  enabled?: boolean;
-  useVolumes?: boolean;
-  useChapters?: boolean;
-  priority?: number /* int */;
 }
 /**
  * BrowseProwlarrBody asks for the Add Indexer discovery assist.

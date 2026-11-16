@@ -152,7 +152,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 			return nil, nil, ms, err
 		}
 		p := filePlan{file: f, FileChange: FileChange{FileID: f.ID, From: rel(f.Path), To: rel(f.Path)}}
-		slots := fileBooks(ctx, cat, coverage, placed, defaultVersion, f.ID)
+		slots := placedBooks(ctx, cat, coverage, placed, defaultVersion, f.ID)
 		skip, exile := skipReason(f, slots, anyCov[f.ID], insideTree(f.Path), under(f.Path, reviewDirs))
 		p.Skip = skip
 		if p.Skip != "" {
@@ -180,9 +180,9 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	return plans, series, ms, nil
 }
 
-// fileBooks lists the books one file holds, once each, filed under the
+// placedBooks lists the books one file holds, once each, filed under the
 // edition's default version unless only an additional version claims it.
-func fileBooks(ctx context.Context, cat *catalogCache, coverage []store.AssetCoverage, placed map[string]int64, defaultVersion map[int64]int64, fileID int64) []store.BookRef {
+func placedBooks(ctx context.Context, cat *catalogCache, coverage []store.AssetCoverage, placed map[string]int64, defaultVersion map[int64]int64, fileID int64) []store.BookRef {
 	var slots []store.BookRef
 	home := map[int64]int64{} // book → the version it is filed under
 	for _, c := range coverage {

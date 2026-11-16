@@ -72,8 +72,3 @@ func cleanStaleTemps(dir string) {
 		}
 	}
 }
-
-var imageExts = map[string]bool{
-	".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true,
-	".avif": true, ".jxl": true, ".bmp": true,
-}

@@ -18,9 +18,6 @@ import (
 
 const fileTrashDir = ".sento-trash"
 
-// dbTimeLayout is the timestamp layout the database stores.
-const dbTimeLayout = "2006-01-02 15:04:05"
-
 type CleanupFile struct {
 	FileID   int64    `json:"fileId"`
 	Path     string   `json:"path"`
@@ -53,7 +50,7 @@ func (im *Importer) CleanupPreview(ctx context.Context, sid, eid int64) ([]Clean
 	if eid != 0 && editionByID(editions, eid) == nil {
 		return nil, store.ErrNotFound
 	}
-	books, err := im.store.SeriesBooks(ctx, sid)
+	books, err := im.store.SeriesBooksByNumber(ctx, sid)
 	if err != nil {
 		return nil, err
 	}

@@ -45,7 +45,12 @@ type Server struct {
 // SetScheduler wires the background scheduler in after construction
 // (main builds it from this server's services) so the System → Tasks
 // endpoints can report and trigger its loops.
-func (s *Server) SetScheduler(sched *scheduler.Scheduler) { s.sched = sched }
+func (s *Server) SetScheduler(sched *scheduler.Scheduler) {
+	s.sched = sched
+	if sched != nil {
+		s.health.SetTaskSource(sched)
+	}
+}
 
 func New(cfg config.Config, st *store.Store, db *sql.DB, mdProvider metadata.Provider) *Server {
 	s := &Server{
@@ -70,18 +75,9 @@ func New(cfg config.Config, st *store.Store, db *sql.DB, mdProvider metadata.Pro
 	s.extensions = service.NewExtensionService(st, s.conns.Host)
 	s.extensions.ManageRepos(cfg.Extensions.Repos)
 	s.profiles = service.NewProfiles(st)
-	s.health = service.NewHealthService(st, s.conns, cfg.Library.Path, s)
+	s.health = service.NewHealthService(st, s.conns, cfg.Library.Path)
 	s.reconcileExtensions()
 	return s
-}
-
-// TaskIssues adapts the scheduler (wired in after construction via
-// SetScheduler) to the health report's task-issue source.
-func (s *Server) TaskIssues() []service.HealthIssue {
-	if s.sched == nil {
-		return nil
-	}
-	return s.sched.TaskIssues()
 }
 
 // reconcileExtensions converges the host's installed extensions with the
@@ -164,7 +160,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, StatusMessage{Status: "ok"})
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
