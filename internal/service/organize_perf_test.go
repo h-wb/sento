@@ -243,7 +243,7 @@ func buildBigSeries(t *testing.T, st *store.Store, lib *Library, libraryRoot str
 			t.Fatal(err)
 		}
 		facts := store.AssetFacts{Title: name, Group: "ScanGroup", FactsKnown: true, Sources: map[string]string{"language": "filename", "group": "filename", "quality": "filename"}}
-		if _, err = st.AddFile(ctx, store.File{
+		if _, err = addFile(ctx, st, store.File{
 			SeriesID: seriesID, Path: path, Size: size, Provenance: "torrent",
 			Facts: facts, Claims: facts, Hash: hash,
 			ContentBooks: []store.BookRef{{Ledger: "volume", EditionID: editionID, Number: num, BookID: bid}},
@@ -276,10 +276,10 @@ func TestOrganizePlanningQueryCount(t *testing.T) {
 	}
 	const N = 120
 	seriesID, _, _ := buildBigSeries(t, st, lib, library, N)
-	im := NewImporter(st, nil, library, nil)
+	im := testImporter(st, nil, library, nil)
 
 	profStats.reset()
-	plans, err := im.PlanOrganize(ctx, seriesID)
+	plans, err := im.files.PlanOrganize(ctx, seriesID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func TestOrganizePlanningQueryCount(t *testing.T) {
 		t.Fatalf("planning %d files took %d queries: per-file lookups are back", N, planQueries)
 	}
 
-	if _, err := im.Organize(ctx, seriesID, true, false); err != nil {
+	if _, err := im.files.Organize(ctx, seriesID, true, false); err != nil {
 		t.Fatal(err)
 	}
 	total, _ := profStats.report()
@@ -309,7 +309,7 @@ func TestOrganizePlanningQueryCount(t *testing.T) {
 		t.Fatalf("files: %v %v", files, err)
 	}
 	profStats.reset()
-	if _, _, _, err := im.organizePlans(ctx, seriesID, files[0].ID); err != nil {
+	if _, _, _, err := im.files.organizePlans(ctx, seriesID, files[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	single, _ := profStats.report()
@@ -336,12 +336,12 @@ func TestOrganizePerfProfile(t *testing.T) {
 	}
 	const N = 270
 	seriesID, _, _ := buildBigSeries(t, st, lib, library, N)
-	im := NewImporter(st, nil, library, nil)
+	im := testImporter(st, nil, library, nil)
 
 	// Phase 1: planning (what GET /series/{id}/files/organize does).
 	profStats.reset()
 	start := time.Now()
-	plans, err := im.PlanOrganize(ctx, seriesID)
+	plans, err := im.files.PlanOrganize(ctx, seriesID)
 	planWall := time.Since(start)
 	if err != nil {
 		t.Fatal(err)
@@ -358,7 +358,7 @@ func TestOrganizePerfProfile(t *testing.T) {
 	// Phase 2: rename-only organize (hardlink move + DB update per file).
 	profStats.reset()
 	start = time.Now()
-	res, err := im.Organize(ctx, seriesID, true, false)
+	res, err := im.files.Organize(ctx, seriesID, true, false)
 	renameWall := time.Since(start)
 	if err != nil {
 		t.Fatalf("organize rename: %v (after %s)", err, renameWall)
@@ -369,7 +369,7 @@ func TestOrganizePerfProfile(t *testing.T) {
 	// Phase 3: retag-only organize (full CBZ repack per file, names unchanged).
 	profStats.reset()
 	start = time.Now()
-	res2, err := im.Organize(ctx, seriesID, false, true)
+	res2, err := im.files.Organize(ctx, seriesID, false, true)
 	retagWall := time.Since(start)
 	if err != nil {
 		t.Fatalf("organize retag: %v (after %s)", err, retagWall)
@@ -390,7 +390,7 @@ func TestOrganizePerfProfile(t *testing.T) {
 	}
 	profStats.reset()
 	start = time.Now()
-	res3, err := im.Organize(ctx, seriesID, true, false)
+	res3, err := im.files.Organize(ctx, seriesID, true, false)
 	refpWall := time.Since(start)
 	if err != nil {
 		t.Fatalf("organize with empty hashes: %v (after %s)", err, refpWall)

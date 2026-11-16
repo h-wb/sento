@@ -46,7 +46,7 @@ func addFactFile(t *testing.T, st *store.Store, sid int64, col store.Edition, w 
 	if err := os.WriteFile(path, []byte("archive bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(context.Background(), store.File{SeriesID: sid, Path: path, Size: 13, Facts: facts, Claims: claims}, nil,
+	fid, err := addFile(context.Background(), st, store.File{SeriesID: sid, Path: path, Size: 13, Facts: facts, Claims: claims}, nil,
 		[]store.BookLink{{Ledger: col.Type, EditionID: col.ID, Number: w.SequenceNum, VersionID: version.ID, BookID: w.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestReviewUsesTheSameReleaseEvidenceAsOwnership(t *testing.T) {
 	if err = os.WriteFile(path, []byte("archive bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true,
+	fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true,
 		Facts:  store.AssetFacts{Title: "ONE PIECE v01.cbz", FactsKnown: true},
 		Claims: store.AssetFacts{FactsKnown: true, Digital: true, Flags: map[string]bool{"digital": true}}}, nil, nil)
 	if err != nil {

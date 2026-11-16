@@ -366,14 +366,14 @@ func reviewSource(f store.File) string {
 	return facts.Protocol
 }
 
-func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req ReviewApplyRequest) ([]ReviewFileOutcome, error) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
+func (lf *LibraryFiles) ApplyReviewChoices(ctx context.Context, sid int64, req ReviewApplyRequest) ([]ReviewFileOutcome, error) {
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
 	since, ok := reviewTokenTime(req.Token)
 	if !ok {
 		return nil, apperr.Conflictf("review changed; refresh the preview before applying choices")
 	}
-	plan, revision, p, err := reviewChoices(ctx, im.store, sid, req.Request, since)
+	plan, revision, p, err := reviewChoices(ctx, lf.store, sid, req.Request, since)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +404,7 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 			return nil, apperr.Conflictf("recheck file storage before applying choices")
 		}
 		// reviewChoices has just matched the live archive with the recorded
-		// evidence under im.mu; the commit checks it is still that archive.
+		// evidence under lf.mu; the commit checks it is still that archive.
 		w := store.FileReviewWrite{FileID: f.ID, Facts: reviewCorrectedFacts(f.Facts, input), Hash: f.Hash, HashStat: p.stats[f.ID], Reset: input.Books != nil, Disposition: choice.Disposition}
 		for _, b := range row.Books {
 			w.Contents = append(w.Contents, b.Book)
@@ -442,7 +442,7 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 		}
 		writes = append(writes, w)
 	}
-	if err = im.store.CommitFileReviews(ctx, sid, revision, writes, func() error {
+	if err = lf.store.CommitFileReviews(ctx, sid, revision, writes, func() error {
 		return validateReviewFiles(ctx, writes, p.files)
 	}); err != nil {
 		return nil, err
@@ -450,20 +450,20 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 	for _, w := range writes {
 		result := ReviewFileOutcome{FileID: w.FileID, Status: "kept"}
 		if w.Disposition == "trash" {
-			if err = im.trashFile(ctx, sid, CleanupFile{FileID: w.FileID, Path: p.files[w.FileID].Path, Reason: "Unused incoming file rejected in review"}, 30, w.Hash); err != nil {
+			if err = lf.trashFile(ctx, sid, CleanupFile{FileID: w.FileID, Path: p.files[w.FileID].Path, Reason: "Unused incoming file rejected in review"}, 30, w.Hash); err != nil {
 				result.Status, result.Note = "trash_pending", err.Error()
 			} else {
 				result.Status = "trashed"
 			}
 		} else if len(w.Selected) > 0 {
 			result.Status = "imported"
-			if err = im.organizeReviewedFile(ctx, sid, w.FileID); err != nil {
+			if err = lf.organizeReviewedFile(ctx, sid, w.FileID); err != nil {
 				result.Note = "Choices saved; organizing the archive still needs to finish: " + err.Error()
 			}
 		}
 		out = append(out, result)
 	}
-	coverage, e := im.store.Coverage(ctx, sid)
+	coverage, e := lf.store.Coverage(ctx, sid)
 	if e != nil {
 		out = append(out, ReviewFileOutcome{Status: "settlement_pending", Note: "Choices saved; checking remaining archive uses still needs attention: " + e.Error()})
 		return out, nil
@@ -472,9 +472,9 @@ func (im *Importer) ApplyReviewChoices(ctx context.Context, sid int64, req Revie
 		delete(displaced, a.FileID)
 	}
 	for id := range displaced {
-		im.exileToReview(ctx, sid, p.files[id])
+		lf.exileToReview(ctx, sid, p.files[id])
 	}
-	if err = im.SettleReviewedJobs(ctx, sid); err != nil {
+	if err = lf.SettleReviewedJobs(ctx, sid); err != nil {
 		out = append(out, ReviewFileOutcome{Status: "settlement_pending", Note: "Choices saved; finishing the download still needs attention: " + err.Error()})
 	}
 	return out, nil
@@ -514,12 +514,12 @@ func validateReviewFiles(ctx context.Context, writes []store.FileReviewWrite, fi
 
 // Legacy accept/mapping clients get the same keep-existing default. Automated
 // import continues to use ApplyUpgrades and the configured acquisition policy.
-func (im *Importer) ApplySafeFileMapping(ctx context.Context, sid, fid int64, refs []store.BookRef, replace bool) (*FileMappingResult, error) {
+func (lf *LibraryFiles) ApplySafeFileMapping(ctx context.Context, sid, fid int64, refs []store.BookRef, replace bool) (*FileMappingResult, error) {
 	if refs == nil {
 		refs = []store.BookRef{}
 	}
 	req := ReviewPlanRequest{Files: []ReviewFileRequest{{FileID: fid, Books: refs}}}
-	plan, _, _, err := reviewChoices(ctx, im.store, sid, req, time.Time{})
+	plan, _, _, err := reviewChoices(ctx, lf.store, sid, req, time.Time{})
 	if err != nil {
 		return nil, err
 	}
@@ -538,7 +538,7 @@ func (im *Importer) ApplySafeFileMapping(ctx context.Context, sid, fid int64, re
 			}
 		}
 	}
-	out, err := im.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}})
+	out, err := lf.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}})
 	if err != nil {
 		return nil, err
 	}

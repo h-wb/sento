@@ -14,10 +14,10 @@ import (
 
 // A committed choice may be interrupted before journaling, linking, unlinking,
 // or recording completion. Every stage retains the reviewed fingerprint.
-func (im *Importer) finishReviewTrash(ctx context.Context) {
+func (lf *LibraryFiles) finishReviewTrash(ctx context.Context) {
 	var afterID int64
 	for ctx.Err() == nil {
-		files, err := im.store.PendingReviewTrash(ctx, afterID)
+		files, err := lf.store.PendingReviewTrash(ctx, afterID)
 		if err != nil {
 			slog.Warn("review trash recovery listing pending files failed", "afterFile", afterID, "error", err)
 			return
@@ -30,24 +30,24 @@ func (im *Importer) finishReviewTrash(ctx context.Context) {
 				return
 			}
 			afterID = f.ID
-			if err = im.resumeReviewTrash(ctx, f); err != nil {
+			if err = lf.resumeReviewTrash(ctx, f); err != nil {
 				slog.Warn("review trash recovery pending", "file", f.ID, "error", err)
 			}
 		}
 	}
 }
 
-func (im *Importer) reopenChangedReviewTrash(ctx context.Context, fid int64) error {
-	return errors.Join(apperr.Conflictf("archive contents changed; review this file again before moving it to trash"), im.store.ReopenReviewTrash(ctx, fid))
+func (lf *LibraryFiles) reopenChangedReviewTrash(ctx context.Context, fid int64) error {
+	return errors.Join(apperr.Conflictf("archive contents changed; review this file again before moving it to trash"), lf.store.ReopenReviewTrash(ctx, fid))
 }
 
-func (im *Importer) resumeReviewTrash(ctx context.Context, f store.File) error {
-	entry, err := im.store.GetFileTrash(ctx, f.ID)
+func (lf *LibraryFiles) resumeReviewTrash(ctx context.Context, f store.File) error {
+	entry, err := lf.store.GetFileTrash(ctx, f.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		if f.Hash == "" {
-			return im.reopenChangedReviewTrash(ctx, f.ID)
+			return lf.reopenChangedReviewTrash(ctx, f.ID)
 		}
-		return im.trashFile(ctx, f.SeriesID, CleanupFile{FileID: f.ID, Path: f.Path, Reason: "Unused incoming file rejected in review"}, 30, f.Hash)
+		return lf.trashFile(ctx, f.SeriesID, CleanupFile{FileID: f.ID, Path: f.Path, Reason: "Unused incoming file rejected in review"}, 30, f.Hash)
 	}
 	if err != nil {
 		return err
@@ -75,7 +75,7 @@ func (im *Importer) resumeReviewTrash(ctx context.Context, f store.File) error {
 		if digest != f.Hash {
 			// No destination exists, so the unstarted journal can be removed
 			// safely and the changed original made available for fresh review.
-			return im.reopenChangedReviewTrash(ctx, f.ID)
+			return lf.reopenChangedReviewTrash(ctx, f.ID)
 		}
 		if err = moveArchive(f.Path, entry.TrashPath); err != nil {
 			return err
@@ -106,5 +106,5 @@ func (im *Importer) resumeReviewTrash(ctx context.Context, f store.File) error {
 			return originalErr
 		}
 	}
-	return im.store.CompleteReviewTrash(ctx, f.ID)
+	return lf.store.CompleteReviewTrash(ctx, f.ID)
 }

@@ -281,7 +281,7 @@ export default function CandidateList({
         <Alert
           color="red"
           title="Release action failed"
-          style={{ overflowWrap: 'anywhere' }}
+          className="wrapAnywhere"
         >
           {error}
         </Alert>

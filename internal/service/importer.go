@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/h-wb/sento/internal/provider"
@@ -21,24 +20,12 @@ import (
 type Importer struct {
 	store        *store.Store
 	registry     *provider.Registry
-	libraryRoot  string
 	pathMappings []string // "remote=local" download-client path translations
-
-	// mu serializes queue passes and file mutations (review, organization,
-	// removal and trash), so decisions and disk operations cannot interleave.
-	mu sync.Mutex
-
-	// again holds the series whose download failed since the last
-	// TakeSearches: they are searched again within minutes, not at the
-	// next sweep.
-	againMu sync.Mutex
-	again   []SearchTarget
-
-	organizer libraryOrganizer
+	files        *LibraryFiles
 }
 
-func NewImporter(st *store.Store, registry *provider.Registry, libraryRoot string, pathMappings []string) *Importer {
-	return &Importer{store: st, registry: registry, libraryRoot: libraryRoot, pathMappings: pathMappings}
+func NewImporter(st *store.Store, registry *provider.Registry, files *LibraryFiles, pathMappings []string) *Importer {
+	return &Importer{store: st, registry: registry, pathMappings: pathMappings, files: files}
 }
 
 // mapPath translates a download-client path to a local one (longest
@@ -66,9 +53,9 @@ func (im *Importer) mapPath(p string) string {
 // ProcessQueue advances all active queue items. Returns the number of
 // items imported this pass.
 func (im *Importer) ProcessQueue(ctx context.Context) (int, error) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	im.finishReviewTrash(ctx)
+	im.files.mu.Lock()
+	defer im.files.mu.Unlock()
+	im.files.finishReviewTrash(ctx)
 
 	items, err := im.store.ListRunnableQueue(ctx)
 	if err != nil {
@@ -142,7 +129,7 @@ func (im *Importer) recordFailure(ctx context.Context, prov provider.Provider, i
 			_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueNeedsReview, reason)
 		} else {
 			event = "download_retry"
-			_ = im.store.DeferQueueUntil(ctx, item, err.Error(), time.Now().Add(sourceFailure.RetryAfter))
+			_ = im.store.DeferQueue(ctx, item.ID, err.Error(), queueRetryAt(item.RetryCount, time.Now().Add(sourceFailure.RetryAfter)))
 		}
 	case errors.Is(err, errDownloadDead):
 		_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueFailed, err.Error())
@@ -151,7 +138,7 @@ func (im *Importer) recordFailure(ctx context.Context, prov provider.Provider, i
 	case errors.Is(err, errDispatchUnknown):
 		_ = im.store.UpdateQueueItem(ctx, item.ID, store.QueueDispatchUnknown, err.Error())
 	default:
-		_ = im.store.DeferQueue(ctx, item, err.Error())
+		_ = im.store.DeferQueue(ctx, item.ID, err.Error(), queueRetryAt(item.RetryCount, time.Time{}))
 	}
 	if errors.Is(err, errDownloadDead) || dead {
 		// Sonarr semantics: a download that never completes gets
@@ -170,8 +157,18 @@ func (im *Importer) recordFailure(ctx context.Context, prov provider.Provider, i
 	}
 	if dead || errors.Is(err, errDownloadDead) {
 		// The release is blocklisted: another is looked for now.
-		im.searchAgain(item)
+		im.files.again.add(item)
 	}
+}
+
+// queueRetryAt respects both the queue's backoff and the source's
+// Retry-After deadline. The latter may exceed the usual backoff cap.
+func queueRetryAt(retryCount int, notBefore time.Time) time.Time {
+	at := time.Now().Add(30 * time.Second * time.Duration(1<<min(retryCount, 6)))
+	if notBefore.After(at) {
+		return notBefore
+	}
+	return at
 }
 
 // errDownloadDead marks downloads that never completed (vs import errors).
@@ -204,7 +201,7 @@ func (im *Importer) processItem(ctx context.Context, prov provider.Provider, ite
 	if err != nil {
 		return false, err
 	}
-	if err := im.store.ObserveDownload(ctx, item, state.Progress, state.Detail, state.StallEligible, state.Transferring, time.Now()); err != nil {
+	if err := observeDownload(ctx, im.store, item, state.Progress, state.Detail, state.StallEligible, state.Transferring, time.Now()); err != nil {
 		return false, err
 	}
 

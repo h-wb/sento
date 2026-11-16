@@ -23,6 +23,7 @@ func (l *Library) ReviewItems(ctx context.Context, seriesID int64) ([]store.Revi
 	}
 	proposers := map[int64]*proposer{}
 	for i := range items {
+		items[i].Detail = reviewDetail(items[i].DetailCode, items[i].DetailArg)
 		if items[i].Kind != "file" {
 			continue
 		}
@@ -44,7 +45,59 @@ func (l *Library) ReviewItems(ctx context.Context, seriesID int64) ([]store.Revi
 		items[i].Proposal = p.propose(items[i].ItemID)
 		items[i].Hint = p.hint(items[i].ItemID)
 	}
+	links, err := l.store.LinkSuggestions(ctx, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	for _, link := range links {
+		series, err := l.store.GetSeries(ctx, link.SeriesID)
+		if err != nil {
+			return nil, err
+		}
+		detail := fmt.Sprintf("MangaBaka lists “%s”, which looks like this edition.", editionText(link.Catalog))
+		if link.LocalBooks > 0 {
+			detail += fmt.Sprintf(" %d of your %d books match its %d.", link.Matched, link.LocalBooks, link.CatalogBooks)
+		}
+		items = append(items, store.ReviewItem{
+			ID: fmt.Sprintf("edition-%d-%d", link.LocalID, link.CatalogID), Kind: "edition", Status: "link",
+			SeriesID: link.SeriesID, SeriesTitle: series.Title, ItemID: link.LocalID, RelatedID: link.CatalogID,
+			Title: editionText(link.Local), Detail: detail,
+		})
+	}
 	return items, nil
+}
+
+// reviewDetail words a stored review question.
+func reviewDetail(code, arg string) string {
+	switch code {
+	case "trash_changed":
+		return "Archive contents changed; review this file again before moving it to trash"
+	case "trash_pending":
+		return "Moving this rejected incoming file to trash is pending; the move will retry automatically"
+	case "unavailable":
+		return "Storage unavailable: " + arg
+	case "unchecked":
+		return "File presence has not been checked"
+	case "confirm":
+		return "Confirm the edition and books in this file"
+	case "new_chapter":
+		return "New chapter from " + arg
+	case "download":
+		return arg
+	case "source_unmatched":
+		return "Found nothing for this series. Pick the right entry, or turn the source off for it."
+	}
+	return arg
+}
+
+func editionText(e *store.Edition) string {
+	parts := []string{e.EditionName, e.Language}
+	for _, p := range []string{e.Publisher, e.Medium} {
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return strings.Join(parts, " · ")
 }
 
 // proposer holds what one series' proposals are read against.

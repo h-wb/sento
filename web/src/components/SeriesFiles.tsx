@@ -160,10 +160,10 @@ export default function SeriesFiles({
                       />
                     </Table.Td>
                     <Table.Td>
-                      <Text size="sm" title={f.path} style={{ overflowWrap: 'anywhere' }}>
+                      <Text size="sm" title={f.path} className="wrapAnywhere">
                         {name}
                       </Text>
-                      <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                      <Text size="xs" c="dimmed" className="wrapAnywhere">
                         {fileOrigin(f)}
                       </Text>
                     </Table.Td>

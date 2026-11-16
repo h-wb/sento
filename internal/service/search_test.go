@@ -251,7 +251,7 @@ func TestBlocklistMatchesReleaseUnderAnyKey(t *testing.T) {
 	}
 
 	// The job was grabbed hash-less: both its keys are the guid.
-	im := NewImporter(st, torrentRegistry(st), t.TempDir(), nil)
+	im := testImporter(st, torrentRegistry(st), t.TempDir(), nil)
 	snapshot, _ := json.Marshal(cand)
 	item := store.QueueItem{SeriesID: seriesID, Protocol: "torrent", ExternalID: "g1", ReleaseKey: "g1", Snapshot: snapshot}
 	if err := im.blockRelease(ctx, item, "never completes"); err != nil {

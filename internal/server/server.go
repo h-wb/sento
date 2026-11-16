@@ -35,6 +35,7 @@ type Server struct {
 	search     *service.SearchService
 	sites      *service.SiteService
 	importer   *service.Importer
+	files      *service.LibraryFiles
 	scanner    *service.Scanner
 	extensions *service.ExtensionService
 	profiles   *service.ProfileService
@@ -71,7 +72,8 @@ func New(cfg config.Config, st *store.Store, db *sql.DB, mdProvider metadata.Pro
 	// Everything downstream of here is provider-agnostic.
 	s.search = service.NewSearchService(st, s.registry)
 	s.sites = service.NewSiteService(st, s.conns)
-	s.importer = service.NewImporter(st, s.registry, cfg.Library.Path, cfg.Library.PathMappings)
+	s.files = service.NewLibraryFiles(st, s.registry, cfg.Library.Path)
+	s.importer = service.NewImporter(st, s.registry, s.files, cfg.Library.PathMappings)
 	s.extensions = service.NewExtensionService(st, s.conns.Host)
 	s.extensions.ManageRepos(cfg.Extensions.Repos)
 	s.profiles = service.NewProfiles(st)
@@ -113,6 +115,9 @@ func (s *Server) reconcileExtensions() {
 
 // Importer exposes the queue importer for background loops.
 func (s *Server) Importer() *service.Importer { return s.importer }
+
+// LibraryFiles exposes the library file changes for background loops.
+func (s *Server) LibraryFiles() *service.LibraryFiles { return s.files }
 
 // Scanner exposes the library scanner for background loops.
 func (s *Server) Scanner() *service.Scanner { return s.scanner }

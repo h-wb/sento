@@ -183,7 +183,7 @@ export default function FileCleanup({
                       mt={4}
                     />
                     <Stack gap={2} style={{ minWidth: 0, flex: 1 }}>
-                      <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+                      <Text size="sm" className="wrapAnywhere">
                         {f.path.split('/').pop()}
                       </Text>
                       <Text size="xs" c="dimmed">
@@ -192,7 +192,7 @@ export default function FileCleanup({
                       <Text size="xs" c={f.eligible ? 'dimmed' : 'orange'}>
                         {f.reason}
                       </Text>
-                      <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                      <Text size="xs" c="dimmed" className="wrapAnywhere">
                         {f.path}
                       </Text>
                     </Stack>
@@ -228,13 +228,13 @@ export default function FileCleanup({
                 {trash.data?.map((f) => (
                   <Group key={f.fileId} align="flex-start" wrap="nowrap" data-testid="trashed-file">
                     <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-                      <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+                      <Text size="sm" className="wrapAnywhere">
                         {f.path.split('/').pop()}
                       </Text>
                       <Text size="xs" c="dimmed">
                         {fmtSize(f.size)} · {f.pending ? 'Trash move pending; deletion is paused' : `Expires ${fmtWhen(f.purgeAfter)}`}
                       </Text>
-                      <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                      <Text size="xs" c="dimmed" className="wrapAnywhere">
                         {f.path}
                       </Text>
                     </Stack>

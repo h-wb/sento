@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/store"
@@ -153,7 +154,7 @@ func (s *SearchService) grabClaims(ctx context.Context, seriesID int64, searchLe
 	}
 	externalID, err := prov.Grab(provider.InClient(ctx, client), c.cand)
 	if err != nil {
-		_ = s.store.DeferQueue(ctx, store.QueueItem{ID: qid}, "Submission result is uncertain: "+err.Error())
+		_ = s.store.DeferQueue(ctx, qid, "Submission result is uncertain: "+err.Error(), queueRetryAt(0, time.Time{}))
 		return 0, err
 	}
 	err = s.store.SetQueueExternalID(ctx, qid, externalID)

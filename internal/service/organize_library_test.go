@@ -38,7 +38,7 @@ func TestOrganizeLibrary(t *testing.T) {
 	if err := SaveMediaSettings(ctx, st, old); err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), library, nil)
+	im := testImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), library, nil)
 	queueVolumes(t, st, seriesID, standard, "abc123", 100, 200)
 	if n, err := im.ProcessQueue(ctx); err != nil || n != 1 {
 		t.Fatalf("import: %d %v", n, err)
@@ -53,34 +53,34 @@ func TestOrganizeLibrary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plans, err := im.PlanOrganizeLibrary(ctx, nil)
+	plans, err := im.files.PlanOrganizeLibrary(ctx, nil)
 	if err != nil || len(plans) != 1 || plans[0].SeriesID != seriesID || len(plans[0].Changes) != 2 {
 		t.Fatalf("library plan: %+v %v", plans, err)
 	}
-	if plans, err = im.PlanOrganizeLibrary(ctx, []int64{seriesID + 1000}); err != nil || len(plans) != 0 {
+	if plans, err = im.files.PlanOrganizeLibrary(ctx, []int64{seriesID + 1000}); err != nil || len(plans) != 0 {
 		t.Fatalf("plan for other series: %+v %v", plans, err)
 	}
 
-	if _, err := im.QueueLibraryOrganize(LibraryOrganizeRequest{}); !errors.Is(err, apperr.ErrInvalid) {
+	if _, err := im.files.QueueLibraryOrganize(LibraryOrganizeRequest{}); !errors.Is(err, apperr.ErrInvalid) {
 		t.Fatalf("empty request: %v", err)
 	}
 	// A bare run (System → Tasks) moves nothing without a previewed request.
-	if err := im.RunLibraryOrganize(ctx); !errors.Is(err, apperr.ErrInvalid) {
+	if err := im.files.RunLibraryOrganize(ctx); !errors.Is(err, apperr.ErrInvalid) {
 		t.Fatalf("run with nothing queued: %v", err)
 	}
-	if status := im.LibraryOrganizeStatus(); status.Running || status.FinishedAt != "" {
+	if status := im.files.LibraryOrganizeStatus(); status.Running || status.FinishedAt != "" {
 		t.Fatalf("status after a bare run: %+v", status)
 	}
-	if q, err := im.QueueLibraryOrganize(LibraryOrganizeRequest{SeriesIDs: []int64{seriesID}, Rename: true}); err != nil || !q.Queued {
+	if q, err := im.files.QueueLibraryOrganize(LibraryOrganizeRequest{SeriesIDs: []int64{seriesID}, Rename: true}); err != nil || !q.Queued {
 		t.Fatalf("queue: %+v %v", q, err)
 	}
-	if _, err := im.QueueLibraryOrganize(LibraryOrganizeRequest{Rename: true}); !errors.Is(err, apperr.ErrConflict) {
+	if _, err := im.files.QueueLibraryOrganize(LibraryOrganizeRequest{Rename: true}); !errors.Is(err, apperr.ErrConflict) {
 		t.Fatalf("second queue: %v", err)
 	}
-	if err := im.RunLibraryOrganize(ctx); err != nil {
+	if err := im.files.RunLibraryOrganize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	status := im.LibraryOrganizeStatus()
+	status := im.files.LibraryOrganizeStatus()
 	if status.Running || status.Queued || status.Total != 1 || status.Done != 1 || status.Renamed != 2 || status.Retagged != 0 ||
 		len(status.Series) != 1 || status.Series[0].Renamed != 2 || status.FinishedAt == "" {
 		t.Fatalf("status: %+v", status)
@@ -95,13 +95,13 @@ func TestOrganizeLibrary(t *testing.T) {
 		}
 	}
 	// Resumable and idempotent: the next run finds nothing to move.
-	if _, err := im.QueueLibraryOrganize(LibraryOrganizeRequest{Rename: true}); err != nil {
+	if _, err := im.files.QueueLibraryOrganize(LibraryOrganizeRequest{Rename: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := im.RunLibraryOrganize(ctx); err != nil {
+	if err := im.files.RunLibraryOrganize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if status = im.LibraryOrganizeStatus(); status.Done != 1 || status.Renamed != 0 || len(status.Series) != 0 {
+	if status = im.files.LibraryOrganizeStatus(); status.Done != 1 || status.Renamed != 0 || len(status.Series) != 0 {
 		t.Fatalf("second run: %+v", status)
 	}
 }

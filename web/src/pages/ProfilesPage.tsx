@@ -295,7 +295,6 @@ export default function ProfilesPage() {
                         size="xs"
                         variant="outline"
                         color={c.negate ? 'red' : 'gray'}
-                        style={{ textTransform: 'none' }}
                       >
                         {condText(c)}
                       </Badge>

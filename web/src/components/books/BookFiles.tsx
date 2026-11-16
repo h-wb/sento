@@ -37,10 +37,10 @@ export function BookFiles({
         <Card key={f.id} withBorder padding="xs">
           <Group justify="space-between" wrap="nowrap">
             <div style={{ minWidth: 0 }}>
-              <Text size="sm" title={f.path} style={{ overflowWrap: 'anywhere' }}>
+              <Text size="sm" title={f.path} className="wrapAnywhere">
                 {fileName(f.path)}
               </Text>
-              <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+              <Text size="xs" c="dimmed" className="wrapAnywhere">
                 {fileOrigin(f)} · {fmtSize(f.size)}
               </Text>
               {/* Its score below says why. */}

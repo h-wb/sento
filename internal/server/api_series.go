@@ -166,7 +166,7 @@ func (s *Server) handleDeleteSeries(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	opts := service.RemoveOptions{DeleteFiles: q.Get("deleteFiles") == "true", RemoveDownloads: q.Get("removeDownloads") == "true"}
-	removed, err := s.importer.RemoveSeries(r.Context(), id, opts)
+	removed, err := s.files.RemoveSeries(r.Context(), id, opts)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -244,7 +244,7 @@ func (s *Server) handlePlanOrganizeLibrary(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid series id: "+bad)
 		return
 	}
-	plans, err := s.importer.PlanOrganizeLibrary(r.Context(), ids)
+	plans, err := s.files.PlanOrganizeLibrary(r.Context(), ids)
 	respondList(w, plans, err)
 }
 
@@ -259,7 +259,7 @@ func (s *Server) handleOrganizeLibrary(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	status, err := s.importer.QueueLibraryOrganize(body)
+	status, err := s.files.QueueLibraryOrganize(body)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -272,7 +272,7 @@ func (s *Server) handleOrganizeLibrary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleOrganizeLibraryStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.importer.LibraryOrganizeStatus())
+	writeJSON(w, http.StatusOK, s.files.LibraryOrganizeStatus())
 }
 
 // --- bindings ---

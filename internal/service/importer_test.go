@@ -162,7 +162,7 @@ func TestImportTorrentPayloadIsIdempotent(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(downloads, "cover.jpg"), []byte("cover"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), library, nil)
+	im := testImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), library, nil)
 
 	for pass := 1; pass <= 2; pass++ {
 		qid := queueVolumes(t, st, seriesID, standard, "abc123", 100, 200)
@@ -222,7 +222,7 @@ func TestImportTorrentPayloadIsIdempotent(t *testing.T) {
 
 func TestMapPath(t *testing.T) {
 	t.Parallel()
-	im := NewImporter(nil, nil, "", []string{"/data=/mnt/seedbox", "/data/complete=/mnt/complete", "bogus"})
+	im := testImporter(nil, nil, "", []string{"/data=/mnt/seedbox", "/data/complete=/mnt/complete", "bogus"})
 	for remote, want := range map[string]string{
 		"/data/complete/sento":   "/mnt/complete/sento", // longest prefix wins
 		"/data/incoming/x":       "/mnt/seedbox/incoming/x",
@@ -265,7 +265,7 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 	if err := SaveMediaSettings(ctx, st, old); err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), library, nil)
+	im := testImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), library, nil)
 	queueVolumes(t, st, seriesID, standard, "abc123", 100, 200)
 	if n, err := im.ProcessQueue(ctx); err != nil || n != 1 {
 		t.Fatalf("import: %d %v", n, err)
@@ -282,7 +282,7 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 	if err := SaveMediaSettings(ctx, st, DefaultMediaSettings()); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := im.PlanOrganize(ctx, seriesID)
+	plan, err := im.files.PlanOrganize(ctx, seriesID)
 	if err != nil || len(plan) != 2 {
 		t.Fatalf("plan: %+v %v", plan, err)
 	}
@@ -291,7 +291,7 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 			t.Fatalf("planned change: %+v", c)
 		}
 	}
-	res, err := im.Organize(ctx, seriesID, true, true)
+	res, err := im.files.Organize(ctx, seriesID, true, true)
 	if err != nil || res.Renamed != 2 || res.Retagged != 2 || len(res.Errors) != 0 {
 		t.Fatalf("organize: %+v %v", res, err)
 	}
@@ -326,7 +326,7 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 		}
 	}
 	// Up to date now: a second look finds nothing to do.
-	if plan, err = im.PlanOrganize(ctx, seriesID); err != nil || len(plan) != 0 {
+	if plan, err = im.files.PlanOrganize(ctx, seriesID); err != nil || len(plan) != 0 {
 		t.Fatalf("second plan: %+v %v", plan, err)
 	}
 
@@ -337,14 +337,14 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 	if err := SaveMediaSettings(ctx, st, split); err != nil {
 		t.Fatal(err)
 	}
-	if plan, err = im.PlanOrganize(ctx, seriesID); err != nil || len(plan) != 2 || plan[0].Retag ||
+	if plan, err = im.files.PlanOrganize(ctx, seriesID); err != nil || len(plan) != 2 || plan[0].Retag ||
 		!strings.HasPrefix(plan[0].To, filepath.Join("Volumes", "ONE PIECE [mangabaka-377]", "Standard Edition [en]")) {
 		t.Fatalf("split plan: %+v %v", plan, err)
 	}
 	if sr, _ := st.GetSeries(ctx, seriesID); sr.ChapterPath != "" {
 		t.Fatalf("a preview recorded a new chapter folder: %q", sr.ChapterPath)
 	}
-	if res, err = im.Organize(ctx, seriesID, true, true); err != nil || res.Renamed != 2 || res.Retagged != 0 || len(res.Errors) != 0 {
+	if res, err = im.files.Organize(ctx, seriesID, true, true); err != nil || res.Renamed != 2 || res.Retagged != 0 || len(res.Errors) != 0 {
 		t.Fatalf("split organize: %+v %v", res, err)
 	}
 	sr, _ := st.GetSeries(ctx, seriesID)
@@ -364,7 +364,7 @@ func TestOrganizeRenamesAndRetags(t *testing.T) {
 	if err := SaveMediaSettings(ctx, st, DefaultMediaSettings()); err != nil {
 		t.Fatal(err)
 	}
-	if res, err = im.Organize(ctx, seriesID, true, true); err != nil || res.Renamed != 2 || len(res.Errors) != 0 {
+	if res, err = im.files.Organize(ctx, seriesID, true, true); err != nil || res.Renamed != 2 || len(res.Errors) != 0 {
 		t.Fatalf("merge back: %+v %v", res, err)
 	}
 	if sr, _ = st.GetSeries(ctx, seriesID); sr.Path != filepath.Join(library, "ONE PIECE [mangabaka-377]") || sr.ChapterPath != "" {
@@ -542,13 +542,13 @@ func TestBookDirNamesVersionFolders(t *testing.T) {
 		t.Fatal(err)
 	}
 	library := t.TempDir()
-	im := NewImporter(st, provider.NewRegistry(&payloadProvider{}), library, nil)
+	im := testImporter(st, provider.NewRegistry(&payloadProvider{}), library, nil)
 	ms := DefaultMediaSettings()
 	ms.SeriesFolder, ms.BookFolder, ms.VolumesRoot = SeriesFolderByEdition, BookFolderByVersion, "Volumes"
 	base := filepath.Join(library, "Volumes", "ONE PIECE [mangabaka-377] [Standard Edition][en]")
 	ref := store.BookRef{Ledger: "volume", EditionID: standard.ID, Number: 100}
 	ref.VersionID = version.ID
-	place := im.newPlacement(ms, series)
+	place := im.files.newPlacement(ms, series)
 	if dir := place.dir(ctx, "anywhere", ref); dir != base {
 		t.Fatalf("default version in %q, want %q", dir, base)
 	}
@@ -576,13 +576,13 @@ func TestBookFileNameNamesVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, provider.NewRegistry(&payloadProvider{}), t.TempDir(), nil)
+	im := testImporter(st, provider.NewRegistry(&payloadProvider{}), t.TempDir(), nil)
 	ms := DefaultMediaSettings()
 	ms.VolumeFile = "{Series Title} {version} v{volume:00} [{edition}][{lang}].cbz"
 	ref := func(vid int64) []store.BookRef {
 		return []store.BookRef{{Ledger: "volume", EditionID: standard.ID, VersionID: vid, Number: 100}}
 	}
-	place := im.newPlacement(ms, series)
+	place := im.files.newPlacement(ms, series)
 	if name := place.fileName(ctx, ref(version.ID), "", ".cbz"); name != "ONE PIECE v01 [Standard Edition][en].cbz" {
 		t.Fatalf("default version named %q, want %q", name, "ONE PIECE v01 [Standard Edition][en].cbz")
 	}
@@ -613,9 +613,9 @@ func TestFileInfoNamesVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, nil, t.TempDir(), nil)
+	im := testImporter(st, nil, t.TempDir(), nil)
 	ms := DefaultMediaSettings()
-	place := im.newPlacement(ms, series)
+	place := im.files.newPlacement(ms, series)
 	if info := place.info(ctx, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{}); info.Series != "ONE PIECE" || info.SeriesGroup != "ONE PIECE" {
 		t.Fatalf("default version Series, SeriesGroup = %q, %q, want ONE PIECE for both", info.Series, info.SeriesGroup)
 	}
@@ -646,11 +646,11 @@ func TestFileInfoReaderFieldTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, nil, t.TempDir(), nil)
+	im := testImporter(st, nil, t.TempDir(), nil)
 	named := func(ms MediaSettings, v store.CollectedVersion) string {
 		// A fresh cache per call: an organize pass snapshots the catalog
 		// once, so one snapshot must not see the edition change.
-		return im.newPlacement(ms, series).info(ctx, []store.BookRef{modelRef(c, ws[1], v)}, tagSource{}).Series
+		return im.files.newPlacement(ms, series).info(ctx, []store.BookRef{modelRef(c, ws[1], v)}, tagSource{}).Series
 	}
 	ms := DefaultMediaSettings()
 	ms.ReaderFields["series"] = "{Series Title} ({lang})"
@@ -698,7 +698,7 @@ func TestOrganizeMovesBooksIntoEditionFolders(t *testing.T) {
 	for _, name := range files {
 		writeCBZ(t, filepath.Join(downloads, name), name)
 	}
-	im := NewImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), library, nil)
+	im := testImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), library, nil)
 	queueVolumes(t, st, seriesID, standard, "abc123", 100, 200)
 	if n, err := im.ProcessQueue(ctx); err != nil || n != 1 {
 		t.Fatalf("import: %d %v", n, err)
@@ -710,7 +710,7 @@ func TestOrganizeMovesBooksIntoEditionFolders(t *testing.T) {
 		t.Fatal(err)
 	}
 	edition := filepath.Join("Volumes", "ONE PIECE [mangabaka-377] [Standard Edition][en]")
-	plan, err := im.PlanOrganize(ctx, seriesID)
+	plan, err := im.files.PlanOrganize(ctx, seriesID)
 	if err != nil || len(plan) != 2 {
 		t.Fatalf("plan: %+v %v", plan, err)
 	}
@@ -719,7 +719,7 @@ func TestOrganizeMovesBooksIntoEditionFolders(t *testing.T) {
 			t.Fatalf("planned change: %+v", c)
 		}
 	}
-	if res, err := im.Organize(ctx, seriesID, true, true); err != nil || res.Renamed != 2 || len(res.Errors) != 0 {
+	if res, err := im.files.Organize(ctx, seriesID, true, true); err != nil || res.Renamed != 2 || len(res.Errors) != 0 {
 		t.Fatalf("organize: %+v %v", res, err)
 	}
 	for _, f := range mustFiles(t, st, seriesID) {
@@ -730,7 +730,7 @@ func TestOrganizeMovesBooksIntoEditionFolders(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(library, "ONE PIECE [mangabaka-377]")); !os.IsNotExist(err) {
 		t.Error("the old series folder was left behind")
 	}
-	if plan, err = im.PlanOrganize(ctx, seriesID); err != nil || len(plan) != 0 {
+	if plan, err = im.files.PlanOrganize(ctx, seriesID); err != nil || len(plan) != 0 {
 		t.Fatalf("second plan: %+v %v", plan, err)
 	}
 	res, err := NewScanner(st, library).ScanSeriesFolder(ctx, seriesID, "")
@@ -754,11 +754,11 @@ func TestMultiBookFileIsNamedForItsRange(t *testing.T) {
 	t.Parallel()
 	_, st, id, c, ws, version := modelFixture(t)
 	ctx := context.Background()
-	im := NewImporter(st, nil, t.TempDir(), nil)
+	im := testImporter(st, nil, t.TempDir(), nil)
 	series, _ := st.GetSeries(ctx, id)
 	ms := DefaultMediaSettings()
 	slots := []store.BookRef{modelRef(c, ws[1], version), modelRef(c, ws[0], version)}
-	place := im.newPlacement(ms, series)
+	place := im.files.newPlacement(ms, series)
 	if got := place.fileName(ctx, slots, "", ".cbz"); !strings.Contains(got, "v01-02") {
 		t.Errorf("range name = %q", got)
 	}
@@ -804,7 +804,7 @@ func TestFilesInsideAGrabTrustItsEdition(t *testing.T) {
 			for _, name := range tc.files {
 				writeCBZ(t, filepath.Join(downloads, name), name)
 			}
-			im := NewImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: tc.files}), t.TempDir(), nil)
+			im := testImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: tc.files}), t.TempDir(), nil)
 			queueVolumes(t, st, seriesID, standard, "abc123", 100, 200)
 			_, _ = im.ProcessQueue(ctx)
 			files, _ := st.ListFiles(ctx, seriesID)
@@ -863,7 +863,7 @@ func TestPackImportRecordsEveryFileWhenProfileRefuses(t *testing.T) {
 		writeCBZ(t, filepath.Join(downloads, folder, name), name)
 		files = append(files, folder+"/"+name)
 	}
-	im := NewImporter(st, nil, library, nil)
+	im := testImporter(st, nil, library, nil)
 	item := store.QueueItem{SeriesID: sid, Protocol: provider.ProtocolTorrent, ReleaseKey: "pack-key", Title: "ONE PIECE v01-v03 (Scan)", Books: raw}
 	err = im.importFiles(ctx, item, downloads, files)
 	if err == nil {
@@ -925,7 +925,7 @@ func TestPackImportMixedReviewAndCleanFiles(t *testing.T) {
 		writeCBZ(t, filepath.Join(downloads, name), name)
 		files = append(files, name)
 	}
-	im := NewImporter(st, nil, library, nil)
+	im := testImporter(st, nil, library, nil)
 	item := store.QueueItem{SeriesID: sid, Protocol: provider.ProtocolTorrent, ReleaseKey: "pack-key", Title: "ONE PIECE v01-v02", Books: raw}
 	err = im.importFiles(ctx, item, downloads, files)
 	if err == nil || !strings.Contains(err.Error(), "verified 1 of 2 expected books") {
@@ -1011,7 +1011,7 @@ func TestRequeuedReviewJobReimportsOnlyUnrecordedPackFiles(t *testing.T) {
 		writeCBZ(t, filepath.Join(downloads, folder, name), name)
 		files = append(files, folder+"/"+name)
 	}
-	im := NewImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), t.TempDir(), nil)
+	im := testImporter(st, provider.NewRegistry(&payloadProvider{dir: downloads, files: files}), t.TempDir(), nil)
 	qid, err := st.AddQueueItem(ctx, store.QueueItem{
 		SeriesID: sid, Protocol: provider.ProtocolTorrent, ExternalID: "hash1",
 		Title: "ONE PIECE v01-v03 (Scan)", Books: raw, Status: store.QueueQueued,

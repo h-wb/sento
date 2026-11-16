@@ -146,7 +146,7 @@ function Uses({
                       </Text>
                     )}
                     {b.owners.map((o) => (
-                      <Text key={o.fileId} size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                      <Text key={o.fileId} size="xs" c="dimmed" className="wrapAnywhere">
                         The other copy, {fileName(o.path)}
                         {!o.present && ' (missing)'}
                         {o.pinned && ' (pinned)'}, scores {o.score.score}. {formats(o.score)}

@@ -185,7 +185,7 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
                 return (
                   <Group key={state} gap={6} wrap="nowrap" align="center" maw="100%">
                     <span className={classes.dot} data-state={state} />
-                    <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                    <Text size="xs" c="dimmed" className="wrapAnywhere">
                       {stateLabel(state)} · {total <= SHELF_LIMIT ? books.length : ranges(books)}
                     </Text>
                   </Group>
@@ -234,9 +234,9 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
                         <Badge variant="light" color={books.length ? 'blue' : 'gray'} className={classes.pickBooks}>
                           {books.length ? `${short} ${named(books)}` : on ? 'Nothing new' : 'Not selected'}
                         </Badge>
-                        <Text size="sm" fw={500} lineClamp={1} title={c.title} style={{ overflowWrap: 'anywhere' }}>{c.title}</Text>
+                        <Text size="sm" fw={500} lineClamp={1} title={c.title} className="wrapAnywhere">{c.title}</Text>
                       </Group>
-                      <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                      <Text size="xs" c="dimmed" className="wrapAnywhere">
                         {c.site} · {c.size ? fmtSize(c.size) : 'Size unknown'}
                         {on && books.length === 0 && ' · Everything in it is covered by the releases above'}
                         {books.length > 0 && extra > 0 && ` · Pack also holds ${count(extra, 'book')} you don’t need from it`}
@@ -259,7 +259,7 @@ export default function AcquisitionPlan({ plan, candidates, searching = false, s
                           }} />
                       })}
                       {outcome && outcome.status !== 'queued' && (
-                        <Text size="xs" c={outcome.status === 'failed' ? 'red' : 'dimmed'} style={{ overflowWrap: 'anywhere' }}>{outcome.message}</Text>
+                        <Text size="xs" c={outcome.status === 'failed' ? 'red' : 'dimmed'} className="wrapAnywhere">{outcome.message}</Text>
                       )}
                     </div>
                     {outcome && <Badge variant="light" color={color} style={{ flex: 'none' }}>{word}</Badge>}

@@ -292,14 +292,14 @@ func (s *Store) LinkCatalog(ctx context.Context, seriesID, localID, catalogID in
 // LinkSuggestion is a catalog edition that looks like the one a local
 // edition has been standing in for.
 type LinkSuggestion struct {
-	SeriesID     int64 `json:"seriesId"`
-	LocalID      int64 `json:"localId"`
-	CatalogID    int64 `json:"catalogId"`
-	Matched      int   `json:"matched"`
-	LocalBooks   int   `json:"localBooks"`
-	CatalogBooks int   `json:"catalogBooks"`
-	local        *Edition
-	catalog      *Edition
+	SeriesID     int64    `json:"seriesId"`
+	LocalID      int64    `json:"localId"`
+	CatalogID    int64    `json:"catalogId"`
+	Matched      int      `json:"matched"`
+	LocalBooks   int      `json:"localBooks"`
+	CatalogBooks int      `json:"catalogBooks"`
+	Local        *Edition `json:"-" db:"-"`
+	Catalog      *Edition `json:"-" db:"-"`
 }
 
 // LinkSuggestions finds, for each local edition (of one series, or all with
@@ -331,7 +331,7 @@ func (s *Store) LinkSuggestions(ctx context.Context, seriesID int64) ([]LinkSugg
 			return nil, err
 		}
 		pair.Matched, pair.LocalBooks, pair.CatalogBooks = len(p.Mapping), len(p.LocalBooks), len(p.CatalogBooks)
-		pair.local, pair.catalog = p.Local, p.Catalog
+		pair.Local, pair.Catalog = p.Local, p.Catalog
 		if pair.Matched*2 < pair.LocalBooks {
 			continue
 		}

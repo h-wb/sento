@@ -28,14 +28,14 @@ func (im *Importer) importStream(ctx context.Context, item store.QueueItem, stre
 		return err
 	}
 	first, _ := slotSpan(slots)
-	seriesDir, err := im.seriesDir(ctx, series, ms, first.Ledger)
+	seriesDir, err := im.files.seriesDir(ctx, series, ms, first.Ledger)
 	if err != nil {
 		return err
 	}
 
 	// One book, or an archive holding several (a volume's worth of
 	// chapters): named and tagged for what it actually holds.
-	place := im.newPlacement(ms, series)
+	place := im.files.newPlacement(ms, series)
 	src := releaseSource(item)
 	group := src.Group
 	info := place.info(ctx, slots, src)
@@ -104,7 +104,7 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	if err != nil {
 		return err
 	}
-	seriesDir, err := im.seriesDir(ctx, series, ms, expected[0].Ledger)
+	seriesDir, err := im.files.seriesDir(ctx, series, ms, expected[0].Ledger)
 	if err != nil {
 		return err
 	}
@@ -113,13 +113,13 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 	// name says so.
 	release := parse.ParseAnchored(item.Title, parse.ChannelTorrent, titles)
 	releaseNamed := item.Protocol == provider.ProtocolSource || (release.Anchored && release.TitleLeftover == "")
-	linked, preservedHashes, err := im.alreadyImported(ctx, item, expected)
+	linked, preservedHashes, err := alreadyImported(ctx, im.store, item, expected)
 	if err != nil {
 		return err
 	}
 	// One placement for the pack: its catalog rows and folder layout are
 	// read once, not per archive.
-	place := im.newPlacement(ms, series)
+	place := im.files.newPlacement(ms, series)
 	// One archive waiting on a person must not abort the pack: the job is
 	// not re-run once it waits for review, so every file of the payload is
 	// recorded here, and the job is held for review at the end.
@@ -166,21 +166,21 @@ func (im *Importer) importFiles(ctx context.Context, item store.QueueItem, dir s
 // alreadyImported is what an earlier attempt at this download brought in:
 // the expected books a file of this release already holds, and the
 // hashes of those files, so a retry neither redoes nor duplicates them.
-func (im *Importer) alreadyImported(ctx context.Context, item store.QueueItem, expected []store.BookRef) (linked, hashes map[string]bool, err error) {
+func alreadyImported(ctx context.Context, st *store.Store, item store.QueueItem, expected []store.BookRef) (linked, hashes map[string]bool, err error) {
 	linked, hashes = map[string]bool{}, map[string]bool{}
 	if item.ReleaseKey == "" {
 		return linked, hashes, nil
 	}
-	view, err := loadLedger(ctx, im.store, item.SeriesID)
+	view, err := loadLedger(ctx, st, item.SeriesID)
 	if err != nil {
 		return nil, nil, err
 	}
-	known, err := im.store.ListFiles(ctx, item.SeriesID)
+	known, err := st.ListFiles(ctx, item.SeriesID)
 	if err != nil {
 		return nil, nil, err
 	}
 	linked, hashes = releaseCoverage(item.ReleaseKey, expected, view, known)
-	recorded, err := im.store.RecordedFiles(ctx, item.SeriesID)
+	recorded, err := st.RecordedFiles(ctx, item.SeriesID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -279,30 +279,4 @@ func (im *Importer) importArchive(ctx context.Context, item store.QueueItem, pla
 		return nil, err
 	}
 	return covered, im.recordAsset(ctx, item, dest, covered, res, contents)
-}
-
-// seriesDir returns the folder for a series' books of the given type
-// under the current settings, recording it on the series.
-func (im *Importer) seriesDir(ctx context.Context, series *store.Series, ms MediaSettings, ledger string) (string, error) {
-	volumes, chapters := seriesFolders(im.libraryRoot, series, ms)
-	if series.Path != volumes {
-		if err := im.store.SetSeriesPath(ctx, series.ID, volumes); err != nil {
-			return "", err
-		}
-		series.Path = volumes
-	}
-	separate := ""
-	if chapters != volumes {
-		separate = chapters
-	}
-	if series.ChapterPath != separate {
-		if err := im.store.SetSeriesChapterPath(ctx, series.ID, separate); err != nil {
-			return "", err
-		}
-		series.ChapterPath = separate
-	}
-	if ledger == "chapter" {
-		return chapters, nil
-	}
-	return volumes, nil
 }

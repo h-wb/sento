@@ -11,6 +11,7 @@ import (
 	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -57,7 +58,7 @@ func TestReviewProposesWhatTheFileNameSays(t *testing.T) {
 		{"3.cbz", "", "", ""},             // nothing ties it to the series
 		{"ONE PIECE 050 (Digital).cbz", "mixed", "", ""},
 	} {
-		fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/" + tc.name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: tc.name, ReleaseKey: tc.key}}, nil, nil)
+		fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: t.TempDir() + "/" + tc.name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: tc.name, ReleaseKey: tc.key}}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -84,7 +85,7 @@ func TestReviewProposesWhatTheFileNameSays(t *testing.T) {
 
 func addReviewFile(t *testing.T, st *store.Store, sid int64, name, key string) int64 {
 	t.Helper()
-	fid, err := st.AddFile(context.Background(), store.File{SeriesID: sid, Path: t.TempDir() + "/" + name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, ReleaseKey: key}}, nil, nil)
+	fid, err := addFile(context.Background(), st, store.File{SeriesID: sid, Path: t.TempDir() + "/" + name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, ReleaseKey: key}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +225,7 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 	t.Parallel()
 	_, st, sid, standard, books, version := modelFixture(t)
 	ctx := context.Background()
-	im := NewImporter(st, nil, t.TempDir(), nil)
+	im := testImporter(st, nil, t.TempDir(), nil)
 	qid, _, err := st.ReserveQueue(ctx, store.QueueItem{SeriesID: sid, Protocol: "torrent", ReleaseKey: "pack", Title: "ONE PIECE pack"}, []store.BookRef{modelRef(standard, books[0], version), modelRef(standard, books[1], version)})
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +237,7 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 	if err = os.WriteFile(path, []byte("verified pages"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "1.cbz", ReleaseKey: "pack"}}, nil, nil)
+	fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "1.cbz", ReleaseKey: "pack"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,13 +249,13 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 		}
 		return job.Status
 	}
-	if err = im.SettleReviewedJobs(ctx, sid); err != nil || status() != store.QueueNeedsReview {
+	if err = im.files.SettleReviewedJobs(ctx, sid); err != nil || status() != store.QueueNeedsReview {
 		t.Fatalf("closed with a file still waiting: %s %v", status(), err)
 	}
 	if err = st.MapFile(ctx, sid, fid, []store.BookRef{modelRef(standard, books[0], version)}); err != nil {
 		t.Fatal(err)
 	}
-	if err = im.SettleReviewedJobs(ctx, sid); err != nil || status() != store.QueueImported {
+	if err = im.files.SettleReviewedJobs(ctx, sid); err != nil || status() != store.QueueImported {
 		t.Fatalf("not closed after the last confirmation: %s %v", status(), err)
 	}
 	job, _ := st.GetQueueItem(ctx, qid)
@@ -276,7 +277,7 @@ func TestReviewedDownloadClosesItself(t *testing.T) {
 	if searches := im.TakeSearches(); len(searches) != 1 || searches[0].SeriesID != sid || searches[0].Ledger != LedgerVolume {
 		t.Fatalf("unmatched books did not schedule recovery: %+v", searches)
 	}
-	if err = im.SettleReviewedJobs(ctx, sid); err != nil {
+	if err = im.files.SettleReviewedJobs(ctx, sid); err != nil {
 		t.Fatal(err)
 	}
 	if searches := im.TakeSearches(); len(searches) != 0 {
@@ -306,7 +307,7 @@ func TestKeepingAnExtraResolvesReview(t *testing.T) {
 	if err = os.WriteFile(extra, []byte("pages"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: extra, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "ONE PIECE 092.1.cbz", ReleaseKey: "pack"}}, nil, nil)
+	fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: extra, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "ONE PIECE 092.1.cbz", ReleaseKey: "pack"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +323,7 @@ func TestKeepingAnExtraResolvesReview(t *testing.T) {
 			t.Fatalf("a file kept as an extra is still waiting: %+v", i)
 		}
 	}
-	if err = NewImporter(st, nil, t.TempDir(), nil).SettleReviewedJobs(ctx, sid); err != nil {
+	if err = testImporter(st, nil, t.TempDir(), nil).files.SettleReviewedJobs(ctx, sid); err != nil {
 		t.Fatal(err)
 	}
 	if job, _ := st.GetQueueItem(ctx, qid); job.Status != store.QueueImported {
@@ -410,7 +411,7 @@ func TestReviewProposesOnlyProfileCompatibleVersion(t *testing.T) {
 	}
 	add := func(name string, isColor bool) int64 {
 		t.Helper()
-		id, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/" + name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, FactsKnown: true, Flags: map[string]bool{"colored": isColor}}}, nil, nil)
+		id, err := addFile(ctx, st, store.File{SeriesID: sid, Path: t.TempDir() + "/" + name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: name, FactsKnown: true, Flags: map[string]bool{"colored": isColor}}}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -479,7 +480,7 @@ func TestReviewHintSurvivesWithoutProposal(t *testing.T) {
 		{"ONE PIECE v03-04 (Digital).cbz", "volume", []string{"3–4"}},
 		{"ONE PIECE c07 (Digital).cbz", "chapter", []string{"7"}},
 	} {
-		fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/" + tc.name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: tc.name}}, nil, nil)
+		fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: t.TempDir() + "/" + tc.name, NeedsReview: true, Unrequested: true, Presence: "present", Facts: store.AssetFacts{Title: tc.name}}, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -508,5 +509,112 @@ func TestReviewHintSurvivesWithoutProposal(t *testing.T) {
 		if tc.name == "ONE PIECE v02 (Digital).cbz" && !proposed {
 			t.Errorf("%s: no proposal although the book exists", tc.name)
 		}
+	}
+}
+
+// The sentences review shows are worded from the codes the store reads, the
+// same on either database: a file's state, a pending chapter, an unmatched
+// source, and the reasons a bulk decline leaves a file alone.
+func TestReviewSentences(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, standard, books, version := modelFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+
+	unavailable := waitingFile(t, st, sid, root, "ONE PIECE v01 (Digital).cbz", "")
+	if err := st.SetFilePresence(ctx, unavailable, "unavailable", "mount is offline"); err != nil {
+		t.Fatal(err)
+	}
+	unchecked, err := addFile(ctx, st, store.File{SeriesID: sid, Path: root + "/missing.cbz", NeedsReview: true, Unrequested: true}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trashed := waitingScoredFile(t, st, sid, root, "unmatched.cbz", "")
+	files, err := st.ListFiles(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f store.File
+	for _, file := range files {
+		if file.ID == trashed {
+			f = file
+		}
+	}
+	revision, err := st.ReviewRevision(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.CommitFileReviews(ctx, sid, revision, []store.FileReviewWrite{{FileID: trashed, Facts: f.Facts, Hash: f.Hash, Reset: true, Disposition: "trash"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.ObserveBook(ctx, sid, store.BookObservation{EditionID: standard.ID, Source: "Weeb Central", ExternalKey: "ch-1100", Label: "Chapter 1100", Number: 110000}); err != nil {
+		t.Fatal(err)
+	}
+	ix, err := st.AddIndexer(ctx, store.Indexer{Name: "Weeb Central (en)", Protocol: store.IndexerSource, Enabled: true, UseVolumes: true, UseChapters: true, Settings: []byte(`{"sourceId":"42"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.AddBinding(ctx, store.Binding{SeriesID: sid, SourceID: strconv.FormatInt(ix, 10), SourceMangaKey: "wrong", SourceName: "Weeb Central (en)", State: "unmatched"}); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := lib.ReviewItems(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	details := map[string]string{}
+	for _, i := range items {
+		details[i.Kind+" "+strconv.FormatInt(i.ItemID, 10)] = i.Detail
+		if i.Kind == "chapter" {
+			details["chapter "+i.Title] = i.Detail
+		}
+	}
+	for key, want := range map[string]string{
+		"file " + strconv.FormatInt(unavailable, 10): "Storage unavailable: mount is offline",
+		"file " + strconv.FormatInt(unchecked, 10):   "File presence has not been checked",
+		"file " + strconv.FormatInt(trashed, 10):     "Moving this rejected incoming file to trash is pending; the move will retry automatically",
+		"chapter Chapter 1100":                       "New chapter from Weeb Central",
+		"source " + strconv.FormatInt(ix, 10):        "Found nothing for this series. Pick the right entry, or turn the source off for it.",
+	} {
+		if got, ok := details[key]; !ok || got != want {
+			t.Errorf("%s: detail %q (listed %v), want %q", key, got, ok, want)
+		}
+	}
+
+	other := testProvider()
+	other.series.MangaBakaID, other.series.Title = 900, "The Enigma of Amigara Fault"
+	other.collections = nil
+	oid, err := NewLibrary(st, other, provider.NewRegistry()).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 900})
+	if err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := waitingFile(t, st, oid, t.TempDir(), "Amigara v01.cbz", "")
+	owned := ownedModelFile(t, st, sid, standard, books[0], version)
+	pinned, err := addFile(ctx, st, store.File{SeriesID: sid, Path: root + "/ONE PIECE v02 (Digital).cbz", NeedsReview: true, Unrequested: true}, nil, []store.BookLink{{Ledger: standard.Type, EditionID: standard.ID, Number: books[1].SequenceNum, VersionID: version.ID, BookID: books[1].ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.PinCoverage(ctx, sid, store.AssetCoverage{FileID: pinned, VersionID: version.ID, BookID: books[1].ID, Pinned: true}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := testImporter(st, nil, root, nil).files.ResolveFileReviews(ctx, sid, []int64{elsewhere, owned, pinned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reasons := map[int64]string{}
+	for _, s := range res.Skipped {
+		reasons[s.FileID] = s.Reason
+	}
+	for fid, want := range map[int64]string{
+		elsewhere: "File does not belong to this series",
+		owned:     "File is no longer waiting for review",
+		pinned:    "This archive already has confirmed contents or pins; review its selections individually",
+	} {
+		if got := reasons[fid]; got != want {
+			t.Errorf("file %d skipped with %q, want %q", fid, got, want)
+		}
+	}
+	if len(res.Resolved) != 0 || len(res.Skipped) != 3 {
+		t.Errorf("resolved %v, skipped %+v; want the three files skipped", res.Resolved, res.Skipped)
 	}
 }

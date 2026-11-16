@@ -43,18 +43,18 @@ type FileMappingResult struct {
 
 // ApplyUpgrades maps the file to its books (atomically, like MapFile) and
 // then applies the upgrade path per book.
-func (im *Importer) ApplyUpgrades(ctx context.Context, seriesID, fileID int64, slots []store.BookRef, force bool) (*FileMappingResult, error) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	return im.applyUpgrades(ctx, seriesID, fileID, slots, force)
+func (lf *LibraryFiles) ApplyUpgrades(ctx context.Context, seriesID, fileID int64, slots []store.BookRef, force bool) (*FileMappingResult, error) {
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+	return lf.applyUpgrades(ctx, seriesID, fileID, slots, force)
 }
 
-// applyUpgrades runs with im.mu held, including during a bulk review.
-func (im *Importer) applyUpgrades(ctx context.Context, seriesID, fileID int64, slots []store.BookRef, force bool) (*FileMappingResult, error) {
-	if err := im.store.MapFile(ctx, seriesID, fileID, slots); err != nil {
+// applyUpgrades runs with lf.mu held, including during a bulk review.
+func (lf *LibraryFiles) applyUpgrades(ctx context.Context, seriesID, fileID int64, slots []store.BookRef, force bool) (*FileMappingResult, error) {
+	if err := lf.store.MapFile(ctx, seriesID, fileID, slots); err != nil {
 		return nil, err
 	}
-	return im.DisplaceOwners(ctx, seriesID, fileID, slots, force)
+	return lf.DisplaceOwners(ctx, seriesID, fileID, slots, force)
 }
 
 // DisplaceOwners enforces one owner per collected version's book: when another
@@ -65,12 +65,12 @@ func (im *Importer) applyUpgrades(ctx context.Context, seriesID, fileID int64, s
 // pinned holds; force — a person's explicit choice in review — overrides
 // both. A file that does not outscore the holder gives up that version's
 // selection, preserving its verified contents and other selections.
-func (im *Importer) DisplaceOwners(ctx context.Context, seriesID, fileID int64, slots []store.BookRef, force bool) (*FileMappingResult, error) {
-	profiles, err := NewProfiles(im.store).seriesProfiles(ctx, seriesID)
+func (lf *LibraryFiles) DisplaceOwners(ctx context.Context, seriesID, fileID int64, slots []store.BookRef, force bool) (*FileMappingResult, error) {
+	profiles, err := NewProfiles(lf.store).seriesProfiles(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	files, err := im.store.ListFiles(ctx, seriesID)
+	files, err := lf.store.ListFiles(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -95,16 +95,16 @@ func (im *Importer) DisplaceOwners(ctx context.Context, seriesID, fileID int64, 
 			continue
 		}
 		seen[key] = true
-		version, err := im.store.GetVersion(ctx, sl.VersionID)
+		version, err := lf.store.GetVersion(ctx, sl.VersionID)
 		if err != nil {
 			return nil, err
 		}
-		col, err := im.store.GetEdition(ctx, sl.EditionID)
+		col, err := lf.store.GetEdition(ctx, sl.EditionID)
 		if err != nil {
 			return nil, err
 		}
 		prof := profiles.For(*version)
-		owners, err := im.store.BookOwners(ctx, sl.VersionID, sl.BookID)
+		owners, err := lf.store.BookOwners(ctx, sl.VersionID, sl.BookID)
 		if err != nil {
 			return nil, err
 		}
@@ -137,7 +137,7 @@ func (im *Importer) DisplaceOwners(ctx context.Context, seriesID, fileID int64, 
 			// This version keeps its pinned or better holder. Other versions
 			// may still select the incoming file.
 			b := blockers[0]
-			if err := im.store.DeselectBook(ctx, fileID, sl.VersionID, sl.BookID); err != nil {
+			if err := lf.store.DeselectBook(ctx, fileID, sl.VersionID, sl.BookID); err != nil {
 				return nil, err
 			}
 			res.Kept = append(res.Kept, KeptClaim{
@@ -147,7 +147,7 @@ func (im *Importer) DisplaceOwners(ctx context.Context, seriesID, fileID int64, 
 			continue
 		}
 		for _, o := range beaten {
-			if err := im.store.DeselectBook(ctx, o.FileID, sl.VersionID, sl.BookID); err != nil {
+			if err := lf.store.DeselectBook(ctx, o.FileID, sl.VersionID, sl.BookID); err != nil {
 				return nil, err
 			}
 			affected[o.FileID] = true
@@ -157,15 +157,15 @@ func (im *Importer) DisplaceOwners(ctx context.Context, seriesID, fileID int64, 
 			})
 		}
 	}
-	coverage, err := im.store.Coverage(ctx, seriesID)
+	coverage, err := lf.store.Coverage(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	versions, err := im.store.ListVersions(ctx, seriesID)
+	versions, err := lf.store.ListVersions(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
-	editions, err := im.store.ListEditions(ctx, seriesID)
+	editions, err := lf.store.ListEditions(ctx, seriesID)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ func (im *Importer) DisplaceOwners(ctx context.Context, seriesID, fileID int64, 
 		delete(affected, id)
 	}
 	for id := range affected {
-		im.exileToReview(ctx, seriesID, byID[id])
+		lf.exileToReview(ctx, seriesID, byID[id])
 	}
 	return res, nil
 }
@@ -181,16 +181,16 @@ func (im *Importer) DisplaceOwners(ctx context.Context, seriesID, fileID int64, 
 // exileToReview moves a file that no longer holds any book out of the
 // series' final folders into its review/ folder. Bytes are never deleted;
 // a file already in review/ or outside the series tree is left alone.
-func (im *Importer) exileToReview(ctx context.Context, seriesID int64, f store.File) {
+func (lf *LibraryFiles) exileToReview(ctx context.Context, seriesID int64, f store.File) {
 	if f.ID == 0 || f.Presence != "present" {
 		return
 	}
-	ms := LoadMediaSettings(ctx, im.store)
-	series, err := im.store.GetSeries(ctx, seriesID)
+	ms := LoadMediaSettings(ctx, lf.store)
+	series, err := lf.store.GetSeries(ctx, seriesID)
 	if err != nil {
 		return
 	}
-	seriesDir, _ := seriesFolders(im.libraryRoot, series, ms)
+	seriesDir, _ := seriesFolders(lf.libraryRoot, series, ms)
 	sep := string(filepath.Separator)
 	if !strings.HasPrefix(f.Path, seriesDir+sep) {
 		return
@@ -211,7 +211,7 @@ func (im *Importer) exileToReview(ctx context.Context, seriesID int64, f store.F
 	}
 	// The files.path index is unique across the table: never move onto a
 	// path another row already records, whatever is on disk.
-	if taken, err := im.store.PathTaken(ctx, dest, f.ID); err != nil || taken {
+	if taken, err := lf.store.PathTaken(ctx, dest, f.ID); err != nil || taken {
 		return
 	}
 	if err := os.MkdirAll(reviewDir, 0o755); err != nil {
@@ -220,7 +220,7 @@ func (im *Importer) exileToReview(ctx context.Context, seriesID int64, f store.F
 	if err := os.Rename(f.Path, dest); err != nil {
 		return
 	}
-	if err := im.store.SetFileLocation(ctx, f.ID, dest, f.Size, hash); err != nil {
+	if err := lf.store.SetFileLocation(ctx, f.ID, dest, f.Size, hash); err != nil {
 		// Roll the move back: a DB row still pointing at the old path is
 		// what makes a later placement collide with the unique index.
 		_ = os.Rename(dest, f.Path)

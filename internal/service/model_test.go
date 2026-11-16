@@ -15,6 +15,16 @@ import (
 	"github.com/h-wb/sento/internal/store"
 )
 
+// addFile stores f with the presence a scan or an import gives it.
+func addFile(ctx context.Context, st *store.Store, f store.File, parse any, links []store.BookLink) (int64, error) {
+	return st.AddFile(ctx, f, FilePresence(f.Path), parse, links)
+}
+
+// testImporter builds an importer with its own library files under root.
+func testImporter(st *store.Store, reg *provider.Registry, root string, pathMappings []string) *Importer {
+	return NewImporter(st, reg, NewLibraryFiles(st, reg, root), pathMappings)
+}
+
 func modelFixture(t *testing.T) (*Library, *store.Store, int64, store.Edition, []store.Book, store.CollectedVersion) {
 	t.Helper()
 	lib, st := setup(t)
@@ -50,7 +60,7 @@ func ownedModelFile(t *testing.T, st *store.Store, id int64, c store.Edition, w 
 	if err := os.WriteFile(path, []byte("test archive"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(context.Background(), store.File{SeriesID: id, Path: path, Size: 12}, nil, []store.BookLink{{Ledger: c.Type, EditionID: c.ID, Number: w.SequenceNum, VersionID: version.ID, BookID: w.ID}})
+	fid, err := addFile(context.Background(), st, store.File{SeriesID: id, Path: path, Size: 12}, nil, []store.BookLink{{Ledger: c.Type, EditionID: c.ID, Number: w.SequenceNum, VersionID: version.ID, BookID: w.ID}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +176,7 @@ func TestModelLocalCatalogLinkIsExplicitAndPreservesEdits(t *testing.T) {
 
 func TestModelCatalogLinkIsSuggestedAndCompletesTheEdition(t *testing.T) {
 	t.Parallel()
-	_, st, id, c, _, _ := modelFixture(t)
+	lib, st, id, c, _, _ := modelFixture(t)
 	ctx := context.Background()
 	local, err := st.AddCustomEdition(ctx, store.Edition{SeriesID: id, EditionName: "Ma collection", Language: c.Language, Monitored: true}, c.ID, 0)
 	if err != nil {
@@ -188,7 +198,7 @@ func TestModelCatalogLinkIsSuggestedAndCompletesTheEdition(t *testing.T) {
 	if len(got) != 1 || got[0].LocalID != local || got[0].CatalogID != c.ID || got[0].Matched != 2 {
 		t.Fatalf("suggestions: %+v", got)
 	}
-	review, err := st.ReviewItems(ctx, id)
+	review, err := lib.ReviewItems(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +542,7 @@ func TestModelPackStaysOneAssetAcrossUnitsAndVersions(t *testing.T) {
 	dir := t.TempDir()
 	name := "ONE PIECE v01-v02 (Digital).cbz"
 	writeCBZ(t, filepath.Join(dir, name), "one unsplit pack")
-	im := NewImporter(st, nil, t.TempDir(), nil)
+	im := testImporter(st, nil, t.TempDir(), nil)
 	if err = im.importFiles(ctx, store.QueueItem{SeriesID: id, Protocol: "torrent", Books: raw}, dir, []string{name}); err != nil {
 		t.Fatal(err)
 	}

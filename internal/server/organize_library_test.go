@@ -57,7 +57,7 @@ func TestOrganizeLibraryRunsInBackground(t *testing.T) {
 		t.Fatalf("without a scheduler: %d %s", rec.Code, rec.Body)
 	}
 
-	srv.SetScheduler(scheduler.New(srv.store, srv.library, srv.search, srv.importer, srv.scanner, srv.extensions, srv.health, scheduler.DefaultIntervals()))
+	srv.SetScheduler(scheduler.New(srv.store, srv.library, srv.search, srv.importer, srv.files, srv.scanner, srv.extensions, srv.health, scheduler.DefaultIntervals()))
 	if rec := do(t, h, http.MethodPost, "/api/v1/library/organize", `{}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("nothing to apply: %d %s", rec.Code, rec.Body)
 	}

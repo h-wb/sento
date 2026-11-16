@@ -6,9 +6,7 @@
   flex-wrap: wrap;
 }
 .series {
-  border: 1px solid var(--mantine-color-default-border);
-  border-radius: var(--mantine-radius-md);
-  overflow: hidden;
+  composes: list from '../styles/list.module.css';
 }
 .header {
   display: flex;

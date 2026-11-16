@@ -158,10 +158,10 @@ export function MappingEditor({
     >
       <Stack gap="lg">
         <div>
-          <Text size="sm" fw={600} style={{ overflowWrap: 'anywhere' }}>
+          <Text size="sm" fw={600} className="wrapAnywhere">
             {fileName(value.path)}
           </Text>
-          <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+          <Text size="xs" c="dimmed" className="wrapAnywhere">
             {fileOrigin(value)}
           </Text>
           <dl className={classes.about}>

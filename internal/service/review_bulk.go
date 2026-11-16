@@ -21,22 +21,35 @@ import (
 // one transaction. A file that no longer waits for review is skipped with
 // its reason, never overwritten. Afterwards the download the pack came in
 // settles like any other reviewed import.
-func (im *Importer) ResolveFileReviews(ctx context.Context, seriesID int64, fileIDs []int64) (*store.ReviewResolution, error) {
+func (lf *LibraryFiles) ResolveFileReviews(ctx context.Context, seriesID int64, fileIDs []int64) (*store.ReviewResolution, error) {
 	if len(fileIDs) == 0 || len(fileIDs) > 500 {
 		return nil, apperr.Invalidf("select between 1 and 500 files")
 	}
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	res, err := im.store.DeclineFiles(ctx, seriesID, fileIDs)
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+	res, err := lf.store.DeclineFiles(ctx, seriesID, fileIDs)
 	if err != nil {
 		return nil, err
 	}
+	for i, skip := range res.Skipped {
+		if reason, ok := skipReasons[skip.Code]; ok {
+			res.Skipped[i].Reason = reason
+		}
+	}
 	if len(res.Resolved) > 0 {
-		if err = im.SettleReviewedJobs(ctx, seriesID); err != nil {
+		if err = lf.SettleReviewedJobs(ctx, seriesID); err != nil {
 			slog.Warn("settling reviewed jobs failed", "series", seriesID, "error", err)
 		}
 	}
 	return res, nil
+}
+
+// skipReasons words the store's codes for a file a bulk decline left alone.
+var skipReasons = map[string]string{
+	"gone":         "File is no longer available",
+	"other_series": "File does not belong to this series",
+	"not_waiting":  "File is no longer waiting for review",
+	"protected":    "This archive already has confirmed contents or pins; review its selections individually",
 }
 
 // ReleaseFileMatch is one file's outcome of matching a whole release at
@@ -59,8 +72,8 @@ type ReleaseFileMatch struct {
 // Files whose numbers do not resolve — an unreadable
 // name, the other ledger, numbers the edition does not hold, a number two
 // books share — are left for individual review rather than guessed.
-func (im *Importer) MatchReleaseFiles(ctx context.Context, seriesID, versionID int64, fileIDs []int64) ([]ReleaseFileMatch, error) {
-	out, err := releaseFileMatches(ctx, im.store, seriesID, versionID, fileIDs)
+func (lf *LibraryFiles) MatchReleaseFiles(ctx context.Context, seriesID, versionID int64, fileIDs []int64) ([]ReleaseFileMatch, error) {
+	out, err := releaseFileMatches(ctx, lf.store, seriesID, versionID, fileIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +83,7 @@ func (im *Importer) MatchReleaseFiles(ctx context.Context, seriesID, versionID i
 			continue
 		}
 		var result *FileMappingResult
-		if result, err = im.ApplySafeFileMapping(ctx, seriesID, m.FileID, m.Books, false); err != nil {
+		if result, err = lf.ApplySafeFileMapping(ctx, seriesID, m.FileID, m.Books, false); err != nil {
 			m.Books, m.Label, m.Note = []store.BookRef{}, "", err.Error()
 			continue
 		}

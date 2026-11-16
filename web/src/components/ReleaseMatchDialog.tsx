@@ -28,7 +28,7 @@ export function ReleaseMatchDialog({ seriesID, title, files, close }: {
   return (
     <EditorModal title="Match whole release" dirty={dirty || versionID !== '0'} busy={busy} onClose={close} size="lg">
       <Stack>
-        <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>{title}</Text>
+        <Text size="sm" fw={500} className="wrapAnywhere">{title}</Text>
         <Text size="xs" c="dimmed">{files.length} files waiting for review</Text>
         {pending && <Text size="sm" c="dimmed">Loading the series’ editions…</Text>}
         <QueryFeedback pending={pending} error={error} onRetry={() => { void detail.refetch(); void versions.refetch() }} />

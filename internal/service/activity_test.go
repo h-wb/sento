@@ -32,7 +32,7 @@ func TestActivityGroupsFileQuestionsWithTheirImport(t *testing.T) {
 	if err := os.WriteFile(path, []byte("archive"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "Volume 2.cbz", ReleaseKey: "pack"}}, nil, nil); err != nil {
+	if _, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{Title: "Volume 2.cbz", ReleaseKey: "pack"}}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, scope := range []int64{0, sid} {
@@ -128,7 +128,7 @@ func TestActivityRetiresFailedAttemptsOnlyWhenAllBooksAreCovered(t *testing.T) {
 	check(false) // One replacement cannot clear a partly uncovered pack.
 	reserve("replacement-2", 1)
 	check(true)
-	targets, err := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil).TryAnother(ctx, []int64{old})
+	targets, err := testImporter(st, provider.NewRegistry(), t.TempDir(), nil).TryAnother(ctx, []int64{old})
 	if err != nil || len(targets) != 0 {
 		t.Fatalf("resolved failure was recovered again: %v %v", targets, err)
 	}
@@ -156,7 +156,7 @@ func TestActivityOwnedBooksClearAFailureButKeepUnmatchedFilesVisible(t *testing.
 	if err = os.WriteFile(path, []byte("archive"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Facts: store.AssetFacts{ReleaseKey: "working"}}, nil, nil)
+	fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, Facts: store.AssetFacts{ReleaseKey: "working"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestActivityOwnedBooksClearAFailureButKeepUnmatchedFilesVisible(t *testing.
 	}
 	// Files still waiting on a person remain one import question, even if
 	// another file happens to satisfy all the original books already.
-	if _, err = st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/extra.cbz", NeedsReview: true, Facts: store.AssetFacts{ReleaseKey: "failed"}}, nil, nil); err != nil {
+	if _, err = addFile(ctx, st, store.File{SeriesID: sid, Path: t.TempDir() + "/extra.cbz", NeedsReview: true, Facts: store.AssetFacts{ReleaseKey: "failed"}}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	data, err = lib.Activity(ctx, sid)
@@ -227,7 +227,7 @@ func TestPartialImportShowsVerifiedBooksAndScopesReplacementToUnmatchedBooks(t *
 	if err = os.WriteFile(path, []byte("verified pages"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Presence: "present", Facts: store.AssetFacts{ReleaseKey: "partial"}}, nil, nil)
+	fid, err := addFile(ctx, st, store.File{SeriesID: sid, Path: path, Presence: "present", Facts: store.AssetFacts{ReleaseKey: "partial"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestPartialImportShowsVerifiedBooksAndScopesReplacementToUnmatchedBooks(t *
 	if err = os.WriteFile(extraPath, []byte("extra pages"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = st.AddFile(ctx, store.File{SeriesID: sid, Path: extraPath, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{ReleaseKey: "partial"}}, nil, nil); err != nil {
+	if _, err = addFile(ctx, st, store.File{SeriesID: sid, Path: extraPath, NeedsReview: true, Unrequested: true, Facts: store.AssetFacts{ReleaseKey: "partial"}}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, scope := range []int64{0, sid} {
@@ -317,7 +317,7 @@ func TestActivityArchivesGoneSourcesWithoutHidingFileQuestions(t *testing.T) {
 	if err = os.WriteFile(path, []byte("pages"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = st.AddFile(ctx, store.File{SeriesID: sid, Path: path, NeedsReview: true, Facts: store.AssetFacts{ReleaseKey: "gone-release"}}, nil, nil); err != nil {
+	if _, err = addFile(ctx, st, store.File{SeriesID: sid, Path: path, NeedsReview: true, Facts: store.AssetFacts{ReleaseKey: "gone-release"}}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	data, err := lib.Activity(ctx, sid)

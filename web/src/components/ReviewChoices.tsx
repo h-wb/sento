@@ -45,7 +45,7 @@ export function ReviewReceipt({ plan, receipt, done }: { plan: ReviewPlan; recei
   return (
     <Stack gap="sm">
       <Text size="sm" fw={500}>Choices saved</Text>
-      {receipt.map((f, i) => <Text key={`${f.fileId}-${i}`} size="sm" style={{ overflowWrap: 'anywhere' }}>
+      {receipt.map((f, i) => <Text key={`${f.fileId}-${i}`} size="sm" className="wrapAnywhere">
         {fileName(plan.files.find((p) => p.fileId === f.fileId)?.path ?? '')}: {outcomeText[f.status] ?? f.status}{f.note && ` · ${f.note}`}
       </Text>)}
       <Text size="xs" c="dimmed">Pending trash moves will retry automatically. Archives already imported or retained keep their saved choices.</Text>
@@ -127,7 +127,7 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
           <Score value={b.incoming} />
           {b.owners.map((o) => (
             <div key={o.fileId}>
-              <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
+              <Text size="xs" className="wrapAnywhere">
                 {using(i, b.book) && !b.currentSelected ? 'Replace' : replacementChosen(b.book) ? 'Replaced by another incoming archive' : 'Keep existing'}: {fileName(o.path)}{!o.present && ' (missing)'}
                 {[o.source, o.group].filter(Boolean).length > 0 && ` · ${[o.source, o.group].filter(Boolean).join(' · ')}`}
                 {o.pinned && <Badge size="xs" ml={4}>Pinned</Badge>}
@@ -184,8 +184,8 @@ function Choices({ seriesID, request, applied, onDirtyChange, onBusyChange, plan
               <Group gap={6} wrap="nowrap" align="flex-start">
                 {collapsible && (open ? <IconChevronDown size={14} style={{ marginTop: 3, flexShrink: 0 }} /> : <IconChevronRight size={14} style={{ marginTop: 3, flexShrink: 0 }} />)}
                 <div style={{ minWidth: 0 }}>
-                  <Text size="sm" fw={500} style={{ overflowWrap: 'anywhere' }}>{fileName(f.path)}</Text>
-                  <Text size="xs" c={f.reason && !open ? 'orange' : 'dimmed'} lineClamp={2} style={{ overflowWrap: 'anywhere' }}>
+                  <Text size="sm" fw={500} className="wrapAnywhere">{fileName(f.path)}</Text>
+                  <Text size="xs" c={f.reason && !open ? 'orange' : 'dimmed'} lineClamp={2} className="wrapAnywhere">
                     {open ? origin || 'Source and group unknown' : cardSummary(f, i, true)}
                   </Text>
                 </div>

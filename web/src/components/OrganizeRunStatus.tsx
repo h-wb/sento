@@ -39,7 +39,7 @@ export default function OrganizeRunStatus({
       {failed.map((r) => (
         <Alert key={r.seriesId} color="orange" title={r.title}>
           {r.errors.map((e) => (
-            <Text key={e} size="xs" style={{ overflowWrap: 'anywhere' }}>
+            <Text key={e} size="xs" className="wrapAnywhere">
               {e}
             </Text>
           ))}

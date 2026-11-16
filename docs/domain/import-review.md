@@ -12,8 +12,8 @@ claimed as collected without evidence.
 
 | File or package | What it holds |
 | --- | --- |
-| `internal/service/importer.go` | `Importer` and its `mu` lock, `ProcessQueue`/`processItem`, `recordFailure` |
-| `internal/service/import_payload.go` | `importStream`, `importFiles`, `importArchive`, `alreadyImported`, `seriesDir` |
+| `internal/service/importer.go` | `Importer`, `ProcessQueue`/`processItem` under `LibraryFiles.mu`, `recordFailure` |
+| `internal/service/import_payload.go` | `importStream`, `importFiles`, `importArchive`, `alreadyImported` |
 | `internal/service/asset_import.go` | `assetPath`, `verifyDestination`, `placeAsset`, `installAsset`, `installProcessed`, `recordAsset`, `importReviewFile`, `offerFacts` |
 | `internal/service/image_import.go` | `payloadArchives`: image-only folders packed into CBZ |
 | `internal/service/import_contents.go` | `fileBooks`: intrinsic contents versus covered books |
@@ -237,7 +237,7 @@ sequenceDiagram
     Svc->>Svc: fingerprint each archive unless its stat signature is trusted
     Svc-->>UI: plan plus token (time plus sha256 of revision, request, plan, digests, signatures)
     UI->>Server: POST review/choices with request, token, choices
-    Server->>Svc: ApplyReviewChoices under Importer.mu
+    Server->>Svc: ApplyReviewChoices under LibraryFiles.mu
     Svc->>Svc: recompute the plan bound to the preview's time
     Svc->>Svc: token must equal the recomputed plan's token
     Svc->>Store: CommitFileReviews, locks series then editions, rechecks revision

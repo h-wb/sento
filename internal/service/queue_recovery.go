@@ -4,30 +4,40 @@ import (
 	"context"
 	"log/slog"
 	"slices"
+	"sync"
 
 	"github.com/h-wb/sento/internal/apperr"
 	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
-// searchAgain asks for the job's series to be searched again soon.
-func (im *Importer) searchAgain(item store.QueueItem) {
-	im.againMu.Lock()
-	defer im.againMu.Unlock()
+// retrySearches collects the series to search again soon, once each.
+type retrySearches struct {
+	mu      sync.Mutex
+	targets []SearchTarget
+}
+
+func (r *retrySearches) add(item store.QueueItem) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, t := range jobTargets(item) {
-		if !slices.Contains(im.again, t) {
-			im.again = append(im.again, t)
+		if !slices.Contains(r.targets, t) {
+			r.targets = append(r.targets, t)
 		}
 	}
 }
 
+func (r *retrySearches) take() []SearchTarget {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := r.targets
+	r.targets = nil
+	return out
+}
+
 // TakeSearches hands over the series to search again, once each.
 func (im *Importer) TakeSearches() []SearchTarget {
-	im.againMu.Lock()
-	defer im.againMu.Unlock()
-	out := im.again
-	im.again = nil
-	return out
+	return im.files.again.take()
 }
 
 // jobTargets are the series' ledgers a job's books belong to.
@@ -158,8 +168,8 @@ func (im *Importer) UnblockReleases(ctx context.Context, ids []int64, protocol s
 // TryAnother retires failed downloads and returns the distinct ledgers to
 // search. Serializing with the worker prevents an import racing recovery.
 func (im *Importer) TryAnother(ctx context.Context, ids []int64) ([]SearchTarget, error) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
+	im.files.mu.Lock()
+	defer im.files.mu.Unlock()
 	var jobs []store.QueueItem
 	files := map[int64][]store.File{}
 	views := map[int64]*ledgerView{}

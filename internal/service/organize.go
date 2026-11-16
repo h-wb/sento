@@ -49,9 +49,9 @@ var reHashSuffix = regexp.MustCompile(` \[[a-f0-9]{64}\]$`)
 
 // organizePlans works out, for every file of a series, where the current
 // settings would put it and what metadata it should carry.
-func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) ([]filePlan, *store.Series, MediaSettings, error) {
-	ms := LoadMediaSettings(ctx, im.store)
-	series, err := im.store.GetSeries(ctx, seriesID)
+func (lf *LibraryFiles) organizePlans(ctx context.Context, seriesID, fileID int64) ([]filePlan, *store.Series, MediaSettings, error) {
+	ms := LoadMediaSettings(ctx, lf.store)
+	series, err := lf.store.GetSeries(ctx, seriesID)
 	if err != nil {
 		return nil, nil, ms, err
 	}
@@ -59,7 +59,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	// planning costs a fixed number of queries whatever the file count.
 	// One confirmed file needs a handful of rows; the cache loads those
 	// lazily, per row as before, without fetching the whole series per file.
-	place := im.newPlacement(ms, series)
+	place := lf.newPlacement(ms, series)
 	cat := place.cat
 	if fileID == 0 {
 		if err := cat.preload(ctx); err != nil {
@@ -68,12 +68,12 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	}
 	// Computed, not recorded: a preview must not change where the series
 	// is considered to live.
-	volumesDir, chaptersDir := seriesFolders(im.libraryRoot, series, ms)
-	files, err := im.store.ListFiles(ctx, seriesID)
+	volumesDir, chaptersDir := seriesFolders(lf.libraryRoot, series, ms)
+	files, err := lf.store.ListFiles(ctx, seriesID)
 	if err != nil {
 		return nil, nil, ms, err
 	}
-	coverage, err := im.store.Coverage(ctx, seriesID)
+	coverage, err := lf.store.Coverage(ctx, seriesID)
 	if err != nil {
 		return nil, nil, ms, err
 	}
@@ -90,7 +90,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 
 	// Choose a placed file per collected version, respecting its profile
 	// and pins. Distinct copies may keep distinct files of the same book.
-	profiles, err := NewProfiles(im.store).seriesProfiles(ctx, seriesID)
+	profiles, err := NewProfiles(lf.store).seriesProfiles(ctx, seriesID)
 	if err != nil {
 		return nil, nil, ms, err
 	}
@@ -113,7 +113,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	// Every folder the series' books may sit in: its own, plus one per
 	// copy whose rendered series folder differs from the series'.
 	volumeTrees, chapterTrees := []string{volumesDir}, []string{chaptersDir}
-	folders := editionFolders(im.libraryRoot, series, ms, editions, versions)
+	folders := editionFolders(lf.libraryRoot, series, ms, editions, versions)
 	for _, e := range editions {
 		for k, dir := range folders {
 			if k.EditionID != e.ID {
@@ -138,7 +138,7 @@ func (im *Importer) organizePlans(ctx context.Context, seriesID, fileID int64) (
 	insideTree := func(p string) bool { return under(p, volumeTrees) || under(p, chapterTrees) }
 
 	rel := func(p string) string {
-		if r, err := filepath.Rel(im.libraryRoot, p); err == nil && !strings.HasPrefix(r, "..") {
+		if r, err := filepath.Rel(lf.libraryRoot, p); err == nil && !strings.HasPrefix(r, "..") {
 			return r
 		}
 		return p
@@ -312,8 +312,8 @@ func settleFallbackNames(plans []filePlan, rel func(string) string) {
 
 // PlanOrganize previews what Organize would change, without touching
 // anything.
-func (im *Importer) PlanOrganize(ctx context.Context, seriesID int64) ([]FileChange, error) {
-	plans, _, _, err := im.organizePlans(ctx, seriesID, 0)
+func (lf *LibraryFiles) PlanOrganize(ctx context.Context, seriesID int64) ([]FileChange, error) {
+	plans, _, _, err := lf.organizePlans(ctx, seriesID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -329,23 +329,23 @@ func (im *Importer) PlanOrganize(ctx context.Context, seriesID int64) ([]FileCha
 // Organize brings a series' files in line with the current settings:
 // rename moves them to their templated path, retag rewrites their embedded
 // metadata. One file failing does not stop the others.
-func (im *Importer) Organize(ctx context.Context, seriesID int64, rename, retag bool) (*OrganizeResult, error) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	return im.organize(ctx, seriesID, 0, rename, retag)
+func (lf *LibraryFiles) Organize(ctx context.Context, seriesID int64, rename, retag bool) (*OrganizeResult, error) {
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+	return lf.organize(ctx, seriesID, 0, rename, retag)
 }
 
 // OrganizeReviewedFile finishes the import of the file just confirmed. Its
 // naming and metadata follow the import settings; other files are untouched.
-func (im *Importer) OrganizeReviewedFile(ctx context.Context, seriesID, fileID int64) error {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	return im.organizeReviewedFile(ctx, seriesID, fileID)
+func (lf *LibraryFiles) OrganizeReviewedFile(ctx context.Context, seriesID, fileID int64) error {
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+	return lf.organizeReviewedFile(ctx, seriesID, fileID)
 }
 
-// organizeReviewedFile runs with im.mu held, including during a bulk review.
-func (im *Importer) organizeReviewedFile(ctx context.Context, seriesID, fileID int64) error {
-	res, err := im.organize(ctx, seriesID, fileID, true, true)
+// organizeReviewedFile runs with lf.mu held, including during a bulk review.
+func (lf *LibraryFiles) organizeReviewedFile(ctx context.Context, seriesID, fileID int64) error {
+	res, err := lf.organize(ctx, seriesID, fileID, true, true)
 	if err != nil {
 		return err
 	}
@@ -355,14 +355,14 @@ func (im *Importer) organizeReviewedFile(ctx context.Context, seriesID, fileID i
 	return nil
 }
 
-func (im *Importer) organize(ctx context.Context, seriesID, fileID int64, rename, retag bool) (*OrganizeResult, error) {
-	plans, series, ms, err := im.organizePlans(ctx, seriesID, fileID)
+func (lf *LibraryFiles) organize(ctx context.Context, seriesID, fileID int64, rename, retag bool) (*OrganizeResult, error) {
+	plans, series, ms, err := lf.organizePlans(ctx, seriesID, fileID)
 	if err != nil {
 		return nil, err
 	}
 	if rename {
 		// The series now lives where the settings put it.
-		if _, err := im.seriesDir(ctx, series, ms, "volume"); err != nil {
+		if _, err := lf.seriesDir(ctx, series, ms, "volume"); err != nil {
 			return nil, err
 		}
 	}
@@ -381,7 +381,7 @@ func (im *Importer) organize(ctx context.Context, seriesID, fileID int64, rename
 			return res, err
 		}
 		from := p.file.Path
-		dest, err := im.organizeFile(ctx, p, ms, doRename, doRetag)
+		dest, err := lf.organizeFile(ctx, p, ms, doRename, doRetag)
 		if err != nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", p.From, err))
 			continue
@@ -395,7 +395,7 @@ func (im *Importer) organize(ctx context.Context, seriesID, fileID int64, rename
 		p.moved = dest != from
 		if p.moved {
 			res.Renamed++
-			pruneEmptyDirs(filepath.Dir(from), im.libraryRoot)
+			pruneEmptyDirs(filepath.Dir(from), lf.libraryRoot)
 		}
 		if dest != p.dest {
 			p.file.Path = dest
@@ -412,7 +412,7 @@ func (im *Importer) organize(ctx context.Context, seriesID, fileID int64, rename
 			continue // still held: a different book keeps the name
 		}
 		from := p.file.Path
-		dest, err := im.organizeFile(ctx, p, ms, true, false)
+		dest, err := lf.organizeFile(ctx, p, ms, true, false)
 		if err != nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", p.From, err))
 			continue
@@ -421,7 +421,7 @@ func (im *Importer) organize(ctx context.Context, seriesID, fileID int64, rename
 			if !p.moved {
 				res.Renamed++
 			}
-			pruneEmptyDirs(filepath.Dir(from), im.libraryRoot)
+			pruneEmptyDirs(filepath.Dir(from), lf.libraryRoot)
 		}
 	}
 	return res, nil
@@ -461,7 +461,7 @@ func moveOrder(plans []filePlan) []filePlan {
 
 // organizeFile moves and re-tags one file and returns where it is now: its
 // planned path, or a fallback name beside it when that path is held.
-func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettings, rename, retag bool) (string, error) {
+func (lf *LibraryFiles) organizeFile(ctx context.Context, p filePlan, ms MediaSettings, rename, retag bool) (string, error) {
 	src := p.file.Path
 	// Re-tagging and moving never change a fingerprint, so the stored one
 	// stands; hashing every page again is the slow part of a library run.
@@ -492,7 +492,7 @@ func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettin
 			base := dest
 			for i := 2; ; i++ {
 				var taken bool
-				if taken, err = im.store.PathTaken(ctx, dest, p.file.ID); err != nil {
+				if taken, err = lf.store.PathTaken(ctx, dest, p.file.ID); err != nil {
 					return "", err
 				}
 				if !taken {
@@ -532,7 +532,7 @@ func (im *Importer) organizeFile(ctx context.Context, p filePlan, ms MediaSettin
 	if err != nil {
 		return "", err
 	}
-	if err := im.store.SetFileLocation(ctx, p.file.ID, dest, info.Size(), hash); err != nil {
+	if err := lf.store.SetFileLocation(ctx, p.file.ID, dest, info.Size(), hash); err != nil {
 		return "", err
 	}
 	if dest != src {

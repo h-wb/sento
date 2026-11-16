@@ -36,21 +36,21 @@ type RemovedSeries struct {
 // downloads. The records go first: that is the commitment. Disk and client
 // clean-up after it is best effort, and what it could not do is reported
 // rather than failing a removal that already happened.
-func (im *Importer) RemoveSeries(ctx context.Context, id int64, opts RemoveOptions) (*RemovedSeries, error) {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	trash, err := im.store.ListFileTrash(ctx, id)
+func (lf *LibraryFiles) RemoveSeries(ctx context.Context, id int64, opts RemoveOptions) (*RemovedSeries, error) {
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+	trash, err := lf.store.ListFileTrash(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if len(trash) > 0 {
 		return nil, apperr.Conflictf("restore or empty this series’ file trash before removing it")
 	}
-	files, err := im.store.ListFiles(ctx, id)
+	files, err := lf.store.ListFiles(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	jobs, err := im.store.SeriesQueueItems(ctx, id)
+	jobs, err := lf.store.SeriesQueueItems(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -66,14 +66,14 @@ func (im *Importer) RemoveSeries(ctx context.Context, id int64, opts RemoveOptio
 				continue
 			}
 			seen[j.ExternalID] = true
-			shared, err := im.store.DownloadShared(ctx, id, j.Protocol, j.ExternalID)
+			shared, err := lf.store.DownloadShared(ctx, id, j.Protocol, j.ExternalID)
 			if err != nil {
 				return nil, err
 			}
 			downloads = append(downloads, download{j, shared})
 		}
 	}
-	if err := im.store.DeleteSeries(ctx, id); err != nil {
+	if err := lf.store.DeleteSeries(ctx, id); err != nil {
 		return nil, err
 	}
 
@@ -83,9 +83,9 @@ func (im *Importer) RemoveSeries(ctx context.Context, id int64, opts RemoveOptio
 			out.Kept = append(out.Kept, d.item.Title+": another series uses this download")
 			continue
 		}
-		prov := im.registry.Get(d.item.ProviderID)
+		prov := lf.registry.Get(d.item.ProviderID)
 		if prov == nil {
-			prov = im.registry.ForProtocol(d.item.Protocol)
+			prov = lf.registry.ForProtocol(d.item.Protocol)
 		}
 		remover, ok := prov.(provider.Remover)
 		if !ok {
@@ -105,7 +105,7 @@ func (im *Importer) RemoveSeries(ctx context.Context, id int64, opts RemoveOptio
 				continue
 			}
 			out.FilesDeleted++
-			im.pruneEmptyDirs(filepath.Dir(f.Path))
+			lf.pruneEmptyDirs(filepath.Dir(f.Path))
 		}
 	}
 	return out, nil
@@ -114,28 +114,28 @@ func (im *Importer) RemoveSeries(ctx context.Context, id int64, opts RemoveOptio
 // pruneEmptyDirs removes dir and its parents while they are empty, inside
 // the library and never the library itself: a removed series leaves no
 // empty folders behind, and nothing outside the library is touched.
-func (im *Importer) pruneEmptyDirs(dir string) {
-	pruneEmptyDirs(dir, im.libraryRoot)
+func (lf *LibraryFiles) pruneEmptyDirs(dir string) {
+	pruneEmptyDirs(dir, lf.libraryRoot)
 }
 
 // DeleteFile forgets a file and deletes it from disk; a file a card has
 // pinned is refused. When the record goes but the disk refuses, the error
 // says so: a rescan adopts the file again.
-func (im *Importer) DeleteFile(ctx context.Context, id int64) error {
-	im.mu.Lock()
-	defer im.mu.Unlock()
-	if f, err := im.store.GetFileTrash(ctx, id); err == nil {
-		return im.purgeTrashedFile(ctx, f.SeriesID, id)
+func (lf *LibraryFiles) DeleteFile(ctx context.Context, id int64) error {
+	lf.mu.Lock()
+	defer lf.mu.Unlock()
+	if f, err := lf.store.GetFileTrash(ctx, id); err == nil {
+		return lf.purgeTrashedFile(ctx, f.SeriesID, id)
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
-	path, err := im.store.DeleteFile(ctx, id)
+	path, err := lf.store.DeleteFile(ctx, id)
 	if err != nil {
 		return err
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("unlinked, but deleting it from disk failed: %w", err)
 	}
-	im.pruneEmptyDirs(filepath.Dir(path))
+	lf.pruneEmptyDirs(filepath.Dir(path))
 	return nil
 }

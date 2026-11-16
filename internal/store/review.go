@@ -4,9 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/h-wb/sento/internal/apperr"
 )
@@ -25,6 +23,10 @@ type ReviewItem struct {
 	ItemID      int64  `json:"itemId"`
 	Title       string `json:"title"`
 	Detail      string `json:"detail"`
+	// DetailCode and DetailArg name the question for the service to word
+	// as Detail.
+	DetailCode string `json:"-"`
+	DetailArg  string `json:"-"`
 	// RelatedID is the catalog edition of an "edition" item (ItemID is the
 	// local one).
 	RelatedID int64 `json:"relatedId,omitempty" db:"-"`
@@ -61,6 +63,8 @@ type ReviewProposal struct {
 type ReviewSkip struct {
 	FileID int64  `json:"fileId"`
 	Reason string `json:"reason"`
+	// Code names the reason: gone, other_series, not_waiting or protected.
+	Code string `json:"-"`
 }
 
 // ReviewResolution is what a bulk decline did: the files it marked reviewed
@@ -84,25 +88,25 @@ func (s *Store) DeclineFiles(ctx context.Context, seriesID int64, fileIDs []int6
 			var waiting bool
 			err := tx.QueryRowContext(ctx, s.q(`SELECT series_id, needs_review OR EXISTS(SELECT 1 FROM asset_contents c WHERE c.file_id=files.id AND c.verified=FALSE) FROM files WHERE id=?`), fid).Scan(&fileSeries, &waiting)
 			if errors.Is(err, sql.ErrNoRows) {
-				res.Skipped = append(res.Skipped, ReviewSkip{fid, "File is no longer available"})
+				res.Skipped = append(res.Skipped, ReviewSkip{FileID: fid, Code: "gone"})
 				continue
 			}
 			if err != nil {
 				return err
 			}
 			if fileSeries != seriesID {
-				res.Skipped = append(res.Skipped, ReviewSkip{fid, "File does not belong to this series"})
+				res.Skipped = append(res.Skipped, ReviewSkip{FileID: fid, Code: "other_series"})
 				continue
 			}
 			if err = s.rejectTrashEdit(ctx, tx, fid); err != nil {
 				if errors.Is(err, apperr.ErrConflict) {
-					res.Skipped = append(res.Skipped, ReviewSkip{fid, err.Error()})
+					res.Skipped = append(res.Skipped, ReviewSkip{FileID: fid, Reason: err.Error()})
 					continue
 				}
 				return err
 			}
 			if !waiting {
-				res.Skipped = append(res.Skipped, ReviewSkip{fid, "File is no longer waiting for review"})
+				res.Skipped = append(res.Skipped, ReviewSkip{FileID: fid, Code: "not_waiting"})
 				continue
 			}
 			var protected int
@@ -110,7 +114,7 @@ func (s *Store) DeclineFiles(ctx context.Context, seriesID int64, fileIDs []int6
 				return err
 			}
 			if protected > 0 {
-				res.Skipped = append(res.Skipped, ReviewSkip{fid, "This archive already has confirmed contents or pins; review its selections individually"})
+				res.Skipped = append(res.Skipped, ReviewSkip{FileID: fid, Code: "protected"})
 				continue
 			}
 			if _, err = tx.ExecContext(ctx, s.q(`DELETE FROM asset_coverage WHERE file_id=?`), fid); err != nil {
@@ -132,56 +136,21 @@ func (s *Store) DeclineFiles(ctx context.Context, seriesID int64, fileIDs []int6
 	return res, nil
 }
 
+// ReviewItems lists what waits for review, for one series or all (sid 0).
+// Detail is left empty; Library.ReviewItems fills it in.
 func (s *Store) ReviewItems(ctx context.Context, sid int64) ([]ReviewItem, error) {
-	items, err := s.reviewRows(ctx, sid)
-	if err != nil {
-		return nil, err
-	}
-	links, err := s.LinkSuggestions(ctx, sid)
-	if err != nil {
-		return nil, err
-	}
-	for _, l := range links {
-		series, err := s.GetSeries(ctx, l.SeriesID)
-		if err != nil {
-			return nil, err
-		}
-		detail := fmt.Sprintf("MangaBaka lists “%s”, which looks like this edition.", editionText(l.catalog))
-		if l.LocalBooks > 0 {
-			detail += fmt.Sprintf(" %d of your %d books match its %d.", l.Matched, l.LocalBooks, l.CatalogBooks)
-		}
-		items = append(items, ReviewItem{
-			ID: fmt.Sprintf("edition-%d-%d", l.LocalID, l.CatalogID), Kind: "edition", Status: "link",
-			SeriesID: l.SeriesID, SeriesTitle: series.Title, ItemID: l.LocalID, RelatedID: l.CatalogID,
-			Title: editionText(l.local), Detail: detail,
-		})
-	}
-	return items, nil
-}
-
-func editionText(e *Edition) string {
-	parts := []string{e.EditionName, e.Language}
-	for _, p := range []string{e.Publisher, e.Medium} {
-		if p != "" {
-			parts = append(parts, p)
-		}
-	}
-	return strings.Join(parts, " · ")
-}
-
-func (s *Store) reviewRows(ctx context.Context, sid int64) ([]ReviewItem, error) {
 	return list[ReviewItem](ctx, s, `
  SELECT 'file-'||CAST(f.id AS TEXT) AS id,'file' AS kind,f.series_id,s.title AS series_title,f.id AS item_id,f.path AS title,
- CASE WHEN f.review_action='trash' AND f.needs_review=TRUE THEN 'Archive contents changed; review this file again before moving it to trash' WHEN f.review_action='trash' THEN 'Moving this rejected incoming file to trash is pending; the move will retry automatically' WHEN f.presence='unavailable' THEN 'Storage unavailable: '||f.presence_error WHEN f.presence='unknown' THEN 'File presence has not been checked' ELSE 'Confirm the edition and books in this file' END AS detail, f.presence AS status
+ CASE WHEN f.review_action='trash' AND f.needs_review=TRUE THEN 'trash_changed' WHEN f.review_action='trash' THEN 'trash_pending' WHEN f.presence='unavailable' THEN 'unavailable' WHEN f.presence='unknown' THEN 'unchecked' ELSE 'confirm' END AS detail_code, f.presence_error AS detail_arg, f.presence AS status
  FROM files f JOIN series s ON s.id=f.series_id WHERE (?=0 OR s.id=?) AND NOT EXISTS(SELECT 1 FROM file_trash WHERE file_id=f.id) AND (f.review_action='trash' OR f.needs_review=TRUE OR f.presence IN('unavailable','unknown') OR EXISTS(SELECT 1 FROM asset_contents c WHERE c.file_id=f.id AND c.verified=FALSE))
  UNION ALL
- SELECT 'queue-'||CAST(q.id AS TEXT),'download',q.series_id,s.title,q.id,q.title,COALESCE(q.error,''),q.status
+ SELECT 'queue-'||CAST(q.id AS TEXT),'download',q.series_id,s.title,q.id,q.title,'download',COALESCE(q.error,''),q.status
  FROM queue_items q JOIN series s ON s.id=q.series_id WHERE (?=0 OR s.id=?) AND q.status IN('needs_review','dispatch_unknown','failed','retry_wait')
  UNION ALL
- SELECT 'chapter-'||CAST(o.id AS TEXT),'chapter',c.series_id,s.title,o.id,o.label,'New chapter from '||o.source,o.state
+ SELECT 'chapter-'||CAST(o.id AS TEXT),'chapter',c.series_id,s.title,o.id,o.label,'new_chapter',o.source,o.state
  FROM book_observations o JOIN editions c ON c.id=o.edition_id JOIN series s ON s.id=c.series_id WHERE (?=0 OR s.id=?) AND o.state='pending'
  UNION ALL
- SELECT 'source-'||CAST(b.series_id AS TEXT)||'-'||b.source_id,'source',b.series_id,s.title,i.id,i.name,'Found nothing for this series. Pick the right entry, or turn the source off for it.','unmatched'
+ SELECT 'source-'||CAST(b.series_id AS TEXT)||'-'||b.source_id,'source',b.series_id,s.title,i.id,i.name,'source_unmatched','','unmatched'
  FROM indexers i JOIN source_bindings b ON b.source_id=CAST(i.id AS TEXT) JOIN series s ON s.id=b.series_id
  LEFT JOIN series_site_settings o ON o.series_id=b.series_id AND o.provider='indexer' AND o.site_id=CAST(i.id AS TEXT)
  WHERE (?=0 OR s.id=?) AND i.protocol='source' AND COALESCE(o.enabled,i.enabled)=TRUE AND b.state='unmatched'

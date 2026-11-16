@@ -38,7 +38,7 @@ export function StatusBadge({
     : 'Unreachable'
   return (
     <Tooltip label={result.error || 'The service answered'} multiline maw={360}>
-      <Badge color={result.ok ? 'green' : 'red'} variant="light" style={{ textTransform: 'none' }}>
+      <Badge color={result.ok ? 'green' : 'red'} variant="light">
         {label}
       </Badge>
     </Tooltip>
@@ -133,7 +133,7 @@ export function ConnectionDialog({
         )}
         {live && !live.ok && (
           <Alert color="red" py="xs" title="Not reachable right now">
-            <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
+            <Text size="xs" className="wrapAnywhere">
               {live.error}
             </Text>
           </Alert>

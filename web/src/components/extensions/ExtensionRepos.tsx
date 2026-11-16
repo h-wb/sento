@@ -141,7 +141,7 @@ function RepoRow({
             <Badge
               color={repo.extensions > 0 ? 'green' : 'yellow'}
               variant="light"
-              style={{ flexShrink: 0, textTransform: 'none' }}
+              style={{ flexShrink: 0 }}
             >
               {repo.extensions.toLocaleString()} {plural(repo.extensions, 'extension')}
             </Badge>

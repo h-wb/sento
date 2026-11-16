@@ -11,7 +11,7 @@ import (
 )
 
 func (s *SearchService) prepareVersions(ctx context.Context, run *searchRun) error {
-	if err := s.store.CheckFilePresence(ctx, run.seriesID); err != nil {
+	if err := CheckFilePresence(ctx, s.store, run.seriesID); err != nil {
 		return err
 	}
 	view, err := loadLedger(ctx, s.store, run.seriesID)

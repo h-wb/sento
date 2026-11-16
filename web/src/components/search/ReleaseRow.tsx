@@ -93,12 +93,12 @@ export function ReleaseRow({
                   fw={600}
                   size="sm"
                   lineClamp={expanded ? undefined : 1}
-                  style={{ overflowWrap: 'anywhere' }}
+                  className="wrapAnywhere"
                 >
                   {c.title}
                 </Text>
               </Group>
-              <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+              <Text size="xs" c="dimmed" className="wrapAnywhere">
                 {[
                   c.site,
                   c.protocol === 'torrent' ? 'Torrent' : 'Direct download',
@@ -110,7 +110,7 @@ export function ReleaseRow({
                   .join(' · ')}
               </Text>
               {state === 'blocked' ? (
-                <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                <Text size="xs" c="dimmed" className="wrapAnywhere">
                   {reason ?? 'Ruled out'}
                   {more > 0 && ` (+${more} more)`}
                 </Text>
@@ -180,7 +180,7 @@ export function ReleaseRow({
           {!!decision?.reasons.length && (
             <Stack gap={4}>
               {decision.reasons.map((r) => (
-                <Text key={r.code} size="sm" style={{ overflowWrap: 'anywhere' }}>
+                <Text key={r.code} size="sm" className="wrapAnywhere">
                   {r.message}{' '}
                   <Text span size="xs" c="dimmed">
                     {r.code === 'rejected.blocklisted'
@@ -213,7 +213,7 @@ export function ReleaseRow({
             <Text size="xs">Profile: {c.policySnapshot?.name ?? 'Built-in defaults'}</Text>
           </SimpleGrid>
           {!!c.coverage?.length && (
-            <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
+            <Text size="xs" className="wrapAnywhere">
               Will collect:{' '}
               {c.coverage
                 .slice(0, 30)
@@ -248,7 +248,7 @@ export function ReleaseRow({
             </Stack>
           )}
           {!!c.formats?.length && (
-            <Text size="xs" style={{ overflowWrap: 'anywhere' }}>
+            <Text size="xs" className="wrapAnywhere">
               Matched formats:{' '}
               {c.formats.map((f) => `${f.name} (${f.score > 0 ? '+' : ''}${f.score})`).join(' · ')}
             </Text>
@@ -265,7 +265,7 @@ export function ReleaseRow({
               </summary>
               <Stack gap={3} mt="xs">
                 {c.parseTrace.map((p, i) => (
-                  <Text key={i} size="xs" style={{ overflowWrap: 'anywhere' }}>
+                  <Text key={i} size="xs" className="wrapAnywhere">
                     {p.rule}
                     {p.text ? `: ${p.text}` : ''}
                   </Text>

@@ -49,7 +49,7 @@
 .searchTrigger:hover { color: var(--mantine-color-text); }
 .searchTrigger :global(.mantine-Kbd-root) { margin-left: auto; }
 .statusDot { width: 6px; height: 6px; border-radius: 50%; background: var(--mantine-color-red-6); }
-.statusDot[data-healthy='true'] { background: #69947a; }
+.statusDot[data-healthy='true'] { background: var(--status-green); }
 .main > :global(.mantine-Group-root):first-child { margin-top: 4px; }
 .main {
   padding-top: calc(var(--app-shell-header-offset, 0px) + 36px);

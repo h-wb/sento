@@ -73,6 +73,7 @@ type Scheduler struct {
 	libraries  *service.Library
 	search     *service.SearchService
 	importer   *service.Importer
+	files      *service.LibraryFiles
 	scanner    *service.Scanner
 	extensions *service.ExtensionService
 	intervals  Intervals
@@ -94,12 +95,12 @@ const OrganizeLibrary = "library-organize"
 const stateKey = "scheduler"
 
 func New(st *store.Store, lib *service.Library, search *service.SearchService,
-	importer *service.Importer, scanner *service.Scanner,
+	importer *service.Importer, files *service.LibraryFiles, scanner *service.Scanner,
 	extensions *service.ExtensionService, health *service.HealthService, intervals Intervals,
 ) *Scheduler {
 	s := &Scheduler{
 		store: st, libraries: lib, search: search,
-		importer: importer, scanner: scanner, extensions: extensions,
+		importer: importer, files: files, scanner: scanner, extensions: extensions,
 		intervals: intervals, startupGrace: 30 * time.Second,
 	}
 	s.tasks = append(s.tasks, &task{
@@ -135,11 +136,11 @@ func New(st *store.Store, lib *service.Library, search *service.SearchService,
 				interval: intervals.VolumeSweep, tick: s.tickVolumes,
 			})
 	}
-	if importer != nil {
+	if files != nil {
 		// On demand only: applies the media settings to existing files.
 		s.tasks = append(s.tasks, &task{
 			slug: OrganizeLibrary, name: "Organize Library Files",
-			tick: importer.RunLibraryOrganize,
+			tick: files.RunLibraryOrganize,
 		})
 	}
 	s.tasks = append(s.tasks, &task{
@@ -162,8 +163,8 @@ func New(st *store.Store, lib *service.Library, search *service.SearchService,
 // history beyond what the UI shows are pruned.
 func (s *Scheduler) tickHousekeeping(ctx context.Context) error {
 	var trashErr error
-	if s.importer != nil {
-		trashErr = s.importer.PurgeExpiredTrash(ctx)
+	if s.files != nil {
+		trashErr = s.files.PurgeExpiredTrash(ctx)
 	}
 	if n, err := s.store.PruneFinishedQueue(ctx, 200); err != nil {
 		return errors.Join(trashErr, err)

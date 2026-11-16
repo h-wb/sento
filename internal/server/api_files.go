@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/h-wb/sento/internal/service"
 )
 
 // File handlers: listing, scoring, mapping and deleting files, plus the
@@ -61,7 +63,7 @@ func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.importer.DeleteFile(r.Context(), fid); err != nil {
+	if err := s.files.DeleteFile(r.Context(), fid); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -83,7 +85,7 @@ func (s *Server) handleRemapFile(w http.ResponseWriter, r *http.Request) {
 	}
 	// Mapping the file may displace bettered owners (upgrade path); the
 	// response says which, so the UI can report the replacement.
-	mapping, err := s.importer.ApplySafeFileMapping(r.Context(), id, fid, body.Books, body.Replace)
+	mapping, err := s.files.ApplySafeFileMapping(r.Context(), id, fid, body.Books, body.Replace)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -98,7 +100,7 @@ func (s *Server) handlePlanOrganize(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	changes, err := s.importer.PlanOrganize(r.Context(), sid)
+	changes, err := s.files.PlanOrganize(r.Context(), sid)
 	respondList(w, changes, err)
 }
 
@@ -107,7 +109,7 @@ func (s *Server) handleCheckFiles(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.store.CheckFilePresence(r.Context(), sid); err != nil {
+	if err := service.CheckFilePresence(r.Context(), s.store, sid); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -124,7 +126,7 @@ func (s *Server) handleCleanupPreview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid edition ID")
 		return
 	}
-	files, err := s.importer.CleanupPreview(r.Context(), sid, eid)
+	files, err := s.files.CleanupPreview(r.Context(), sid, eid)
 	respondList(w, files, err)
 }
 func (s *Server) handleCleanupFiles(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +138,7 @@ func (s *Server) handleCleanupFiles(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	result, err := s.importer.CleanupFiles(r.Context(), sid, body.EditionID, body.FileIDs, body.RetentionDays)
+	result, err := s.files.CleanupFiles(r.Context(), sid, body.EditionID, body.FileIDs, body.RetentionDays)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -160,7 +162,7 @@ func (s *Server) handleRestoreTrash(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.importer.RestoreTrashedFile(r.Context(), sid, fid); err != nil {
+	if err := s.files.RestoreTrashedFile(r.Context(), sid, fid); err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -175,7 +177,7 @@ func (s *Server) handlePurgeTrash(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.importer.PurgeTrashedFile(r.Context(), sid, fid); err != nil {
+	if err := s.files.PurgeTrashedFile(r.Context(), sid, fid); err != nil {
 		writeErr(w, err)
 		return
 	}

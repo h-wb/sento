@@ -1,6 +1,5 @@
-.rows { border: 1px solid var(--mantine-color-default-border); border-radius: var(--mantine-radius-md); overflow: hidden; }
-.row { padding: 8px 12px; border-top: 1px solid var(--mantine-color-default-border); border-left: 3px solid transparent; }
-.row:first-child { border-top: 0; }
+.rows { composes: list from '../styles/list.module.css'; }
+.row { composes: item from '../styles/list.module.css'; padding: 8px 12px; border-left: 3px solid transparent; }
 .row[data-status='ready'] { border-left-color: var(--mantine-color-green-6); }
 .row[data-status='review'] { border-left-color: var(--mantine-color-orange-6); }
 .row[data-status='queued'] { border-left-color: var(--mantine-color-blue-6); }

@@ -13,7 +13,7 @@ import (
 // progress comes from the stored observation and the provider's live state.
 func withLiveProgress(registry *provider.Registry, item *store.QueueItem) {
 	observed, _ := time.Parse(time.RFC3339, item.ObservedAt)
-	if time.Since(observed) > 5*time.Minute {
+	if time.Since(observed) > observationGap {
 		item.Stalled = false
 	}
 	if item.Status != store.QueueDownloading {

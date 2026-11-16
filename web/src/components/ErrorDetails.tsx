@@ -6,7 +6,7 @@ export function ErrorDetails({ error, title = 'Error details' }: { error: string
   return (
     <>
       <Stack gap={3} style={{ minWidth: 0 }}>
-        <Text size="xs" c="red" lineClamp={2} style={{ overflowWrap: 'anywhere' }}>{error}</Text>
+        <Text size="xs" c="red" lineClamp={2} className="wrapAnywhere">{error}</Text>
         <Button variant="subtle" color="gray" size="compact-xs" style={{ alignSelf: 'flex-start' }} onClick={() => setOpened(true)}>View error</Button>
       </Stack>
       <Modal opened={opened} onClose={() => setOpened(false)} title={title} size="lg" centered>

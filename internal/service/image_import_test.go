@@ -47,7 +47,7 @@ func TestLoosePagesImportInNaturalOrderAndKeepOriginals(t *testing.T) {
 		writePage(t, filepath.Join(dir, f), uint8(10+i))
 	}
 	claims, _ := json.Marshal([]store.BookRef{modelRef(col, books[0], version)})
-	im := NewImporter(st, provider.NewRegistry(), root, nil)
+	im := testImporter(st, provider.NewRegistry(), root, nil)
 	if err := im.importFiles(ctx, store.QueueItem{SeriesID: id, Title: "ONE PIECE v01", Protocol: "torrent", Books: claims}, dir, files); err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestLoosePagesAmbiguityAndEscapingPaths(t *testing.T) {
 			rel := filepath.Join(folder, "page.png")
 			writePage(t, filepath.Join(dir, rel), 1)
 			claims, _ := json.Marshal([]store.BookRef{modelRef(col, books[0], version)})
-			im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+			im := testImporter(st, provider.NewRegistry(), t.TempDir(), nil)
 			if err := im.importFiles(context.Background(), store.QueueItem{SeriesID: id, Protocol: "torrent", Books: claims}, dir, []string{rel}); err == nil {
 				t.Fatal("ambiguous image folder claimed a book")
 			}
@@ -144,7 +144,7 @@ func TestOverlappingPackImportKeepsFullContentsButClaimsSubset(t *testing.T) {
 	name := "ONE PIECE v01-v03 (Digital) [English].cbz"
 	writeCBZ(t, filepath.Join(dir, name), "pack")
 	claims, _ := json.Marshal([]store.BookRef{modelRef(col, books[2], version)})
-	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+	im := testImporter(st, provider.NewRegistry(), t.TempDir(), nil)
 	if err := im.importFiles(ctx, store.QueueItem{SeriesID: id, Protocol: "torrent", Title: name, Books: claims}, dir, []string{name}); err != nil {
 		t.Fatal(err)
 	}

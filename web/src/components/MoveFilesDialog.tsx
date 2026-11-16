@@ -231,7 +231,7 @@ export function MoveFilesDialog({
               {/* What cannot move comes first: it is what needs a look. */}
               {[...refused, ...moved].map((r) => (
                 <div key={r.file.fileId} className={classes.move}>
-                  <Text size="sm" style={{ overflowWrap: 'anywhere' }}>
+                  <Text size="sm" className="wrapAnywhere">
                     {fileName(r.file.path)}
                   </Text>
                   <Text size="xs" c={r.usable.length ? 'dimmed' : 'orange'}>

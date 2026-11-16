@@ -183,7 +183,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 	for _, refs := range contents {
 		contentBooks = append(contentBooks, refs...)
 	}
-	fid, err := im.store.AddFile(ctx, store.File{ContentBooks: contentBooks, SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol, Facts: facts, Claims: claims, Hash: hash, HashStat: hashStat, NeedsReview: review, ParserVersion: parse.Version}, parsed, links)
+	fid, err := im.store.AddFile(ctx, store.File{ContentBooks: contentBooks, SeriesID: item.SeriesID, Path: path, Size: fi.Size(), Provenance: item.Protocol, Facts: facts, Claims: claims, Hash: hash, HashStat: hashStat, NeedsReview: review, ParserVersion: parse.Version}, FilePresence(path), parsed, links)
 	if err == nil {
 		// The import claims its books; if a better file already holds one,
 		// this one yields (automatic upgrades only — review can force).
@@ -191,7 +191,7 @@ func (im *Importer) recordAsset(ctx context.Context, item store.QueueItem, path 
 		for _, l := range links {
 			refs = append(refs, store.BookRef{Ledger: l.Ledger, EditionID: l.EditionID, Number: l.Number, VersionID: l.VersionID, BookID: l.BookID})
 		}
-		if _, uerr := im.DisplaceOwners(ctx, item.SeriesID, fid, refs, false); uerr != nil {
+		if _, uerr := im.files.DisplaceOwners(ctx, item.SeriesID, fid, refs, false); uerr != nil {
 			slog.Warn("applying upgrade path after import failed", "series", item.SeriesID, "file", fid, "error", uerr)
 		}
 	}
@@ -292,6 +292,6 @@ func (im *Importer) importReviewFile(ctx context.Context, item store.QueueItem, 
 	}
 	// The signature of the installed copy, read after install: a later write
 	// to the shared inode changes it, so review re-reads the archive then.
-	_, err = im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: dest, Size: info.Size(), Provenance: item.Protocol, NeedsReview: true, Unrequested: true, Facts: facts, Claims: claims, Hash: hash, HashStat: statSignature(info), ParserVersion: parse.Version}, parsed, nil)
+	_, err = im.store.AddFile(ctx, store.File{SeriesID: item.SeriesID, Path: dest, Size: info.Size(), Provenance: item.Protocol, NeedsReview: true, Unrequested: true, Facts: facts, Claims: claims, Hash: hash, HashStat: statSignature(info), ParserVersion: parse.Version}, FilePresence(dest), parsed, nil)
 	return err
 }

@@ -89,7 +89,7 @@ export function EditionCard({
         <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
           <div style={{ minWidth: 0 }}>
             <Group gap="xs">
-              <Text fw={600} style={{ overflowWrap: 'anywhere' }}>
+              <Text fw={600} className="wrapAnywhere">
                 {title}
               </Text>
               <EditionOrigin edition={c} href={catalogUrl} />

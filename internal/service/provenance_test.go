@@ -22,8 +22,8 @@ func TestRescanAdoptsATaggedFileFromItsNotes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, nil, t.TempDir(), nil)
-	info := im.newPlacement(DefaultMediaSettings(), series).info(ctx, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{
+	im := testImporter(st, nil, t.TempDir(), nil)
+	info := im.files.newPlacement(DefaultMediaSettings(), series).info(ctx, []store.BookRef{modelRef(c, ws[1], version)}, tagSource{
 		Release: "ONE PIECE v02 (Digital) (1r0n)", Group: "1r0n", Via: "torrent", Site: "Nyaa",
 		Flags: map[string]bool{"digital": true, "raw": false},
 	})
@@ -85,16 +85,16 @@ func TestTagsTellPublishedFromFanTranslated(t *testing.T) {
 	_, st, sid, c, ws, version := modelFixture(t)
 	ctx := context.Background()
 	series, _ := st.GetSeries(ctx, sid)
-	im := NewImporter(st, nil, t.TempDir(), nil)
+	im := testImporter(st, nil, t.TempDir(), nil)
 	if c.Publisher == "" {
 		t.Fatal("the fixture edition needs a publisher")
 	}
 	slots := []store.BookRef{modelRef(c, ws[0], version)}
-	fan := im.newPlacement(DefaultMediaSettings(), series).info(ctx, slots, tagSource{Group: "Some Scans", Via: "source"})
+	fan := im.files.newPlacement(DefaultMediaSettings(), series).info(ctx, slots, tagSource{Group: "Some Scans", Via: "source"})
 	if fan.Publisher != "" || fan.Translator != "Some Scans" {
 		t.Fatalf("fan translation tagged as %+v", fan)
 	}
-	official := im.newPlacement(DefaultMediaSettings(), series).info(ctx, slots, tagSource{Group: "MANGA Plus", Via: "source", Flags: map[string]bool{"official": true}})
+	official := im.files.newPlacement(DefaultMediaSettings(), series).info(ctx, slots, tagSource{Group: "MANGA Plus", Via: "source", Flags: map[string]bool{"official": true}})
 	if official.Publisher != c.Publisher || official.Translator != "" {
 		t.Fatalf("official source tagged as %+v", official)
 	}

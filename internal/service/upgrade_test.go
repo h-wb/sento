@@ -19,7 +19,7 @@ func TestUpgradePathDisplacesOnlyBetterFiles(t *testing.T) {
 	t.Parallel()
 	lib, st, sid, standard, books, version := modelFixture(t)
 	ctx := context.Background()
-	im := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil)
+	im := testImporter(st, provider.NewRegistry(), t.TempDir(), nil)
 	fidDigital, err := st.AddFormat(ctx, profile.Format{Name: "Digital", Conditions: []profile.Condition{{Type: profile.CondFlag, Value: "digital"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +45,7 @@ func TestUpgradePathDisplacesOnlyBetterFiles(t *testing.T) {
 		}
 		facts.Title = name
 		facts.FactsKnown = true
-		fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Size: 13, Facts: facts}, nil, links)
+		fid, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: path, Size: 13, Facts: facts}, FilePresence(path), nil, links)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -68,7 +68,7 @@ func TestUpgradePathDisplacesOnlyBetterFiles(t *testing.T) {
 
 	// A better file (Digital flag, +100): mapping it displaces the old one.
 	better := addFile("ONE PIECE v01 (Digital).cbz", store.AssetFacts{Flags: map[string]bool{"digital": true}}, nil)
-	res, err := im.ApplyUpgrades(ctx, sid, better, []store.BookRef{slot}, false)
+	res, err := im.files.ApplyUpgrades(ctx, sid, better, []store.BookRef{slot}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestUpgradePathDisplacesOnlyBetterFiles(t *testing.T) {
 	// A worse file (score 0 against the digital owner's 100) does not
 	// displace; it is kept as an extra.
 	worse := addFile("ONE PIECE v01 [repack].cbz", store.AssetFacts{}, nil)
-	res, err = im.ApplyUpgrades(ctx, sid, worse, []store.BookRef{slot}, false)
+	res, err = im.files.ApplyUpgrades(ctx, sid, worse, []store.BookRef{slot}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestUpgradePathDisplacesOnlyBetterFiles(t *testing.T) {
 	}
 
 	// Force replaces even a better current owner.
-	res, err = im.ApplyUpgrades(ctx, sid, worse, []store.BookRef{slot}, true)
+	res, err = im.files.ApplyUpgrades(ctx, sid, worse, []store.BookRef{slot}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestUpgradePathDisplacesOnlyBetterFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	best := addFile("ONE PIECE v01 (Digital) (Premium).cbz", store.AssetFacts{Flags: map[string]bool{"digital": true, "premium": true}}, nil)
-	res, err = im.ApplyUpgrades(ctx, sid, best, []store.BookRef{slot}, false)
+	res, err = im.files.ApplyUpgrades(ctx, sid, best, []store.BookRef{slot}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -100,7 +100,7 @@ func TestFileHashStatFollowsItsFingerprint(t *testing.T) {
 	if err := conn.QueryRowContext(ctx, `INSERT INTO series (mangabaka_id,title,sort_title,raw_json) VALUES (999993,'Stat','stat','{}') RETURNING id`).Scan(&sid); err != nil {
 		t.Fatal(err)
 	}
-	fid, err := s.AddFile(ctx, File{SeriesID: sid, Path: "/library/a.cbz", Hash: "one", HashStat: "sig-one", Presence: "present"}, nil, nil)
+	fid, err := s.AddFile(ctx, File{SeriesID: sid, Path: "/library/a.cbz", Hash: "one", HashStat: "sig-one", Presence: "present"}, "unknown", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

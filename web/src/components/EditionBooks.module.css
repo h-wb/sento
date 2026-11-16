@@ -37,14 +37,13 @@
 .dot[data-tone='review'] { background: var(--mantine-color-yellow-6); }
 .dot[data-tone='upcoming'] { background: transparent; border: 1px dashed var(--mantine-color-dimmed); }
 
-.rows { border: 1px solid var(--mantine-color-default-border); border-radius: var(--mantine-radius-md); overflow: hidden; }
+.rows { composes: list from '../styles/list.module.css'; }
 .row {
+  composes: item from '../styles/list.module.css';
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 36px;
   padding: 2px 8px;
-  border-top: 1px solid var(--mantine-color-default-border);
 }
-.row:first-child { border-top: 0; }
 .rowDetail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

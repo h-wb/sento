@@ -53,7 +53,7 @@ func TestSourceFailureQueueRecovery(t *testing.T) {
 			if _, err = conn.ExecContext(ctx, createdQuery, qid); err != nil {
 				t.Fatal(err)
 			}
-			im := NewImporter(st, provider.NewRegistry(p), t.TempDir(), nil)
+			im := testImporter(st, provider.NewRegistry(p), t.TempDir(), nil)
 			for attempt := 0; attempt < 6; attempt++ {
 				before := time.Now().Add(time.Hour)
 				if _, err = im.ProcessQueue(ctx); err != nil {
@@ -101,7 +101,7 @@ func TestSourceFailureQueueRecovery(t *testing.T) {
 				if _, err = conn.ExecContext(ctx, query, qid); err != nil {
 					t.Fatal(err)
 				}
-				im = NewImporter(st, provider.NewRegistry(p), t.TempDir(), nil)
+				im = testImporter(st, provider.NewRegistry(p), t.TempDir(), nil)
 			}
 		})
 	}
@@ -123,7 +123,7 @@ func TestGoneSourceListingIsBlocklisted(t *testing.T) {
 	if err = st.SetQueueExternalID(ctx, qid, "remote"); err != nil {
 		t.Fatal(err)
 	}
-	im := NewImporter(st, provider.NewRegistry(p), t.TempDir(), nil)
+	im := testImporter(st, provider.NewRegistry(p), t.TempDir(), nil)
 	if _, err = im.ProcessQueue(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestAListingThatKeepsFailingIsSwitchedOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &recoveryProvider{stateErr: &provider.DownloadError{Err: errors.New("page 3: host: Not a local file header"), Dead: true}}
-	im := NewImporter(st, provider.NewRegistry(p), t.TempDir(), nil)
+	im := testImporter(st, provider.NewRegistry(p), t.TempDir(), nil)
 	state := func() string {
 		bindings, _ := st.ListBindings(ctx, sid)
 		for _, b := range bindings {
@@ -207,7 +207,7 @@ func TestTryAnotherGivesUpTheRelease(t *testing.T) {
 	if err := st.UpdateQueueItem(ctx, importing, store.QueueImporting, ""); err != nil {
 		t.Fatal(err)
 	}
-	targets, err := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil).TryAnother(ctx, []int64{stuck, importing})
+	targets, err := testImporter(st, provider.NewRegistry(), t.TempDir(), nil).TryAnother(ctx, []int64{stuck, importing})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,11 +237,11 @@ func TestTryAnotherPreservesImportReview(t *testing.T) {
 	if err = st.UpdateQueueItem(ctx, qid, store.QueueNeedsReview, "partial import"); err != nil {
 		t.Fatal(err)
 	}
-	_, err = st.AddFile(ctx, store.File{SeriesID: sid, Path: t.TempDir() + "/review.cbz", NeedsReview: true, Facts: store.AssetFacts{ReleaseKey: "review-pack"}}, nil, nil)
+	_, err = addFile(ctx, st, store.File{SeriesID: sid, Path: t.TempDir() + "/review.cbz", NeedsReview: true, Facts: store.AssetFacts{ReleaseKey: "review-pack"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	targets, err := NewImporter(st, provider.NewRegistry(), t.TempDir(), nil).TryAnother(ctx, []int64{qid})
+	targets, err := testImporter(st, provider.NewRegistry(), t.TempDir(), nil).TryAnother(ctx, []int64{qid})
 	if err != nil || len(targets) != 0 {
 		t.Fatalf("recovery = %v, %v", targets, err)
 	}
@@ -299,7 +299,7 @@ func TestBrokenListingRetiresRemainingQueuedDownloads(t *testing.T) {
 		}
 		ids = append(ids, qid)
 	}
-	if _, err = NewImporter(st, provider.NewRegistry(p), t.TempDir(), nil).ProcessQueue(ctx); err != nil {
+	if _, err = testImporter(st, provider.NewRegistry(p), t.TempDir(), nil).ProcessQueue(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if p.attempts != 3 {
@@ -350,4 +350,19 @@ func TestListingSuccessAndManualEnableResetFailures(t *testing.T) {
 	fail(false)
 	fail(false)
 	fail(true)
+}
+
+func TestQueueRetryAtCapsTheBackoffButNotTheSourceDeadline(t *testing.T) {
+	now := time.Now()
+	if at := queueRetryAt(0, time.Time{}); at.Before(now.Add(30*time.Second)) || at.After(time.Now().Add(30*time.Second)) {
+		t.Fatalf("first retry at %v, want 30s after %v", at, now)
+	}
+	capped := queueRetryAt(6, time.Time{})
+	if got := queueRetryAt(20, time.Time{}); got.Sub(capped) > time.Second || capped.Sub(got) > time.Second {
+		t.Fatalf("backoff not capped: %v vs %v", got, capped)
+	}
+	deadline := now.Add(24 * time.Hour)
+	if got := queueRetryAt(20, deadline); !got.Equal(deadline) {
+		t.Fatalf("source deadline %v not kept: %v", deadline, got)
+	}
 }

@@ -19,7 +19,7 @@ func TestPrepareLibraryRootChecksMovedFiles(t *testing.T) {
 	old, root := t.TempDir(), t.TempDir()
 	src := filepath.Join(old, "book.cbz")
 	writeCBZ(t, src, "book")
-	if _, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: src, Size: 1, Provenance: "scan"}, nil, nil); err != nil {
+	if _, err := addFile(ctx, st, store.File{SeriesID: sid, Path: src, Size: 1, Provenance: "scan"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := PrepareLibraryRoot(ctx, st, old); err != nil {
@@ -71,7 +71,7 @@ func TestPrepareLibraryRootNormalizesLegacyRelativePaths(t *testing.T) {
 	if err := st.SetSeriesPath(ctx, sid, relative); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.AddFile(ctx, store.File{SeriesID: sid, Path: src, Size: 1, Provenance: "scan"}, nil, nil); err != nil {
+	if _, err := addFile(ctx, st, store.File{SeriesID: sid, Path: src, Size: 1, Provenance: "scan"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := PrepareLibraryRoot(ctx, st, relative); err != nil {

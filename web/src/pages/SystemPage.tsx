@@ -99,7 +99,7 @@ export default function SystemPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <Text size="sm">{issue.message}</Text>
                     {issue.detail && (
-                      <Text size="xs" c="dimmed" style={{ overflowWrap: 'anywhere' }}>
+                      <Text size="xs" c="dimmed" className="wrapAnywhere">
                         {issue.detail}
                       </Text>
                     )}

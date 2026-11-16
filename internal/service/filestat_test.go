@@ -138,7 +138,7 @@ func TestReviewChoicesTrustRecordedSignature(t *testing.T) {
 		t.Fatalf("preview read the archive despite its recorded signature: %v", err)
 	}
 	choice := ReviewFileChoice{FileID: fid, Disposition: "keep", Use: []store.BookRef{plan.Files[0].Books[0].Book}}
-	if _, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
+	if _, err = testImporter(st, nil, root, nil).files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
 		t.Fatalf("apply read the archive despite its recorded signature: %v", err)
 	}
 }
@@ -181,7 +181,7 @@ func TestApplyReviewChoicesRejectsArchiveChangedSincePreview(t *testing.T) {
 			changeKeepingTimes(t, fileRow(t, st, sid, fid).Path, change)
 			settleArchives(t) // so only the token's signature reveals it
 			choice := ReviewFileChoice{FileID: fid, Disposition: "keep", Use: []store.BookRef{plan.Files[0].Books[0].Book}}
-			_, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}})
+			_, err = testImporter(st, nil, root, nil).files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}})
 			if !errors.Is(err, apperr.ErrConflict) {
 				t.Fatalf("apply accepted an archive changed since its preview: %v", err)
 			}
@@ -221,7 +221,7 @@ func TestScanTrustsRecordedSignature(t *testing.T) {
 	// A presence check marks the file checked without reading it, so only
 	// the signature can reveal a rewrite that kept its size and mtime.
 	changeKeepingTimes(t, f.Path, archiveChanges["rewritten in place"])
-	if err = st.CheckFilePresence(ctx, sid); err != nil {
+	if err = CheckFilePresence(ctx, st, sid); err != nil {
 		t.Fatal(err)
 	}
 	f = fileRow(t, st, sid, fid)
@@ -286,7 +286,7 @@ func TestScanBackfillsSignatureForUntouchedLegacyFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fid, err := st.AddFile(ctx, store.File{
+	fid, err := addFile(ctx, st, store.File{
 		SeriesID: sid, Path: path, Size: info.Size(), Hash: hash, Presence: "present",
 		Facts: store.AssetFacts{Title: "legacy.cbz", FactsKnown: true},
 	}, nil, nil)
@@ -330,7 +330,7 @@ func TestApplyReviewChoicesAcceptsArchiveSettledSincePreview(t *testing.T) {
 	}
 	settleArchives(t)
 	choice := ReviewFileChoice{FileID: fid, Disposition: "keep", Use: []store.BookRef{plan.Files[0].Books[0].Book}}
-	if _, err = NewImporter(st, nil, root, nil).ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
+	if _, err = testImporter(st, nil, root, nil).files.ApplyReviewChoices(ctx, sid, ReviewApplyRequest{Request: req, Token: plan.Token, Choices: []ReviewFileChoice{choice}}); err != nil {
 		t.Fatalf("apply rejected an unchanged archive: %v", err)
 	}
 }
