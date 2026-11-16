@@ -310,6 +310,12 @@ and **per-series** ("add series, I already have files at …").
 **Root folders** are a first-class config concept (multiple allowed); the
 `{library}` token in naming templates resolves against the series' root.
 
+*Correction (2026-11-16):* there is one library root, the configured
+`library.path` (env `SENTO_LIBRARY_PATH`), recorded in the settings table
+at startup by `PrepareLibraryRoot`; no `{library}` token exists in the
+naming templates (`{collectionId}` is an older name of `{editionId}` and
+still renders), see [domain/naming.md](../domain/naming.md#tokens).
+
 **Series identification**, evidence in trust order (first hit wins, all
 recorded in the import trace):
 
@@ -318,6 +324,12 @@ recorded in the import trace):
 2. MangaBaka ID in the folder name (`[mangabaka-377]`, our own layout).
 3. `ComicInfo.xml` `Series` field from contained archives (komf-tagged and
    reader-managed libraries have good data here).
+
+   *Correction (2026-11-16):* only archives Sento itself tagged are read:
+   their `Notes` provenance line (`sento:v1`), from at most 20 `.cbz`
+   files in the folder, 3 of them agreeing; the title proposed is those
+   archives' own `Series` field. ComicInfo written by other tools is not
+   used, see [domain/metadata.md](../domain/metadata.md#reading-it-back).
 4. Blind parse of the folder name (parser §titles) → MangaBaka search.
 
 Bulk search is throttled to MangaBaka's 30 searches/min — the import runs
@@ -327,11 +339,23 @@ the rest land in a review screen (suggestions + manual search), exactly like
 Sonarr's import mapping page. Unmatched folders are listed, skippable,
 revisitable.
 
+*Correction (2026-11-16):* `ProposeImports` runs synchronously in the
+request, reads only, and has no throttle and no auto-accept threshold.
+Every folder is proposed with its candidates (the top 5 search results,
+the best `match.Similarity` recorded as `confidence`, 1 for an exact id
+or provenance hit) and the user confirms each one; nothing is added until
+then, see [domain/library-files.md](../domain/library-files.md#importing-an-existing-library).
+
 **Edition assignment**: imported volume files need a monitored collection.
 Heuristics, in order: edition hints in filenames (omnibus/colored/publisher
 tags vs collection descriptors), file count vs collection `count_main`,
 else default to the instance-language standard edition. Always shown and
 editable in the review step `[default]`.
+
+*Correction (2026-11-16):* importing a folder adds the series with
+`Monitor: "all"`, so every volume edition is monitored; there are no
+per-file edition heuristics (`ImportFolder`), see
+[domain/library-files.md](../domain/library-files.md#importing-an-existing-library).
 
 **File linking**: every archive in the series folder is parsed (`file`
 channel, anchored) + ComicInfo `Volume`/`Number` fields used as
@@ -352,6 +376,11 @@ separate, explicit, per-series or bulk action with a dry-run preview.
 **Formats**: CBZ/CBR/ZIP/(PDF/EPUB pass-through) in v1. Folder-of-images
 chapters (Mihon local downloads, HakuNeko) are detected and surfaced but
 not imported; a "pack to CBZ" assist is roadmap (§13).
+
+*Correction (2026-11-16):* downloads already pack folder-of-images into
+CBZ during import (`payloadArchives` in `internal/service/image_import.go`);
+scans skip them because a folder is not a book file (`mediafile.IsBook`),
+see [domain/library-files.md](../domain/library-files.md#scanning).
 
 **Rescan** checks stored file presence and imports newly discovered paths in place. Known paths are retained; ordinary page reads perform no filesystem access. Missing archives under healthy roots become wanted, while unavailable storage blocks acquisition and appears in review.
 
@@ -383,6 +412,8 @@ sections above). What's deliberately deferred, roughly in order:
 4. **RSS sync** via Prowlarr for passive release discovery (§7).
 5. **Folder-of-images adoption** — "pack to CBZ" assist for Mihon/HakuNeko
    style libraries detected during import (§11.4).
+   *Correction (2026-11-16):* downloads already pack them
+   (`payloadArchives`); only scans skip them.
 6. **Richer content relationships** — multilingual chapter editions already exist; automatic equivalence or translation inference remains out of scope.
 
 Explicitly rejected (not deferred): Komga/Kavita scan webhooks — files on

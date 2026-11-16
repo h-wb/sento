@@ -5,9 +5,9 @@ describes itself, for two readers: a comic reader (Komga, Kavita) that
 should show it right, and Sento itself, which should adopt it back exactly
 after a reinstall or a rescan, without guessing from its name (D17).
 
-Only facts are written, never preferences: the release profile and the card
-a file fills are choices you make and can change; what the file is does not
-change. Presentation — the name a reader files the copy under — is a choice
+Only facts are written, never preferences: the release profile and the
+edition a file fills are choices you make and can change; what the file is
+does not change. Presentation — the name a reader files the copy under — is a choice
 too, so it is written but never read back for identity (D18): a rescan
 adopts a file from its `Notes` line, not from its `Series`.
 
@@ -29,6 +29,36 @@ elements they do not know.
 | Group | `ScanInformation` | `1r0n` |
 | Variant facts | `Notes` `flags:` (the release's flags, as profiles match them) | `flags:colored,digital` |
 | The release | `Notes` `release:`, `via:`, `site:` | `release:"Nausicaa Deluxe v01 (Digital)"` |
+
+## How each field is filled
+
+`placement.info` builds the ComicInfo for one file from the series, its
+edition and the books it holds; `mediafile.Process` merges it into the
+archive (below). Where each written field comes from:
+
+| Field | Filled from |
+| --- | --- |
+| `Series`, `SeriesGroup` | the copy's presented fields, rendered from the templates |
+| `Volume` / `Number` | the book's number; a volume carries `Volume` only, a chapter `Number` only. When the book's number is unknown, both are cleared and `Title` is the book's label instead |
+| `Count` | the series' final volume or total chapters, only when the series is completed |
+| `Title` | the book's subtitle from MangaBaka; `Volumes 1–3` (or `Chapters 1–8`) when the file holds several books |
+| `Summary` | the book's description from MangaBaka, else the series' |
+| `Year`, `Month`, `Day` | the book's release date, else the series' year |
+| `Writer`, `Penciller` | MangaBaka's authors and artists |
+| `Genre` | MangaBaka's genres, title-cased |
+| `Tags` | MangaBaka's tags, capped at 30 (`maxTags`) |
+| `AgeRating` | mapped from MangaBaka's content rating: `suggestive` → `Teen`, `erotica` → `Mature 17+`, `pornographic` → `Adults Only 18+` |
+| `Web` | `https://mangabaka.org/{seriesId}` |
+| `LanguageISO` | the edition's language |
+| `Publisher` | the edition's publisher, except for a fan translation |
+| `Translator` | the group, for a fan translation (an extension source without the `official` flag) |
+| `Format` | the edition's kind as `parse.ReadEdition` reads its name, minus a trailing "edition"; `Box Set` for a box; empty for a standard edition |
+| `Manga` | `YesAndRightToLeft` for manga |
+| `ScanInformation` | the release group |
+| `GTIN` | the book's ISBN |
+| `PageCount` | the pages in the archive, set by `Process` |
+| `Notes` | Sento's provenance line (below) |
+| `LocalizedSeries`, `Imprint` | kept as the file had them on merge |
 
 ## Presented fields: the name a reader files a copy under
 
@@ -88,6 +118,71 @@ the line can grow without a version bump.
 | `site` | the indexer or source it came from |
 | `flags` | the release's flags that hold |
 
+## The merge: what a re-tag keeps
+
+`mediafile.Process` rewrites a zip or rar archive into a clean CBZ: pages
+byte-for-byte as they were (zip members raw-copied, images stored rather
+than deflated), one common top folder flattened, junk entries and
+duplicate names dropped, and `ComicInfo.xml` replaced. The result is
+written to a `.sento-import-*` temp in the destination folder, chmod 0644,
+then renamed onto the destination, so a reader never sees a half-written
+file. An archive with no image members is refused.
+
+This diagram shows one `Process` run:
+
+```mermaid
+flowchart TD
+    A["Process(src, dest, info)"] --> B["walk every member of the archive"]
+    B --> C["strip the single common top folder"]
+    C --> D{"what the member is"}
+    D -->|"junk or a duplicate name"| E["dropped"]
+    D -->|"ComicInfo.xml"| F["read as existing"]
+    D -->|"ComicInfo.orig.xml"| G["read as original"]
+    D -->|"any other file"| H["copied, raw for zip members"]
+    H --> I{"info given?"}
+    I -->|"no"| J["existing ComicInfo.xml written back"]
+    I -->|"yes"| K["merged over existing, or over orig when existing is Sento's"]
+    K --> L["ComicInfo.xml written, orig preserved once"]
+    J --> M["temp chmod 0644"]
+    L --> M
+    M --> N["renamed onto dest"]
+```
+
+The merge rules (`mediafile.Merge`):
+
+- `Number` and `Volume` are always Sento's, even when empty: a source's
+  own guess (often a mis-parsed year) never survives a volume's absent
+  `Number` or a chapter's absent `Volume`.
+- The presented fields (`Series`, `SeriesGroup`) are written exactly, so
+  a source's own series name never competes with the chosen one.
+- Every other field is overwritten only when Sento's value is non-empty;
+  the source's value survives otherwise, as do the elements Sento does
+  not model (`Extra`, carried verbatim).
+- On a re-tag of a file Sento tagged before (`sento:` in its `Notes`),
+  the merge base is `ComicInfo.orig.xml`, not Sento's earlier tag, so a
+  field the new tag leaves empty does not keep what the earlier one
+  wrote.
+- `ComicInfo.orig.xml` holds the pre-Sento ComicInfo, written once and
+  never overwritten by a later re-tag.
+- `PageCount` is set to the page count of the new archive.
+
+## The fingerprint
+
+A file is identified by its pages alone: `mediafile.Fingerprint` is the
+SHA-256 over the sorted SHA-256s of the archive's image members. Names,
+member order, container format and `ComicInfo.xml` do not enter it, so a
+download and its processed, re-tagged library copy share a fingerprint,
+and re-tagging never changes it. A file that is not an archive, or holds
+no images, is identified by the SHA-256 of its whole bytes instead.
+
+Image members are the extensions `.jpg .jpeg .png .webp .gif .avif .jxl
+.bmp`; junk entries (`Thumbs.db`, `.DS_Store`, `desktop.ini`, `._*`,
+`__MACOSX`) never count.
+
+Archives Sento can read, fingerprint and rewrite are `.cbz .zip .cbr
+.rar` (`mediafile.IsArchive`); `.pdf` and `.epub` are kept as they are
+(`IsBook`). `.7z` and `.cb7` parse as books but are never rewritten.
+
 ## Reading it back
 
 A rescan opens a CBZ's ComicInfo. When its `Notes` line is Sento's and names
@@ -103,5 +198,14 @@ whose archives Sento tagged is proposed as the series they name, with the
 title their `Series` field gives, before its name is looked up. A few
 archives are read; when they name different series, the folder is matched
 by its name instead.
+
+The bulk read behind that step (`taggedSeries`) walks the candidate
+folder, skipping the trash folder, reads at most 20 `.cbz` archives and
+stops after 3 that agree. Each must carry Sento's own provenance in its
+`Notes` (`sento:v1`); the proposal's title is those archives' `Series`
+field, which Sento itself wrote. Archives that disagree make the folder
+fall through to name matching. ComicInfo written by other tools is not
+read for identification; see the correction under
+[spec §11.4](../spec/spec.md#114-existing-library-import--rescan-d14).
 
 Not yet: reading ComicInfo that another tool wrote.

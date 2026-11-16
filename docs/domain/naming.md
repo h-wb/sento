@@ -63,6 +63,49 @@ rendered when the folder is first created); a change of top folders
 re-roots it. Moving the library root itself is a
 [separate operation](../installation.md#moving-the-library).
 
+One book becomes its path level by level: the ledger picks the top
+folder, the copy's render of the series folder picks the folder beside it,
+the book folder nests inside that, the file template names the file, and a
+held path adds the fingerprint or a counter instead of overwriting.
+
+```mermaid
+flowchart TD
+    A["one book of a series"] --> B{"volume or chapter?"}
+    B -->|"volume"| C["volumesRoot top folder"]
+    B -->|"chapter"| D["chaptersRoot top folder"]
+    C --> E["seriesFolder rendered for the copy"]
+    D --> E
+    E --> F["bookFolder levels"]
+    F --> G["volumeFile or chapterFile name"]
+    G --> H{"path already held?"}
+    H -->|"no"| I["the templated path"]
+    H -->|"same content"| J["existing path verified, never replaced"]
+    H -->|"different book on disk"| K["fingerprint added to the name"]
+    H -->|"path recorded in the database"| L[" (n) counter suffix"]
+```
+
+## Media settings reference
+
+Every key stored under the `media` settings key, with its default and what
+it changes. Saving validates the templates first: see
+[What is refused](#what-is-refused). The defaults come from
+`DefaultMediaSettings`; a stored row that fails to unmarshal falls back to
+them (`LoadMediaSettings`).
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `seriesFolder` | `{Series Title} [mangabaka-{seriesId}]` | the series folder template, rendered per copy to place its files |
+| `volumesRoot`, `chaptersRoot` | empty | top folders above the series folder; equal values (both empty by default) keep one folder per series |
+| `bookFolder` | `{edition} [{lang}] ({version})` | folder levels inside the copy's folder, one per `/` |
+| `volumeFile` | `{Series Title} v{volume:00} [{edition}][{lang}].cbz` | the volume file name; must hold `{volume}` |
+| `chapterFile` | `{Series Title} c{chapter:000} [{group}][{lang}].cbz` | the chapter file name; must hold `{chapter}` |
+| `chapterDir` | `chapters` | stored with the settings; no code reads it today |
+| `hashInName` | off | the fingerprint enters every file name, not only on a collision |
+| `renameImports` | on | new imports get the templated name; off keeps the name they arrived with |
+| `alwaysCopy` | off | copy instead of hardlink when installing a file |
+| `writeComicInfo` | on | archives are rewritten as tagged CBZ on import and organize |
+| `readerFields` | `series` = `{Series Title} {version}`, `seriesGroup` = `{Series Title}` | the templates for the presented ComicInfo fields, per copy; an edition may override each |
+
 ## Tokens
 
 Tokens are written `{name}`, in any case. Every token works in every path
@@ -84,7 +127,8 @@ templates, backs the token table on the Media page
 
 A wrapper left empty disappears: `[{group}]` vanishes when there is no
 group, and so does ` ({version})` for a default version. Values lose the
-characters a path cannot hold.
+characters a path cannot hold. An older name still renders:
+`{collectionId}` is an alias of `{editionId}`.
 
 ## What is refused
 
@@ -100,6 +144,29 @@ Saving is refused, and the preview says why under the field, when:
 - a reader template uses `{volume}`, `{chapter}`, `{group}`, `{isbn}` (it
   holds for every book of a copy), uses `{Reader Series}` (the name it
   sets), or renders empty.
+
+## Collisions, name limits and temporary files
+
+A templated name is tamed before use: path-unsafe characters are removed
+and the base name is cut to 120 bytes, rune by rune; a name cut to nothing
+falls back to `book` (`assetPath`). The fingerprint enters the name as
+` [<sha-256>]` before the extension.
+
+An occupied path is never overwritten:
+
+- On disk, `placeAsset` tries the plain name first (unless `hashInName`
+  is on). When it exists, the existing file's fingerprint must match, or
+  the fingerprinted name is used instead (`verifyDestination`).
+- In the database, `files.path` is unique. When another row already
+  records the destination, organize appends ` (2)`, ` (3)`, ... before
+  the extension (`PathTaken`).
+
+While a file is written it passes through temporary names in its folder:
+`.sento-import-*` (the `Process` / `ImportCBZ` temp), `.sento-stage-*` (a
+re-tag staged next to its destination) and `.sento-install-*` (a copy
+staged before its exclusive link). Each is removed when its operation
+ends; a leftover `.sento-import-*` older than one hour is swept on the
+next import into that folder (`cleanStaleTemps`).
 
 ## Names in readers
 
@@ -194,6 +261,60 @@ embedded metadata where the merge would change it.
 Planning loads a series' catalog rows in bulk, so its query count is fixed
 whatever the file count. Moving and re-tagging reuse a file's stored
 fingerprint and only hash its pages when none is recorded.
+
+### How a run plans
+
+`organizePlans` works out every change for one series before anything
+moves, in this order:
+
+1. Load the media settings and the series, and preload the catalog cache
+   in bulk (`catalogCache.preload`): a whole-series plan costs a fixed
+   number of queries whatever the file count. A one-file pass (after a
+   review confirmation) loads rows lazily instead.
+2. Compute the series' volume and chapter folders and every copy's
+   folder (`editionFolders`), plus the `review/` folders inside them.
+3. Pick the placed file for each book of each collected version
+   (`preferredFileOwners`: pin first, then score, then lower id).
+4. For each file, list the books it holds (`fileBooks`), each filed under
+   its edition's default version, else the oldest additional version
+   that claims it.
+5. Decide its fate (`skipReason`): not on disk, not matched to a book
+   yet, or exiled to `review/` when another file is placed for all its
+   books; otherwise compute the target path and name (`planTarget`) and
+   whether its metadata would change (the current `ComicInfo` merged
+   with the new one, compared field by field).
+6. `settleFallbackNames` drops from the plan the files already sitting
+   on their fingerprinted name because a different book keeps the plain
+   one: planning them again would move nothing.
+
+The per-pass cache is the `placement`: the folder map and each copy's
+rendered reader names are built once per run and shared by every file.
+
+### How a run applies
+
+This diagram shows one organize run, from the queued request to the
+status the dialog polls:
+
+```mermaid
+sequenceDiagram
+    participant UI
+    participant Importer
+    participant Store
+    participant Disk
+    UI->>Importer: queue the run (POST /library/organize)
+    Importer->>Importer: library-organize task, one series at a time, under mu
+    Importer->>Importer: plan, then moveOrder (each file after the one on its destination)
+    loop each planned file
+        Importer->>Disk: re-tag staged via mediafile.Process (.sento-stage)
+        Importer->>Disk: installAsset, hardlink or copy, never overwriting
+        Importer->>Store: SetFileLocation with new path, size, fingerprint
+        Importer->>Disk: prune emptied folders up to the library root
+    end
+    loop swapped names, second pass
+        Importer->>Disk: move to the name the other file just left
+    end
+    Importer->>UI: status, renamed and retagged counts, per-series errors
+```
 
 ## API and code
 
