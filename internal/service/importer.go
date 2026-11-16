@@ -157,7 +157,7 @@ func (im *Importer) recordFailure(ctx context.Context, prov provider.Provider, i
 	}
 	if dead || errors.Is(err, errDownloadDead) {
 		// The release is blocklisted: another is looked for now.
-		im.searchAgain(item)
+		im.files.again.add(item)
 	}
 }
 

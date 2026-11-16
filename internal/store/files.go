@@ -45,7 +45,8 @@ type BookLink struct {
 // AddFile records a library file and its book links. Re-adding a known
 // path updates the row in place (paths are unique) and adds any new links,
 // so an import retried after a partial failure converges instead of
-// tripping over what the first attempt already recorded.
+// tripping over what the first attempt already recorded. The presence
+// argument is what gets stored; f.Presence is ignored.
 func (s *Store) AddFile(ctx context.Context, f File, presence string, parse any, links []BookLink) (int64, error) {
 	if err := s.EnsureModels(ctx, f.SeriesID); err != nil {
 		return 0, err

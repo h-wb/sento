@@ -359,9 +359,10 @@ preview cannot race a review commit, and two passes cannot move the same
 archive.
 
 The `Importer` takes the same mutex: `ProcessQueue` holds it for the whole
-pass, and `TryAnother` for one call. `ApplyReviewChoices`, `ApplyUpgrades`,
-`CleanupFiles`, `RestoreTrashedFile`, `PurgeTrashedFile`, `RemoveSeries` and
-`DeleteFile` each take it for one operation.
+pass, and `TryAnother` for one call. `ApplyReviewChoices`,
+`ResolveFileReviews`, `ApplyUpgrades`, `Organize`, `OrganizeReviewedFile`,
+`CleanupFiles`, `RestoreTrashedFile`, `PurgeTrashedFile`, `PurgeExpiredTrash`,
+`RemoveSeries` and `DeleteFile` each take it for one operation.
 
 All of these also take the database's edition locks inside their
 transactions, which is what makes a stale preview safe to reject: the

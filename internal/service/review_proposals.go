@@ -82,6 +82,8 @@ func reviewDetail(code, arg string) string {
 		return "Confirm the edition and books in this file"
 	case "new_chapter":
 		return "New chapter from " + arg
+	case "download":
+		return arg
 	case "source_unmatched":
 		return "Found nothing for this series. Pick the right entry, or turn the source off for it."
 	}

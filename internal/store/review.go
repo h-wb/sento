@@ -136,11 +136,9 @@ func (s *Store) DeclineFiles(ctx context.Context, seriesID int64, fileIDs []int6
 	return res, nil
 }
 
+// ReviewItems lists what waits for review, for one series or all (sid 0).
+// Detail is left empty; Library.ReviewItems fills it in.
 func (s *Store) ReviewItems(ctx context.Context, sid int64) ([]ReviewItem, error) {
-	return s.reviewRows(ctx, sid)
-}
-
-func (s *Store) reviewRows(ctx context.Context, sid int64) ([]ReviewItem, error) {
 	return list[ReviewItem](ctx, s, `
  SELECT 'file-'||CAST(f.id AS TEXT) AS id,'file' AS kind,f.series_id,s.title AS series_title,f.id AS item_id,f.path AS title,
  CASE WHEN f.review_action='trash' AND f.needs_review=TRUE THEN 'trash_changed' WHEN f.review_action='trash' THEN 'trash_pending' WHEN f.presence='unavailable' THEN 'unavailable' WHEN f.presence='unknown' THEN 'unchecked' ELSE 'confirm' END AS detail_code, f.presence_error AS detail_arg, f.presence AS status

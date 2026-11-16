@@ -11,6 +11,7 @@ import (
 	"github.com/h-wb/sento/internal/mediafile"
 	"github.com/h-wb/sento/internal/parse"
 	"github.com/h-wb/sento/internal/profile"
+	"github.com/h-wb/sento/internal/provider"
 	"github.com/h-wb/sento/internal/store"
 )
 
@@ -508,5 +509,112 @@ func TestReviewHintSurvivesWithoutProposal(t *testing.T) {
 		if tc.name == "ONE PIECE v02 (Digital).cbz" && !proposed {
 			t.Errorf("%s: no proposal although the book exists", tc.name)
 		}
+	}
+}
+
+// The sentences review shows are worded from the codes the store reads, the
+// same on either database: a file's state, a pending chapter, an unmatched
+// source, and the reasons a bulk decline leaves a file alone.
+func TestReviewSentences(t *testing.T) {
+	t.Parallel()
+	lib, st, sid, standard, books, version := modelFixture(t)
+	ctx := context.Background()
+	root := t.TempDir()
+
+	unavailable := waitingFile(t, st, sid, root, "ONE PIECE v01 (Digital).cbz", "")
+	if err := st.SetFilePresence(ctx, unavailable, "unavailable", "mount is offline"); err != nil {
+		t.Fatal(err)
+	}
+	unchecked, err := addFile(ctx, st, store.File{SeriesID: sid, Path: root + "/missing.cbz", NeedsReview: true, Unrequested: true}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trashed := waitingScoredFile(t, st, sid, root, "unmatched.cbz", "")
+	files, err := st.ListFiles(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f store.File
+	for _, file := range files {
+		if file.ID == trashed {
+			f = file
+		}
+	}
+	revision, err := st.ReviewRevision(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.CommitFileReviews(ctx, sid, revision, []store.FileReviewWrite{{FileID: trashed, Facts: f.Facts, Hash: f.Hash, Reset: true, Disposition: "trash"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.ObserveBook(ctx, sid, store.BookObservation{EditionID: standard.ID, Source: "Weeb Central", ExternalKey: "ch-1100", Label: "Chapter 1100", Number: 110000}); err != nil {
+		t.Fatal(err)
+	}
+	ix, err := st.AddIndexer(ctx, store.Indexer{Name: "Weeb Central (en)", Protocol: store.IndexerSource, Enabled: true, UseVolumes: true, UseChapters: true, Settings: []byte(`{"sourceId":"42"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = st.AddBinding(ctx, store.Binding{SeriesID: sid, SourceID: strconv.FormatInt(ix, 10), SourceMangaKey: "wrong", SourceName: "Weeb Central (en)", State: "unmatched"}); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := lib.ReviewItems(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	details := map[string]string{}
+	for _, i := range items {
+		details[i.Kind+" "+strconv.FormatInt(i.ItemID, 10)] = i.Detail
+		if i.Kind == "chapter" {
+			details["chapter "+i.Title] = i.Detail
+		}
+	}
+	for key, want := range map[string]string{
+		"file " + strconv.FormatInt(unavailable, 10): "Storage unavailable: mount is offline",
+		"file " + strconv.FormatInt(unchecked, 10):   "File presence has not been checked",
+		"file " + strconv.FormatInt(trashed, 10):     "Moving this rejected incoming file to trash is pending; the move will retry automatically",
+		"chapter Chapter 1100":                       "New chapter from Weeb Central",
+		"source " + strconv.FormatInt(ix, 10):        "Found nothing for this series. Pick the right entry, or turn the source off for it.",
+	} {
+		if got, ok := details[key]; !ok || got != want {
+			t.Errorf("%s: detail %q (listed %v), want %q", key, got, ok, want)
+		}
+	}
+
+	other := testProvider()
+	other.series.MangaBakaID, other.series.Title = 900, "The Enigma of Amigara Fault"
+	other.collections = nil
+	oid, err := NewLibrary(st, other, provider.NewRegistry()).AddSeries(ctx, AddSeriesRequest{MangaBakaID: 900})
+	if err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := waitingFile(t, st, oid, t.TempDir(), "Amigara v01.cbz", "")
+	owned := ownedModelFile(t, st, sid, standard, books[0], version)
+	pinned, err := addFile(ctx, st, store.File{SeriesID: sid, Path: root + "/ONE PIECE v02 (Digital).cbz", NeedsReview: true, Unrequested: true}, nil, []store.BookLink{{Ledger: standard.Type, EditionID: standard.ID, Number: books[1].SequenceNum, VersionID: version.ID, BookID: books[1].ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = st.PinCoverage(ctx, sid, store.AssetCoverage{FileID: pinned, VersionID: version.ID, BookID: books[1].ID, Pinned: true}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := testImporter(st, nil, root, nil).files.ResolveFileReviews(ctx, sid, []int64{elsewhere, owned, pinned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reasons := map[int64]string{}
+	for _, s := range res.Skipped {
+		reasons[s.FileID] = s.Reason
+	}
+	for fid, want := range map[int64]string{
+		elsewhere: "File does not belong to this series",
+		owned:     "File is no longer waiting for review",
+		pinned:    "This archive already has confirmed contents or pins; review its selections individually",
+	} {
+		if got := reasons[fid]; got != want {
+			t.Errorf("file %d skipped with %q, want %q", fid, got, want)
+		}
+	}
+	if len(res.Resolved) != 0 || len(res.Skipped) != 3 {
+		t.Errorf("resolved %v, skipped %+v; want the three files skipped", res.Resolved, res.Skipped)
 	}
 }

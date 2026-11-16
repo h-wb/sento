@@ -35,11 +35,6 @@ func (r *retrySearches) take() []SearchTarget {
 	return out
 }
 
-// searchAgain asks for the job's series to be searched again soon.
-func (im *Importer) searchAgain(item store.QueueItem) {
-	im.files.again.add(item)
-}
-
 // TakeSearches hands over the series to search again, once each.
 func (im *Importer) TakeSearches() []SearchTarget {
 	return im.files.again.take()
