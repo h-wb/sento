@@ -4,6 +4,7 @@ import { api } from '../../api'
 import type { ActivityDownload } from '../../types/service'
 import { notify } from '../../ui'
 import type { BookSelection } from '../BookDialog'
+import { replacementSearch } from '../bookSelection'
 import { useConfirmAction } from '../ConfirmAction'
 import type { DownloadActions } from '../DownloadActivityRow'
 
@@ -53,23 +54,11 @@ export function useDownloadActions({ seriesID, onSources, mutation, confirm, ref
       }),
     replace: (d) => {
       const book = d.unresolvedBooks?.[0] ?? d.job.books?.[0]
-      if (!book?.versionId) return
+      const sel = replacementSearch(book, d.job)
+      if (!sel) return
       setRecovery({
         seriesID: d.job.seriesId,
-        sel: {
-          versionId: book.versionId,
-          editionId: book.editionId,
-          ledger: book.ledger as 'volume' | 'chapter',
-          all: true,
-          number: 0,
-          monitored: true,
-          wanted: true,
-          fileIds: [],
-          autoSearch: true,
-          editionLabel: 'Replacement',
-          replaceQueueId: d.job.id,
-          replaceTitle: d.job.title,
-        },
+        sel,
       })
     },
   }

@@ -18,6 +18,7 @@ Edition,
 File as SeriesFile,
 } from '../types/store'
 import type { BookSelection } from './BookDialog'
+import { bookSelection } from './bookSelection'
 import { BookGrid } from './books/BookGrid'
 import { BookRow } from './books/BookRow'
 import { filters } from './books/bookStatus'
@@ -32,22 +33,6 @@ import { usePaged } from './usePaged'
 // volume runs) open as the list, where every book shows its details.
 const GRID_FROM = 50
 const PAGE_SIZE = 100
-
-function bookSelection(c: Edition, t: CollectedVersion, label: string, s: BookStatus): BookSelection {
-  return {
-    ledger: c.type === 'chapter' ? 'chapter' : 'volume',
-    editionId: c.id,
-    versionId: t.id,
-    bookId: s.book.id,
-    number: s.book.sequenceNum,
-    label: s.book.sequenceStr,
-    editionLabel: label,
-    fileIds: s.fileIds,
-    unusedFileIds: s.onDiskFileIds.filter((id) => !s.fileIds.includes(id)),
-    monitored: s.monitored,
-    wanted: s.wanted,
-  }
-}
 
 export default function EditionBooks({
   seriesID,

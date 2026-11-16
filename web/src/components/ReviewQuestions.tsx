@@ -9,7 +9,8 @@ import { CatalogLink } from './CatalogLink'
 import { fileName } from './editionText'
 import { useReviewDialogs } from './reviewDialogs'
 import { useConfirmAction } from './ConfirmAction'
-import { errorMessage, notify } from '../ui'
+import { useEditor } from './useEditor'
+import { notify } from '../ui'
 
 // One release's files waiting for review: pack-level actions above the
 // per-file questions, which stay visible and answerable on their own.
@@ -67,26 +68,21 @@ export default function ReviewQuestions({
   onSources?: () => void
 }) {
   const qc = useQueryClient()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const editor = useEditor()
   const dialogs = useReviewDialogs()
   const [link, setLink] = useState<{ item: ReviewItem; editions: Edition[] } | null>(null)
   const { confirm, confirmation } = useConfirmAction()
-  const run = async (fn: () => Promise<unknown>) => {
-    setBusy(true)
-    setError('')
-    try {
-      await fn()
-    } catch (e) {
-      setError(errorMessage(e))
-    } finally {
-      await invalidate()
-      setBusy(false)
-    }
-  }
   const invalidate = async () => {
     await invalidateLibrary(qc)
   }
+  const run = (fn: () => Promise<unknown>) =>
+    editor.run(async () => {
+      try {
+        await fn()
+      } finally {
+        await invalidate()
+      }
+    })
   const chapters = items.filter((i) => i.kind === 'chapter')
   const proposed = items.filter((i) => i.proposal)
   // Series with files waiting: one recheck for them all, not one per file.
@@ -207,7 +203,7 @@ export default function ReviewQuestions({
       </Stack>
       <Group gap="xs">
         {i.proposal && (
-          <Button size="xs" disabled={busy} onClick={() => void run(() => accept(i))}>
+          <Button size="xs" disabled={editor.busy} onClick={() => void run(() => accept(i))}>
             Accept
           </Button>
         )}
@@ -220,7 +216,7 @@ export default function ReviewQuestions({
           <>
             <Button
               size="xs"
-              disabled={busy}
+              disabled={editor.busy}
               onClick={() =>
                 void run(async () =>
                   setLink({ item: i, editions: (await api.getSeries(i.seriesId)).editions }),
@@ -232,7 +228,7 @@ export default function ReviewQuestions({
             <Button
               size="xs"
               variant="subtle"
-              disabled={busy}
+              disabled={editor.busy}
               onClick={() =>
                 void run(() => api.declineCatalogLink(i.seriesId, i.itemId, i.relatedId ?? 0))
               }
@@ -260,7 +256,7 @@ export default function ReviewQuestions({
           <>
             <Button
               size="xs"
-              disabled={busy}
+              disabled={editor.busy}
               onClick={() => void run(() => api.reviewObservation(i.seriesId, i.itemId, true))}
             >
               Add chapter
@@ -268,7 +264,7 @@ export default function ReviewQuestions({
             <Button
               size="xs"
               variant="subtle"
-              disabled={busy}
+              disabled={editor.busy}
               onClick={() => void run(() => api.reviewObservation(i.seriesId, i.itemId, false))}
             >
               Dismiss
@@ -281,12 +277,12 @@ export default function ReviewQuestions({
   const rendered = new Set<string>()
   return (
     <Stack gap="sm">
-      {error && <Alert color="red">{error}</Alert>}
+      {editor.error && <Alert color="red">{editor.error}</Alert>}
       {chapters.length > 1 && (
         <Group>
           <Button
             size="xs"
-            disabled={busy}
+            disabled={editor.busy}
             onClick={() =>
               void run(async () => {
                 for (const i of chapters) await api.reviewObservation(i.seriesId, i.itemId, true)
@@ -298,7 +294,7 @@ export default function ReviewQuestions({
           <Button
             size="xs"
             variant="default"
-            disabled={busy}
+            disabled={editor.busy}
             onClick={() =>
               void run(async () => {
                 for (const i of chapters) await api.reviewObservation(i.seriesId, i.itemId, false)
@@ -314,7 +310,7 @@ export default function ReviewQuestions({
           {proposed.length > 1 && (
             <Button
               size="xs"
-              disabled={busy}
+              disabled={editor.busy}
               onClick={() =>
                 void run(async () => {
                   for (const i of proposed) await accept(i)
@@ -328,7 +324,7 @@ export default function ReviewQuestions({
             <Button
               size="xs"
               variant="default"
-              disabled={busy}
+              disabled={editor.busy}
               onClick={() =>
                 void run(async () => {
                   for (const id of fileSeries) await api.checkFiles(id)
@@ -356,7 +352,7 @@ export default function ReviewQuestions({
               title={title}
               note={shared}
               files={pack}
-              busy={busy}
+              busy={editor.busy}
               onDecline={() => decline(pack)}
               onMatch={() =>
                 dialogs.release({ seriesID: i.seriesId, title, files: pack })

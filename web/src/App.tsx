@@ -1,109 +1,45 @@
-import { useActivity } from './components/useActivity'
-import { activityCounts } from './components/activityModel'
 import {
-  ActionIcon,
-  AppShell,
-  Avatar,
-  Badge,
-  Tooltip,
-  Burger,
-  Center,
-  ColorSwatch,
-  Divider,
-  Group,
-  Kbd,
-  Loader,
-  Menu,
-  Modal,
-  NavLink,
-  Table,
-  Text,
-  Title,
-  UnstyledButton,
-  useMantineColorScheme,
+ActionIcon,
+AppShell,
+Burger,
+Center,
+Divider,
+Group,
+Kbd,
+Loader,
+Modal,
+NavLink,
+Text,
+Title,
+Tooltip,
+UnstyledButton
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { NavigationProgress, nprogress } from '@mantine/nprogress'
-import { Spotlight, spotlight, type SpotlightActionData } from '@mantine/spotlight'
-import { lazy, Suspense, useEffect } from 'react'
+import { NavigationProgress,nprogress } from '@mantine/nprogress'
+import { Spotlight,spotlight } from '@mantine/spotlight'
 import {
-  IconAdjustmentsHorizontal,
-  IconBooks,
-  IconCalendar,
-  IconDownload,
-  IconCheck,
-  IconDeviceDesktop,
-  IconFiles,
-  IconMoon,
-  IconPalette,
-  IconPlus,
-  IconSearch,
-  IconServerBolt,
-  IconPlug,
-  IconSun,
-  IconWorldSearch,
-  IconZoomCheck,
+IconBooks,
+IconSearch
 } from '@tabler/icons-react'
-import { useIsFetching, useQuery } from '@tanstack/react-query'
-import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { api } from './api'
-import { seriesQueries } from './queries'
-import { plural } from './format'
-import { versionLabel } from './ui'
+import { useIsFetching,useQuery } from '@tanstack/react-query'
+import { Suspense,useEffect } from 'react'
+import { Link,useLocation,useNavigate } from 'react-router-dom'
 import classes from './App.module.css'
 import { AddSeriesCtx } from './addSeries'
+import { api } from './api'
 import { AddSeriesForm } from './components/AddSeriesForm'
-import { PRESETS, useThemePreset } from './theme'
-import LibraryPage from './pages/LibraryPage'
-
-// Lazy-loaded routes land in their own chunks, fetched only when the route
-// is visited. Library stays eager since it's the landing page.
-const AddPage = lazy(() => import('./pages/AddPage'))
-const SeriesPage = lazy(() => import('./pages/SeriesPage'))
-const CalendarPage = lazy(() => import('./pages/CalendarPage'))
-const QueuePage = lazy(() => import('./pages/QueuePage'))
-const WantedPage = lazy(() => import('./pages/WantedPage'))
-const IndexersPage = lazy(() => import('./pages/IndexersPage'))
-const ConnectionsPage = lazy(() => import('./pages/ConnectionsPage'))
-const MediaPage = lazy(() => import('./pages/MediaPage'))
-const ProfilesPage = lazy(() => import('./pages/ProfilesPage'))
-const SystemPage = lazy(() => import('./pages/SystemPage'))
-
-type NavItem = { to: string; label: string; icon: typeof IconBooks; key: string }
-
-// Day-to-day pages, always on top. `key` is the page's "g <key>" shortcut.
-const primaryLinks: NavItem[] = [
-  { to: '/', label: 'Library', icon: IconBooks, key: 'l' },
-  { to: '/calendar', label: 'Calendar', icon: IconCalendar, key: 'c' },
-  { to: '/queue', label: 'Activity', icon: IconDownload, key: 'a' },
-  { to: '/wanted', label: 'Wanted', icon: IconZoomCheck, key: 'w' },
-]
-// Set-up-once config, ordered to mirror the pipeline: search → download →
-// quality decision → import.
-const configLinks: NavItem[] = [
-  { to: '/indexers', label: 'Indexers', icon: IconWorldSearch, key: 'i' },
-  { to: '/connections', label: 'Connections', icon: IconPlug, key: 'o' },
-  { to: '/profiles', label: 'Profiles', icon: IconAdjustmentsHorizontal, key: 'p' },
-  { to: '/media', label: 'Media', icon: IconFiles, key: 'm' },
-]
-const systemLink: NavItem = { to: '/system', label: 'System', icon: IconServerBolt, key: 's' }
-const allLinks = [...primaryLinks, ...configLinks, systemLink]
-
-const MODES = [
-  { value: 'light', label: 'Light', icon: IconSun },
-  { value: 'dark', label: 'Dark', icon: IconMoon },
-  { value: 'auto', label: 'System', icon: IconDeviceDesktop },
-] as const
-
-const modKey = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl '
-
-// "g" then a page's key jumps to it (Gmail-style sequence); "g n" adds a series.
-const SHORTCUTS: [string[], string][] = [
-  [[`${modKey}K`, '/'], 'Search pages and series'],
-  ...allLinks.map((l): [string[], string] => [[`g ${l.key}`], `Go to ${l.label}`]),
-  [['g n'], 'Add a series'],
-  [['?'], 'Show this help'],
-]
+import { activityCounts } from './components/activityModel'
+import { useActivity } from './components/useActivity'
+import { plural } from './format'
+import { AppRoutes } from './routes'
+import { AppearanceMenu } from './shell/AppearanceMenu'
+import { ActivityBadge } from './shell/NavBadges'
+import { useNavBadges } from './shell/useNavBadges'
+import { ShortcutsHelp } from './shell/ShortcutsHelp'
+import { configLinks,modKey,primaryLinks,systemLink,type NavItem } from './shell/navigation'
+import { useShortcuts } from './shell/useShortcuts'
+import { useSpotlightActions } from './shell/useSpotlightActions'
+import { versionLabel } from './ui'
 
 export default function App() {
   const location = useLocation()
@@ -111,15 +47,11 @@ export default function App() {
   const [navOpened, { toggle: toggleNav, close: closeNav }] = useDisclosure()
   const [helpOpen, { open: openHelp, close: closeHelp }] = useDisclosure(false)
   const [addOpen, { open: openAdd, close: closeAdd }] = useDisclosure(false)
-  const { colorScheme, setColorScheme } = useMantineColorScheme()
-  const { themeId, setThemeId } = useThemePreset()
 
   // Light background polling so the shell can hint at what's going on.
   const status = useQuery({ queryKey: ['status'], queryFn: api.status, refetchInterval: 60_000 })
   const health = useQuery({ queryKey: ['health'], queryFn: api.healthChecks, refetchInterval: 60_000 })
   const activity = useActivity()
-  // Cached library list, shared with LibraryPage — powers ⌘K series search.
-  const seriesList = useQuery(seriesQueries.list())
   const activityCount = activityCounts(activity.data)
   const active = activityCount.attention || activityCount.progress
   const healthy = !status.isError && status.data?.database.ok === true
@@ -131,90 +63,14 @@ export default function App() {
     else nprogress.complete()
   }, [fetching])
 
-  // Global keyboard shortcuts: "/" opens search, "?" shows help, and a
-  // Gmail-style "g <key>" jumps between pages. Ignored while typing.
-  useEffect(() => {
-    let gAt = 0
-    const typing = (el: EventTarget | null) =>
-      el instanceof HTMLElement &&
-      (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return
-      if (e.key === '/') {
-        e.preventDefault()
-        spotlight.open()
-      } else if (e.key === '?') {
-        e.preventDefault()
-        openHelp()
-      } else if (e.key === 'g') {
-        gAt = e.timeStamp
-      } else if (gAt > 0 && e.timeStamp - gAt < 1000) {
-        if (e.key === 'n') {
-          e.preventDefault()
-          openAdd()
-          gAt = 0
-        } else {
-          const link = allLinks.find((l) => l.key === e.key)
-          if (link) {
-            e.preventDefault()
-            navigate(link.to)
-            gAt = 0
-          }
-        }
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [navigate, openHelp, openAdd])
+  useShortcuts(openHelp, openAdd)
 
   const isActive = (to: string) =>
     to === '/' ? location.pathname === '/' || location.pathname.startsWith('/series/') : location.pathname.startsWith(to)
 
-  const toAction = (l: NavItem, group: string): SpotlightActionData => ({
-    id: l.to,
-    label: l.label,
-    group,
-    leftSection: <l.icon size={18} />,
-    onClick: () => navigate(l.to),
-  })
-  const spotlightActions: SpotlightActionData[] = [
-    {
-      id: 'add-series',
-      label: 'Add series',
-      group: 'Actions',
-      leftSection: <IconPlus size={18} />,
-      onClick: openAdd,
-    },
-    ...primaryLinks.map((l) => toAction(l, 'Pages')),
-    ...configLinks.map((l) => toAction(l, 'Configure')),
-    toAction(systemLink, 'Pages'),
-    ...(seriesList.data ?? []).map(
-      (s): SpotlightActionData => ({
-        id: `series-${s.id}`,
-        label: s.title,
-        description: [s.type, s.status].filter(Boolean).join(' · ') || undefined,
-        group: 'Library',
-        leftSection: (
-          <Avatar src={s.coverUrl} size="sm" radius="sm">
-            {s.title.slice(0, 1)}
-          </Avatar>
-        ),
-        onClick: () => navigate(`/series/${s.id}`),
-      }),
-    ),
-  ]
+  const spotlightActions = useSpotlightActions(openAdd)
 
-  const healthIssues = health.data?.issues ?? []
-  const healthSummary = `${healthIssues.length} health ${plural(healthIssues.length, 'issue')}`
-  // The count is announced as a description so the link keeps its name.
-  const healthBadge =
-    healthIssues.length > 0 ? (
-      <Tooltip label={healthSummary}>
-        <Badge aria-hidden size="xs" circle color={healthIssues.some((i) => i.level === 'error') ? 'red' : 'yellow'}>
-          {healthIssues.length}
-        </Badge>
-      </Tooltip>
-    ) : undefined
+  const { healthIssues, healthSummary, healthBadge } = useNavBadges(health.data)
 
   const renderLink = (l: NavItem) => (
     <NavLink
@@ -226,9 +82,7 @@ export default function App() {
       leftSection={<l.icon size={18} />}
       rightSection={
         l.to === '/queue' && active > 0 ? (
-          <Badge size="xs" circle color={activityCount.attention > 0 ? 'orange' : 'brand'}>
-            {active}
-          </Badge>
+          <ActivityBadge active={active} attention={activityCount.attention} />
         ) : l.to === '/system' ? (
           healthBadge
         ) : undefined
@@ -267,42 +121,7 @@ export default function App() {
               </Group>
             </UnstyledButton>
             <ActionIcon hiddenFrom="xs" variant="default" size="lg" aria-label="Search library" onClick={spotlight.open}><IconSearch size={18} /></ActionIcon>
-            <Menu position="bottom-end" withArrow width={220} closeOnItemClick={false}>
-              <Menu.Target>
-                <ActionIcon variant="default" size="lg" radius="md" aria-label="Appearance">
-                  <IconPalette size={18} />
-                </ActionIcon>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Label>Mode</Menu.Label>
-                {MODES.map((m) => (
-                  <Menu.Item
-                    key={m.value}
-                    leftSection={<m.icon size={16} />}
-                    rightSection={
-                      colorScheme === m.value ? <IconCheck size={14} /> : undefined
-                    }
-                    onClick={() => setColorScheme(m.value)}
-                  >
-                    {m.label}
-                  </Menu.Item>
-                ))}
-                <Menu.Divider />
-                <Menu.Label>Theme</Menu.Label>
-                {PRESETS.map((p) => (
-                  <Menu.Item
-                    key={p.id}
-                    leftSection={<ColorSwatch color={p.swatch} size={14} />}
-                    rightSection={
-                      p.id === themeId ? <IconCheck size={14} /> : undefined
-                    }
-                    onClick={() => setThemeId(p.id)}
-                  >
-                    {p.label}
-                  </Menu.Item>
-                ))}
-              </Menu.Dropdown>
-            </Menu>
+            <AppearanceMenu />
           </Group>
         </Group>
       </AppShell.Header>
@@ -336,21 +155,7 @@ export default function App() {
             </Center>
           }
         >
-          <Routes>
-            <Route path="/" element={<LibraryPage />} />
-            <Route path="/add" element={<AddPage />} />
-            <Route path="/series/:id" element={<SeriesPage key={location.pathname} />} />
-            <Route path="/calendar" element={<CalendarPage />} />
-            <Route path="/queue" element={<QueuePage />} />
-            <Route path="/wanted" element={<WantedPage />} />
-            <Route path="/connections" element={<ConnectionsPage />} />
-            {/* The page was called Sources; keep old bookmarks working. */}
-            <Route path="/sources" element={<Navigate to="/connections" replace />} />
-            <Route path="/indexers" element={<IndexersPage />} />
-            <Route path="/profiles" element={<ProfilesPage />} />
-            <Route path="/media" element={<MediaPage />} />
-            <Route path="/system" element={<SystemPage />} />
-          </Routes>
+          <AppRoutes />
         </Suspense>
       </div></AppShell.Main>
         <Spotlight
@@ -365,28 +170,7 @@ export default function App() {
           }}
         />
       </AppShell>
-      <Modal opened={helpOpen} onClose={closeHelp} title="Keyboard shortcuts" centered>
-        <Table verticalSpacing="xs">
-          <Table.Tbody>
-            {SHORTCUTS.map(([keys, desc]) => (
-              <Table.Tr key={desc}>
-                <Table.Td w={140}>
-                  <Group gap={6}>
-                    {keys.map((k) => (
-                      <Kbd key={k} size="sm">
-                        {k}
-                      </Kbd>
-                    ))}
-                  </Group>
-                </Table.Td>
-                <Table.Td>
-                  <Text size="sm">{desc}</Text>
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Modal>
+      <ShortcutsHelp helpOpen={helpOpen} closeHelp={closeHelp} />
       <Modal opened={addOpen} onClose={closeAdd} title="Add series" size="lg">
         <AddSeriesForm
           onDone={(id) => {

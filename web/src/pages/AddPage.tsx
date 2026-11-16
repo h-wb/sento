@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Alert, Badge, Button, Card, Group, Stack, Text, TextInput, Title, Select, Tabs } from '@mantine/core'
 import { IconFolderSearch, IconSearch } from '@tabler/icons-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, type ImportProposal } from '../api'
 import { usePageTitle } from '../ui'
 import { PageHeader } from '../components/PageHeader'
@@ -11,6 +11,7 @@ import { AddSeriesForm } from '../components/AddSeriesForm'
 export default function AddPage() {
   usePageTitle('Add series')
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   return (
     <>
@@ -18,7 +19,7 @@ export default function AddPage() {
         title="Add series"
         description="Search MangaBaka and add a series to your library."
       />
-      <Tabs defaultValue={new URLSearchParams(window.location.search).get('tab') === 'import' ? 'import' : 'search'}>
+      <Tabs defaultValue={searchParams.get('tab') === 'import' ? 'import' : 'search'}>
         <Tabs.List mb="lg">
           <Tabs.Tab value="search" leftSection={<IconSearch size={15} />}>Find a series</Tabs.Tab>
           <Tabs.Tab value="import" leftSection={<IconFolderSearch size={15} />}>Import from disk</Tabs.Tab>

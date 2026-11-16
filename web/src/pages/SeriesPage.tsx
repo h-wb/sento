@@ -36,10 +36,10 @@ import { api, type Edition } from '../api'
 import { invalidateLibrary, seriesQueries } from '../queries'
 import { plural } from '../format'
 import BookDialog, { type BookSelection } from '../components/BookDialog'
+import { editionSearch } from '../components/bookSelection'
 import { notify, usePageTitle } from '../ui'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { EmptyState } from '../components/EmptyState'
-import { cardLabel } from '../components/editionText'
 import { RemoveSeries } from '../components/RemoveSeries'
 import classes from './SeriesPage.module.css'
 import ActivityPanel from '../components/ActivityPanel'
@@ -64,18 +64,7 @@ export default function SeriesPage() {
     const versions = await api.versions(seriesID)
     const v = versions.find((v) => v.editionId === e.id && v.isDefault)
     if (!v) return
-    setBookSel({
-      versionId: v.id,
-      all: true,
-      ledger: e.type === 'chapter' ? 'chapter' : 'volume',
-      number: 0,
-      editionId: e.id,
-      editionLabel: cardLabel(e, v, versions),
-      monitored: v.monitored,
-      wanted: true,
-      fileIds: [],
-      autoSearch: true,
-    })
+    setBookSel(editionSearch(e, v, versions))
   }
   // The open tab lives in ?view= so it survives a reload and can be linked
   // to; ?view=review is the deep link the global review inbox uses.

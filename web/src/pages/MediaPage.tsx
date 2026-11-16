@@ -1,32 +1,23 @@
-import { Fragment, useState, type ReactNode } from 'react'
 import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Code,
-  Collapse,
-  Group,
-  Select,
-  SimpleGrid,
-  Stack,
-  Switch,
-  Text,
-  TextInput,
-  Title,
-  UnstyledButton,
+Alert,
+Button,
+Text
 } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
-import { IconAlertTriangle, IconCheck, IconCircleCheck } from '@tabler/icons-react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type MediaSettings } from '../api'
-import type { NamingSetup } from '../types/service'
-import { notify, usePageTitle } from '../ui'
+import { useMutation,useQuery,useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { api,type MediaSettings } from '../api'
+import { ComicInfoSection } from '../components/media/ComicInfoSection'
+import { DiskSection } from '../components/media/DiskSection'
+import { ReaderSetupSection } from '../components/media/ReaderSetupSection'
+import { TokenTable } from '../components/media/TokenTable'
+import { useTemplateCaret } from '../components/media/useTemplateCaret'
+import OrganizeLibrary from '../components/OrganizeLibrary'
 import { PageHeader } from '../components/PageHeader'
 import { QueryFeedback } from '../components/QueryFeedback'
 import { TemplateInput } from '../components/TemplateInput'
-import { PathTree } from '../components/PathTree'
-import OrganizeLibrary from '../components/OrganizeLibrary'
+import type { NamingSetup } from '../types/service'
+import { notify,usePageTitle } from '../ui'
 import { useUnsavedChanges } from '../useUnsavedChanges'
 import classes from './MediaPage.module.css'
 
@@ -47,42 +38,11 @@ const fileSettings: (keyof MediaSettings)[] = [
 const changesFiles = (a: MediaSettings, b: MediaSettings) =>
   fileSettings.some((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]))
 
-// What sits inside a series folder. A layout naming a series folder sets
-// that too; the others keep it, unless it was the per-edition one.
-const seriesFolderDefault = '{Series Title} [mangabaka-{seriesId}]'
-const seriesFolderByEdition = '{Series Title} [mangabaka-{seriesId}] [{edition}][{lang}] ({version})'
-const layouts: { value: string; label: string; template: string; seriesFolder?: string }[] = [
-  { value: 'edition', label: 'A folder per edition — Standard Edition [en]', template: '{edition} [{lang}] ({version})' },
-  { value: 'type', label: 'By type, then edition — Volumes/Standard Edition [en]', template: '{type}/{edition} [{lang}] ({version})' },
-  { value: 'flat', label: 'None — books directly in the series folder', template: '' },
-  {
-    value: 'editionFolders',
-    label: 'A series folder per edition instead — ONE PIECE [Standard Edition][en] (Colored)',
-    template: '',
-    seriesFolder: seriesFolderByEdition,
-  },
-  { value: 'ids', label: 'By internal id — editions/42/versions/81', template: 'editions/{editionId}/versions/{versionId}' },
-]
-
 // A setup is the settings it fills; it is recognised by them, not stored.
 const matches = (s: NamingSetup, m: MediaSettings) =>
   s.seriesFolder === m.seriesFolder &&
   s.bookFolder === m.bookFolder &&
   Object.entries(s.readerFields).every(([k, v]) => m.readerFields[k] === v)
-
-function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return (
-    <section className={classes.section}>
-      <Title order={3} className={classes.sectionTitle}>
-        {title}
-      </Title>
-      <Text size="sm" c="dimmed" mb="md" maw={620}>
-        {description}
-      </Text>
-      <Stack gap="md">{children}</Stack>
-    </section>
-  )
-}
 
 export default function MediaPage() {
   usePageTitle('Media')
@@ -130,23 +90,7 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
   })
   const errors = preview.data?.errors ?? {}
 
-  // The template last focused: a token picked from the table goes into it,
-  // at the caret. Reader fields are keyed "reader:<field>".
-  const [active, setActive] = useState<{ field: string; input: HTMLInputElement } | null>(null)
-  const focused = (field: string) => (input: HTMLInputElement) => setActive({ field, input })
-  const insertToken = (syntax: string) => {
-    if (!active?.input.isConnected) return
-    const { field, input } = active
-    const start = input.selectionStart ?? input.value.length
-    const end = input.selectionEnd ?? start
-    const value = input.value.slice(0, start) + syntax + input.value.slice(end)
-    if (field.startsWith('reader:')) setReaderField(field.slice('reader:'.length), value)
-    else set({ [field]: value })
-    requestAnimationFrame(() => {
-      input.focus()
-      input.setSelectionRange(start + syntax.length, start + syntax.length)
-    })
-  }
+  const { focused, insertToken } = useTemplateCaret(set, setReaderField)
   // A level of the path tree leads to the setting that makes it.
   const pick = (setting: string) => {
     const input = document.getElementById(`media-${setting}`)
@@ -214,233 +158,11 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
             onRetry={() => void (schema.error ? schema.refetch() : preview.refetch())}
           />
 
-          <Section
-            title="Your reader"
-            description="Readers decide what a series is in their own way. A setup fills the series folder, the book folder and the names in readers below so yours shows each edition as you mean; nothing changes until you save."
-          >
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              {setups.map((s, i) => {
-                const on = setup?.key === s.key
-                return (
-                  <UnstyledButton
-                    key={s.key}
-                    className={classes.setup}
-                    data-active={on}
-                    aria-pressed={on}
-                    onClick={() =>
-                      set({ seriesFolder: s.seriesFolder, bookFolder: s.bookFolder, readerFields: { ...form.readerFields, ...s.readerFields } })
-                    }
-                  >
-                    <Group justify="space-between" wrap="nowrap" gap="xs">
-                      <Text fw={600} size="sm">
-                        {s.title}
-                      </Text>
-                      {on ? (
-                        <IconCheck size={16} aria-hidden />
-                      ) : (
-                        i === 0 && <Badge size="xs" variant="light" color="gray">Recommended</Badge>
-                      )}
-                    </Group>
-                    <Text size="xs" c="dimmed" mt={4} lh={1.5}>
-                      {s.summary}
-                    </Text>
-                  </UnstyledButton>
-                )
-              })}
-            </SimpleGrid>
-            {setups.length > 0 && !setup && (
-              <Text size="xs" c="dimmed">
-                Your own arrangement: it matches neither setup.
-              </Text>
-            )}
-            <Stack gap={8} aria-label="How readers will show it" role="group">
-              {(preview.data?.readers ?? []).map((r) => (
-                <Group key={r.reader} gap="xs" wrap="nowrap" align="flex-start">
-                  {r.fine ? (
-                    <IconCircleCheck size={18} color="var(--mantine-color-green-filled)" style={{ flexShrink: 0 }} />
-                  ) : (
-                    <IconAlertTriangle size={18} color="var(--mantine-color-yellow-filled)" style={{ flexShrink: 0 }} />
-                  )}
-                  <Text size="sm">
-                    <Text span fw={600}>
-                      {r.reader}
-                    </Text>{' '}
-                    {r.says.charAt(0).toLowerCase() + r.says.slice(1)}
-                  </Text>
-                </Group>
-              ))}
-            </Stack>
-            {(setup?.tips?.length ?? 0) > 0 && (
-              <div className={classes.tips}>
-                <Text size="xs" fw={600} mb={4}>
-                  In your reader
-                </Text>
-                {[...new Set(setup!.tips.map((t) => t.reader))].map((reader) => (
-                  <div key={reader}>
-                    <Text size="xs" fw={500} mt={6}>
-                      {reader}
-                    </Text>
-                    <ul className={classes.tipList}>
-                      {setup!.tips
-                        .filter((t) => t.reader === reader)
-                        .map((t) => (
-                          <li key={t.tip}>
-                            <Text size="xs" c="dimmed">
-                              {t.tip}
-                            </Text>
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Section>
+          <ReaderSetupSection setups={setups} setup={setup} form={form} set={set} preview={preview} />
 
-          <Section
-            title="On disk"
-            description="Where each book's file goes, one level at a time. The tree shows three sample books; pick a level to change the setting that makes it."
-          >
-            {preview.data?.paths ? <PathTree examples={preview.data.paths} onPick={pick} /> : <Text size="sm" c="dimmed">Loading…</Text>}
-            <div>
-              <Group grow align="flex-start">
-                <TextInput
-                  id="media-volumesRoot"
-                  label="Volumes top folder"
-                  placeholder="None"
-                  value={form.volumesRoot}
-                  error={errors.volumesRoot}
-                  onChange={(e) => set({ volumesRoot: e.currentTarget.value })}
-                />
-                <TextInput
-                  id="media-chaptersRoot"
-                  label="Chapters top folder"
-                  placeholder="None"
-                  value={form.chaptersRoot}
-                  error={errors.chaptersRoot}
-                  onChange={(e) => set({ chaptersRoot: e.currentTarget.value })}
-                />
-              </Group>
-              <Text size="xs" c="dimmed" mt={6}>
-                Optional folders above every series, such as Volumes and Chapters. Two different
-                names keep chapters in a tree of their own.
-              </Text>
-            </div>
-            <TemplateInput
-              id="media-seriesFolder"
-              label="Series folder"
-              description="One folder per series. When it names something a copy has, such as {Reader Series} or {edition}, each copy that renders differently gets a folder of its own beside it."
-              value={form.seriesFolder}
-              preview={preview.data?.seriesFolder}
-              error={errors.seriesFolder}
-              onChange={(v) => set({ seriesFolder: v })}
-              onFocus={focused('seriesFolder')}
-            />
-            <Select
-              label="Folders inside a series"
-              allowDeselect={false}
-              value={
-                layouts.find(
-                  (l) => l.template === form.bookFolder && (!l.seriesFolder || l.seriesFolder === form.seriesFolder),
-                )?.value ?? 'custom'
-              }
-              onChange={(v) => {
-                const layout = layouts.find((l) => l.value === v)
-                if (!layout) return
-                const seriesFolder =
-                  layout.seriesFolder ?? (form.seriesFolder === seriesFolderByEdition ? seriesFolderDefault : form.seriesFolder)
-                set({ bookFolder: layout.template, seriesFolder, hashInName: layout.value === 'ids' })
-              }}
-              data={[...layouts.map(({ value, label }) => ({ value, label })), { value: 'custom', label: 'Custom' }]}
-            />
-            <TemplateInput
-              id="media-bookFolder"
-              label="Book folder"
-              value={form.bookFolder}
-              preview={preview.data ? preview.data.bookFolder || '(directly in the series folder)' : undefined}
-              error={errors.bookFolder}
-              onChange={(v) => set({ bookFolder: v })}
-              onFocus={focused('bookFolder')}
-            />
-            <TemplateInput
-              id="media-volumeFile"
-              label="Volume file"
-              value={form.volumeFile}
-              preview={preview.data?.volumeFile}
-              error={errors.volumeFile}
-              onChange={(v) => set({ volumeFile: v })}
-              onFocus={focused('volumeFile')}
-            />
-            <TemplateInput
-              id="media-chapterFile"
-              label="Chapter file"
-              value={form.chapterFile}
-              preview={preview.data?.chapterFile}
-              error={errors.chapterFile}
-              onChange={(v) => set({ chapterFile: v })}
-              onFocus={focused('chapterFile')}
-            />
-            <Switch
-              label="Rename imported files"
-              description="Off, a file keeps the name it arrived with."
-              checked={form.renameImports}
-              onChange={(e) => set({ renameImports: e.currentTarget.checked })}
-            />
-            <Switch
-              label="Add the content fingerprint to file names"
-              description="Off, it is only added when two different books would get the same path."
-              checked={form.hashInName}
-              onChange={(e) => set({ hashInName: e.currentTarget.checked })}
-            />
-          </Section>
+          <DiskSection form={form} set={set} preview={preview} errors={errors} focused={focused} pick={pick} />
 
-          <Section
-            title="Inside each book"
-            description="The ComicInfo.xml Sento writes into every book. Readers file, name and describe books by it; the two names below are yours to choose, the rest comes from MangaBaka and the release."
-          >
-            <Switch
-              label="Embed metadata in books"
-              description="Every import becomes a clean CBZ with a full ComicInfo.xml. Torrent downloads are copied so the original keeps seeding, which uses extra disk space while it seeds."
-              checked={form.writeComicInfo}
-              onChange={(e) => set({ writeComicInfo: e.currentTarget.checked })}
-            />
-            {!form.writeComicInfo && (
-              <Switch
-                label="Copy instead of hardlink"
-                description="Books keep whatever metadata they came with. Use a full copy if your filesystem does not support hardlinks."
-                checked={form.alwaysCopy}
-                onChange={(e) => set({ alwaysCopy: e.currentTarget.checked })}
-              />
-            )}
-            {readerFields.map(readerInput)}
-            <div>
-              <Button
-                variant="subtle"
-                size="compact-sm"
-                px={0}
-                aria-expanded={allFields}
-                onClick={() => setAllFields((v) => !v)}
-              >
-                {allFields ? 'Hide' : 'Show'} every field Sento writes ({schema.data?.comicInfo.length ?? 0})
-              </Button>
-              <Collapse expanded={allFields}>
-                <div className={classes.pairs} style={{ marginTop: 8 }}>
-                  {(schema.data?.comicInfo ?? []).map((w) => (
-                    <Fragment key={w.fields.join()}>
-                      <Group gap={4}>
-                        {w.fields.map((f) => (
-                          <Code key={f}>{f}</Code>
-                        ))}
-                      </Group>
-                      <Text size="xs" c="dimmed">
-                        {w.from}
-                      </Text>
-                    </Fragment>
-                  ))}
-                </div>
-              </Collapse>
-            </div>
-          </Section>
+          <ComicInfoSection form={form} set={set} readerFields={readerFields} readerInput={readerInput} allFields={allFields} setAllFields={setAllFields} schema={schema} />
 
           {offerOrganize && !dirty && (
             <Alert
@@ -483,46 +205,8 @@ function MediaForm({ initial, onSaved }: { initial: MediaSettings; onSaved: () =
           )}
         </fieldset>
 
-        <Card padding="md" className={classes.tokens}>
-          <Title order={4} mb={4}>
-            Naming tokens
-          </Title>
-          <Text size="xs" c="dimmed" mb="sm">
-            Click a token to put it into the template you are editing. <Code>:00</Code> pads a
-            number.
-          </Text>
-          <div className={classes.pairs}>
-            {(schema.data?.tokens ?? []).map((t) => (
-              <Fragment key={t.syntax}>
-                <span style={{ whiteSpace: 'nowrap' }}>
-                  <UnstyledButton
-                    aria-label={`Insert ${t.syntax}`}
-                    // Keep the caret in the template being edited.
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => insertToken(t.syntax)}
-                  >
-                    <Code>{t.syntax}</Code>
-                  </UnstyledButton>
-                  {t.perBook && (
-                    <Text span size="xs" c="dimmed" aria-hidden>
-                      {' *'}
-                    </Text>
-                  )}
-                </span>
-                <Text size="xs" c="dimmed">
-                  {t.help}
-                </Text>
-              </Fragment>
-            ))}
-          </div>
-          <Text size="xs" c="dimmed" mt="sm">
-            Brackets around an empty token disappear: <Code>[{'{group}'}]</Code> vanishes when
-            there is no group.
-          </Text>
-          <Text size="xs" c="dimmed" mt={4}>
-            * names one book, so it cannot be part of a name in readers.
-          </Text>
-        </Card>
+          <TokenTable schema={schema} insertToken={insertToken} />
+
       </div>
     </div>
   )
