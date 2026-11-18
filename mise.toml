@@ -16,7 +16,7 @@ node = "24.22.3"
 # Java keeps its upstream build metadata ("+9.0.LTS"): macOS resolves only
 # the full form, so the pin uses it.
 java = "temurin-21.0.13+9.0.LTS"
-vendir = "0.46.3"
+vendir = "0.47.0"
 gradle = "9.9.1"
 golangci-lint = "2.15.0"
 actionlint = "1.7.12"
