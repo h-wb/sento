@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/h-wb/sento/compare/v0.8.0...v0.9.0) (2026-11-18)
+
+
+### Features
+
+* **web:** clearer dialogs for a file, correcting files and giving them to an edition ([#98](https://github.com/h-wb/sento/issues/98)) ([8d209a6](https://github.com/h-wb/sento/commit/8d209a61b5a71a580d84be2125f45cc399686855))
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/jackc/pgx/v5 to v5.13.0 ([#100](https://github.com/h-wb/sento/issues/100)) ([4cc7b91](https://github.com/h-wb/sento/commit/4cc7b91878afcbab2897b2997b73f49323d39140))
+* sweep stage temp files, read Kapitel as a chapter, guard four dialogs ([#103](https://github.com/h-wb/sento/issues/103)) ([f8b2985](https://github.com/h-wb/sento/commit/f8b2985880655437f8b0a6d4a5ab48a4a76d80f1))
+
 ## [0.8.0](https://github.com/h-wb/sento/compare/v0.7.0...v0.8.0) (2026-11-11)
 
 
