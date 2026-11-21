@@ -15,13 +15,13 @@ go = "1.27.4"
 node = "24.22.3"
 # Java keeps its upstream build metadata ("+9.0.LTS"): macOS resolves only
 # the full form, so the pin uses it.
-java = "temurin-21.0.13+9.0.LTS"
+java = "temurin-21.0.13+100000002.0.LTS"
 vendir = "0.46.3"
 gradle = "9.9.1"
 golangci-lint = "2.15.0"
 actionlint = "1.7.12"
 shellcheck = "0.11.0" # actionlint runs it over every `run:` script
-pitchfork = "2.34.0" # supervises the [daemons] dev stack
+pitchfork = "2.36.0" # supervises the [daemons] dev stack
 "go:golang.org/x/tools/gopls" = "latest"
 
 [env]
